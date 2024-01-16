@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Queued Custom Type Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.13.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates multi-thread programming using Qt.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/queuedcustomtype-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Contents:</db:para>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>In the <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type Example</db:link>, we showed how to integrate custom types with the meta-object system, enabling them to be stored in QVariant objects, written out in debugging information and used in signal-slot communication.</db:para>
+<db:para>In this example, we create a new value class, Block, and register it with the meta-object system to enable us to send instances of it between threads using queued signals and slots.</db:para>
+</db:section>
+<db:section xml:id="the-block-class">
+<db:title>The Block Class</db:title>
+<db:para>The Block class is similar to the Message class described in the <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type Example</db:link>. It provides the default constructor, copy constructor and destructor in the public section of the class that the meta-object system requires. It describes a colored rectangle.</db:para>
+<db:programlisting language="cpp">class Block
+{
+public:
+    Block();
+    Block(const Block &amp;amp;other);
+    ~Block();
+
+    Block(const QRect &amp;amp;rect, const QColor &amp;amp;color);
+
+    QColor color() const;
+    QRect rect() const;
+
+private:
+    QRect m_rect;
+    QColor m_color;
+};
+
+Q_DECLARE_METATYPE(Block);
+</db:programlisting>
+<db:para>We will still need to register it with the meta-object system at run-time by calling the <db:link xlink:href="qmetatype.xml#qRegisterMetaType-1">qRegisterMetaType</db:link>() template function before we make any signal-slot connections that use this type. Even though we do not intend to use the type with QVariant in this example, it is good practice to also declare the new type with <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>().</db:para>
+<db:para>The implementation of the Block class is trivial, so we avoid quoting it here.</db:para>
+</db:section>
+<db:section xml:id="the-window-class">
+<db:title>The Window Class</db:title>
+<db:para>We define a simple Window class with a public slot that accepts a Block object. The rest of the class is concerned with managing the user interface and handling images.</db:para>
+<db:programlisting language="cpp">class Window : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Window(QWidget *parent = nullptr);
+    void loadImage(const QImage &amp;amp;image);
+
+public slots:
+    void addBlock(const Block &amp;amp;block);
+
+private slots:
+    void loadImage();
+    void resetUi();
+
+private:
+    QLabel *label;
+    QPixmap pixmap;
+    QPushButton *loadButton;
+    QPushButton *resetButton;
+    QString path;
+    RenderThread *thread;
+};
+</db:programlisting>
+<db:para>The Window class also contains a worker thread, provided by a RenderThread object. This will emit signals to send Block objects to the window's addBlock(Block) slot.</db:para>
+<db:para>The parts of the Window class that are most relevant are the constructor and the addBlock(Block) slot.</db:para>
+<db:para>The constructor creates a thread for rendering images, sets up a user interface containing a label and two push buttons that are connected to slots in the same class.</db:para>
+<db:programlisting language="cpp">Window::Window(QWidget *parent)
+    : QWidget(parent), thread(new RenderThread(this))
+{
+    label = new QLabel(this);
+    label-&amp;gt;setAlignment(Qt::AlignCenter);
+
+    loadButton = new QPushButton(tr(&quot;&amp;amp;Load image...&quot;), this);
+    resetButton = new QPushButton(tr(&quot;&amp;amp;Stop&quot;), this);
+    resetButton-&amp;gt;setEnabled(false);
+
+    connect(loadButton, &amp;amp;QPushButton::clicked,
+            this, QOverload&amp;lt;&amp;gt;::of(&amp;amp;Window::loadImage));
+    connect(resetButton, &amp;amp;QPushButton::clicked,
+            thread, &amp;amp;RenderThread::stopProcess);
+    connect(thread, &amp;amp;RenderThread::finished,
+            this, &amp;amp;Window::resetUi);
+    connect(thread, &amp;amp;RenderThread::sendBlock,
+            this, &amp;amp;Window::addBlock);
+</db:programlisting>
+<db:para>In the last of these connections, we connect a signal in the RenderThread object to the addBlock(Block) slot in the window.</db:para>
+<db:programlisting language="cpp">    ...
+    setWindowTitle(tr(&quot;Queued Custom Type&quot;));
+}
+</db:programlisting>
+<db:para>The rest of the constructor simply sets up the layout of the window.</db:para>
+<db:para>The addBlock(Block) slot receives blocks from the rendering thread via the signal-slot connection set up in the constructor:</db:para>
+<db:programlisting language="cpp">void Window::addBlock(const Block &amp;amp;block)
+{
+    QColor color = block.color();
+    color.setAlpha(64);
+
+    QPainter painter;
+    painter.begin(&amp;amp;pixmap);
+    painter.fillRect(block.rect(), color);
+    painter.end();
+    label-&amp;gt;setPixmap(pixmap);
+}
+</db:programlisting>
+<db:para>We simply paint these onto the label as they arrive.</db:para>
+</db:section>
+<db:section xml:id="the-renderthread-class">
+<db:title>The RenderThread Class</db:title>
+<db:para>The RenderThread class processes an image, creating Block objects and using the sendBlock(Block) signal to send them to other components in the example.</db:para>
+<db:programlisting language="cpp">class RenderThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    RenderThread(QObject *parent = nullptr);
+    ~RenderThread();
+
+    void processImage(const QImage &amp;amp;image);
+
+signals:
+    void sendBlock(const Block &amp;amp;block);
+
+public slots:
+    void stopProcess();
+
+protected:
+    void run();
+
+private:
+    bool m_abort;
+    QImage m_image;
+    QMutex mutex;
+};
+</db:programlisting>
+<db:para>The constructor and destructor are not quoted here. These take care of setting up the thread's internal state and cleaning up when it is destroyed.</db:para>
+<db:para>Processing is started with the processImage() function, which calls the RenderThread class's reimplementation of the QThread::run() function:</db:para>
+<db:programlisting language="cpp">void RenderThread::processImage(const QImage &amp;amp;image)
+{
+    if (image.isNull())
+        return;
+
+    m_image = image;
+    m_abort = false;
+    start();
+}
+
+void RenderThread::run()
+{
+    int size = qMax(m_image.width()/20, m_image.height()/20);
+    for (int s = size; s &amp;gt; 0; --s) {
+        for (int c = 0; c &amp;lt; 400; ++c) {
+</db:programlisting>
+<db:para>Ignoring the details of the way the image is processed, we see that the signal containing a block is emitted in the usual way:</db:para>
+<db:programlisting language="cpp">    ...
+            Block block(QRect(x1, y1, x2 - x1 + 1, y2 - y1 + 1),
+                        QColor(red/n, green/n, blue/n));
+            emit sendBlock(block);
+            if (m_abort)
+                return;
+            msleep(10);
+        }
+    }
+}
+</db:programlisting>
+<db:para>Each signal that is emitted will be queued and delivered later to the window's addBlock(Block) slot.</db:para>
+</db:section>
+<db:section xml:id="registering-the-type">
+<db:title>Registering the Type</db:title>
+<db:para>In the example's main() function, we perform the registration of the Block class as a custom type with the meta-object system by calling the <db:link xlink:href="qmetatype.xml#qRegisterMetaType-1">qRegisterMetaType</db:link>() template function:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    qRegisterMetaType&amp;lt;Block&amp;gt;();
+
+    Window window;
+    window.show();
+
+    window.loadImage(createImage(256, 256));
+    return app.exec();
+}
+</db:programlisting>
+<db:para>This call is placed here to ensure that the type is registered before any signal-slot connections are made that use it.</db:para>
+<db:para>The rest of the main() function is concerned with setting a seed for the pseudo-random number generator, creating and showing the window, and setting a default image. See the source code for the implementation of the createImage() function.</db:para>
+</db:section>
+<db:section xml:id="further-reading">
+<db:title>Further Reading</db:title>
+<db:para>This example showed how a custom type can be registered with the meta-object system so that it can be used with signal-slot connections between threads. For ordinary communication involving direct signals and slots, it is enough to simply declare the type in the way described in the <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type Example</db:link>.</db:para>
+<db:para>In practice, both the <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro and the <db:link xlink:href="qmetatype.xml#qRegisterMetaType-1">qRegisterMetaType</db:link>() template function can be used to register custom types, but <db:link xlink:href="qmetatype.xml#qRegisterMetaType-1">qRegisterMetaType</db:link>() is only required if you need to perform signal-slot communication or need to create and destroy objects of the custom type at run-time.</db:para>
+<db:para>More information on using custom types with Qt can be found in the <db:link xlink:href="custom-types.xml">Creating Custom Qt Types</db:link> document.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/threads/queuedcustomtype?h=5.13">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QXmlStream Bookmarks Example</db:title>
+<db:productname>QtXml</db:productname>
+<db:edition>Qt 5.13.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read and write to XBEL files.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The QXmlStream Bookmarks example provides a reader for XML Bookmark Exchange Language (XBEL) files using Qt's QXmlStreamReader class for reading, and QXmlStreamWriter class for writing the files.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/xmlstreamexample-screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="xbelwriter-class-definition">
+<db:title>XbelWriter Class Definition</db:title>
+<db:para>The <db:code>XbelWriter</db:code> class contains a private instance of QXmlStreamWriter, which provides an XML writer with a streaming API. <db:code>XbelWriter</db:code> also has a reference to the QTreeWidget instance where the bookmark hierarchy is stored.</db:para>
+<db:programlisting language="cpp">class XbelWriter
+{
+public:
+    explicit XbelWriter(const QTreeWidget *treeWidget);
+    bool writeFile(QIODevice *device);
+
+private:
+    void writeItem(const QTreeWidgetItem *item);
+    QXmlStreamWriter xml;
+    const QTreeWidget *treeWidget;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelwriter-class-implementation">
+<db:title>XbelWriter Class Implementation</db:title>
+<db:para>The <db:code>XbelWriter</db:code> constructor accepts a <db:code role="parameter">treeWidget</db:code> to initialize within its definition. We enable QXmlStreamWriter's auto-formatting property to ensure line-breaks and indentations are added automatically to empty sections between elements, increasing readability as the data is split into several lines.</db:para>
+<db:programlisting language="cpp">XbelWriter::XbelWriter(const QTreeWidget *treeWidget)
+    : treeWidget(treeWidget)
+{
+    xml.setAutoFormatting(true);
+}
+</db:programlisting>
+<db:para>The <db:code>writeFile()</db:code> function accepts a QIODevice object and sets it using <db:code>setDevice()</db:code>. This function then writes the document type definition(DTD), the start element, the version, and <db:code>treeWidget</db:code>'s top-level items.</db:para>
+<db:programlisting language="cpp">bool XbelWriter::writeFile(QIODevice *device)
+{
+    xml.setDevice(device);
+
+    xml.writeStartDocument();
+    xml.writeDTD(QStringLiteral(&quot;&amp;lt;!DOCTYPE xbel&amp;gt;&quot;));
+    xml.writeStartElement(QStringLiteral(&quot;xbel&quot;));
+    xml.writeAttribute(XbelReader::versionAttribute(), QStringLiteral(&quot;1.0&quot;));
+    for (int i = 0; i &amp;lt; treeWidget-&amp;gt;topLevelItemCount(); ++i)
+        writeItem(treeWidget-&amp;gt;topLevelItem(i));
+
+    xml.writeEndDocument();
+    return true;
+}
+</db:programlisting>
+<db:para>The <db:code>writeItem()</db:code> function accepts a QTreeWidgetItem object and writes it to the stream, depending on its <db:code>tagName</db:code>, which can either be a &quot;folder&quot;, &quot;bookmark&quot;, or &quot;separator&quot;.</db:para>
+<db:programlisting language="cpp">void XbelWriter::writeItem(const QTreeWidgetItem *item)
+{
+    QString tagName = item-&amp;gt;data(0, Qt::UserRole).toString();
+    if (tagName == QLatin1String(&quot;folder&quot;)) {
+        bool folded = !item-&amp;gt;isExpanded();
+        xml.writeStartElement(tagName);
+        xml.writeAttribute(XbelReader::foldedAttribute(), folded ? yesValue() : noValue());
+        xml.writeTextElement(titleElement(), item-&amp;gt;text(0));
+        for (int i = 0; i &amp;lt; item-&amp;gt;childCount(); ++i)
+            writeItem(item-&amp;gt;child(i));
+        xml.writeEndElement();
+    } else if (tagName == QLatin1String(&quot;bookmark&quot;)) {
+        xml.writeStartElement(tagName);
+        if (!item-&amp;gt;text(1).isEmpty())
+            xml.writeAttribute(XbelReader::hrefAttribute(), item-&amp;gt;text(1));
+        xml.writeTextElement(titleElement(), item-&amp;gt;text(0));
+        xml.writeEndElement();
+    } else if (tagName == QLatin1String(&quot;separator&quot;)) {
+        xml.writeEmptyElement(tagName);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelreader-class-definition">
+<db:title>XbelReader Class Definition</db:title>
+<db:para>The <db:code>XbelReader</db:code> contains a private instance of QXmlStreamReader, the companion class to QXmlStreamWriter. <db:code>XbelReader</db:code> also contains a reference to the QTreeWidget that is used to group the bookmarks according to their hierarchy.</db:para>
+<db:programlisting language="cpp">class XbelReader
+{
+public:
+    XbelReader(QTreeWidget *treeWidget);
+
+    bool read(QIODevice *device);
+
+    QString errorString() const;
+
+    static inline QString versionAttribute() { return QStringLiteral(&quot;version&quot;); }
+    static inline QString hrefAttribute() { return QStringLiteral(&quot;href&quot;); }
+    static inline QString foldedAttribute() { return QStringLiteral(&quot;folded&quot;); }
+
+private:
+    void readXBEL();
+    void readTitle(QTreeWidgetItem *item);
+    void readSeparator(QTreeWidgetItem *item);
+    void readFolder(QTreeWidgetItem *item);
+    void readBookmark(QTreeWidgetItem *item);
+
+    QTreeWidgetItem *createChildItem(QTreeWidgetItem *item);
+
+    QXmlStreamReader xml;
+    QTreeWidget *treeWidget;
+
+    QIcon folderIcon;
+    QIcon bookmarkIcon;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelreader-class-implementation">
+<db:title>XbelReader Class Implementation</db:title>
+<db:para>The <db:code>XbelReader</db:code> constructor accepts a QTreeWidget to initialize the <db:code>treeWidget</db:code> within its definition. A QStyle object is used to set <db:code>treeWidget</db:code>'s style property. The <db:code>folderIcon</db:code> is set to QIcon::Normal mode where the pixmap is only displayed when the user is not interacting with the icon. The QStyle::SP_DirClosedIcon, QStyle::SP_DirOpenIcon, and QStyle::SP_FileIcon correspond to standard pixmaps that follow the style of your GUI.</db:para>
+<db:programlisting language="cpp">XbelReader::XbelReader(QTreeWidget *treeWidget)
+    : treeWidget(treeWidget)
+{
+    QStyle *style = treeWidget-&amp;gt;style();
+
+    folderIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_DirClosedIcon),
+                         QIcon::Normal, QIcon::Off);
+    folderIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_DirOpenIcon),
+                         QIcon::Normal, QIcon::On);
+    bookmarkIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_FileIcon));
+}
+</db:programlisting>
+<db:para>The <db:code>read()</db:code> function accepts a QIODevice and sets it using <db:link xlink:href="">setDevice()</db:link>. The actual process of reading only takes place if the file is a valid XBEL 1.0 file. Note that the XML input needs to be well-formed to be accepted by QXmlStreamReader. Otherwise, the <db:link xlink:href="">raiseError()</db:link> function is used to display an error message. Since the XBEL reader is only concerned with reading XML elements, it makes extensive use of the <db:link xlink:href="">readNextStartElement()</db:link> convenience function.</db:para>
+<db:programlisting language="cpp">bool XbelReader::read(QIODevice *device)
+{
+    xml.setDevice(device);
+
+    if (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;xbel&quot;)
+            &amp;amp;&amp;amp; xml.attributes().value(versionAttribute()) == QLatin1String(&quot;1.0&quot;)) {
+            readXBEL();
+        } else {
+            xml.raiseError(QObject::tr(&quot;The file is not an XBEL version 1.0 file.&quot;));
+        }
+    }
+
+    return !xml.error();
+}
+</db:programlisting>
+<db:para>The <db:code>errorString()</db:code> function is used if an error occurred, in order to obtain a description of the error complete with line and column number information.</db:para>
+<db:programlisting language="cpp">QString XbelReader::errorString() const
+{
+    return QObject::tr(&quot;%1\nLine %2, column %3&quot;)
+            .arg(xml.errorString())
+            .arg(xml.lineNumber())
+            .arg(xml.columnNumber());
+}
+</db:programlisting>
+<db:para>The <db:code>readXBEL()</db:code> function reads the name of a startElement and calls the appropriate function to read it, depending on whether if its a &quot;folder&quot;, &quot;bookmark&quot; or &quot;separator&quot;. Otherwise, it calls <db:link xlink:href="">skipCurrentElement()</db:link>. The <db:link xlink:href="qtglobal.xml#Q_ASSERT">Q_ASSERT</db:link>() macro is used to provide a pre-condition for the function.</db:para>
+<db:programlisting language="cpp">void XbelReader::readXBEL()
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;xbel&quot;));
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;folder&quot;))
+            readFolder(0);
+        else if (xml.name() == QLatin1String(&quot;bookmark&quot;))
+            readBookmark(0);
+        else if (xml.name() == QLatin1String(&quot;separator&quot;))
+            readSeparator(0);
+        else
+            xml.skipCurrentElement();
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>readTitle()</db:code> function reads the bookmark's title.</db:para>
+<db:programlisting language="cpp">void XbelReader::readTitle(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;title&quot;));
+
+    QString title = xml.readElementText();
+    item-&amp;gt;setText(0, title);
+}
+</db:programlisting>
+<db:para>The <db:code>readSeparator()</db:code> function creates a separator and sets its flags. The text is set to 30 &quot;0xB7&quot;, the HEX equivalent for period. The element is then skipped using <db:link xlink:href="">skipCurrentElement()</db:link>.</db:para>
+<db:programlisting language="cpp">void XbelReader::readSeparator(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;separator&quot;));
+
+    QTreeWidgetItem *separator = createChildItem(item);
+    separator-&amp;gt;setFlags(item-&amp;gt;flags() &amp;amp; ~Qt::ItemIsSelectable);
+    separator-&amp;gt;setText(0, QString(30, 0xB7));
+    xml.skipCurrentElement();
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The <db:code>MainWindow</db:code> class is a subclass of QMainWindow, with a <db:code>File</db:code> menu and a <db:code>Help</db:code> menu.</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow();
+
+public slots:
+    void open();
+    void saveAs();
+    void about();
+#if !defined(QT_NO_CONTEXTMENU) &amp;amp;&amp;amp; !defined(QT_NO_CLIPBOARD)
+    void onCustomContextMenuRequested(const QPoint &amp;amp;pos);
+#endif
+private:
+    void createMenus();
+
+    QTreeWidget *treeWidget;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>The <db:code>MainWindow</db:code> constructor instantiates the QTreeWidget object, <db:code>treeWidget</db:code> and sets its header with a <db:link xlink:href="qstringlist.xml">QStringList</db:link> object, <db:code>labels</db:code>. The constructor also invokes <db:code>createActions()</db:code> and <db:code>createMenus()</db:code> to set up the menus and their corresponding actions. The <db:code>statusBar()</db:code> is used to display the message &quot;Ready&quot; and the window's size is fixed to 480x320 pixels.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow()
+{
+    QStringList labels;
+    labels &amp;lt;&amp;lt; tr(&quot;Title&quot;) &amp;lt;&amp;lt; tr(&quot;Location&quot;);
+
+    treeWidget = new QTreeWidget;
+    treeWidget-&amp;gt;header()-&amp;gt;setSectionResizeMode(QHeaderView::Stretch);
+    treeWidget-&amp;gt;setHeaderLabels(labels);
+#if !defined(QT_NO_CONTEXTMENU) &amp;amp;&amp;amp; !defined(QT_NO_CLIPBOARD)
+    treeWidget-&amp;gt;setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(treeWidget, &amp;amp;QWidget::customContextMenuRequested,
+            this, &amp;amp;MainWindow::onCustomContextMenuRequested);
+#endif
+    setCentralWidget(treeWidget);
+
+    createMenus();
+
+    statusBar()-&amp;gt;showMessage(tr(&quot;Ready&quot;));
+
+    setWindowTitle(tr(&quot;QXmlStream Bookmarks&quot;));
+    const QSize availableSize = QApplication::desktop()-&amp;gt;availableGeometry(this).size();
+    resize(availableSize.width() / 2, availableSize.height() / 3);
+}
+</db:programlisting>
+<db:para>The <db:code>open()</db:code> function enables the user to open an XBEL file using QFileDialog::getOpenFileName(). A warning message is displayed along with the <db:code>fileName</db:code> and <db:code>errorString</db:code> if the file cannot be read or if there is a parse error.</db:para>
+<db:programlisting language="cpp">void MainWindow::open()
+{
+    QString fileName =
+            QFileDialog::getOpenFileName(this, tr(&quot;Open Bookmark File&quot;),
+                                         QDir::currentPath(),
+                                         tr(&quot;XBEL Files (*.xbel *.xml)&quot;));
+    if (fileName.isEmpty())
+        return;
+
+    treeWidget-&amp;gt;clear();
+
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;QXmlStream Bookmarks&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  file.errorString()));
+        return;
+    }
+
+    XbelReader reader(treeWidget);
+    if (!reader.read(&amp;amp;file)) {
+        QMessageBox::warning(this, tr(&quot;QXmlStream Bookmarks&quot;),
+                             tr(&quot;Parse error in file %1:\n\n%2&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  reader.errorString()));
+    } else {
+        statusBar()-&amp;gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+    }
+
+}
+</db:programlisting>
+<db:para>The <db:code>saveAs()</db:code> function displays a QFileDialog, prompting the user for a <db:code>fileName</db:code> using QFileDialog::getSaveFileName(). Similar to the <db:code>open()</db:code> function, this function also displays a warning message if the file cannot be written to.</db:para>
+<db:programlisting language="cpp">void MainWindow::saveAs()
+{
+    QString fileName =
+            QFileDialog::getSaveFileName(this, tr(&quot;Save Bookmark File&quot;),
+                                         QDir::currentPath(),
+                                         tr(&quot;XBEL Files (*.xbel *.xml)&quot;));
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;QXmlStream Bookmarks&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  file.errorString()));
+        return;
+    }
+
+    XbelWriter writer(treeWidget);
+    if (writer.writeFile(&amp;amp;file))
+        statusBar()-&amp;gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+</db:programlisting>
+<db:para>The <db:code>about()</db:code> function displays a QMessageBox with a brief description of the example.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About QXmlStream Bookmarks&quot;),
+            tr(&quot;The &amp;lt;b&amp;gt;QXmlStream Bookmarks&amp;lt;/b&amp;gt; example demonstrates how to use Qt's &quot;
+               &quot;QXmlStream classes to read and write XML documents.&quot;));
+}
+</db:programlisting>
+<db:para>In order to implement the <db:code>open()</db:code>, <db:code>saveAs()</db:code>, <db:code>exit()</db:code>, <db:code>about()</db:code> and <db:code>aboutQt()</db:code> functions, we connect them to QAction objects and add them to the <db:code>fileMenu</db:code> and <db:code>helpMenu</db:code>. The connections are as shown below:</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    QAction *openAct = fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Open...&quot;), this, &amp;amp;MainWindow::open);
+    openAct-&amp;gt;setShortcuts(QKeySequence::Open);
+
+    QAction *saveAsAct = fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Save As...&quot;), this, &amp;amp;MainWindow::saveAs);
+    saveAsAct-&amp;gt;setShortcuts(QKeySequence::SaveAs);
+
+    QAction *exitAct = fileMenu-&amp;gt;addAction(tr(&quot;E&amp;amp;xit&quot;), this, &amp;amp;QWidget::close);
+    exitAct-&amp;gt;setShortcuts(QKeySequence::Quit);
+
+    menuBar()-&amp;gt;addSeparator();
+
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(tr(&quot;&amp;amp;About&quot;), this, &amp;amp;MainWindow::about);
+    helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, &amp;amp;QCoreApplication::quit);
+}
+</db:programlisting>
+<db:para>The <db:code>createMenus()</db:code> function creates the <db:code>fileMenu</db:code> and <db:code>helpMenu</db:code> and adds the QAction objects to them in order to create the menu shown in the screenshot below:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/xmlstreamexample-filemenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/xmlstreamexample-helpmenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    QAction *openAct = fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Open...&quot;), this, &amp;amp;MainWindow::open);
+    openAct-&amp;gt;setShortcuts(QKeySequence::Open);
+
+    QAction *saveAsAct = fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Save As...&quot;), this, &amp;amp;MainWindow::saveAs);
+    saveAsAct-&amp;gt;setShortcuts(QKeySequence::SaveAs);
+
+    QAction *exitAct = fileMenu-&amp;gt;addAction(tr(&quot;E&amp;amp;xit&quot;), this, &amp;amp;QWidget::close);
+    exitAct-&amp;gt;setShortcuts(QKeySequence::Quit);
+
+    menuBar()-&amp;gt;addSeparator();
+
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(tr(&quot;&amp;amp;About&quot;), this, &amp;amp;MainWindow::about);
+    helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, &amp;amp;QCoreApplication::quit);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="main-function">
+<db:title><db:code>main()</db:code> Function</db:title>
+<db:para>The <db:code>main()</db:code> function instantiates <db:code>MainWindow</db:code> and invokes the <db:code>show()</db:code> function.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    MainWindow mainWin;
+    mainWin.show();
+    mainWin.open();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>See the <db:link xlink:href="http://pyxml.sourceforge.net/topics/xbel/">XML Bookmark Exchange Language Resource Page</db:link> for more information about XBEL files.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/xml/streambookmarks?h=5.13">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

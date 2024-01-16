@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Declaring Slots in D-Bus Adaptors</db:title>
+<db:productname>QtDBus</db:productname>
+<db:edition>Qt 5.13.2 Reference Documentation</db:edition>
+<db:titleabbrev>QtDBus Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qdbusdeclaringsignals.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Declaring Signals in D-Bus Adaptors"/></db:extendedlink>
+<db:abstract>
+<db:para>QtDBus Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>contentspage</db:code></db:emphasis>Using Qt D-Bus Adaptors</db:para>
+<db:para>Slots in D-Bus adaptors are declared just like normal, public slots, but their parameters must follow certain rules (see <db:link xlink:href="qdbustypesystem.xml">The Qt D-Bus Type System</db:link> for more information). Slots whose parameters do not follow those rules or that are not public will not be accessible via D-Bus.</db:para>
+<db:para>Slots can have one parameter of type <db:code>const QDBusMessage &amp;</db:code>, which must appear at the end of the input parameter list, before any output parameters. This parameter, if present, will be initialized with a copy of the current message being processed, which allows the callee to obtain information about the caller, such as its connection name.</db:para>
+<db:para>Slots can be of three kinds:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Asynchronous</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Input-only</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Input-and-output</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:section xml:id="asynchronous-slots">
+<db:title>Asynchronous Slots</db:title>
+<db:para>Asynchronous slots are those that do not normally return any reply to the caller. For that reason, they cannot take any output parameters. In most cases, by the time the first line of the slot is run, the caller function has already resumed working.</db:para>
+<db:para>However, slots must not rely on that behavior. Scheduling and message-dispatching issues could change the order in which the slot is run. Code intending to synchronize with the caller should provide its own method of synchronization.</db:para>
+<db:para>Asynchronous slots are marked by the keyword <db:link xlink:href="qdbusabstractadaptor-proxy.xml#Q_NOREPLY">Q_NOREPLY</db:link> in the method signature, before the <db:code>void</db:code> return type and the slot name. The <db:code>quit()</db:code> slot in the <db:link xlink:href="qtdbus-complexpingpong-example.xml">D-Bus Complex Ping Pong Example</db:link> is an example of this.</db:para>
+</db:section>
+<db:section xml:id="input-only-slots">
+<db:title>Input-Only Slots</db:title>
+<db:para>Input-only slots are normal slots that take parameters passed by value or by constant reference. However, unlike asynchronous slots, the caller is usually waiting for completion of the callee before resuming operation. Therefore, non-asynchronous slots should not block or should state it its documentation that they may do so.</db:para>
+<db:para>Input-only slots have no special marking in their signature, except that they take only parameters passed by value or by constant reference. Optionally, slots can take a QDBusMessage parameter as a last parameter, which can be used to perform additional analysis of the method call message.</db:para>
+</db:section>
+<db:section xml:id="input-and-output-slots">
+<db:title>Input and Output Slots</db:title>
+<db:para>Like input-only slots, input-and-output slots are those that the caller is waiting for a reply. Unlike input-only ones, though, this reply will contain data. Slots that output data may contain non-constant references and may return a value as well. However, the output parameters must all appear at the end of the argument list and may not have input arguments interleaved. Optionally, a QDBusMessage argument may appear between the input and the output arguments.</db:para>
+</db:section>
+<db:section xml:id="automatic-replies">
+<db:title>Automatic Replies</db:title>
+<db:para>Method replies are generated automatically with the contents of the output parameters (if there were any) by the Qt D-Bus implementation. Slots need not worry about constructing proper QDBusMessage objects and sending them over the connection.</db:para>
+<db:para>However, the possibility of doing so remains there. Should the slot find out it needs to send a special reply or even an error, it can do so by using QDBusMessage::createReply() or QDBusMessage::createErrorReply() on the QDBusMessage parameter and send it with QDBusConnection::send(). The Qt D-Bus implementation will not generate any reply if the slot did so.</db:para>
+<db:warning>
+<db:para>When a caller places a method call and waits for a reply, it will only wait for a limited amount of time. Slots intending to take a long time to complete should make that fact clear in documentation so that callers properly set higher timeouts.</db:para>
+</db:warning>
+</db:section>
+<db:section xml:id="delayed-replies">
+<db:title>Delayed Replies</db:title>
+<db:para>In some circumstances, the called slot may not be able to process the request immediately. This is frequently the case when the request involves an I/O or networking operation which may block.</db:para>
+<db:para>If this is the case, the slot should return control to the application's main loop to avoid freezing the user interface, and resume the process later. To accomplish this, it should make use of the extra <db:code>QDBusMessage</db:code> parameter at the end of the input parameter list and request a delayed reply.</db:para>
+<db:para>We do this by writing a slot that stores the request data in a persistent structure, indicating to the caller using <db:link xlink:href="">QDBusMessage::setDelayedReply(true)</db:link> that the response will be sent later.</db:para>
+<db:programlisting language="cpp">struct RequestData
+{
+    QString request;
+    QString processedData;
+    QDBusMessage reply;
+};
+
+QString processRequest(const QString &amp;amp;request, const QDBusMessage &amp;amp;message)
+{
+    RequestData *data = new RequestData;
+    data-&amp;gt;request = request;
+    message.setDelayedReply(true);
+    data-&amp;gt;reply = message.createReply();
+    QDBusConnection::sessionBus().send(data-&amp;gt;reply);
+
+    appendRequest(data);
+    return QString();
+}
+</db:programlisting>
+<db:para>The use of <db:link xlink:href="">QDBusConnection::sessionBus().send(data-&gt;reply)</db:link> is needed to explicitly inform the caller that the response will be delayed. In this case, the return value is unimportant; we return an arbitrary value to satisfy the compiler.</db:para>
+<db:para>When the request is processed and a reply is available, it should be sent using the <db:code>QDBusMessage</db:code> object that was obtained. In our example, the reply code could be something as follows:</db:para>
+<db:programlisting language="cpp">void sendReply(RequestData *data)
+{
+    // data-&amp;gt;processedData has been initialized with the request's reply
+    QDBusMessage &amp;amp;reply = &amp;amp;data-&amp;gt;reply;
+
+    // send the reply over D-Bus:
+    reply &amp;lt;&amp;lt; data-&amp;gt;processedData;
+    QDBusConnection::sessionBus().send(reply);
+
+    // dispose of the transaction data
+    delete data;
+}
+</db:programlisting>
+<db:para>As can be seen in the example, when a delayed reply is in place, the return value(s) from the slot will be ignored by Qt D-Bus. They are used only to determine the slot's signature when communicating the adaptor's description to remote applications, or in case the code in the slot decides not to use a delayed reply.</db:para>
+<db:para>The delayed reply itself is requested from Qt D-Bus by calling QDBusMessage::reply() on the original message. It then becomes the resposibility of the called code to eventually send a reply to the caller.</db:para>
+<db:warning>
+<db:para>When a caller places a method call and waits for a reply, it will only wait for a limited amount of time. Slots intending to take a long time to complete should make that fact clear in documentation so that callers properly set higher timeouts.</db:para>
+</db:warning>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="usingadaptors.xml">Using Qt D-Bus Adaptors</db:link></db:member>
+<db:member><db:link xlink:href="qdbusdeclaringsignals.xml">Declaring Signals in D-Bus Adaptors</db:link></db:member>
+<db:member><db:link xlink:href="qdbustypesystem.xml">The Qt D-Bus Type System</db:link></db:member>
+<db:member>QDBusConnection</db:member>
+<db:member>QDBusMessage</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>
