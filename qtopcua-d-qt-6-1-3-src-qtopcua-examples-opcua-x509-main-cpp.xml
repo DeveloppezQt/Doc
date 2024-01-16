@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt OPC UA X509 Support Example</db:title>
+<db:productname>QtOpcUa</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>An OPC UA module for Qt</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to generate keys and certificate signing requests.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt OPC UA module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QOpcUaProvider&amp;gt;
+#include &amp;lt;QOpcUaKeyPair&amp;gt;
+#include &amp;lt;QOpcUaX509CertificateSigningRequest&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionSubjectAlternativeName&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionBasicConstraints&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionKeyUsage&amp;gt;
+#include &amp;lt;QFile&amp;gt;
+
+int main(int argc, char **argv)
+{
+    Q_UNUSED(argc);
+    Q_UNUSED(argv);
+
+    // Generate RSA Key
+    QOpcUaKeyPair key;
+    key.generateRsaKey(QOpcUaKeyPair::RsaKeyStrength::Bits1024);
+
+    // Save private key to file
+    QByteArray keyData = key.privateKeyToByteArray(QOpcUaKeyPair::Cipher::Aes128Cbc, &quot;password&quot;);
+
+    QFile keyFile(&quot;privateKey.pem&quot;);
+    keyFile.open(QFile::WriteOnly);
+    keyFile.write(keyData);
+    keyFile.close();
+
+    // Create a certificate signing request
+    QOpcUaX509CertificateSigningRequest csr;
+
+    // Set the subject of the certificate
+    QOpcUaX509DistinguishedName dn;
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::CommonName, &quot;QtOpcUaViewer&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::CountryName, &quot;DE&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::LocalityName, &quot;Berlin&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::StateOrProvinceName, &quot;Berlin&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::OrganizationName, &quot;The Qt Company&quot;);
+    csr.setSubject(dn);
+
+    // The subject alternative name extension is needed for OPC UA
+    QOpcUaX509ExtensionSubjectAlternativeName *san = new QOpcUaX509ExtensionSubjectAlternativeName;
+    san-&amp;gt;addEntry(QOpcUaX509ExtensionSubjectAlternativeName::Type::DNS, &quot;foo.com&quot;);
+    san-&amp;gt;addEntry(QOpcUaX509ExtensionSubjectAlternativeName::Type::URI, &quot;urn:foo.com:The%20Qt%20Company:QtOpcUaViewer&quot;);
+    san-&amp;gt;setCritical(true);
+    csr.addExtension(san);
+
+    // Set the certificate basic constraints
+    QOpcUaX509ExtensionBasicConstraints *bc = new QOpcUaX509ExtensionBasicConstraints;
+    bc-&amp;gt;setCa(false);
+    bc-&amp;gt;setCritical(true);
+    csr.addExtension(bc);
+
+    // Set the key usage constraints
+    QOpcUaX509ExtensionKeyUsage *ku = new QOpcUaX509ExtensionKeyUsage;
+    ku-&amp;gt;setCritical(true);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::DigitalSignature);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::NonRepudiation);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::KeyEncipherment);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::DataEncipherment);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::CertificateSigning);
+    csr.addExtension(ku);
+
+    // Now there are two options:
+    // 1. When you need to get your certificate signing request signed by a certificate authority
+    //    you have to use the request data.
+    // 2. When there is no certificate authority you have to self-sign the request.
+
+    // Option 1
+    QByteArray certificateSigingRequestData = csr.createRequest(key);
+
+    // Option 2
+    QByteArray selfSignedCertificateData = csr.createSelfSignedCertificate(key);
+
+    return 0;
+}
+
+</db:programlisting>
+</db:article>

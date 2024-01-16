@@ -1,0 +1,1240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QVulkanWindow Class</db:title>
+<db:productname>QtGui</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GUI Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> class is a convenience subclass of <db:link xlink:href="qwindow.xml">QWindow</db:link> to perform Vulkan rendering.</db:para>
+<db:para>This class was introduced in Qt 5.10.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>QVulkanWindow</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Since</db:term>
+<db:listitem>
+<db:para>Qt 5.10</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>CMake</db:term>
+<db:listitem>
+<db:para>find_package(Qt6 REQUIRED COMPONENTS Gui)</db:para>
+<db:para>target_link_libraries(mytarget PRIVATE Qt6::Gui)</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += gui</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherits</db:term>
+<db:listitem>
+<db:para><db:link xlink:href="qwindow.xml" xlink:role="class">QWindow</db:link></db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> is a Vulkan-capable <db:link xlink:href="qwindow.xml">QWindow</db:link> that manages a Vulkan device, a graphics queue, a command pool and buffer, a depth-stencil image and a double-buffered FIFO swapchain, while taking care of correct behavior when it comes to events like resize, special situations like not having a device queue supporting both graphics and presentation, device lost scenarios, and additional functionality like reading the rendered content back. Conceptually it is the counterpart of <db:link xlink:href="qopenglwindow.xml">QOpenGLWindow</db:link> in the Vulkan world.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> does not always eliminate the need to implement a fully custom <db:link xlink:href="qwindow.xml">QWindow</db:link> subclass as it will not necessarily be sufficient in advanced use cases.</db:para>
+</db:note>
+<db:para><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> can be embedded into <db:link xlink:href="qwidget.xml">QWidget</db:link>-based user interfaces via <db:link xlink:href="qwidget.xml#createWindowContainer">QWidget::createWindowContainer</db:link>(). This approach has a number of limitations, however. Make sure to study the <db:link xlink:href="qwidget.xml#createWindowContainer">documentation</db:link> first.</db:para>
+<db:para>A typical application using <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> may look like the following:</db:para>
+<db:programlisting language="cpp">class VulkanRenderer : public QVulkanWindowRenderer
+{
+public:
+    VulkanRenderer(QVulkanWindow *w) : m_window(w) { }
+
+    void initResources() override
+    {
+        m_devFuncs = m_window-&amp;gt;vulkanInstance()-&amp;gt;deviceFunctions(m_window-&amp;gt;device());
+        // ..
+    }
+    void initSwapChainResources() override { /* ... */ }
+    void releaseSwapChainResources() override { /* ... */ }
+    void releaseResources() override { /* ... */ }
+
+    void startNextFrame() override
+    {
+        VkCommandBuffer cmdBuf = m_window-&amp;gt;currentCommandBuffer();
+        // ...
+        m_devFuncs-&amp;gt;vkCmdBeginRenderPass(commandBuffer, renderPassBegin, contents);
+        // ...
+        m_window-&amp;gt;frameReady();
+    }
+
+private:
+    QVulkanWindow *m_window;
+    QVulkanDeviceFunctions *m_devFuncs;
+};
+
+class VulkanWindow : public QVulkanWindow
+{
+public:
+    QVulkanWindowRenderer *createRenderer() override {
+        return new VulkanRenderer(this);
+    }
+};
+
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+
+    QVulkanInstance inst;
+    // enable the standard validation layers, when available
+    inst.setLayers(QByteArrayList() &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_standard_validation&quot;);
+    if (!inst.create())
+        qFatal(&quot;Failed to create Vulkan instance: %d&quot;, inst.errorCode());
+
+    VulkanWindow w;
+    w.setVulkanInstance(&amp;amp;inst);
+    w.showMaximized();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>As it can be seen in the example, the main patterns in <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> usage are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The <db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link> is associated via <db:link xlink:href="qwindow.xml#setVulkanInstance">QWindow::setVulkanInstance</db:link>(). It is then retrievable via <db:link xlink:href="qwindow.xml#vulkanInstance">QWindow::vulkanInstance</db:link>() from everywhere, on any thread.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Similarly to <db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link>, device extensions can be queried via <db:link xlink:href="qvulkanwindow.xml#supportedDeviceExtensions">supportedDeviceExtensions</db:link>() before the actual initialization. Requesting an extension to be enabled is done via <db:link xlink:href="qvulkanwindow.xml#setDeviceExtensions">setDeviceExtensions</db:link>(). Such calls must be made before the window becomes visible, that is, before calling <db:link xlink:href="qwindow.xml#show">show</db:link>() or similar functions. Unsupported extension requests are gracefully ignored.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The renderer is implemented in a <db:link xlink:href="qvulkanwindowrenderer.xml">QVulkanWindowRenderer</db:link> subclass, an instance of which is created in the <db:link xlink:href="qvulkanwindow.xml#createRenderer">createRenderer</db:link>() factory function.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The core Vulkan commands are exposed via the QVulkanFunctions object, retrievable by calling <db:link xlink:href="qvulkaninstance.xml#functions">QVulkanInstance::functions</db:link>(). Device level functions are available after creating a VkDevice by calling <db:link xlink:href="qvulkaninstance.xml#deviceFunctions">QVulkanInstance::deviceFunctions</db:link>().</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The building of the draw calls for the next frame happens in <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>(). The implementation is expected to add commands to the command buffer returned from <db:link xlink:href="qvulkanwindow.xml#currentCommandBuffer">currentCommandBuffer</db:link>(). Returning from the function does not indicate that the commands are ready for submission. Rather, an explicit call to <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>() is required. This allows asynchronous generation of commands, possibly on multiple threads. Simple implementations will simply call <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>() at the end of their <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>().</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The basic Vulkan resources (physical device, graphics queue, a command pool, the window's main command buffer, image formats, etc.) are exposed on the <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> via lightweight getter functions. Some of these are for convenience only, and applications are always free to query, create and manage additional resources directly via the Vulkan API.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The renderer lives in the gui/main thread, like the window itself. This thread is then throttled to the presentation rate, similarly to how OpenGL with a swap interval of 1 would behave. However, the renderer implementation is free to utilize multiple threads in any way it sees fit. The accessors like <db:link xlink:href="qwindow.xml#vulkanInstance">vulkanInstance</db:link>(), <db:link xlink:href="qvulkanwindow.xml#currentCommandBuffer">currentCommandBuffer</db:link>(), etc. can be called from any thread. The submission of the main command buffer, the queueing of present, and the building of the next frame do not start until <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>() is invoked on the gui/main thread.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>When the window is made visible, the content is updated automatically. Further updates can be requested by calling <db:link xlink:href="qwindow.xml#requestUpdate">QWindow::requestUpdate</db:link>(). To render continuously, call <db:link xlink:href="qwindow.xml#requestUpdate">requestUpdate</db:link>() after <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>().</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>For troubleshooting, enable the logging category <db:code>qt.vulkan</db:code>. Critical errors are printed via <db:link xlink:href="qtglobal.xml#qWarning">qWarning</db:link>() automatically.</db:para>
+<db:section xml:id="coordinate-system-differences-between-opengl-and-vulkan">
+<db:title>Coordinate system differences between OpenGL and Vulkan</db:title>
+<db:para>There are two notable differences to be aware of: First, with Vulkan Y points down the screen in clip space, while OpenGL uses an upwards pointing Y axis. Second, the standard OpenGL projection matrix assume a near and far plane values of -1 and 1, while Vulkan prefers 0 and 1.</db:para>
+<db:para>In order to help applications migrate from OpenGL-based code without having to flip Y coordinates in the vertex data, and to allow using <db:link xlink:href="qmatrix4x4.xml">QMatrix4x4</db:link> functions like <db:link xlink:href="qmatrix4x4.xml#perspective">QMatrix4x4::perspective</db:link>() while keeping the Vulkan viewport's minDepth and maxDepth set to 0 and 1, <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> provides a correction matrix retrievable by calling <db:link xlink:href="qvulkanwindow.xml#clipCorrectionMatrix">clipCorrectionMatrix</db:link>().</db:para>
+</db:section>
+<db:section xml:id="multisampling">
+<db:title>Multisampling</db:title>
+<db:para>While disabled by default, multisample antialiasing is fully supported by <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link>. Additional color buffers and resolving into the swapchain's non-multisample buffers are all managed automatically.</db:para>
+<db:para>To query the supported sample counts, call <db:link xlink:href="qvulkanwindow.xml#supportedSampleCounts">supportedSampleCounts</db:link>(). When the returned set contains 4, 8, ..., passing one of those values to <db:link xlink:href="qvulkanwindow.xml#setSampleCount">setSampleCount</db:link>() requests multisample rendering.</db:para>
+<db:note>
+<db:para>unlike <db:link xlink:href="qsurfaceformat.xml#setSamples">QSurfaceFormat::setSamples</db:link>(), the list of supported sample counts are exposed to the applications in advance and there is no automatic falling back to lower sample counts in <db:link xlink:href="qvulkanwindow.xml#setSampleCount">setSampleCount</db:link>(). If the requested value is not supported, a warning is shown and a no multisampling will be used.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="reading-images-back">
+<db:title>Reading images back</db:title>
+<db:para>When <db:link xlink:href="qvulkanwindow.xml#supportsGrab">supportsGrab</db:link>() returns true, <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> can perform readbacks from the color buffer into a <db:link xlink:href="qimage.xml">QImage</db:link>. <db:link xlink:href="qvulkanwindow.xml#grab">grab</db:link>() is a slow and inefficient operation, so frequent usage should be avoided. It is nonetheless valuable since it allows applications to take screenshots, or tools and tests to process and verify the output of the GPU rendering.</db:para>
+</db:section>
+<db:section xml:id="srgb-support">
+<db:title>sRGB support</db:title>
+<db:para>While many applications will be fine with the default behavior of <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> when it comes to swapchain image formats, <db:link xlink:href="qvulkanwindow.xml#setPreferredColorFormats">setPreferredColorFormats</db:link>() allows requesting a pre-defined format. This is useful most notably when working in the sRGB color space. Passing a format like <db:code>VK_FORMAT_B8G8R8A8_SRGB</db:code> results in choosing an sRGB format, when available.</db:para>
+</db:section>
+<db:section xml:id="validation-layers">
+<db:title>Validation layers</db:title>
+<db:para>During application development it can be extremely valuable to have the Vulkan validation layers enabled. As shown in the example code above, calling <db:link xlink:href="qvulkaninstance.xml#setLayers">QVulkanInstance::setLayers</db:link>() on the <db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link> before <db:link xlink:href="qvulkaninstance.xml#create">QVulkanInstance::create</db:link>() enables validation, assuming the Vulkan driver stack in the system contains the necessary layers.</db:para>
+<db:note>
+<db:para>Be aware of platform-specific differences. On desktop platforms installing the <db:link xlink:href="https://www.lunarg.com/vulkan-sdk/">Vulkan SDK</db:link> is typically sufficient. However, Android for example requires deploying additional shared libraries together with the application, and also mandates a different list of validation layer names. See <db:link xlink:href="https://developer.android.com/ndk/guides/graphics/validation-layer.html">the Android Vulkan development pages</db:link> for more information.</db:para>
+</db:note>
+<db:note>
+<db:para><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> does not expose device layers since this functionality has been deprecated since version 1.0.13 of the Vulkan API.</db:para>
+</db:note>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link></db:member>
+<db:member><db:link xlink:href="qwindow.xml">QWindow</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="member-type-documentation">
+<db:title>Member Type Documentation</db:title>
+<db:section xml:id="Flag-enum">
+<db:title>enum QVulkanWindow::Flag</db:title>
+<db:bridgehead renderas="sect2">flags QVulkanWindow::Flags</db:bridgehead>
+<db:enumsynopsis>
+<db:enumname>Flag</db:enumname>
+<db:enumitem>
+<db:enumidentifier>PersistentResources</db:enumidentifier>
+<db:enumvalue>0x01</db:enumvalue>
+</db:enumitem>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:enumsynopsis>
+<db:typedefsynopsis>
+<db:typedefname>QVulkanWindow::Flags</db:typedefname>
+</db:typedefsynopsis>
+<db:para>This enum describes the flags that can be passed to <db:link xlink:href="qvulkanwindow.xml#setFlags">setFlags</db:link>().</db:para>
+<db:informaltable>
+<db:thead>
+<db:tr>
+<db:th>Constant</db:th>
+<db:th>Value</db:th>
+<db:th>Description</db:th>
+</db:tr>
+</db:thead>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link></db:emphasis>::PersistentResources</db:code></db:para>
+</db:td>
+<db:td><db:code>0x01</db:code></db:td>
+<db:td>
+<db:para>Ensures no graphics resources are released when the window becomes unexposed. The default behavior is to release everything, and reinitialize later when becoming visible again.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The <db:code>Flags</db:code> type is a typedef for <db:code><db:link xlink:href="qflags.xml">QFlags</db:link>&lt;Flag&gt;. </db:code>It stores an OR combination of <db:code>Flag</db:code> values.</db:para>
+</db:section>
+<db:section xml:id="QueueCreateInfoModifier-typedef">
+<db:title>QVulkanWindow::QueueCreateInfoModifier</db:title>
+<db:typedefsynopsis>
+<db:typedefname>QueueCreateInfoModifier</db:typedefname>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:typedefsynopsis>
+<db:para>A function that is called during graphics initialization to add additional queues that should be created.</db:para>
+<db:para>Set if the renderer needs additional queues besides the default graphics queue (e.g. a transfer queue). The provided queue family properties can be used to select the indices for the additional queues. The renderer can subsequently request the actual queue in initResources().</db:para>
+<db:note>
+<db:para>When requesting additional graphics queues, Qt itself always requests a graphics queue. You'll need to search queueCreateInfo for the appropriate entry and manipulate it to obtain the additional queue.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#setQueueCreateInfoModifier">setQueueCreateInfoModifier</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="QVulkanWindow">
+<db:title>[explicit] QVulkanWindow::QVulkanWindow(QWindow *<db:emphasis>parent</db:emphasis> = nullptr)</db:title>
+<db:constructorsynopsis>
+<db:methodname>QVulkanWindow</db:methodname>
+<db:methodparam>
+<db:type>QWindow *</db:type>
+<db:parameter>parent</db:parameter>
+<db:initializer>nullptr</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">constructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">QVulkanWindow(QWindow *parent)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:constructorsynopsis>
+<db:para>Constructs a new <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> with the given <db:code role="parameter">parent</db:code>.</db:para>
+<db:para>The surface type is set to <db:link xlink:href="qsurface.xml#SurfaceType-enum">QSurface::VulkanSurface</db:link>.</db:para>
+</db:section>
+<db:section xml:id="dtor.QVulkanWindow">
+<db:title>[virtual] QVulkanWindow::~QVulkanWindow()</db:title>
+<db:destructorsynopsis>
+<db:modifier>virtual</db:modifier>
+<db:methodname>~QVulkanWindow</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">destructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">~QVulkanWindow()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:destructorsynopsis>
+<db:para>Destructor.</db:para>
+</db:section>
+<db:section xml:id="availablePhysicalDevices">
+<db:title>QList&lt;VkPhysicalDeviceProperties&gt; QVulkanWindow::availablePhysicalDevices()</db:title>
+<db:methodsynopsis>
+<db:type>QList&lt;VkPhysicalDeviceProperties&gt;</db:type>
+<db:methodname>availablePhysicalDevices</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QList&lt;VkPhysicalDeviceProperties&gt; availablePhysicalDevices()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the list of properties for the supported physical devices in the system.</db:para>
+<db:note>
+<db:para>This function can be called before making the window visible.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="clipCorrectionMatrix">
+<db:title>QMatrix4x4 QVulkanWindow::clipCorrectionMatrix()</db:title>
+<db:methodsynopsis>
+<db:type>QMatrix4x4</db:type>
+<db:methodname>clipCorrectionMatrix</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QMatrix4x4 clipCorrectionMatrix()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a <db:link xlink:href="qmatrix4x4.xml">QMatrix4x4</db:link> that can be used to correct for coordinate system differences between OpenGL and Vulkan.</db:para>
+<db:para>By pre-multiplying the projection matrix with this matrix, applications can continue to assume that Y is pointing upwards, and can set minDepth and maxDepth in the viewport to 0 and 1, respectively, without having to do any further corrections to the vertex Z positions. Geometry from OpenGL applications can then be used as-is, assuming a rasterization state matching the OpenGL culling and front face settings.</db:para>
+</db:section>
+<db:section xml:id="colorFormat">
+<db:title>VkFormat QVulkanWindow::colorFormat() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkFormat</db:type>
+<db:methodname>colorFormat</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkFormat colorFormat() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the color buffer format used by the swapchain.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#setPreferredColorFormats">setPreferredColorFormats</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="concurrentFrameCount">
+<db:title>int QVulkanWindow::concurrentFrameCount() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>int</db:type>
+<db:methodname>concurrentFrameCount</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">int concurrentFrameCount() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the number of frames that can be potentially active at the same time.</db:para>
+<db:note>
+<db:para>The value is constant for the entire lifetime of the <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link>.</db:para>
+</db:note>
+<db:programlisting language="cpp">    class Renderer {
+        void startNextFrame();
+        // ...
+
+        VkDescriptorBufferInfo m_uniformBufInfo[QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT];
+        QVulkanWindow *m_window = nullptr;
+    };
+
+    void Renderer::startNextFrame()
+    {
+        const int count = m_window-&amp;gt;concurrentFrameCount();
+        // for (int i = 0; i &amp;lt; count; ++i)
+            // m_uniformBufInfo[i] = ...
+        // ...
+    }
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#currentFrame">currentFrame</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="createRenderer">
+<db:title>[virtual] QVulkanWindowRenderer *QVulkanWindow::createRenderer()</db:title>
+<db:methodsynopsis>
+<db:modifier>virtual</db:modifier>
+<db:type>QVulkanWindowRenderer *</db:type>
+<db:methodname>createRenderer</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QVulkanWindowRenderer * createRenderer()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a new instance of <db:link xlink:href="qvulkanwindowrenderer.xml">QVulkanWindowRenderer</db:link>.</db:para>
+<db:para>This virtual function is called once during the lifetime of the window, at some point after making it visible for the first time.</db:para>
+<db:para>The default implementation returns null and so no rendering will be performed apart from clearing the buffers.</db:para>
+<db:para>The window takes ownership of the returned renderer object.</db:para>
+</db:section>
+<db:section xml:id="currentCommandBuffer">
+<db:title>VkCommandBuffer QVulkanWindow::currentCommandBuffer() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkCommandBuffer</db:type>
+<db:methodname>currentCommandBuffer</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkCommandBuffer currentCommandBuffer() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns The active command buffer for the current swap chain image. Implementations of <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>() are expected to add commands to this command buffer.</db:para>
+<db:note>
+<db:para>This function must only be called from within startNextFrame() and, in case of asynchronous command generation, up until the call to <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="currentFrame">
+<db:title>int QVulkanWindow::currentFrame() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>int</db:type>
+<db:methodname>currentFrame</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">int currentFrame() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the current frame index in the range [0, <db:link xlink:href="qvulkanwindow.xml#concurrentFrameCount">concurrentFrameCount</db:link>() - 1].</db:para>
+<db:para>Renderer implementations will have to ensure that uniform data and other dynamic resources exist in multiple copies, in order to prevent frame N altering the data used by the still-active frames N - 1, N - 2, ... N - <db:link xlink:href="qvulkanwindow.xml#concurrentFrameCount">concurrentFrameCount</db:link>() + 1.</db:para>
+<db:para>To avoid relying on dynamic array sizes, applications can use <db:link xlink:href="qvulkanwindow.xml#MAX_CONCURRENT_FRAME_COUNT-var">MAX_CONCURRENT_FRAME_COUNT</db:link> when declaring arrays. This is guaranteed to be always equal to or greater than the value returned from <db:link xlink:href="qvulkanwindow.xml#concurrentFrameCount">concurrentFrameCount</db:link>(). Such arrays can then be indexed by the value returned from this function.</db:para>
+<db:programlisting language="cpp">    class Renderer {
+        void startNextFrame();
+        // ...
+
+        VkDescriptorBufferInfo m_uniformBufInfo[QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT];
+        QVulkanWindow *m_window = nullptr;
+    };
+
+    void Renderer::startNextFrame()
+    {
+        VkDescriptorBufferInfo &amp;amp;uniformBufInfo(m_uniformBufInfo[m_window-&amp;gt;currentFrame()]);
+        // ...
+    }
+</db:programlisting>
+<db:note>
+<db:para>This function must only be called from within startNextFrame() and, in case of asynchronous command generation, up until the call to <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#concurrentFrameCount">concurrentFrameCount</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="currentFramebuffer">
+<db:title>VkFramebuffer QVulkanWindow::currentFramebuffer() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkFramebuffer</db:type>
+<db:methodname>currentFramebuffer</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkFramebuffer currentFramebuffer() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a VkFramebuffer for the current swapchain image using the default render pass.</db:para>
+<db:para>The framebuffer has two attachments (color, depth-stencil) when multisampling is not in use, and three (color resolve, depth-stencil, multisample color) when <db:link xlink:href="qvulkanwindow.xml#sampleCountFlagBits">sampleCountFlagBits</db:link>() is greater than <db:code>VK_SAMPLE_COUNT_1_BIT</db:code>. Renderers must take this into account, for example when providing clear values.</db:para>
+<db:note>
+<db:para>Applications are not required to use this framebuffer in case they provide their own render pass instead of using the one returned from <db:link xlink:href="qvulkanwindow.xml#defaultRenderPass">defaultRenderPass</db:link>().</db:para>
+</db:note>
+<db:note>
+<db:para>This function must only be called from within startNextFrame() and, in case of asynchronous command generation, up until the call to <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#defaultRenderPass">defaultRenderPass</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="currentSwapChainImageIndex">
+<db:title>int QVulkanWindow::currentSwapChainImageIndex() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>int</db:type>
+<db:methodname>currentSwapChainImageIndex</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">int currentSwapChainImageIndex() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the current swap chain image index in the range [0, <db:link xlink:href="qvulkanwindow.xml#swapChainImageCount">swapChainImageCount</db:link>() - 1].</db:para>
+<db:note>
+<db:para>This function must only be called from within startNextFrame() and, in case of asynchronous command generation, up until the call to <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="defaultRenderPass">
+<db:title>VkRenderPass QVulkanWindow::defaultRenderPass() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkRenderPass</db:type>
+<db:methodname>defaultRenderPass</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkRenderPass defaultRenderPass() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a typical render pass with one sub-pass.</db:para>
+<db:note>
+<db:para>Applications are not required to use this render pass. However, they are then responsible for ensuring the current swap chain and depth-stencil images get transitioned from <db:code>VK_IMAGE_LAYOUT_UNDEFINED</db:code> to <db:code>VK_IMAGE_LAYOUT_PRESENT_SRC_KHR</db:code> and <db:code>VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL</db:code> either via the application's custom render pass or by other means.</db:para>
+</db:note>
+<db:note>
+<db:para>Stencil read/write is not enabled in this render pass.</db:para>
+</db:note>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#currentFramebuffer">currentFramebuffer</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="depthStencilFormat">
+<db:title>VkFormat QVulkanWindow::depthStencilFormat() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkFormat</db:type>
+<db:methodname>depthStencilFormat</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkFormat depthStencilFormat() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the format used by the depth-stencil buffer(s).</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="depthStencilImage">
+<db:title>VkImage QVulkanWindow::depthStencilImage() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImage</db:type>
+<db:methodname>depthStencilImage</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImage depthStencilImage() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the depth-stencil image.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="depthStencilImageView">
+<db:title>VkImageView QVulkanWindow::depthStencilImageView() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImageView</db:type>
+<db:methodname>depthStencilImageView</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImageView depthStencilImageView() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the depth-stencil image view.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="device">
+<db:title>VkDevice QVulkanWindow::device() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkDevice</db:type>
+<db:methodname>device</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkDevice device() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the active logical device.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="deviceLocalMemoryIndex">
+<db:title>uint32_t QVulkanWindow::deviceLocalMemoryIndex() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>uint32_t</db:type>
+<db:methodname>deviceLocalMemoryIndex</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">uint32_t deviceLocalMemoryIndex() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a device local memory type index suitable for general use.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+<db:note>
+<db:para>It is not guaranteed that this memory type is always suitable. The correct, cross-implementation solution - especially for device local images - is to manually pick a memory type after checking the mask returned from <db:code>vkGetImageMemoryRequirements</db:code>.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="flags">
+<db:title>QVulkanWindow::Flags QVulkanWindow::flags() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QVulkanWindow::Flags</db:type>
+<db:methodname>flags</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QVulkanWindow::Flags flags() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Return the requested flags.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#setFlags">setFlags</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="frameGrabbed">
+<db:title>void QVulkanWindow::frameGrabbed(const QImage &amp;<db:emphasis>image</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>frameGrabbed</db:methodname>
+<db:methodparam>
+<db:type>const QImage &amp;</db:type>
+<db:parameter>image</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void frameGrabbed(const QImage &amp;image)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>This signal is emitted when the <db:code role="parameter">image</db:code> is ready.</db:para>
+</db:section>
+<db:section xml:id="frameReady">
+<db:title>void QVulkanWindow::frameReady()</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>frameReady</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void frameReady()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>This function must be called exactly once in response to each invocation of the <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>() implementation. At the time of this call, the main command buffer, exposed via <db:link xlink:href="qvulkanwindow.xml#currentCommandBuffer">currentCommandBuffer</db:link>(), must have all necessary rendering commands added to it since this function will trigger submitting the commands and queuing the present command.</db:para>
+<db:note>
+<db:para>This function must only be called from the gui/main thread, which is where <db:link xlink:href="qvulkanwindowrenderer.xml">QVulkanWindowRenderer</db:link>'s functions are invoked and where the <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> instance lives.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="grab">
+<db:title>QImage QVulkanWindow::grab()</db:title>
+<db:methodsynopsis>
+<db:type>QImage</db:type>
+<db:methodname>grab</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QImage grab()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Builds and renders the next frame without presenting it, then performs a blocking readback of the image content.</db:para>
+<db:para>Returns the image if the renderer's <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">startNextFrame</db:link>() implementation calls back <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>() directly. Otherwise, returns an incomplete image, that has the correct size but not the content yet. The content will be delivered via the <db:link xlink:href="qvulkanwindow.xml#frameGrabbed">frameGrabbed</db:link>() signal in the latter case.</db:para>
+<db:note>
+<db:para>This function should not be called when a frame is in progress (that is, <db:link xlink:href="qvulkanwindow.xml#frameReady">frameReady</db:link>() has not yet been called back by the application).</db:para>
+</db:note>
+<db:note>
+<db:para>This function is potentially expensive due to the additional, blocking readback.</db:para>
+</db:note>
+<db:note>
+<db:para>This function currently requires that the swapchain supports usage as a transfer source (<db:code>VK_IMAGE_USAGE_TRANSFER_SRC_BIT</db:code>), and will fail otherwise.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="graphicsCommandPool">
+<db:title>VkCommandPool QVulkanWindow::graphicsCommandPool() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkCommandPool</db:type>
+<db:methodname>graphicsCommandPool</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkCommandPool graphicsCommandPool() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the active graphics command pool.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="graphicsQueue">
+<db:title>VkQueue QVulkanWindow::graphicsQueue() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkQueue</db:type>
+<db:methodname>graphicsQueue</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkQueue graphicsQueue() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the active graphics queue.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="graphicsQueueFamilyIndex">
+<db:title>[since 5.15] uint32_t QVulkanWindow::graphicsQueueFamilyIndex() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>uint32_t</db:type>
+<db:methodname>graphicsQueueFamilyIndex</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">uint32_t graphicsQueueFamilyIndex() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the family index of the active graphics queue.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>(). Implementations of QVulkanWindowRenderer::updateQueueCreateInfo() can also call this function.</db:para>
+</db:note>
+<db:para>This function was introduced in Qt 5.15.</db:para>
+</db:section>
+<db:section xml:id="hostVisibleMemoryIndex">
+<db:title>uint32_t QVulkanWindow::hostVisibleMemoryIndex() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>uint32_t</db:type>
+<db:methodname>hostVisibleMemoryIndex</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">uint32_t hostVisibleMemoryIndex() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a host visible memory type index suitable for general use.</db:para>
+<db:para>The returned memory type will be both host visible and coherent. In addition, it will also be cached, if possible.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initResources">QVulkanWindowRenderer::initResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="isValid">
+<db:title>bool QVulkanWindow::isValid() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>bool</db:type>
+<db:methodname>isValid</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool isValid() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if this window has successfully initialized all Vulkan resources, including the swapchain.</db:para>
+<db:note>
+<db:para>Initialization happens on the first expose event after the window is made visible.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="msaaColorImage">
+<db:title>VkImage QVulkanWindow::msaaColorImage(int <db:emphasis>idx</db:emphasis>) const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImage</db:type>
+<db:methodname>msaaColorImage</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>idx</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImage msaaColorImage(int idx) const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the specified multisample color image, or <db:code>VK_NULL_HANDLE</db:code> if multisampling is not in use.</db:para>
+<db:para><db:code role="parameter">idx</db:code> must be in the range [0, <db:link xlink:href="qvulkanwindow.xml#swapChainImageCount">swapChainImageCount</db:link>() - 1].</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="msaaColorImageView">
+<db:title>VkImageView QVulkanWindow::msaaColorImageView(int <db:emphasis>idx</db:emphasis>) const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImageView</db:type>
+<db:methodname>msaaColorImageView</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>idx</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImageView msaaColorImageView(int idx) const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the specified multisample color image view, or <db:code>VK_NULL_HANDLE</db:code> if multisampling is not in use.</db:para>
+<db:para><db:code role="parameter">idx</db:code> must be in the range [0, <db:link xlink:href="qvulkanwindow.xml#swapChainImageCount">swapChainImageCount</db:link>() - 1].</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="physicalDevice">
+<db:title>VkPhysicalDevice QVulkanWindow::physicalDevice() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkPhysicalDevice</db:type>
+<db:methodname>physicalDevice</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkPhysicalDevice physicalDevice() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the active physical device.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="physicalDeviceProperties">
+<db:title>const VkPhysicalDeviceProperties *QVulkanWindow::physicalDeviceProperties() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>const VkPhysicalDeviceProperties *</db:type>
+<db:methodname>physicalDeviceProperties</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">const VkPhysicalDeviceProperties * physicalDeviceProperties() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a pointer to the properties for the active physical device.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseResources">QVulkanWindowRenderer::releaseResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="sampleCountFlagBits">
+<db:title>VkSampleCountFlagBits QVulkanWindow::sampleCountFlagBits() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkSampleCountFlagBits</db:type>
+<db:methodname>sampleCountFlagBits</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkSampleCountFlagBits sampleCountFlagBits() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the current sample count as a <db:code>VkSampleCountFlagBits</db:code> value.</db:para>
+<db:para>When targeting the default render target, the <db:code>rasterizationSamples</db:code> field of <db:code>VkPipelineMultisampleStateCreateInfo</db:code> must be set to this value.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#setSampleCount">setSampleCount</db:link>()</db:member>
+<db:member><db:link xlink:href="qvulkanwindow.xml#supportedSampleCounts">supportedSampleCounts</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setDeviceExtensions">
+<db:title>void QVulkanWindow::setDeviceExtensions(const QByteArrayList &amp;<db:emphasis>extensions</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setDeviceExtensions</db:methodname>
+<db:methodparam>
+<db:type>const QByteArrayList &amp;</db:type>
+<db:parameter>extensions</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setDeviceExtensions(const QByteArrayList &amp;extensions)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Sets the list of device <db:code role="parameter">extensions</db:code> to be enabled.</db:para>
+<db:para>Unsupported extensions are ignored.</db:para>
+<db:para>The swapchain extension will always be added automatically, no need to include it in this list.</db:para>
+<db:note>
+<db:para>This function must be called before the window is made visible or at latest in <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>(), and has no effect if called afterwards.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="setFlags">
+<db:title>void QVulkanWindow::setFlags(QVulkanWindow::Flags <db:emphasis>flags</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setFlags</db:methodname>
+<db:methodparam>
+<db:type>QVulkanWindow::Flags</db:type>
+<db:parameter>flags</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setFlags(QVulkanWindow::Flags flags)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Configures the behavior based on the provided <db:code role="parameter">flags</db:code>.</db:para>
+<db:note>
+<db:para>This function must be called before the window is made visible or at latest in <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>(), and has no effect if called afterwards.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#flags">flags</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setPhysicalDeviceIndex">
+<db:title>void QVulkanWindow::setPhysicalDeviceIndex(int <db:emphasis>idx</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setPhysicalDeviceIndex</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>idx</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setPhysicalDeviceIndex(int idx)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Requests the usage of the physical device with index <db:code role="parameter">idx</db:code>. The index corresponds to the list returned from <db:link xlink:href="qvulkanwindow.xml#availablePhysicalDevices">availablePhysicalDevices</db:link>().</db:para>
+<db:para>By default the first physical device is used.</db:para>
+<db:note>
+<db:para>This function must be called before the window is made visible or at latest in <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>(), and has no effect if called afterwards.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="setPreferredColorFormats">
+<db:title>void QVulkanWindow::setPreferredColorFormats(const QList&lt;VkFormat&gt; &amp;<db:emphasis>formats</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setPreferredColorFormats</db:methodname>
+<db:methodparam>
+<db:type>const QList&lt;VkFormat&gt; &amp;</db:type>
+<db:parameter>formats</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setPreferredColorFormats(const QList&lt;VkFormat&gt; &amp;formats)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Sets the preferred <db:code role="parameter">formats</db:code> of the swapchain.</db:para>
+<db:para>By default no application-preferred format is set. In this case the surface's preferred format will be used or, in absence of that, <db:code>VK_FORMAT_B8G8R8A8_UNORM</db:code>.</db:para>
+<db:para>The list in <db:code role="parameter">formats</db:code> is ordered. If the first format is not supported, the second will be considered, and so on. When no formats in the list are supported, the behavior is the same as in the default case.</db:para>
+<db:para>To query the actual format after initialization, call <db:link xlink:href="qvulkanwindow.xml#colorFormat">colorFormat</db:link>().</db:para>
+<db:note>
+<db:para>This function must be called before the window is made visible or at latest in <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>(), and has no effect if called afterwards.</db:para>
+</db:note>
+<db:note>
+<db:para>Reimplementing <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>() allows dynamically examining the list of supported formats, should that be desired. There the surface is retrievable via QVulkanInstace::surfaceForWindow(), while this function can still safely be called to affect the later stages of initialization.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#colorFormat">colorFormat</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setQueueCreateInfoModifier">
+<db:title>[since 5.15] void QVulkanWindow::setQueueCreateInfoModifier(const QVulkanWindow::QueueCreateInfoModifier &amp;<db:emphasis>modifier</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setQueueCreateInfoModifier</db:methodname>
+<db:methodparam>
+<db:type>const QVulkanWindow::QueueCreateInfoModifier &amp;</db:type>
+<db:parameter>modifier</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setQueueCreateInfoModifier(const QVulkanWindow::QueueCreateInfoModifier &amp;modifier)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Sets the queue create info modification function <db:code role="parameter">modifier</db:code>.</db:para>
+<db:para>This function was introduced in Qt 5.15.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#QueueCreateInfoModifier-typedef">QueueCreateInfoModifier</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setSampleCount">
+<db:title>void QVulkanWindow::setSampleCount(int <db:emphasis>sampleCount</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>setSampleCount</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>sampleCount</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setSampleCount(int sampleCount)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Requests multisample antialiasing with the given <db:code role="parameter">sampleCount</db:code>. The valid values are 1, 2, 4, 8, ... up until the maximum value supported by the physical device.</db:para>
+<db:para>When the sample count is greater than 1, <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> will create a multisample color buffer instead of simply targeting the swapchain's images. The rendering in the multisample buffer will get resolved into the non-multisample buffers at the end of each frame.</db:para>
+<db:para>To examine the list of supported sample counts, call <db:link xlink:href="qvulkanwindow.xml#supportedSampleCounts">supportedSampleCounts</db:link>().</db:para>
+<db:para>When setting up the rendering pipeline, call <db:link xlink:href="qvulkanwindow.xml#sampleCountFlagBits">sampleCountFlagBits</db:link>() to query the active sample count as a <db:code>VkSampleCountFlagBits</db:code> value.</db:para>
+<db:note>
+<db:para>This function must be called before the window is made visible or at latest in <db:link xlink:href="qvulkanwindowrenderer.xml#preInitResources">QVulkanWindowRenderer::preInitResources</db:link>(), and has no effect if called afterwards.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#supportedSampleCounts">supportedSampleCounts</db:link>()</db:member>
+<db:member><db:link xlink:href="qvulkanwindow.xml#sampleCountFlagBits">sampleCountFlagBits</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="supportedDeviceExtensions">
+<db:title>QVulkanInfoVector&lt;QVulkanExtension&gt; QVulkanWindow::supportedDeviceExtensions()</db:title>
+<db:methodsynopsis>
+<db:type>QVulkanInfoVector&lt;QVulkanExtension&gt;</db:type>
+<db:methodname>supportedDeviceExtensions</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QVulkanInfoVector&lt;QVulkanExtension&gt; supportedDeviceExtensions()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the list of the extensions that are supported by logical devices created from the physical device selected by <db:link xlink:href="qvulkanwindow.xml#setPhysicalDeviceIndex">setPhysicalDeviceIndex</db:link>().</db:para>
+<db:note>
+<db:para>This function can be called before making the window visible.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="supportedSampleCounts">
+<db:title>QList&lt;int&gt; QVulkanWindow::supportedSampleCounts()</db:title>
+<db:methodsynopsis>
+<db:type>QList&lt;int&gt;</db:type>
+<db:methodname>supportedSampleCounts</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QList&lt;int&gt; supportedSampleCounts()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the set of supported sample counts when using the physical device selected by <db:link xlink:href="qvulkanwindow.xml#setPhysicalDeviceIndex">setPhysicalDeviceIndex</db:link>(), as a sorted list.</db:para>
+<db:para>By default <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> uses a sample count of 1. By calling <db:link xlink:href="qvulkanwindow.xml#setSampleCount">setSampleCount</db:link>() with a different value (2, 4, 8, ...) from the set returned by this function, multisample anti-aliasing can be requested.</db:para>
+<db:note>
+<db:para>This function can be called before making the window visible.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qvulkanwindow.xml#setSampleCount">setSampleCount</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="supportsGrab">
+<db:title>bool QVulkanWindow::supportsGrab() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>bool</db:type>
+<db:methodname>supportsGrab</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool supportsGrab() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if the swapchain supports usage as transfer source, meaning <db:link xlink:href="qvulkanwindow.xml#grab">grab</db:link>() is functional.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="swapChainImage">
+<db:title>VkImage QVulkanWindow::swapChainImage(int <db:emphasis>idx</db:emphasis>) const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImage</db:type>
+<db:methodname>swapChainImage</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>idx</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImage swapChainImage(int idx) const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the specified swap chain image.</db:para>
+<db:para><db:code role="parameter">idx</db:code> must be in the range [0, <db:link xlink:href="qvulkanwindow.xml#swapChainImageCount">swapChainImageCount</db:link>() - 1].</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="swapChainImageCount">
+<db:title>int QVulkanWindow::swapChainImageCount() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>int</db:type>
+<db:methodname>swapChainImageCount</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">int swapChainImageCount() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the number of images in the swap chain.</db:para>
+<db:note>
+<db:para>Accessing this is necessary when providing a custom render pass and framebuffer. The framebuffer is specific to the current swapchain image and hence the application must provide multiple framebuffers.</db:para>
+</db:note>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="swapChainImageSize">
+<db:title>QSize QVulkanWindow::swapChainImageSize() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QSize</db:type>
+<db:methodname>swapChainImageSize</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QSize swapChainImageSize() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the image size of the swapchain.</db:para>
+<db:para>This usually matches the size of the window, but may also differ in case <db:code>vkGetPhysicalDeviceSurfaceCapabilitiesKHR</db:code> reports a fixed size.</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="swapChainImageView">
+<db:title>VkImageView QVulkanWindow::swapChainImageView(int <db:emphasis>idx</db:emphasis>) const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>VkImageView</db:type>
+<db:methodname>swapChainImageView</db:methodname>
+<db:methodparam>
+<db:type>int</db:type>
+<db:parameter>idx</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">VkImageView swapChainImageView(int idx) const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the specified swap chain image view.</db:para>
+<db:para><db:code role="parameter">idx</db:code> must be in the range [0, <db:link xlink:href="qvulkanwindow.xml#swapChainImageCount">swapChainImageCount</db:link>() - 1].</db:para>
+<db:note>
+<db:para>Calling this function is only valid from the invocation of <db:link xlink:href="qvulkanwindowrenderer.xml#initSwapChainResources">QVulkanWindowRenderer::initSwapChainResources</db:link>() up until <db:link xlink:href="qvulkanwindowrenderer.xml#releaseSwapChainResources">QVulkanWindowRenderer::releaseSwapChainResources</db:link>().</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="member-variable-documentation">
+<db:title>Member Variable Documentation</db:title>
+<db:section xml:id="MAX_CONCURRENT_FRAME_COUNT-var">
+<db:title>const int QVulkanWindow::MAX_CONCURRENT_FRAME_COUNT</db:title>
+<db:fieldsynopsis>
+<db:modifier>static</db:modifier>
+<db:type>const int</db:type>
+<db:varname>MAX_CONCURRENT_FRAME_COUNT</db:varname>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:fieldsynopsis>
+<db:para>This variable holds a constant value that is always equal to or greater than the maximum value of <db:link xlink:href="qvulkanwindow.xml#concurrentFrameCount">concurrentFrameCount</db:link>().</db:para>
+</db:section>
+</db:section>
+</db:article>

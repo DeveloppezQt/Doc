@@ -1,0 +1,470 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt OPC UA Viewer Example</db:title>
+<db:productname>QtOpcUa</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>An OPC UA module for Qt</db:titleabbrev>
+<db:abstract>
+<db:para>Using the model/view approach to display all nodes of an OPC UA server in a tree view.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt OPC UA module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;opcuamodel.h&quot;
+#include &quot;certificatedialog.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+
+#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QDir&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QTextCharFormat&amp;gt;
+#include &amp;lt;QTextBlock&amp;gt;
+#include &amp;lt;QOpcUaProvider&amp;gt;
+#include &amp;lt;QOpcUaAuthenticationInformation&amp;gt;
+#include &amp;lt;QOpcUaErrorState&amp;gt;
+
+static MainWindow *mainWindowGlobal = nullptr;
+static QtMessageHandler oldMessageHandler = nullptr;
+
+static void messageHandler(QtMsgType type, const QMessageLogContext &amp;amp;context, const QString &amp;amp;msg)
+{
+    if (!mainWindowGlobal)
+        return;
+
+   QString message;
+   QColor color = Qt::black;
+
+   switch (type) {
+   case QtWarningMsg:
+       message = QObject::tr(&quot;Warning&quot;);
+       color = Qt::darkYellow;
+       break;
+   case QtCriticalMsg:
+       message = QObject::tr(&quot;Critical&quot;);
+       color = Qt::darkRed;
+       break;
+   case QtFatalMsg:
+       message = QObject::tr(&quot;Fatal&quot;);
+        color = Qt::darkRed;
+       break;
+   case QtInfoMsg:
+       message = QObject::tr(&quot;Info&quot;);
+       break;
+   case QtDebugMsg:
+       message = QObject::tr(&quot;Debug&quot;);
+       break;
+   }
+   message += QLatin1String(&quot;: &quot;);
+   message += msg;
+
+   const QString contextStr =
+       QStringLiteral(&quot; (%1:%2, %3)&quot;).arg(context.file).arg(context.line).arg(context.function);
+
+   // Logging messages from backends are sent from different threads and need to be
+   // synchronized with the GUI thread.
+   QMetaObject::invokeMethod(mainWindowGlobal, &quot;log&quot;, Qt::QueuedConnection,
+                             Q_ARG(QString, message),
+                             Q_ARG(QString, contextStr),
+                             Q_ARG(QColor, color));
+
+   if (oldMessageHandler)
+       oldMessageHandler(type, context, msg);
+}
+
+MainWindow::MainWindow(const QString &amp;amp;initialUrl, QWidget *parent) : QMainWindow(parent)
+  , ui(new Ui::MainWindow)
+  , mOpcUaModel(new OpcUaModel(this))
+  , mOpcUaProvider(new QOpcUaProvider(this))
+{
+    ui-&amp;gt;setupUi(this);
+    ui-&amp;gt;host-&amp;gt;setText(initialUrl);
+    mainWindowGlobal = this;
+
+    connect(ui-&amp;gt;quitAction, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::close);
+    ui-&amp;gt;quitAction-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q));
+
+    connect(ui-&amp;gt;aboutAction, &amp;amp;QAction::triggered, this, &amp;amp;QApplication::aboutQt);
+    ui-&amp;gt;aboutAction-&amp;gt;setShortcut(QKeySequence(QKeySequence::HelpContents));
+
+    updateUiState();
+
+    ui-&amp;gt;opcUaPlugin-&amp;gt;addItems(QOpcUaProvider::availableBackends());
+    ui-&amp;gt;treeView-&amp;gt;setModel(mOpcUaModel);
+    ui-&amp;gt;treeView-&amp;gt;header()-&amp;gt;setSectionResizeMode(QHeaderView::ResizeToContents);
+
+    if (ui-&amp;gt;opcUaPlugin-&amp;gt;count() == 0) {
+        ui-&amp;gt;opcUaPlugin-&amp;gt;setDisabled(true);
+        ui-&amp;gt;connectButton-&amp;gt;setDisabled(true);
+        QMessageBox::critical(this, tr(&quot;No OPCUA plugins available&quot;), tr(&quot;The list of available OPCUA plugins is empty. No connection possible.&quot;));
+    }
+
+    connect(ui-&amp;gt;findServersButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::findServers);
+    connect(ui-&amp;gt;host, &amp;amp;QLineEdit::returnPressed, this-&amp;gt;ui-&amp;gt;findServersButton,
+            [this]() { this-&amp;gt;ui-&amp;gt;findServersButton-&amp;gt;animateClick(); });
+    connect(ui-&amp;gt;getEndpointsButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::getEndpoints);
+    connect(ui-&amp;gt;connectButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::connectToServer);
+    oldMessageHandler = qInstallMessageHandler(&amp;amp;messageHandler);
+
+    setupPkiConfiguration();
+
+    m_identity = m_pkiConfig.applicationIdentity();
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+void MainWindow::setupPkiConfiguration()
+{
+    QString pkidir = QCoreApplication::applicationDirPath();
+#ifdef Q_OS_WIN
+    pkidir += &quot;../&quot;;
+#endif
+    pkidir += &quot;/pki&quot;;
+    m_pkiConfig.setClientCertificateFile(pkidir + &quot;/own/certs/opcuaviewer.der&quot;);
+    m_pkiConfig.setPrivateKeyFile(pkidir + &quot;/own/private/opcuaviewer.pem&quot;);
+    m_pkiConfig.setTrustListDirectory(pkidir + &quot;/trusted/certs&quot;);
+    m_pkiConfig.setRevocationListDirectory(pkidir + &quot;/trusted/crl&quot;);
+    m_pkiConfig.setIssuerListDirectory(pkidir + &quot;/issuers/certs&quot;);
+    m_pkiConfig.setIssuerRevocationListDirectory(pkidir + &quot;/issuers/crl&quot;);
+
+    // create the folders if they don't exist yet
+    createPkiFolders();
+}
+
+void MainWindow::createClient()
+{
+    if (mOpcUaClient == nullptr) {
+        mOpcUaClient = mOpcUaProvider-&amp;gt;createClient(ui-&amp;gt;opcUaPlugin-&amp;gt;currentText());
+        if (!mOpcUaClient) {
+            const QString message(tr(&quot;Connecting to the given sever failed. See the log for details.&quot;));
+            log(message, QString(), Qt::red);
+            QMessageBox::critical(this, tr(&quot;Failed to connect to server&quot;), message);
+            return;
+        }
+
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::connectError, this, &amp;amp;MainWindow::showErrorDialog);
+        mOpcUaClient-&amp;gt;setApplicationIdentity(m_identity);
+        mOpcUaClient-&amp;gt;setPkiConfiguration(m_pkiConfig);
+
+        if (mOpcUaClient-&amp;gt;supportedUserTokenTypes().contains(QOpcUaUserTokenPolicy::TokenType::Certificate)) {
+            QOpcUaAuthenticationInformation authInfo;
+            authInfo.setCertificateAuthentication();
+            mOpcUaClient-&amp;gt;setAuthenticationInformation(authInfo);
+        }
+
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::connected, this, &amp;amp;MainWindow::clientConnected);
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::disconnected, this, &amp;amp;MainWindow::clientDisconnected);
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::errorChanged, this, &amp;amp;MainWindow::clientError);
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::stateChanged, this, &amp;amp;MainWindow::clientState);
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::endpointsRequestFinished, this, &amp;amp;MainWindow::getEndpointsComplete);
+        connect(mOpcUaClient, &amp;amp;QOpcUaClient::findServersFinished, this, &amp;amp;MainWindow::findServersComplete);
+    }
+}
+
+void MainWindow::findServers()
+{
+    QStringList localeIds;
+    QStringList serverUris;
+    QUrl url(ui-&amp;gt;host-&amp;gt;text());
+
+    updateUiState();
+
+    createClient();
+    // set default port if missing
+    if (url.port() == -1) url.setPort(4840);
+
+    if (mOpcUaClient) {
+        mOpcUaClient-&amp;gt;findServers(url, localeIds, serverUris);
+        qDebug() &amp;lt;&amp;lt; &quot;Discovering servers on &quot; &amp;lt;&amp;lt; url.toString();
+    }
+}
+
+void MainWindow::findServersComplete(const QList&amp;lt;QOpcUaApplicationDescription&amp;gt; &amp;amp;servers, QOpcUa::UaStatusCode statusCode)
+{
+    QOpcUaApplicationDescription server;
+
+    if (isSuccessStatus(statusCode)) {
+        ui-&amp;gt;servers-&amp;gt;clear();
+        for (const auto &amp;amp;server : servers) {
+            const auto urls = server.discoveryUrls();
+            for (const auto &amp;amp;url : qAsConst(urls))
+                ui-&amp;gt;servers-&amp;gt;addItem(url);
+        }
+    }
+
+    updateUiState();
+}
+
+void MainWindow::getEndpoints()
+{
+    ui-&amp;gt;endpoints-&amp;gt;clear();
+    updateUiState();
+
+    if (ui-&amp;gt;servers-&amp;gt;currentIndex() &amp;gt;= 0) {
+        const QString serverUrl = ui-&amp;gt;servers-&amp;gt;currentText();
+        createClient();
+        mOpcUaClient-&amp;gt;requestEndpoints(serverUrl);
+    }
+}
+
+void MainWindow::getEndpointsComplete(const QList&amp;lt;QOpcUaEndpointDescription&amp;gt; &amp;amp;endpoints, QOpcUa::UaStatusCode statusCode)
+{
+    int index = 0;
+    const std::array&amp;lt;const char *, 4&amp;gt; modes = {
+        &quot;Invalid&quot;,
+        &quot;None&quot;,
+        &quot;Sign&quot;,
+        &quot;SignAndEncrypt&quot;
+    };
+
+    if (isSuccessStatus(statusCode)) {
+        mEndpointList = endpoints;
+        for (const auto &amp;amp;endpoint : endpoints) {
+            if (endpoint.securityMode() &amp;gt;= modes.size()) {
+                qWarning() &amp;lt;&amp;lt; &quot;Invalid security mode&quot;;
+                continue;
+            }
+
+            const QString EndpointName = QString(&quot;%1 (%2)&quot;)
+                    .arg(endpoint.securityPolicy(), modes[endpoint.securityMode()]);
+            ui-&amp;gt;endpoints-&amp;gt;addItem(EndpointName, index++);
+        }
+    }
+
+    updateUiState();
+}
+
+void MainWindow::connectToServer()
+{
+    if (mClientConnected) {
+        mOpcUaClient-&amp;gt;disconnectFromEndpoint();
+        return;
+    }
+
+    if (ui-&amp;gt;endpoints-&amp;gt;currentIndex() &amp;gt;= 0) {
+        m_endpoint = mEndpointList[ui-&amp;gt;endpoints-&amp;gt;currentIndex()];
+        createClient();
+        mOpcUaClient-&amp;gt;connectToEndpoint(m_endpoint);
+    }
+}
+
+void MainWindow::clientConnected()
+{
+    mClientConnected = true;
+    updateUiState();
+
+    connect(mOpcUaClient, &amp;amp;QOpcUaClient::namespaceArrayUpdated, this, &amp;amp;MainWindow::namespacesArrayUpdated);
+    mOpcUaClient-&amp;gt;updateNamespaceArray();
+}
+
+void MainWindow::clientDisconnected()
+{
+    mClientConnected = false;
+    mOpcUaClient-&amp;gt;deleteLater();
+    mOpcUaClient = nullptr;
+    mOpcUaModel-&amp;gt;setOpcUaClient(nullptr);
+    updateUiState();
+}
+
+void MainWindow::namespacesArrayUpdated(const QStringList &amp;amp;namespaceArray)
+{
+    if (namespaceArray.isEmpty()) {
+        qWarning() &amp;lt;&amp;lt; &quot;Failed to retrieve the namespaces array&quot;;
+        return;
+    }
+
+    disconnect(mOpcUaClient, &amp;amp;QOpcUaClient::namespaceArrayUpdated, this, &amp;amp;MainWindow::namespacesArrayUpdated);
+    mOpcUaModel-&amp;gt;setOpcUaClient(mOpcUaClient);
+    ui-&amp;gt;treeView-&amp;gt;header()-&amp;gt;setSectionResizeMode(1 /* Value column*/, QHeaderView::Interactive);
+}
+
+void MainWindow::clientError(QOpcUaClient::ClientError error)
+{
+    qDebug() &amp;lt;&amp;lt; &quot;Client error changed&quot; &amp;lt;&amp;lt; error;
+}
+
+void MainWindow::clientState(QOpcUaClient::ClientState state)
+{
+    qDebug() &amp;lt;&amp;lt; &quot;Client state changed&quot; &amp;lt;&amp;lt; state;
+}
+
+void MainWindow::updateUiState()
+{
+    // allow changing the backend only if it was not already created
+    ui-&amp;gt;opcUaPlugin-&amp;gt;setEnabled(mOpcUaClient == nullptr);
+    ui-&amp;gt;connectButton-&amp;gt;setText(mClientConnected ? tr(&quot;Disconnect&quot;) : tr(&quot;Connect&quot;));
+
+    if (mClientConnected) {
+        ui-&amp;gt;host-&amp;gt;setEnabled(false);
+        ui-&amp;gt;servers-&amp;gt;setEnabled(false);
+        ui-&amp;gt;endpoints-&amp;gt;setEnabled(false);
+        ui-&amp;gt;findServersButton-&amp;gt;setEnabled(false);
+        ui-&amp;gt;getEndpointsButton-&amp;gt;setEnabled(false);
+        ui-&amp;gt;connectButton-&amp;gt;setEnabled(true);
+    } else {
+        ui-&amp;gt;host-&amp;gt;setEnabled(true);
+        ui-&amp;gt;servers-&amp;gt;setEnabled(ui-&amp;gt;servers-&amp;gt;count() &amp;gt; 0);
+        ui-&amp;gt;endpoints-&amp;gt;setEnabled(ui-&amp;gt;endpoints-&amp;gt;count() &amp;gt; 0);
+
+        ui-&amp;gt;findServersButton-&amp;gt;setDisabled(ui-&amp;gt;host-&amp;gt;text().isEmpty());
+        ui-&amp;gt;getEndpointsButton-&amp;gt;setEnabled(ui-&amp;gt;servers-&amp;gt;currentIndex() != -1);
+        ui-&amp;gt;connectButton-&amp;gt;setEnabled(ui-&amp;gt;endpoints-&amp;gt;currentIndex() != -1);
+    }
+
+    if (!mOpcUaClient) {
+        ui-&amp;gt;servers-&amp;gt;setEnabled(false);
+        ui-&amp;gt;endpoints-&amp;gt;setEnabled(false);
+        ui-&amp;gt;getEndpointsButton-&amp;gt;setEnabled(false);
+        ui-&amp;gt;connectButton-&amp;gt;setEnabled(false);
+    }
+}
+
+void MainWindow::log(const QString &amp;amp;text, const QString &amp;amp;context, const QColor &amp;amp;color)
+{
+    auto cf = ui-&amp;gt;log-&amp;gt;currentCharFormat();
+    cf.setForeground(color);
+    ui-&amp;gt;log-&amp;gt;setCurrentCharFormat(cf);
+    ui-&amp;gt;log-&amp;gt;appendPlainText(text);
+    if (!context.isEmpty()) {
+        cf.setForeground(Qt::gray);
+        ui-&amp;gt;log-&amp;gt;setCurrentCharFormat(cf);
+        ui-&amp;gt;log-&amp;gt;insertPlainText(context);
+    }
+}
+
+void MainWindow::log(const QString &amp;amp;text, const QColor &amp;amp;color)
+{
+    log(text, QString(), color);
+}
+
+bool MainWindow::createPkiPath(const QString &amp;amp;path)
+{
+    const QString msg = tr(&quot;Creating PKI path '%1': %2&quot;);
+
+    QDir dir;
+    const bool ret = dir.mkpath(path);
+    if (ret)
+        qDebug() &amp;lt;&amp;lt; msg.arg(path, &quot;SUCCESS.&quot;);
+    else
+        qCritical(&quot;%s&quot;, qPrintable(msg.arg(path, &quot;FAILED.&quot;)));
+
+    return ret;
+}
+
+bool MainWindow::createPkiFolders()
+{
+    bool result = createPkiPath(m_pkiConfig.trustListDirectory());
+    if (!result)
+        return result;
+
+    result = createPkiPath(m_pkiConfig.revocationListDirectory());
+    if (!result)
+        return result;
+
+    result = createPkiPath(m_pkiConfig.issuerListDirectory());
+    if (!result)
+        return result;
+
+    result = createPkiPath(m_pkiConfig.issuerRevocationListDirectory());
+    if (!result)
+        return result;
+
+    return result;
+}
+
+void MainWindow::showErrorDialog(QOpcUaErrorState *errorState)
+{
+    int result = 0;
+
+    const QString statuscode = QOpcUa::statusToString(errorState-&amp;gt;errorCode());
+
+    QString msg = errorState-&amp;gt;isClientSideError() ? tr(&quot;The client reported: &quot;) : tr(&quot;The server reported: &quot;);
+
+    switch (errorState-&amp;gt;connectionStep()) {
+    case QOpcUaErrorState::ConnectionStep::Unknown:
+        break;
+    case QOpcUaErrorState::ConnectionStep::CertificateValidation: {
+        CertificateDialog dlg(this);
+        msg += tr(&quot;Server certificate validation failed with error 0x%1 (%2).\nClick 'Abort' to abort the connect, or 'Ignore' to continue connecting.&quot;)
+                  .arg(static_cast&amp;lt;ulong&amp;gt;(errorState-&amp;gt;errorCode()), 8, 16, QLatin1Char('0')).arg(statuscode);
+        result = dlg.showCertificate(msg, m_endpoint.serverCertificate(), m_pkiConfig.trustListDirectory());
+        errorState-&amp;gt;setIgnoreError(result == 1);
+    }
+        break;
+    case QOpcUaErrorState::ConnectionStep::OpenSecureChannel:
+        msg += tr(&quot;OpenSecureChannel failed with error 0x%1 (%2).&quot;).arg(errorState-&amp;gt;errorCode(), 8, 16, QLatin1Char('0')).arg(statuscode);
+        QMessageBox::warning(this, tr(&quot;Connection Error&quot;), msg);
+        break;
+    case QOpcUaErrorState::ConnectionStep::CreateSession:
+        msg += tr(&quot;CreateSession failed with error 0x%1 (%2).&quot;).arg(errorState-&amp;gt;errorCode(), 8, 16, QLatin1Char('0')).arg(statuscode);
+        QMessageBox::warning(this, tr(&quot;Connection Error&quot;), msg);
+        break;
+    case QOpcUaErrorState::ConnectionStep::ActivateSession:
+        msg += tr(&quot;ActivateSession failed with error 0x%1 (%2).&quot;).arg(errorState-&amp;gt;errorCode(), 8, 16, QLatin1Char('0')).arg(statuscode);
+        QMessageBox::warning(this, tr(&quot;Connection Error&quot;), msg);
+        break;
+    }
+}
+
+
+</db:programlisting>
+</db:article>

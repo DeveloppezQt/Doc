@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Exposing Attributes of C++ Types to QML</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how to expose the attributes of a C++ type to QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>QML can easily be extended with functionality defined in C++ code. Due to the tight integration of the QML engine with the <db:link xlink:href="metaobjects.xml">Qt meta-object system</db:link>, any functionality that is appropriately exposed by a <db:link xlink:href="qobject.xml">QObject</db:link>-derived class is accessible from QML code. This enables C++ data and functions to be accessible directly from QML, often with little or no modification.</db:para>
+<db:para>The QML engine has the ability to introspect <db:link xlink:href="qobject.xml">QObject</db:link> instances through the meta-object system. This means any QML code can access the following members of an instance of a <db:link xlink:href="qobject.xml">QObject</db:link>-derived class:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Properties</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Methods (providing they are public slots or flagged with <db:link xlink:href="qobject.xml#Q_INVOKABLE">Q_INVOKABLE</db:link>)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Signals</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>(Additionally, enums are available if they have been declared with Q_ENUMS. See <db:link xlink:href="qtqml-cppintegration-data.xml">Data Type Conversion Between QML and C++</db:link> for more details.)</db:para>
+<db:para>In general, these are accessible from QML regardless of whether a <db:link xlink:href="qobject.xml">QObject</db:link>-derived class has been <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered with the QML type system</db:link>. However, if a class is to be used in a way that requires the engine to access additional type information — for example, if the class itself is to be used as a method parameter or property, or if one of its enum types is to be used in this way — then the class may need to be registered.</db:para>
+<db:para>Also note that a number of the important concepts covered in this document are demonstrated in the <db:link xlink:href="qtqml-tutorials-extending-qml-example.xml">Writing QML Extensions with C++</db:link> tutorial.</db:para>
+<db:section xml:id="data-type-handling-and-ownership">
+<db:title>Data Type Handling and Ownership</db:title>
+<db:para>Any data that is transferred from C++ to QML, whether as a property value, a method parameter or return value, or a signal parameter value, must be of a type that is supported by the QML engine.</db:para>
+<db:para>By default, the engine supports a number of Qt C++ types and can automatically convert them as appropriately when used from QML. Additionally, C++ classes that are <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered</db:link> with the QML type system can be used as data types, as can their enums if appropriately registered. See <db:link xlink:href="qtqml-cppintegration-data.xml">Data Type Conversion Between QML and C++</db:link> for further information.</db:para>
+<db:para>Additionally, data ownership rules are taken into consideration when data is transferred from C++ to QML. See <db:link xlink:href="qtqml-cppintegration-data.xml#data-ownership">Data Ownership</db:link> for more details.</db:para>
+</db:section>
+<db:section xml:id="exposing-properties">
+<db:title>Exposing Properties</db:title>
+<db:para>A <db:emphasis>property</db:emphasis> can be specified for any <db:link xlink:href="qobject.xml">QObject</db:link>-derived class using the <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>() macro. A property is a class data member with an associated read function and optional write function.</db:para>
+<db:para>All properties of a <db:link xlink:href="qobject.xml">QObject</db:link>-derived class are accessible from QML.</db:para>
+<db:para>For example, below is a <db:code>Message</db:code> class with an <db:code>author</db:code> property. As specified by the <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> macro call, this property is readable through the <db:code>author()</db:code> method, and writable through the <db:code>setAuthor()</db:code> method:</db:para>
+<db:note>
+<db:para>Do not use <db:emphasis>typedef</db:emphasis> or <db:emphasis>using</db:emphasis> for <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> types as these will confuse moc. This may make certain type comparisons fail.</db:para>
+</db:note>
+<db:para>Instead of:</db:para>
+<db:programlisting language="cpp" role="bad">using FooEnum = Foo::Enum;
+
+class Bar : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(FooEnum enum READ enum WRITE setEnum NOTIFY enumChanged)
+};
+</db:programlisting>
+<db:para>Refer to the type directly:</db:para>
+<db:programlisting language="cpp">class Bar : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(Foo::Enum enum READ enum WRITE setEnum NOTIFY enumChanged)
+};
+</db:programlisting>
+<db:programlisting language="cpp">class Message : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString author READ author WRITE setAuthor NOTIFY authorChanged)
+public:
+    void setAuthor(const QString &amp;amp;a) {
+        if (a != m_author) {
+            m_author = a;
+            emit authorChanged();
+        }
+    }
+    QString author() const {
+        return m_author;
+    }
+signals:
+    void authorChanged();
+private:
+    QString m_author;
+};
+</db:programlisting>
+<db:para>If an instance of this class was <db:link xlink:href="qtqml-cppintegration-contextproperties.xml">set as a context property</db:link> when loading a file named <db:code>MyItem.qml</db:code> from C++:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+
+    QQuickView view;
+    Message msg;
+    view.engine()-&amp;gt;rootContext()-&amp;gt;setContextProperty(&quot;msg&quot;, &amp;amp;msg);
+    view.setSource(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+    view.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>Then, the <db:code>author</db:code> property could be read from <db:code>MyItem.qml</db:code>:</db:para>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick 2.0
+
+Text {
+    width: 100; height: 100
+    text: msg.author    // invokes Message::author() to get this value
+
+    Component.onCompleted: {
+        msg.author = &quot;Jonah&quot;  // invokes Message::setAuthor()
+    }
+}
+</db:programlisting>
+<db:para>For maximum interoperability with QML, <db:emphasis role="bold">any property that is writable should have an associated NOTIFY signal</db:emphasis> that is emitted whenever the property value has changed. This allows the property to be used with <db:link xlink:href="qtqml-syntax-propertybinding.xml">property binding</db:link>, which is an essential feature of QML that enforces relationships between properties by automatically updating a property whenever any of its dependencies change in value.</db:para>
+<db:para>In the above example, the associated NOTIFY signal for the <db:code>author</db:code> property is <db:code>authorChanged</db:code>, as specified in the <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>() macro call. This means that whenever the signal is emitted — as it is when the author changes in Message::setAuthor() — this notifies the QML engine that any bindings involving the <db:code>author</db:code> property must be updated, and in turn, the engine will update the <db:code>text</db:code> property by calling <db:code>Message::author()</db:code> again.</db:para>
+<db:para>If the <db:code>author</db:code> property was writable but did not have an associated NOTIFY signal, the <db:code>text</db:code> value would be initialized with the initial value returned by <db:code>Message::author()</db:code> but would not be updated with any later changes to this property. In addition, any attempts to bind to the property from QML will produce a runtime warning from the engine.</db:para>
+<db:note>
+<db:para>It is recommended that the NOTIFY signal be named <db:emphasis>&lt;property&gt;Changed</db:emphasis> where <db:code>&lt;property&gt;</db:code> is the name of the property. The associated property change signal handler generated by the QML engine will always take the form <db:code>on&lt;Property&gt;Changed</db:code>, regardless of the name of the related C++ signal, so it is recommended that the signal name follows this convention to avoid any confusion.</db:para>
+</db:note>
+<db:section xml:id="notes-on-use-of-notify-signals">
+<db:title>Notes on Use of Notify Signals</db:title>
+<db:para>To prevent loops or excessive evaluation, developers should ensure that the property change signal is only emitted when the property value has actually changed. Also, if a property or group of properties is infrequently used, it is permitted to use the same NOTIFY signal for several properties. This should be done with care to ensure that performance doesn't suffer.</db:para>
+<db:para>The presence of a NOTIFY signal does incur a small overhead. There are cases where a property's value is set at object construction time, and does not subsequently change. The most common case of this is when a type uses <db:link xlink:href="qtqml-syntax-objectattributes.xml#grouped-properties">Grouped Properties</db:link>, and the grouped property object is allocated once, and only freed when the object is deleted. In these cases, the CONSTANT attribute may be added to the property declaration instead of a NOTIFY signal.</db:para>
+<db:para>The CONSTANT attribute should only be used for properties whose value is set, and finalized, only in the class constructor. All other properties that want to be used in bindings should have a NOTIFY signal instead.</db:para>
+</db:section>
+<db:section xml:id="properties-with-object-types">
+<db:title>Properties with Object Types</db:title>
+<db:para>Object-type properties are accessible from QML providing that the object type has been appropriately <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered</db:link> with the QML type system.</db:para>
+<db:para>For example, the <db:code>Message</db:code> type might have a <db:code>body</db:code> property of type <db:code>MessageBody*</db:code>:</db:para>
+<db:programlisting language="cpp">class Message : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(MessageBody* body READ body WRITE setBody NOTIFY bodyChanged)
+public:
+    MessageBody* body() const;
+    void setBody(MessageBody* body);
+};
+
+class MessageBody : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text READ text WRITE text NOTIFY textChanged)
+// ...
+}
+</db:programlisting>
+<db:para>Suppose the <db:code>Message</db:code> type was <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered</db:link> with the QML type system, allowing it to be used as an object type from QML code:</db:para>
+<db:programlisting language="qml">Message {
+    // ...
+}
+</db:programlisting>
+<db:para>If the <db:code>MessageBody</db:code> type was also registered with the type system, it would be possible to assign <db:code>MessageBody</db:code> to the <db:code>body</db:code> property of a <db:code>Message</db:code>, all from within QML code:</db:para>
+<db:programlisting language="qml">Message {
+    body: MessageBody {
+        text: &quot;Hello, world!&quot;
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="properties-with-object-list-types">
+<db:title>Properties with Object-List Types</db:title>
+<db:para>Properties containing lists of <db:link xlink:href="qobject.xml">QObject</db:link>-derived types can also be exposed to QML. For this purpose, however, one should use <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> rather than <db:link xlink:href="qlist.xml">QList</db:link>&lt;T&gt; as the property type. This is because <db:link xlink:href="qlist.xml">QList</db:link> is not a <db:link xlink:href="qobject.xml">QObject</db:link>-derived type, and so cannot provide the necessary QML property characteristics through the Qt meta object system, such as signal notifications when a list is modified.</db:para>
+<db:para>For example, the <db:code>MessageBoard</db:code> class below has a <db:code>messages</db:code> property of type <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> that stores a list of <db:code>Message</db:code> instances:</db:para>
+<db:programlisting language="cpp">class MessageBoard : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QQmlListProperty&amp;lt;Message&amp;gt; messages READ messages)
+public:
+    QQmlListProperty&amp;lt;Message&amp;gt; messages();
+
+private:
+    static void append_message(QQmlListProperty&amp;lt;Message&amp;gt; *list, Message *msg);
+
+    QList&amp;lt;Message *&amp;gt; m_messages;
+};
+</db:programlisting>
+<db:para>The MessageBoard::messages() function simply creates and returns a <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> from its <db:link xlink:href="qlist.xml">QList</db:link>&lt;T&gt; <db:code>m_messages</db:code> member, passing the appropriate list modification functions as required by the <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> constructor:</db:para>
+<db:programlisting language="cpp">QQmlListProperty&amp;lt;Message&amp;gt; MessageBoard::messages()
+{
+    return QQmlListProperty&amp;lt;Message&amp;gt;(this, 0, &amp;amp;MessageBoard::append_message);
+}
+
+void MessageBoard::append_message(QQmlListProperty&amp;lt;Message&amp;gt; *list, Message *msg)
+{
+    MessageBoard *msgBoard = qobject_cast&amp;lt;MessageBoard *&amp;gt;(list-&amp;gt;object);
+    if (msg)
+        msgBoard-&amp;gt;m_messages.append(msg);
+}
+</db:programlisting>
+<db:para>Note that the template class type for the <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> — in this case, <db:code>Message</db:code> — must be <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered</db:link> with the QML type system.</db:para>
+</db:section>
+<db:section xml:id="grouped-properties">
+<db:title>Grouped Properties</db:title>
+<db:para>Any read-only object-type property is accessible from QML code as a <db:emphasis>grouped property</db:emphasis>. This can be used to expose a group of related properties that describe a set of attributes for a type.</db:para>
+<db:para>For example, suppose the <db:code>Message::author</db:code> property was of type <db:code>MessageAuthor</db:code> rather than a simple string, with sub-properties of <db:code>name</db:code> and <db:code>email</db:code>:</db:para>
+<db:programlisting language="cpp">class MessageAuthor : public QObject
+{
+    Q_PROPERTY(QString name READ name WRITE setName)
+    Q_PROPERTY(QString email READ email WRITE setEmail)
+public:
+    ...
+};
+
+class Message : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(MessageAuthor* author READ author)
+public:
+    Message(QObject *parent)
+        : QObject(parent), m_author(new MessageAuthor(this))
+    {
+    }
+    MessageAuthor *author() const {
+        return m_author;
+    }
+private:
+    MessageAuthor *m_author;
+};
+</db:programlisting>
+<db:para>The <db:code>author</db:code> property could be written to using the <db:link xlink:href="qtqml-syntax-objectattributes.xml#grouped-properties">grouped property syntax</db:link> in QML, like this:</db:para>
+<db:programlisting language="qml">Message {
+    author.name: &quot;Alexandra&quot;
+    author.email: &quot;alexandra@mail.com&quot;
+}
+</db:programlisting>
+<db:para>A type that is exposed as a grouped property differs from an <db:link xlink:href="qtqml-cppintegration-exposecppattributes.xml#properties-with-object-types">object-type property</db:link> in that the grouped property is read-only, and is initialized to a valid value by the parent object at construction. The grouped property's sub-properties may be modified from QML but the grouped property object itself will never change, whereas an object-type property may be assigned a new object value from QML at any time. Thus, the lifetime of a grouped property object is controlled strictly by the C++ parent implementation, whereas an object-type property can be freely created and destroyed through QML code.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="exposing-methods-including-qt-slots">
+<db:title>Exposing Methods (Including Qt Slots)</db:title>
+<db:para>Any method of a <db:link xlink:href="qobject.xml">QObject</db:link>-derived type is accessible from QML code if it is:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A public method flagged with the <db:link xlink:href="qobject.xml#Q_INVOKABLE">Q_INVOKABLE</db:link>() macro</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A method that is a public Qt <db:link xlink:href="signalsandslots.xml">slot</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>For example, the <db:code>MessageBoard</db:code> class below has a <db:code>postMessage()</db:code> method that has been flagged with the <db:link xlink:href="qobject.xml#Q_INVOKABLE">Q_INVOKABLE</db:link> macro, as well as a <db:code>refresh()</db:code> method that is a public slot:</db:para>
+<db:programlisting language="cpp">class MessageBoard : public QObject
+{
+    Q_OBJECT
+public:
+    Q_INVOKABLE bool postMessage(const QString &amp;amp;msg) {
+        qDebug() &amp;lt;&amp;lt; &quot;Called the C++ method with&quot; &amp;lt;&amp;lt; msg;
+        return true;
+    }
+
+public slots:
+    void refresh() {
+        qDebug() &amp;lt;&amp;lt; &quot;Called the C++ slot&quot;;
+    }
+};
+</db:programlisting>
+<db:para>If an instance of <db:code>MessageBoard</db:code> was set as the context data for a file <db:code>MyItem.qml</db:code>, then <db:code>MyItem.qml</db:code> could invoke the two methods as shown in the examples below:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>C++</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="cpp">int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+
+    MessageBoard msgBoard;
+    QQuickView view;
+    view.engine()-&amp;gt;rootContext()-&amp;gt;setContextProperty(&quot;msgBoard&quot;, &amp;amp;msgBoard);
+    view.setSource(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+    view.show();
+
+    return app.exec();
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QML</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick 2.0
+
+Item {
+    width: 100; height: 100
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: {
+            var result = msgBoard.postMessage(&quot;Hello from QML&quot;)
+            console.log(&quot;Result of postMessage():&quot;, result)
+            msgBoard.refresh();
+        }
+    }
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>If a C++ method has a parameter with a <db:code>QObject*</db:code> type, the parameter value can be passed from QML using an object <db:code>id</db:code> or a JavaScript <db:link xlink:href="qml-var.xml">var</db:link> value that references the object.</db:para>
+<db:para>QML supports the calling of overloaded C++ functions. If there are multiple C++ functions with the same name but different arguments, the correct function will be called according to the number and the types of arguments that are provided.</db:para>
+<db:para>Values returned from C++ methods are converted to JavaScript values when accessed from JavaScript expressions in QML.</db:para>
+</db:section>
+<db:section xml:id="exposing-signals">
+<db:title>Exposing Signals</db:title>
+<db:para>Any public <db:link xlink:href="signalsandslots.xml">signal</db:link> of a <db:link xlink:href="qobject.xml">QObject</db:link>-derived type is accessible from QML code.</db:para>
+<db:para>The QML engine automatically creates a <db:link xlink:href="qtqml-syntax-signals.xml">signal handler</db:link> for any signal of a <db:link xlink:href="qobject.xml">QObject</db:link>-derived type that is used from QML. Signal handlers are always named <db:emphasis>on&lt;Signal&gt;</db:emphasis> where <db:code>&lt;Signal&gt;</db:code> is the name of the signal, with the first letter capitalized. All parameters passed by the signal are available in the signal handler through the parameter names.</db:para>
+<db:para>For example, suppose the <db:code>MessageBoard</db:code> class has a <db:code>newMessagePosted()</db:code> signal with a single parameter, <db:code>subject</db:code>:</db:para>
+<db:programlisting language="cpp">class MessageBoard : public QObject
+{
+    Q_OBJECT
+public:
+   // ...
+signals:
+   void newMessagePosted(const QString &amp;amp;subject);
+};
+</db:programlisting>
+<db:para>If the <db:code>MessageBoard</db:code> type was <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-c-types-with-the-qml-type-system">registered</db:link> with the QML type system, then a <db:code>MessageBoard</db:code> object declared in QML could receive the <db:code>newMessagePosted()</db:code> signal using a signal handler named <db:code>onNewMessagePosted</db:code>, and examine the <db:code>subject</db:code> parameter value:</db:para>
+<db:programlisting language="qml">MessageBoard {
+    onNewMessagePosted: (subject)=&amp;gt; console.log(&quot;New message received:&quot;, subject)
+}
+</db:programlisting>
+<db:para>As with property values and method parameters, a signal parameter must have a type that is supported by the QML engine; see <db:link xlink:href="qtqml-cppintegration-data.xml">Data Type Conversion Between QML and C++</db:link>. (Using an unregistered type will not generate an error, but the parameter value will not be accessible from the handler.)</db:para>
+<db:para>Classes may have multiple signals with the same name, but only the final signal is accessible as a QML signal. Note that signals with the same name but different parameters cannot be distinguished from one another.</db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,500 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Changes to Qt Core</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Migrate Qt Core to Qt 6.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Qt 6 is a result of the conscious effort to make the framework more efficient and easy to use.</db:para>
+<db:para>We try to maintain binary and source compatibility for all the public APIs in each release. But some changes were inevitable in an effort to make Qt a better framework.</db:para>
+<db:para>In this topic we summarize those changes in Qt Core, and provide guidance to handle them.</db:para>
+<db:section xml:id="container-classes">
+<db:title>Container Classes</db:title>
+<db:section xml:id="qhash-qmultihash-qset">
+<db:title>QHash, QMultiHash, QSet</db:title>
+<db:section xml:id="qhash-signature">
+<db:title>qHash() Signature</db:title>
+<db:para>For custom types, <db:link xlink:href="qhash.xml#qhash">QHash</db:link> and <db:link xlink:href="qmultihash.xml">QMultiHash</db:link> rely on you providing a <db:link xlink:href="qhash.xml#qhash">custom qHash() function</db:link> in the same namespace. In Qt 4 and Qt 5, the return value and optional second argument of a qHash function was of type uint. In Qt 6, it is size_t.</db:para>
+<db:para>That is, you need to change</db:para>
+<db:programlisting language="cpp">uint qHash(MyType x, uint seed);
+</db:programlisting>
+<db:para>to</db:para>
+<db:programlisting language="cpp">size_t qHash(MyType x, size_t seed);
+</db:programlisting>
+<db:para>This allows <db:link xlink:href="qhash.xml#qhash">QHash</db:link>, <db:link xlink:href="qmultihash.xml">QMultiHash</db:link> and <db:link xlink:href="qset.xml">QSet</db:link> to hold more than 2^32 items on 64 bit platforms.</db:para>
+</db:section>
+<db:section xml:id="stability-of-references">
+<db:title>Stability of References</db:title>
+<db:para>The implementation of <db:link xlink:href="qhash.xml#qhash">QHash</db:link>, <db:link xlink:href="qmultihash.xml">QMultiHash</db:link> and <db:link xlink:href="qset.xml">QSet</db:link> in Qt 6 got changed from a node based approach to a two stage lookup table. This design allows to keep the memory overhead of a hash instance very small, while at the same time giving good performance.</db:para>
+<db:para>One behavioral change to note is that the new implementation will not provide stable references to elements in the hash when the table needs to grow, or when entries are removed. Applications that rely on such stability might now run into undefined behavior.</db:para>
+</db:section>
+<db:section xml:id="removal-of-qhash-insertmulti">
+<db:title>Removal of QHash::insertMulti</db:title>
+<db:para>In Qt 5, <db:link xlink:href="qhash.xml#qhash">QHash</db:link> could be used to create multi-valued hashes by using QHash::insertMulti, and <db:link xlink:href="qmultihash.xml">QMultiHash</db:link> was deriving vom <db:link xlink:href="qhash.xml#qhash">QHash</db:link>.</db:para>
+<db:para>In Qt 6, both types and use cases are distinct, and QHash::insertMulti got removed.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="qvector-qlist">
+<db:title>QVector, QList</db:title>
+<db:para>Prior to Qt 6, <db:link xlink:href="qvector.xml">QVector</db:link> and <db:link xlink:href="qlist.xml">QList</db:link> were separate classes. In Qt 6, they are unified: Qt 5 <db:link xlink:href="qlist.xml">QList</db:link> implementation is gone and both classes use updated <db:link xlink:href="qvector.xml">QVector</db:link> implementation instead. <db:link xlink:href="qlist.xml">QList</db:link> is the class with the actual implementation and <db:link xlink:href="qvector.xml">QVector</db:link> is an alias (typedef) to <db:link xlink:href="qlist.xml">QList</db:link>.</db:para>
+<db:para><db:link xlink:href="qlist.xml">QList</db:link>'s fromVector() and toVector(), and <db:link xlink:href="qvector.xml">QVector</db:link>'s fromList() and toList(), no longer involve data copying in Qt 6. They now return the object that they were called for.</db:para>
+<db:section xml:id="api-changes">
+<db:title>API Changes</db:title>
+<db:para><db:link xlink:href="qlist.xml">QList</db:link>'s (and hence <db:link xlink:href="qvector.xml">QVector</db:link>'s) size type is changed from int to qsizetype. Together with the size type, all relevant methods' signatures are updated to use qsizetype. This allows <db:link xlink:href="qlist.xml">QList</db:link> to hold more than 2^31 items on 64 bit platforms.</db:para>
+<db:para>When upgrading the code base to Qt 6, this API change would most likely result in compiler warnings about narrowing type conversions. Having the following example code:</db:para>
+<db:programlisting language="cpp">void myFunction(QList&amp;lt;MyType&amp;gt; &amp;amp;data) {
+    int size = data.size();
+    // ...
+    const int pos = getInsertPosition(size);
+    data.insert(pos, MyType());
+    // ...
+}
+</db:programlisting>
+<db:para>you would need to update it to use either qsizetype or an auto keyword:</db:para>
+<db:programlisting language="cpp">void myFunction(QList&amp;lt;MyType&amp;gt; &amp;amp;data) {
+    auto size = data.size();
+    // ...
+    const auto pos = getInsertPosition(size);
+    data.insert(pos, MyType());
+    // ...
+}
+</db:programlisting>
+<db:para>Alternatively, you may use type casting and cast everything to int or to qsizetype.</db:para>
+<db:note>
+<db:para>If you want to build against both Qt 5 and Qt 6, the auto keyword is a good solution to cover signature differences between the versions.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="memory-layout">
+<db:title>Memory Layout</db:title>
+<db:para><db:link xlink:href="qlist.xml">QList</db:link> received multiple changes related to the memory layout in Qt 6.</db:para>
+<db:para>In Qt 5, sizeof(QList&lt;T&gt;) was equal to a size of a pointer. Now, the extra pointer indirection is removed and <db:link xlink:href="qlist.xml">QList</db:link> data members are directly stored in the object. By default, expect sizeof(QList&lt;T&gt;) to be equal to the size of 3 pointers.</db:para>
+<db:para>At the same time, memory layout of the elements is also updated. <db:link xlink:href="qlist.xml">QList</db:link> now always stores its elements directly in the allocated memory region as opposed to Qt 5, where certain objects were separately allocated on the heap and pointers to the objects were placed into the <db:link xlink:href="qlist.xml">QList</db:link> instead.</db:para>
+<db:para>Note that the latter, in particular, affects large objects. To have Qt 5 behavior, you could wrap your objects into smart pointers and store these smart pointers in <db:link xlink:href="qlist.xml">QList</db:link> directly. In this case, the type of your <db:link xlink:href="qlist.xml">QList</db:link> would be QList&lt;MySmartPointer&lt;MyLargeObject&gt;&gt; as opposed to QList&lt;MyLargeObject&gt; in Qt 5.</db:para>
+</db:section>
+<db:section xml:id="stability-of-references">
+<db:title>Stability of References</db:title>
+<db:para>There are several changes made to the <db:link xlink:href="qvector.xml">QVector</db:link>/<db:link xlink:href="qlist.xml">QList</db:link> implementation. The <db:link xlink:href="qvector.xml">QVector</db:link> related one is: insertion at the beginning is optimized (similarly to <db:link xlink:href="qlist.xml">QList</db:link> in Qt 5). The <db:link xlink:href="qlist.xml">QList</db:link> related one is: memory layout for the elements is simplified.</db:para>
+<db:important>
+<db:para>These changes impact the stability of references. In Qt 6, you should consider any size or capacity modifying method to invalidate all references, even when <db:link xlink:href="qlist.xml">QList</db:link> is not <db:link xlink:href="implicit-sharing.xml">implicitly shared</db:link>. Exceptions to this rule are documented explicitly.</db:para>
+</db:important>
+<db:para>Applications that rely on certain reference stability might run into undefined behavior when upgraded to use Qt 6. You should pay extra attention to cases where <db:link xlink:href="qvector.xml">QVector</db:link> or <db:link xlink:href="qlist.xml">QList</db:link> with a non C-compatible array layout were used originally.</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="view-classes-in-qt6">
+<db:title>View classes in Qt6</db:title>
+<db:section xml:id="general-overview">
+<db:title>General Overview</db:title>
+<db:para>There are several new View classes coming with Qt6. There is the already existing <db:link xlink:href="qstringview.xml">QStringView</db:link>, now accompanied by <db:link xlink:href="qbytearrayview.xml">QByteArrayView</db:link> and followed by a specialized <db:link xlink:href="qutf8stringview.xml">QUtf8StringView</db:link> and a more universal <db:link xlink:href="qanystringview.xml">QAnyStringView</db:link>.</db:para>
+</db:section>
+<db:section xml:id="introduction-to-view-classes-on-the-example-of-qstringview">
+<db:title>Introduction to view classes on the example of QStringView</db:title>
+<db:para>The <db:link xlink:href="qstringview.xml">QStringView</db:link> class provides a unified view on UTF-16 strings with a read-only subset of the <db:link xlink:href="qstring.xml">QString</db:link> API. Unlike <db:link xlink:href="qstring.xml">QString</db:link>, which keeps its own copy of the string (possibly ref-counted), <db:link xlink:href="qstringview.xml">QStringView</db:link> provides a view of a string that is stored elsewhere.</db:para>
+<db:programlisting language="cpp">char hello[]{ &quot;Hello.&quot; };   // narrow multi-byte string literal
+QString str{hello};         // needs to make a copy of the string literal
+QString strToStr(str);      // atomic increment involved to not create a copy of hello again
+
+// The above code can be re-written to avoid copying and atomic increment.
+
+QStringView view{ u&quot;Hello.&quot; };  // view to UTF-16 encoded string literal
+QStringView viewToView{ view }; // view of the same UTF-16 encoded string literal
+</db:programlisting>
+<db:para>The string &quot;Hello.&quot; is stored in the binary and is not allocated at run-time. view is only a view onto the string &quot;Hello.&quot;, therefore no copy has to be created. When we copy a <db:link xlink:href="qstringview.xml">QStringView</db:link>, the viewToView observes the same string as the copied-from view is observing. This means that viewToView does not need to create a copy or an atomic increment. They are views onto the existing string &quot;Hello.&quot;.</db:para>
+</db:section>
+<db:section xml:id="views-as-function-argument">
+<db:title>Views as function argument</db:title>
+<db:para>Views should be passed by value, not by reference-to-const.</db:para>
+<db:programlisting language="cpp">void myfun1(QStringView sv);        // preferred
+void myfun2(const QStringView &amp;amp;sv); // compiles and works, but slower
+</db:programlisting>
+</db:section>
+<db:section xml:id="view-manipulation-functions">
+<db:title>View manipulation functions</db:title>
+<db:para><db:link xlink:href="qstringview.xml">QStringView</db:link> supports functions that let us manipulate the view of the string. This allows us to change the view without creating a partial copy of the viewed string.</db:para>
+<db:programlisting language="cpp">QString pineapple = &quot;Pineapple&quot;;
+QString pine = pineapple.left(4);
+
+// The above code can be re-written to avoid creating a partial copy.
+
+QStringView pineappleView{ pineapple };
+QStringView pineView = pineappleView.left(4);
+</db:programlisting>
+</db:section>
+<db:section xml:id="non-null-terminated-strings-and-strings-containing-char-0-char">
+<db:title>Non null-terminated strings and strings containing '\0'</db:title>
+<db:para><db:link xlink:href="qstringview.xml">QStringView</db:link> supports both null-terminated and non null-terminated strings. The difference comes from the way you initialize the <db:link xlink:href="qstringview.xml">QStringView</db:link>:</db:para>
+<db:programlisting language="cpp">QChar aToE[]{ 'a', 'b', 'c', 'd', 'e' };
+
+QStringView nonNull{ aToE, std::size(aToE) }; // with length given
+QStringView nonNull{ aToE }; // automatically determines the length
+
+QChar fToJ[]{ 'f', 'g', 'h', '\0', 'j' };
+
+// uses given length, doesn't search for '\0', so '\0' at position 3
+// is considered to be a part of the string similarly to 'h' and 'j
+QStringView nonNull{ fToJ, std::size(fToJ) };
+QStringView part{ fToJ }; //stops on the first encounter of '\0'
+</db:programlisting>
+</db:section>
+<db:section xml:id="ownership-model-of-views">
+<db:title>Ownership model of views</db:title>
+<db:para>As views do not own the memory they reference, care must be taken to ensure that the referenced data (for example, owned by a <db:link xlink:href="qstring.xml">QString</db:link>) outlives the view on all code paths.</db:para>
+<db:programlisting language="cpp" role="bad">QStringView sayHello()
+{
+    QString hello(&quot;Hello.&quot;);
+    return QStringView{ hello }; // hello gets out of scope and destroyed
+}
+
+void main()
+{
+    QStringView hello{ sayHello() };
+    qDebug() &amp;lt;&amp;lt; hello; // undefined behavior
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="converting-an-qstringview-to-qstring">
+<db:title>Converting an QStringView to QString</db:title>
+<db:para><db:link xlink:href="qstringview.xml">QStringView</db:link> will not implicitly or explicitly convert to a <db:link xlink:href="qstring.xml">QString</db:link>, but can create a deep copy of its data:</db:para>
+<db:programlisting language="cpp">void print(const QString &amp;amp;s) { qDebug() &amp;lt;&amp;lt; s; }
+
+void main()
+{
+    QStringView string{ u&quot;string&quot;};
+
+    // print(string); // invalid, no implicit conversion
+    // QString str{ string }; // invalid, no explicit conversion
+
+    print(string.toString());
+    QString str = string.toString(); // create QString from view
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="important-notes">
+<db:title>Important notes</db:title>
+<db:para>By leveraging the new view classes, one can achieve a lot of performance boost in many use cases. However, it is important to know that there might be some caveats. Therefore it is important to remember:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Views should be passed by value, not by reference-to-const.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Constructing a view with a negative length is undefined behavior.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Care must be taken to ensure that the referenced data (for example, owned by a <db:link xlink:href="qstring.xml">QString</db:link>) outlives the view on all code paths.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+<db:section xml:id="string-related-classes">
+<db:title>String related classes</db:title>
+<db:section xml:id="the-qstringview-class">
+<db:title>The QStringView class</db:title>
+<db:para>Starting with Qt6 it is generally recommended to use <db:link xlink:href="qstringview.xml">QStringView</db:link> over QStringRef. <db:link xlink:href="qstringview.xml">QStringView</db:link> references a contiguous portion of a UTF-16 string it does not own. It acts as an interface type to all kinds of UTF-16 strings, without the need to construct a <db:link xlink:href="qstring.xml">QString</db:link> first. The <db:link xlink:href="qstringview.xml">QStringView</db:link> class exposes almost all read-only methods of <db:link xlink:href="qstring.xml">QString</db:link> and the previously existing QStringRef class.</db:para>
+<db:note>
+<db:para>Care must be taken to ensure that the referenced string data (for example, owned by a <db:link xlink:href="qstring.xml">QString</db:link>) outlives the <db:link xlink:href="qstringview.xml">QStringView</db:link> on all code paths.</db:para>
+</db:note>
+<db:note>
+<db:para>If a <db:link xlink:href="qstringview.xml">QStringView</db:link> wraps a <db:link xlink:href="qstring.xml">QString</db:link>, care needs to be taken since unlike QStringRef <db:link xlink:href="qstringview.xml">QStringView</db:link> will not update the internal data pointer once the <db:link xlink:href="qstring.xml">QString</db:link> data relocates.</db:para>
+</db:note>
+<db:programlisting language="cpp">QString string = ...;
+QStringView view{string};
+
+// Appending something very long might cause a relocation and will
+// ultimately result in a garbled QStringView.
+string += ...;
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-qstringref-class">
+<db:title>The QStringRef class</db:title>
+<db:para>In Qt6 <db:link xlink:href="qstringref.xml">QStringRef</db:link> got removed from Qt Core. To ease porting of existing applications without touching the whole code-base, the QStringRef class did not vanish completely and instead it got moved into the Qt5Compat module.</db:para>
+<db:para>If you want to use QStringRef further, you need to link against the new Qt5Compat module and add this line to your <db:link xlink:href="qmake-manual.xml">qmake</db:link> .pro file:</db:para>
+<db:programlisting language="cpp">QT += core5compat
+</db:programlisting>
+<db:para>In case you already ported your application or library to the <db:link xlink:href="cmake-manual.xml">cmake</db:link> build system, add the following to your CMakeList.txt:</db:para>
+<db:programlisting language="cpp">PUBLIC_LIBRARIES
+    Qt::Core5Compat
+</db:programlisting>
+<db:para>Unfortunately, some methods exposed by <db:link xlink:href="qstring.xml">QString</db:link> returning a QStringRef, could not be moved to Qt5Compat. Therefore some manually porting may be needed. If your code uses one or more of the following functions you need to port them to use <db:link xlink:href="qstringview.xml">QStringView</db:link> or <db:link xlink:href="qstringtokenizer.xml">QStringTokenizer</db:link>. It is also recommended to use <db:link xlink:href="qstringview.xml#tokenize">QStringView::tokenize</db:link> over <db:link xlink:href="qstringview.xml#split">QStringView::split</db:link> for performance critical code.</db:para>
+<db:para>Change code using QStringRef:</db:para>
+<db:programlisting language="cpp">QString string = ...;
+QStringRef left = string.leftRef(n);
+QStringRef mid = string.midRef(n);
+QStringRef right = string.rightRef(n);
+
+QString value = ...;
+const QVector&amp;lt;QStringRef&amp;gt; refs = string.splitRef(' ');
+if (refs.contains(value))
+    return true;
+</db:programlisting>
+<db:para>to:</db:para>
+<db:programlisting language="cpp">QString string = ...;
+QStringView left = QStringView{string}.left(n);
+QStringView mid = QStringView{string}.mid(n);
+QStringView right = QStringView{string}.right(n);
+
+QString value = ...;
+const QList&amp;lt;QStringView&amp;gt; refs = QStringView{string}.split(u' ');
+if (refs.contains(QStringView{value}))
+    return true;
+// or
+const auto refs = QStringView{string}.tokenize(u' ');
+for (auto ref : refs) {
+    if (ref == value)
+        return true;
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="qmutex-and-related-classes">
+<db:title>QMutex and Related Classes</db:title>
+<db:para>In Qt 6, <db:link xlink:href="qrecursivemutex.xml">QRecursiveMutex</db:link> does not inherit from <db:link xlink:href="qmutex.xml">QMutex</db:link> anymore. This change was done to improve the performance of both <db:link xlink:href="qmutex.xml">QMutex</db:link> and <db:link xlink:href="qrecursivemutex.xml">QRecursiveMutex</db:link>.</db:para>
+<db:para>Due to those changes, the QMutex::RecursionMode enum has been removed, and <db:link xlink:href="qmutexlocker.xml">QMutexLocker</db:link> is now a templated class that can operate on both <db:link xlink:href="qmutex.xml">QMutex</db:link> and <db:link xlink:href="qrecursivemutex.xml">QRecursiveMutex</db:link>.</db:para>
+</db:section>
+<db:section xml:id="qfuture-and-related-classes">
+<db:title>QFuture and Related Classes</db:title>
+<db:section xml:id="the-qfuture-class">
+<db:title>The QFuture class</db:title>
+<db:para>To avoid unintended usage of <db:link xlink:href="qfuture.xml">QFuture</db:link>, there were some changes to <db:link xlink:href="qfuture.xml">QFuture</db:link> API in Qt 6, which may introduce source compatibility breaks.</db:para>
+<db:section xml:id="implicit-conversions-between-qfuture-and-other-types">
+<db:title>Implicit conversions between QFuture and other types</db:title>
+<db:para>Conversion of QFuture&lt;T&gt; to T has been disabled. The casting operator was calling <db:link xlink:href="qfuture.xml#result">QFuture::result</db:link>(), which may lead to undefined behavior if the user has moved the results from <db:link xlink:href="qfuture.xml">QFuture</db:link> via <db:link xlink:href="qfuture.xml#takeResult">QFuture::takeResult</db:link>() before trying to do the conversion. Use <db:link xlink:href="qfuture.xml#result">QFuture::result</db:link>() or <db:link xlink:href="qfuture.xml#takeResult">QFuture::takeResult</db:link>() methods explicitly, where you need to convert QFuture&lt;T&gt; to T.</db:para>
+<db:para>The implicit conversion from QFuture&lt;T&gt; to QFuture&lt;void&gt; has been also disabled. If you really intend to do the conversion, use the explicit QFuture&lt;void&gt;(const QFuture&lt;T&gt; &amp;) constructor:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;int&amp;gt; future = ...
+QFuture&amp;lt;void&amp;gt; voidFuture = QFuture&amp;lt;void&amp;gt;(future);
+</db:programlisting>
+</db:section>
+<db:section xml:id="equality-operators">
+<db:title>Equality operators</db:title>
+<db:para>The equality operators of <db:link xlink:href="qfuture.xml">QFuture</db:link> have been removed. They were comparing the underlying d-pointers instead of comparing the results, which is not what users might expect. If you need to compare <db:link xlink:href="qfuture.xml">QFuture</db:link> objects, use QFuture::result() or QFuture::takeResult() methods. For example:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;int&amp;gt; future1 = ...;
+QFuture&amp;lt;int&amp;gt; future2 = ...;
+if (future1.result() == future2.result())
+    // ...
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="behavioral-changes-to-qfuture-and-qfuturewatcher">
+<db:title>Behavioral Changes to QFuture and QFutureWatcher</db:title>
+<db:para>In Qt 6, there were some improvements to <db:link xlink:href="qfuture.xml">QFuture</db:link> and <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> which caused the following behavioral changes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>After pausing <db:link xlink:href="qfuture.xml">QFuture</db:link> or <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> (by calling pause() or setPaused(true)), <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> will not immediately stop delivering progress and result ready signals. At the moment of pausing there may be still computations that are in progress and cannot be stopped. Signals for such computations may be still delivered after pause, instead of being postponed and reported only after next resume. To get notified when pause actually took effect, <db:link xlink:href="qfuturewatcher.xml#suspended">QFutureWatcher::suspended</db:link>() signal can be used. In addition, there are new isSuspending() and isSuspended() methods, to check if the <db:link xlink:href="qfuture.xml">QFuture</db:link> is in the process of suspending or it's already in the suspended state. Note that for consistency reasons, for both <db:link xlink:href="qfuture.xml">QFuture</db:link> and <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> the pause-related APIs were deprecated and replaced by similar methods having &quot;suspend&quot; in the name instead.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qfuture.xml#waitForFinished">QFuture::waitForFinished</db:link>() will now wait until <db:link xlink:href="qfuture.xml">QFuture</db:link> is actually in the finished state, instead of exiting as soon as it is not in the running state. This prevents waitForFinished() from exiting immediately, if at the moment of calling it the future is not started yet. The same applies to <db:link xlink:href="qfuturewatcher.xml#waitForFinished">QFutureWatcher::waitForFinished</db:link>(). This change won't affect the behavior of code that was using <db:link xlink:href="qfuture.xml">QFuture</db:link> with <db:link xlink:href="qtconcurrent-module.xml">QtConcurrent</db:link>. Only the code that was using it with the undocumented QFutureInterface may be affected.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="the-qpromise-class">
+<db:title>The QPromise class</db:title>
+<db:para>In Qt 6, the new <db:link xlink:href="qpromise.xml">QPromise</db:link> class should be used instead of unofficial QFutureInterface as a &quot;setter&quot; counterpart of <db:link xlink:href="qfuture.xml">QFuture</db:link>.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="io-classes">
+<db:title>IO Classes</db:title>
+<db:section xml:id="the-qprocess-class">
+<db:title>The QProcess class</db:title>
+<db:para>In Qt 6, the <db:link xlink:href="qprocess.xml#start">QProcess::start</db:link>() overload that interprets a single command string by splitting it into program name and arguments is renamed to <db:link xlink:href="qprocess.xml#startCommand">QProcess::startCommand</db:link>(). However, a <db:link xlink:href="qprocess.xml#start">QProcess::start</db:link>() overload that takes a single string, as well as a <db:link xlink:href="qstringlist.xml">QStringList</db:link> for arguments exists. Since the <db:link xlink:href="qstringlist.xml">QStringList</db:link> parameter defaults to the empty list, existing code only passing a string will still compile, but will fail to execute the process if it is a complete command string that includes arguments.</db:para>
+<db:para>Qt 5.15 introduced deprecation warnings for the respective overload to make it easy to discover and update existing code:</db:para>
+<db:programlisting language="cpp">QProcess process;
+
+// compiles with warnings in 5.15, compiles but fails with Qt 6
+process.start(&quot;dir \&quot;My Documents\&quot;&quot;);
+
+// works with both Qt 5 and Qt 6; also see QProcess::splitCommand()
+process.start(&quot;dir&quot;, QStringList({&quot;My Documents&quot;});
+
+// works with Qt 6
+process.startCommand(&quot;dir \&quot;My Documents\&quot;&quot;);
+</db:programlisting>
+<db:para>QProcess::pid() and the Q_PID type have been removed; use <db:link xlink:href="qprocess.xml#processId">QProcess::processId</db:link>() instead to get the native process identifier. Code using native Win32 APIs to access the data in the Q_PID as a Win32 PROCESS_INFORMATION struct is no longer supported.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="meta-type-system">
+<db:title>Meta-Type system</db:title>
+<db:section xml:id="the-qvariant-class">
+<db:title>The QVariant class</db:title>
+<db:para>QVariant has been rewritten to use QMetaType for all of its operations. This implies behavior changes in a few methods:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>QVariant::isNull() now only returns true if the QVariant is empty or contains a nullptr. In Qt 5, it also returned true for classes in qtbase which had an isNull method themselves if that one returned true. Code relying on the old behavior needs to check whether the contained value returs isNull – however such code is unlikely to occur in practice, as isNull() is rarely the property one is interested in (compare QString::isEmpty() / isNull() and QTime::isValid / isNull).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QVariant::operator== uses QMetaType::equals in Qt 6. Therefore, some graphical types like QPixmap, QImage and QIcon will never compare equal. Moreover, floating point numbers stored in QVariant are no longer compared with qFuzzyCompare, but instead use exact comparisons.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Furthermore, QVariant::operator&lt;, QVariant::operator&lt;=, QVariant::operator&gt; and QVariant::operator&gt;= were removed, because different variants are not always orderable. This also means that <db:link xlink:href="qvariant.xml">QVariant</db:link> cannot be used anymore as a key in a <db:link xlink:href="qmap.xml">QMap</db:link>.</db:para>
+</db:section>
+<db:section xml:id="the-qmetatype-class">
+<db:title>The QMetaType class</db:title>
+<db:para>In Qt 6, registration of comparators, and cQDebug and QDataStream streaming operators is done automatically. Consequently, QMetaType::registerEqualsComparator(), QMetaType::registerComparators(), qRegisterMetaTypeStreamOperators() and QMetaType::registerDebugStreamOperator() do no longer exist. Calls to those methods have to be removed when porting to Qt 6.</db:para>
+</db:section>
+<db:section xml:id="type-registration">
+<db:title>Type registration</db:title>
+<db:para>Types used in Q_PROPERTY have their meta-type stored in the class' QMetaObject. This requires the types to be complete when moc sees them, which can lead to compilation errors in code that worked in Qt 5. There are three ways to fix this issue:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Include the header which defines the type.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Instead of using an include, use the Q_MOC_INCLUDE macro. This helps if including the header would cause a cyclic dependency, or when it would slow down compilation.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If the header is present in the cpp file which implements the class, it is also possible to include the moc generated file there.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+<db:section xml:id="regular-expression-classes">
+<db:title>Regular expression classes</db:title>
+<db:section xml:id="the-qregularexpression-class">
+<db:title>The QRegularExpression class</db:title>
+<db:para>In Qt6, all methods taking the QRegExp got removed from our code-base. Therefore it is very likely that you will have to port your application or library to <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>.</db:para>
+<db:para><db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> implements Perl-compatible regular expressions. It fully supports Unicode. For an overview of the regular expression syntax supported by <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>, please refer to the aforementioned pcrepattern(3) man page. A regular expression is made up of two things: a pattern string and a set of pattern options that change the meaning of the pattern string.</db:para>
+<db:para>There are some subtle differences between <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> and QRegExp that will be explained by this document to ease the porting effort.</db:para>
+<db:para><db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> is more strict when it comes to the syntax of the regular expression. Therefore it is always good to check the expression for <db:link xlink:href="qregularexpression.xml#isValid">validity</db:link>.</db:para>
+<db:para><db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> can almost always be declared const (except when the pattern changes), while QRegExp almost never could be.</db:para>
+<db:para>There is no replacement for the <db:link xlink:href="qregexp.xml#CaretMode-enum">CaretMode</db:link> enumeration. The <db:link xlink:href="qregularexpression.xml#MatchOption-enum">QRegularExpression::AnchoredMatchOption</db:link> match option can be used to emulate the <db:link xlink:href="qregexp.xml#CaretMode-enum">QRegExp::CaretAtOffset</db:link> behavior. There is no equivalent for the other <db:link xlink:href="qregexp.xml#CaretMode-enum">QRegExp::CaretMode</db:link> modes.</db:para>
+<db:para><db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> supports only Perl-compatible regular expressions. Still, it does not support all the features available in Perl-compatible regular expressions. The most notable one is the fact that duplicated names for capturing groups are not supported, and using them can lead to undefined behavior. This may change in a future version of Qt.</db:para>
+<db:section xml:id="wildcard-matching">
+<db:title>Wildcard matching</db:title>
+<db:para>There is no direct way to do wildcard matching in <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>. However, the <db:link xlink:href="qregularexpression.xml#wildcardToRegularExpression">QRegularExpression::wildcardToRegularExpression</db:link> method is provided to translate glob patterns into a Perl-compatible regular expression that can be used for that purpose.</db:para>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>oldcode</db:code></db:emphasis><db:link xlink:href="qregexp.xml">QRegExp</db:link> wildcard(&quot;*.txt&quot;); wildcard.setPatternSyntax(<db:link xlink:href="qregexp.xml#PatternSyntax-enum">QRegExp::Wildcard</db:link>); <db:emphasis role="bold">&lt;Unknown command&gt;<db:code>newcode</db:code></db:emphasis> auto wildcard = <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>(<db:link xlink:href="qregularexpression.xml#wildcardToRegularExpression">QRegularExpression::wildcardToRegularExpression</db:link>(&quot;*.txt&quot;));</db:para>
+<db:para>Please note though that not all shell like wildcard pattern might be translated in a way you would expect it. The following example code will silently break if simply converted using the above mentioned function:</db:para>
+<db:programlisting language="cpp">const QString fp1(&quot;C:/Users/dummy/files/content.txt&quot;);
+const QString fp2(&quot;/home/dummy/files/content.txt&quot;);
+
+QRegExp re1(&quot;*/files/*&quot;);
+re1.setPatternSyntax(QRegExp::Wildcard);
+... = re1.exactMatch(fp1);  // returns true
+... = re1.exactMatch(fp2);  // returns true
+
+// but converted with QRegularExpression::wildcardToRegularExpression()
+
+QRegularExpression re2(QRegularExpression::wildcardToRegularExpression(&quot;*/files/*&quot;));
+... = re2.match(fp1).hasMatch();    // returns false
+... = re2.match(fp2).hasMatch();    // returns false
+</db:programlisting>
+</db:section>
+<db:section xml:id="searching-forward">
+<db:title>Searching forward</db:title>
+<db:para>Forward searching inside a string was usually implemented with a loop using QRegExp::indexIn and a growing offset, but can now be easily implemented with <db:link xlink:href="qregularexpressionmatchiterator.xml">QRegularExpressionMatchIterator</db:link> or <db:link xlink:href="qstring.xml#indexOf">QString::indexOf</db:link>.</db:para>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>oldcode</db:code></db:emphasis><db:link xlink:href="qstring.xml">QString</db:link> subject(&quot;the quick fox&quot;);</db:para>
+<db:para>int offset = 0; <db:link xlink:href="qregexp.xml">QRegExp</db:link> re(&quot;(\w+)&quot;); while ((offset = re.indexIn(subject, offset)) != -1) { offset += re.matchedLength(); // ... } <db:emphasis role="bold">&lt;Unknown command&gt;<db:code>newcode</db:code></db:emphasis> <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> re(&quot;(\w+)&quot;); <db:link xlink:href="qstring.xml">QString</db:link> subject(&quot;the quick fox&quot;);</db:para>
+<db:para><db:link xlink:href="qregularexpressionmatchiterator.xml">QRegularExpressionMatchIterator</db:link> i = re.globalMatch(subject); while (i.hasNext()) { <db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link> match = i.next(); // ... }</db:para>
+<db:para>// or alternatively using <db:link xlink:href="qstring.xml#indexOf">QString::indexOf</db:link></db:para>
+<db:para>qsizetype from = 0; <db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link> match; while ((from = subject.indexOf(re, from, &amp;match)) != -1) { from += match.capturedLength(); // ... }</db:para>
+</db:section>
+<db:section xml:id="searching-backwards">
+<db:title>Searching backwards</db:title>
+<db:para>Backwards searching inside a string was usually often implemented as a loop over QRegExp::lastIndexIn, but can now be easily implemented using <db:link xlink:href="qstring.xml#lastIndexOf">QString::lastIndexOf</db:link> and <db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link>.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qregularexpressionmatchiterator.xml">QRegularExpressionMatchIterator</db:link> is not capable of performing a backwards search.</db:para>
+</db:note>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>oldcode</db:code></db:emphasis>int offset = -1; <db:link xlink:href="qstring.xml">QString</db:link> subject(&quot;Lorem ipsum dolor sit amet, consetetur sadipscing.&quot;);</db:para>
+<db:para><db:link xlink:href="qregexp.xml">QRegExp</db:link> re(&quot;\s+([ids]\w+)&quot;); while ((offset = re.lastIndexIn(subject, offset)) != -1) { –offset; // ... } <db:emphasis role="bold">&lt;Unknown command&gt;<db:code>newcode</db:code></db:emphasis> qsizetype from = -1; <db:link xlink:href="qstring.xml">QString</db:link> subject(&quot;Lorem ipsum dolor sit amet, consetetur sadipscing.&quot;);</db:para>
+<db:para><db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link> match; <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> re(&quot;\s+([ids]\w+)&quot;); while ((from = subject.lastIndexOf(re, from, &amp;match)) != -1) { –from; // ... }</db:para>
+</db:section>
+<db:section xml:id="exactmatch-vs-match-hasmatch">
+<db:title>exactMatch vs. match.hasMatch</db:title>
+<db:para>QRegExp::exactMatch served two purposes: it exactly matched a regular expression against a subject string, and it implemented partial matching. Exact matching indicates whether the regular expression matches the entire subject string. For example:</db:para>
+<db:programlisting language="cpp">QString source(&quot;abc123&quot;);
+
+QRegExp(&quot;\\d+&quot;).exactMatch(source);         // returns false
+QRegExp(&quot;[a-z]+\\d+&quot;).exactMatch(source);   // returns true
+
+QRegularExpression(&quot;\\d+&quot;).match(source).hasMatch();        // returns true
+QRegularExpression(&quot;[a-z]+\\d+&quot;).match(source).hasMatch();  // returns true
+</db:programlisting>
+<db:para>Exact matching is not reflected in <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>. If you want to be sure that the subject string matches the regular expression exactly, you can wrap the pattern using the <db:link xlink:href="qregularexpression.xml#anchoredPattern">QRegularExpression::anchoredPattern</db:link> function:</db:para>
+<db:programlisting language="cpp">QString source(&quot;abc123&quot;);
+
+QString pattern(&quot;\\d+&quot;);
+QRegularExpression(pattern).match(source).hasMatch();  // returns true
+
+pattern = QRegularExpression::anchoredPattern(pattern);
+QRegularExpression(pattern).match(source).hasMatch();  // returns false
+</db:programlisting>
+</db:section>
+<db:section xml:id="minimal-matching">
+<db:title>Minimal matching</db:title>
+<db:para>QRegExp::setMinimal() implemented minimal matching by simply reversing the greediness of the quantifiers (QRegExp did not support lazy quantifiers, like *?, +?, etc.). <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> instead does support greedy, lazy and possessive quantifiers. The <db:link xlink:href="qregularexpression.xml#PatternOption-enum">QRegularExpression::InvertedGreedinessOption</db:link> pattern option can be useful to emulate the effects of QRegExp::setMinimal(): if enabled, it inverts the greediness of quantifiers (greedy ones become lazy and vice versa).</db:para>
+</db:section>
+<db:section xml:id="different-pattern-syntax">
+<db:title>Different pattern syntax</db:title>
+<db:para>Porting a regular expression from QRegExp to <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> may require changes to the pattern itself. Therefore it is recommended to check the pattern used with the <db:link xlink:href="qregularexpression.xml#isValid">QRegularExpression::isValid</db:link> method. This is especially important for user provided pattern or pattern not controlled by the developer.</db:para>
+<db:para>In other cases, a pattern ported from QRegExp to <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> may silently change semantics. Therefore, it is necessary to review the patterns used. The most notable cases of silent incompatibility are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Curly braces are needed in order to use a hexadecimal escape like \xHHHH with more than 2 digits. A pattern like \x2022 needs to be ported to \x{2022}, or it will match a space (0x20) followed by the string &quot;22&quot;. In general, it is highly recommended to always use curly braces with the \x escape, no matter the amount of digits specified.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A 0-to-n quantification like {,n} needs to be ported to {0,n} to preserve semantics. Otherwise, a pattern such as \d{,3} would actually match a digit followed by the exact string &quot;{,3}&quot;.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="partial-matching">
+<db:title>Partial Matching</db:title>
+<db:para>When using QRegExp::exactMatch(), if an exact match was not found, one could still find out how much of the subject string was matched by the regular expression by calling QRegExp::matchedLength(). If the returned length was equal to the subject string's length, then one could conclude that a partial match was found. <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> supports partial matching explicitly by means of the appropriate <db:link xlink:href="qregularexpression.xml#MatchType-enum">QRegularExpression::MatchType</db:link>.</db:para>
+</db:section>
+<db:section xml:id="global-matching">
+<db:title>Global matching</db:title>
+<db:para>Due to limitations of the QRegExp API it was impossible to implement global matching correctly (that is, like Perl does). In particular, patterns that can match zero characters (like &quot;a*&quot;) are problematic. <db:link xlink:href="qregularexpression.xml#wildcardToRegularExpression">QRegularExpression::wildcardToRegularExpression</db:link> implements Perl global match correctly, and the returned iterator can be used to examine each result.</db:para>
+</db:section>
+<db:section xml:id="unicode-properties-support">
+<db:title>Unicode properties support</db:title>
+<db:para>When using QRegExp, character classes such as \w, \d, etc. match characters with the corresponding Unicode property: for instance, \d matches any character with the Unicode Nd (decimal digit) property. Those character classes only match ASCII characters by default. When using <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link>: for instance, \d matches exactly a character in the 0-9 ASCII range. It is possible to change this behavior by using the <db:link xlink:href="qregularexpression.xml#PatternOption-enum">QRegularExpression::UseUnicodePropertiesOption</db:link> pattern option.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="the-qregexp-class">
+<db:title>The QRegExp class</db:title>
+<db:para>In Qt6 <db:link xlink:href="qregexp.xml">QRegExp</db:link> got removed from Qt Core. If your application cannot be ported right now, QRegExp still exists in Qt5Compat to keep these code-bases working. If you want to use QRegExp further, you need to link against the new Qt5Compat module and add this line to your <db:link xlink:href="qmake-manual.xml">qmake</db:link> .pro file:</db:para>
+<db:programlisting language="cpp">QT += core5compat
+</db:programlisting>
+<db:para>In case you already ported your application or library to the <db:link xlink:href="cmake-manual.xml">cmake</db:link> build system, add the following to your CMakeList.txt:</db:para>
+<db:programlisting language="cpp">PUBLIC_LIBRARIES
+    Qt::Core5Compat
+</db:programlisting>
+</db:section>
+<db:section xml:id="qevent-and-subclasses">
+<db:title>QEvent and subclasses</db:title>
+<db:para>The <db:link xlink:href="qevent.xml">QEvent</db:link> class defined a copy constructor and an assignment operator, in spite of being a polymorphic class. Copying classes with virtual methods can result in slicing when assigning objects from different classes to each other. Since copying and assigning often happens implicilty, this could lead to hard-to-debug problems.</db:para>
+<db:para>In Qt 6, the copy constructor and assignment operator for <db:link xlink:href="qevent.xml">QEvent</db:link> subclasses have been made protected to prevent implicit copying. If you need to copy events, use the <db:link xlink:href="qevent.xml#clone">clone</db:link> method, which will return a heap-allocated copy of the <db:link xlink:href="qevent.xml">QEvent</db:link> object. Make sure you delete the clone, perhaps using std::unique_ptr, unless you post it (in which case Qt will delete it once it has been delivered).</db:para>
+<db:para>In your <db:link xlink:href="qevent.xml">QEvent</db:link> subclasses, override clone(), and declare the protected and default-implemented copy constructor and assignment operator like this:</db:para>
+<db:programlisting language="cpp">class MyEvent : public QEvent
+{
+public:
+    // ...
+
+    MyEvent *clone() const override { return new MyEvent(*this); }
+
+protected:
+    MyEvent(const MyEvent &amp;amp;other) = default;
+    MyEvent &amp;amp;operator=(const MyEvent &amp;amp;other) = default;
+    MyEvent(MyEvent &amp;amp;&amp;amp;) = delete;
+    MyEvent &amp;amp;operator=(MyEvent &amp;amp;&amp;amp;) = delete;
+    // member data
+};
+</db:programlisting>
+<db:para>Note that if your MyEvent class allocates memory (e.g. through a pointer-to-implementation pattern), then you will have to implement custom copy semantics.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="other-classes">
+<db:title>Other classes</db:title>
+<db:para>In Qt 5, <db:link xlink:href="qcoreapplication.xml#quit">QCoreApplication::quit</db:link>() was equivalent to calling <db:link xlink:href="qcoreapplication.xml#exit">QCoreApplication::exit</db:link>(). This just exited the main event loop.</db:para>
+<db:para>In Qt 6, the method will instead try to close all top-level windows by posting a close event. The windows are free to cancel the shutdown process by ignoring the event.</db:para>
+<db:para>Call <db:link xlink:href="qcoreapplication.xml#exit">QCoreApplication::exit</db:link>() to keep the non-conditional behavior.</db:para>
+<db:para>QLibraryInfo::location() and QLibraryInfo::Location were deprecated due to inconsistent naming. Use the new API <db:link xlink:href="qlibraryinfo.xml#path">QLibraryInfo::path</db:link>() and <db:link xlink:href="qlibraryinfo.xml#LibraryPath-enum">QLibraryInfo::LibraryPath</db:link> instead.</db:para>
+</db:section>
+</db:article>
