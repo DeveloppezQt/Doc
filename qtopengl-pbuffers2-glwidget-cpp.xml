@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Pixel Buffers 2 Example</db:title>
+<db:productname>qtopengl</db:productname>
+<db:titleabbrev>qtopengl Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Pixel Buffers 2 example demonstrates how to use the QGLPixelBuffer class to render into an off-screen buffer and use the contents as a dynamic texture in a <db:link xlink:href="qglwidget.xml">QGLWidget</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtGui/QImage&gt;
+#include &quot;glwidget.h&quot;
+
+#include &lt;math.h&gt;
+
+#ifndef GL_MULTISAMPLE
+#define GL_MULTISAMPLE  0x809D
+#endif
+
+GLWidget::GLWidget(QWidget *parent)
+    : QGLWidget(QGLFormat(QGL::SampleBuffers), parent)
+{
+    setWindowTitle(tr(&quot;OpenGL pbuffers 2&quot;));
+
+    pbuffer = new QGLPixelBuffer(1024, 1024, format(), this);
+
+    rot_x = rot_y = rot_z = 0.0f;
+    scale = 0.1f;
+    anim = new QTimeLine(750, this);
+    anim-&gt;setUpdateInterval(20);
+    connect(anim, SIGNAL(valueChanged(qreal)), SLOT(animate(qreal)));
+    connect(anim, SIGNAL(finished()), SLOT(animFinished()));
+
+    svg_renderer = new QSvgRenderer(QLatin1String(&quot;:/res/bubbles.svg&quot;), this);
+    connect(svg_renderer, SIGNAL(repaintNeeded()), this, SLOT(draw()));
+
+    logo = QImage(&quot;:/res/designer.png&quot;);
+    logo = logo.convertToFormat(QImage::Format_ARGB32);
+
+    makeCurrent(); // need a current context to create the display list
+    tile_list = glGenLists(1);
+    glNewList(tile_list, GL_COMPILE);
+    glBegin(GL_QUADS);
+    {
+        glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
+
+        glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
+        glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
+
+        glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
+        glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
+
+        glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
+        glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
+
+        glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
+        glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
+
+        glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
+        glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
+        glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
+        glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
+}
+    glEnd();
+    glEndList();
+
+    wave = new GLfloat[logo.width()*logo.height()];
+    memset(wave, 0, logo.width()*logo.height());
+    startTimer(30); // wave timer
+
+    pbuffer-&gt;makeCurrent();
+    dynamicTexture = pbuffer-&gt;generateDynamicTexture();
+
+    // bind the dynamic texture to the pbuffer - this is a no-op under X11
+    hasDynamicTextureUpdate = pbuffer-&gt;bindToDynamicTexture(dynamicTexture);
+}
+
+GLWidget::~GLWidget()
+{
+    delete[] wave;
+    glDeleteLists(tile_list, 1);
+    pbuffer-&gt;releaseFromDynamicTexture();
+    glDeleteTextures(1, &amp;dynamicTexture);
+    delete pbuffer;
+}
+
+void GLWidget::paintEvent(QPaintEvent *)
+{
+    draw();
+}
+
+void GLWidget::draw()
+{
+    QPainter p(this); // used for text overlay
+
+    // save the GL state set for QPainter
+    p.beginNativePainting();
+    saveGLState();
+
+    // render the 'bubbles.svg' file into our pbuffer
+    QPainter pbuffer_painter(pbuffer);
+    svg_renderer-&gt;render(&amp;pbuffer_painter);
+    pbuffer_painter.end();
+    glFlush();
+
+    if (!hasDynamicTextureUpdate)
+        pbuffer-&gt;updateDynamicTexture(dynamicTexture);
+
+    makeCurrent();
+    // draw into the GL widget
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    glFrustum(-1, 1, -1, 1, 10, 100);
+    glTranslatef(0.0f, 0.0f, -15.0f);
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glViewport(0, 0, width(), height());
+
+    glBindTexture(GL_TEXTURE_2D, dynamicTexture);
+    glEnable(GL_TEXTURE_2D);
+    glEnable(GL_MULTISAMPLE);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // draw background
+    glPushMatrix();
+    glScalef(1.7f, 1.7f, 1.7f);
+    glColor4f(1.0f, 1.0f, 1.0f, 1.0f);
+    glCallList(tile_list);
+    glPopMatrix();
+
+    const int w = logo.width();
+    const int h = logo.height();
+
+    glRotatef(rot_x, 1.0f, 0.0f, 0.0f);
+    glRotatef(rot_y, 0.0f, 1.0f, 0.0f);
+    glRotatef(rot_z, 0.0f, 0.0f, 1.0f);
+    glScalef(scale/w, scale/w, scale/w);
+
+    glDepthFunc(GL_LESS);
+    glEnable(GL_DEPTH_TEST);
+
+    // draw the Qt icon
+    glTranslatef(-w+1, -h+1, 0.0f);
+    for (int y=h-1; y&gt;=0; --y) {
+        uint *p = (uint*) logo.scanLine(y);
+        uint *end = p + w;
+        int  x = 0;
+        while (p &lt; end) {
+            glColor4ub(qRed(*p), qGreen(*p), qBlue(*p), uchar(qAlpha(*p)*.9));
+            glTranslatef(0.0f, 0.0f, wave[y*w+x]);
+            if (qAlpha(*p) &gt; 128)
+                glCallList(tile_list);
+            glTranslatef(0.0f, 0.0f, -wave[y*w+x]);
+            glTranslatef(2.0f, 0.0f, 0.0f);
+            ++x;
+            ++p;
+        }
+        glTranslatef(-w*2.0f, 2.0f, 0.0f);
+    }
+
+    // restore the GL state that QPainter expects
+    restoreGLState();
+    p.endNativePainting();
+
+    // draw the overlayed text using QPainter
+    p.setPen(QColor(197, 197, 197, 157));
+    p.setBrush(QColor(197, 197, 197, 127));
+    p.drawRect(QRect(0, 0, width(), 50));
+    p.setPen(Qt::black);
+    p.setBrush(Qt::NoBrush);
+    const QString str1(tr(&quot;A simple OpenGL pbuffer example.&quot;));
+    const QString str2(tr(&quot;Use the mouse wheel to zoom, press buttons and move mouse to rotate, double-click to flip.&quot;));
+    QFontMetrics fm(p.font());
+    p.drawText(width()/2 - fm.width(str1)/2, 20, str1);
+    p.drawText(width()/2 - fm.width(str2)/2, 20 + fm.lineSpacing(), str2);
+}
+
+void GLWidget::mousePressEvent(QMouseEvent *e)
+{
+    anchor = e-&gt;pos();
+}
+
+void GLWidget::mouseMoveEvent(QMouseEvent *e)
+{
+    QPoint diff = e-&gt;pos() - anchor;
+    if (e-&gt;buttons() &amp; Qt::LeftButton) {
+        rot_x += diff.y()/5.0f;
+        rot_y += diff.x()/5.0f;
+    } else if (e-&gt;buttons() &amp; Qt::RightButton) {
+        rot_z += diff.x()/5.0f;
+    }
+
+    anchor = e-&gt;pos();
+    draw();
+}
+
+void GLWidget::wheelEvent(QWheelEvent *e)
+{
+    e-&gt;delta() &gt; 0 ? scale += scale*0.1f : scale -= scale*0.1f;
+    draw();
+}
+
+void GLWidget::mouseDoubleClickEvent(QMouseEvent *)
+{
+    anim-&gt;start();
+}
+
+void GLWidget::animate(qreal val)
+{
+    rot_y = val * 180;
+    draw();
+}
+
+void GLWidget::animFinished()
+{
+    if (anim-&gt;direction() == QTimeLine::Forward)
+        anim-&gt;setDirection(QTimeLine::Backward);
+    else
+        anim-&gt;setDirection(QTimeLine::Forward);
+}
+
+void GLWidget::saveGLState()
+{
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+}
+
+void GLWidget::restoreGLState()
+{
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+    glPopAttrib();
+}
+
+#define PI 3.14159
+
+void GLWidget::timerEvent(QTimerEvent *)
+{
+    if (QApplication::mouseButtons() != 0)
+        return;
+
+    static bool scale_in = true;
+
+    if (scale_in &amp;&amp; scale &gt; 35.0f)
+        scale_in = false;
+    else if (!scale_in &amp;&amp; scale &lt; .5f)
+        scale_in = true;
+
+    scale = scale_in ? scale + scale*0.01f : scale-scale*0.01f;
+    rot_z += 0.3f;
+    rot_x += 0.1f;
+
+    int dx, dy; // disturbance point
+    float s, v, W, t;
+    int i, j;
+    static float wt[128][128];
+    const int width = logo.width();
+    const int AMP = 5;
+
+    dx = dy = width &gt;&gt; 1;
+
+    W = .3f;
+    v = -4; // wave speed
+
+    for (i = 0; i &lt; width; ++i) {
+        for ( j = 0; j &lt; width; ++j) {
+            s = sqrt((double) ((j - dx) * (j - dx) + (i - dy) * (i - dy)));
+            wt[i][j] += 0.1f;
+            t = s / v;
+            if (s != 0)
+                wave[i*width + j] = AMP * sin(2 * PI * W * (wt[i][j] + t)) / (0.2*(s + 2));
+            else
+                wave[i*width + j] = AMP * sin(2 * PI * W * (wt[i][j] + t));
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

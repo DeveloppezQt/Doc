@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Editable Tree Model Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to implement a simple item-based tree model that can be used with other classes the model/view framework.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;treemodel.h&quot;
+
+#include &lt;QFile&gt;
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+{
+    setupUi(this);
+
+    QStringList headers;
+    headers &lt;&lt; tr(&quot;Title&quot;) &lt;&lt; tr(&quot;Description&quot;);
+
+    QFile file(&quot;:/default.txt&quot;);
+    file.open(QIODevice::ReadOnly);
+    TreeModel *model = new TreeModel(headers, file.readAll());
+    file.close();
+
+    view-&gt;setModel(model);
+    for (int column = 0; column &lt; model-&gt;columnCount(); ++column)
+        view-&gt;resizeColumnToContents(column);
+
+    connect(exitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+
+    connect(view-&gt;selectionModel(),
+            SIGNAL(selectionChanged(const QItemSelection &amp;,
+                                    const QItemSelection &amp;)),
+            this, SLOT(updateActions()));
+
+    connect(actionsMenu, SIGNAL(aboutToShow()), this, SLOT(updateActions()));
+    connect(insertRowAction, SIGNAL(triggered()), this, SLOT(insertRow()));
+    connect(insertColumnAction, SIGNAL(triggered()), this, SLOT(insertColumn()));
+    connect(removeRowAction, SIGNAL(triggered()), this, SLOT(removeRow()));
+    connect(removeColumnAction, SIGNAL(triggered()), this, SLOT(removeColumn()));
+    connect(insertChildAction, SIGNAL(triggered()), this, SLOT(insertChild()));
+
+    updateActions();
+}
+
+void MainWindow::insertChild()
+{
+    QModelIndex index = view-&gt;selectionModel()-&gt;currentIndex();
+    QAbstractItemModel *model = view-&gt;model();
+
+    if (model-&gt;columnCount(index) == 0) {
+        if (!model-&gt;insertColumn(0, index))
+            return;
+    }
+
+    if (!model-&gt;insertRow(0, index))
+        return;
+
+    for (int column = 0; column &lt; model-&gt;columnCount(index); ++column) {
+        QModelIndex child = model-&gt;index(0, column, index);
+        model-&gt;setData(child, QVariant(&quot;[No data]&quot;), Qt::EditRole);
+        if (!model-&gt;headerData(column, Qt::Horizontal).isValid())
+            model-&gt;setHeaderData(column, Qt::Horizontal, QVariant(&quot;[No header]&quot;), Qt::EditRole);
+    }
+
+    view-&gt;selectionModel()-&gt;setCurrentIndex(model-&gt;index(0, 0, index),
+                                            QItemSelectionModel::ClearAndSelect);
+    updateActions();
+}
+
+bool MainWindow::insertColumn(const QModelIndex &amp;parent)
+{
+    QAbstractItemModel *model = view-&gt;model();
+    int column = view-&gt;selectionModel()-&gt;currentIndex().column();
+
+    // Insert a column in the parent item.
+    bool changed = model-&gt;insertColumn(column + 1, parent);
+    if (changed)
+        model-&gt;setHeaderData(column + 1, Qt::Horizontal, QVariant(&quot;[No header]&quot;), Qt::EditRole);
+
+    updateActions();
+
+    return changed;
+}
+
+void MainWindow::insertRow()
+{
+    QModelIndex index = view-&gt;selectionModel()-&gt;currentIndex();
+    QAbstractItemModel *model = view-&gt;model();
+
+    if (!model-&gt;insertRow(index.row()+1, index.parent()))
+        return;
+
+    updateActions();
+
+    for (int column = 0; column &lt; model-&gt;columnCount(index.parent()); ++column) {
+        QModelIndex child = model-&gt;index(index.row()+1, column, index.parent());
+        model-&gt;setData(child, QVariant(&quot;[No data]&quot;), Qt::EditRole);
+    }
+}
+
+bool MainWindow::removeColumn(const QModelIndex &amp;parent)
+{
+    QAbstractItemModel *model = view-&gt;model();
+    int column = view-&gt;selectionModel()-&gt;currentIndex().column();
+
+    // Insert columns in each child of the parent item.
+    bool changed = model-&gt;removeColumn(column, parent);
+
+    if (!parent.isValid() &amp;&amp; changed)
+        updateActions();
+
+    return changed;
+}
+
+void MainWindow::removeRow()
+{
+    QModelIndex index = view-&gt;selectionModel()-&gt;currentIndex();
+    QAbstractItemModel *model = view-&gt;model();
+    if (model-&gt;removeRow(index.row(), index.parent()))
+        updateActions();
+}
+
+void MainWindow::updateActions()
+{
+    bool hasSelection = !view-&gt;selectionModel()-&gt;selection().isEmpty();
+    removeRowAction-&gt;setEnabled(hasSelection);
+    removeColumnAction-&gt;setEnabled(hasSelection);
+
+    bool hasCurrent = view-&gt;selectionModel()-&gt;currentIndex().isValid();
+    insertRowAction-&gt;setEnabled(hasCurrent);
+    insertColumnAction-&gt;setEnabled(hasCurrent);
+
+    if (hasCurrent) {
+        view-&gt;closePersistentEditor(view-&gt;selectionModel()-&gt;currentIndex());
+
+        int row = view-&gt;selectionModel()-&gt;currentIndex().row();
+        int column = view-&gt;selectionModel()-&gt;currentIndex().column();
+        if (view-&gt;selectionModel()-&gt;currentIndex().parent().isValid())
+            statusBar()-&gt;showMessage(tr(&quot;Position: (%1,%2)&quot;).arg(row).arg(column));
+        else
+            statusBar()-&gt;showMessage(tr(&quot;Position: (%1,%2) in top level&quot;).arg(row).arg(column));
+    }
+}
+
+</db:programlisting>
+</db:article>

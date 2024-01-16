@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Recent Files Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Recent Files example shows how a standard File menu can be extended to show the most recent files loaded by a main window application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;mainwindow.h&quot;
+
+MainWindow::MainWindow()
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+
+    textEdit = new QTextEdit;
+    setCentralWidget(textEdit);
+
+    createActions();
+    createMenus();
+    (void)statusBar();
+
+    setWindowFilePath(QString());
+    resize(400, 300);
+}
+
+void MainWindow::newFile()
+{
+    MainWindow *other = new MainWindow;
+    other-&gt;show();
+}
+
+void MainWindow::open()
+{
+    QString fileName = QFileDialog::getOpenFileName(this);
+    if (!fileName.isEmpty())
+        loadFile(fileName);
+}
+
+void MainWindow::save()
+{
+    if (curFile.isEmpty())
+        saveAs();
+    else
+        saveFile(curFile);
+}
+
+void MainWindow::saveAs()
+{
+    QString fileName = QFileDialog::getSaveFileName(this);
+    if (fileName.isEmpty())
+        return;
+
+    saveFile(fileName);
+}
+
+void MainWindow::openRecentFile()
+{
+    QAction *action = qobject_cast&lt;QAction *&gt;(sender());
+    if (action)
+        loadFile(action-&gt;data().toString());
+}
+
+void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About Recent Files&quot;),
+            tr(&quot;The &lt;b&gt;Recent Files&lt;/b&gt; example demonstrates how to provide a &quot;
+               &quot;recently used file menu in a Qt application.&quot;));
+}
+
+void MainWindow::createActions()
+{
+    newAct = new QAction(tr(&quot;&amp;New&quot;), this);
+    newAct-&gt;setShortcuts(QKeySequence::New);
+    newAct-&gt;setStatusTip(tr(&quot;Create a new file&quot;));
+    connect(newAct, SIGNAL(triggered()), this, SLOT(newFile()));
+
+    openAct = new QAction(tr(&quot;&amp;Open...&quot;), this);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+    openAct-&gt;setStatusTip(tr(&quot;Open an existing file&quot;));
+    connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
+
+    saveAct = new QAction(tr(&quot;&amp;Save&quot;), this);
+    saveAct-&gt;setShortcuts(QKeySequence::Save);
+    saveAct-&gt;setStatusTip(tr(&quot;Save the document to disk&quot;));
+    connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
+
+    saveAsAct = new QAction(tr(&quot;Save &amp;As...&quot;), this);
+    saveAsAct-&gt;setShortcuts(QKeySequence::SaveAs);
+    saveAsAct-&gt;setStatusTip(tr(&quot;Save the document under a new name&quot;));
+    connect(saveAsAct, SIGNAL(triggered()), this, SLOT(saveAs()));
+
+    for (int i = 0; i &lt; MaxRecentFiles; ++i) {
+        recentFileActs[i] = new QAction(this);
+        recentFileActs[i]-&gt;setVisible(false);
+        connect(recentFileActs[i], SIGNAL(triggered()),
+                this, SLOT(openRecentFile()));
+    }
+
+    exitAct = new QAction(tr(&quot;E&amp;xit&quot;), this);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+    exitAct-&gt;setStatusTip(tr(&quot;Exit the application&quot;));
+    connect(exitAct, SIGNAL(triggered()), qApp, SLOT(closeAllWindows()));
+
+    aboutAct = new QAction(tr(&quot;&amp;About&quot;), this);
+    aboutAct-&gt;setStatusTip(tr(&quot;Show the application's About box&quot;));
+    connect(aboutAct, SIGNAL(triggered()), this, SLOT(about()));
+
+    aboutQtAct = new QAction(tr(&quot;About &amp;Qt&quot;), this);
+    aboutQtAct-&gt;setStatusTip(tr(&quot;Show the Qt library's About box&quot;));
+    connect(aboutQtAct, SIGNAL(triggered()), qApp, SLOT(aboutQt()));
+}
+
+void MainWindow::createMenus()
+{
+    fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    fileMenu-&gt;addAction(newAct);
+    fileMenu-&gt;addAction(openAct);
+    fileMenu-&gt;addAction(saveAct);
+    fileMenu-&gt;addAction(saveAsAct);
+    separatorAct = fileMenu-&gt;addSeparator();
+    for (int i = 0; i &lt; MaxRecentFiles; ++i)
+        fileMenu-&gt;addAction(recentFileActs[i]);
+    fileMenu-&gt;addSeparator();
+    fileMenu-&gt;addAction(exitAct);
+    updateRecentFileActions();
+
+    menuBar()-&gt;addSeparator();
+
+    helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    helpMenu-&gt;addAction(aboutAct);
+    helpMenu-&gt;addAction(aboutQtAct);
+}
+
+void MainWindow::loadFile(const QString &amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;Recent Files&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                             .arg(fileName)
+                             .arg(file.errorString()));
+        return;
+    }
+
+    QTextStream in(&amp;file);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    textEdit-&gt;setPlainText(in.readAll());
+    QApplication::restoreOverrideCursor();
+
+    setCurrentFile(fileName);
+    statusBar()-&gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+}
+
+void MainWindow::saveFile(const QString &amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;Recent Files&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                             .arg(fileName)
+                             .arg(file.errorString()));
+        return;
+    }
+
+    QTextStream out(&amp;file);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    out &lt;&lt; textEdit-&gt;toPlainText();
+    QApplication::restoreOverrideCursor();
+
+    setCurrentFile(fileName);
+    statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+
+void MainWindow::setCurrentFile(const QString &amp;fileName)
+{
+    curFile = fileName;
+    setWindowFilePath(curFile);
+
+    QSettings settings;
+    QStringList files = settings.value(&quot;recentFileList&quot;).toStringList();
+    files.removeAll(fileName);
+    files.prepend(fileName);
+    while (files.size() &gt; MaxRecentFiles)
+        files.removeLast();
+
+    settings.setValue(&quot;recentFileList&quot;, files);
+
+    foreach (QWidget *widget, QApplication::topLevelWidgets()) {
+        MainWindow *mainWin = qobject_cast&lt;MainWindow *&gt;(widget);
+        if (mainWin)
+            mainWin-&gt;updateRecentFileActions();
+    }
+}
+
+void MainWindow::updateRecentFileActions()
+{
+    QSettings settings;
+    QStringList files = settings.value(&quot;recentFileList&quot;).toStringList();
+
+    int numRecentFiles = qMin(files.size(), (int)MaxRecentFiles);
+
+    for (int i = 0; i &lt; numRecentFiles; ++i) {
+        QString text = tr(&quot;&amp;%1 %2&quot;).arg(i + 1).arg(strippedName(files[i]));
+        recentFileActs[i]-&gt;setText(text);
+        recentFileActs[i]-&gt;setData(files[i]);
+        recentFileActs[i]-&gt;setVisible(true);
+    }
+    for (int j = numRecentFiles; j &lt; MaxRecentFiles; ++j)
+        recentFileActs[j]-&gt;setVisible(false);
+
+    separatorAct-&gt;setVisible(numRecentFiles &gt; 0);
+}
+
+QString MainWindow::strippedName(const QString &amp;fullFileName)
+{
+    return QFileInfo(fullFileName).fileName();
+}
+
+</db:programlisting>
+</db:article>
