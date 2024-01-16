@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Overpainting Example</db:title>
+<db:productname>QtOpenGL</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>QtOpenGL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Overpainting example shows how QPainter can be used to overpaint a scene rendered using OpenGL in a QGLWidget.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/overpainting-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>QGLWidget provides a widget with integrated OpenGL graphics support that enables 3D graphics to be displayed using normal OpenGL calls, yet also behaves like any other standard Qt widget with support for signals and slots, properties, and Qt's action system.</db:para>
+<db:para>Usually, QGLWidget is subclassed to display a pure 3D scene. The developer reimplements <db:link xlink:href="">initializeGL()</db:link> to initialize any required resources, <db:link xlink:href="">resizeGL()</db:link> to set up the projection and viewport, and <db:link xlink:href="">paintGL()</db:link> to perform the OpenGL calls needed to render the scene. However, it is possible to subclass QGLWidget differently to allow 2D graphics, drawn using QPainter, to be painted over a scene rendered using OpenGL.</db:para>
+<db:para>In this example, we demonstrate how this is done by reusing the code from the <db:link xlink:href="qtopengl-hellogl-example.xml">Hello GL</db:link> example to provide a 3D scene, and painting over it with some translucent 2D graphics. Instead of examining each class in detail, we only cover the parts of the <db:code>GLWidget</db:code> class that enable overpainting, and provide more detailed discussion in the final section of this document.</db:para>
+<db:section xml:id="glwidget-class-definition">
+<db:title>GLWidget Class Definition</db:title>
+<db:para>The <db:code>GLWidget</db:code> class is a subclass of QGLWidget, based on the one used in the <db:link xlink:href="qtopengl-hellogl-example.xml">Hello GL</db:link> example. Rather than describe the class as a whole, we show the first few lines of the class and only discuss the changes we have made to the rest of it:</db:para>
+<db:programlisting language="cpp">class GLWidget : public QGLWidget
+{
+    Q_OBJECT
+
+public:
+    GLWidget(QWidget *parent = 0);
+    ~GLWidget();
+    ...
+protected:
+    void initializeGL();
+    void paintEvent(QPaintEvent *event);
+    void resizeGL(int width, int height);
+    void mousePressEvent(QMouseEvent *event);
+    void mouseMoveEvent(QMouseEvent *event);
+    void showEvent(QShowEvent *event);
+
+private slots:
+    void animate();
+
+private:
+    void createBubbles(int number);
+    void drawInstructions(QPainter *painter);
+    ...
+    QtLogo *logo;
+    QList&lt;Bubble*&gt; bubbles;
+    QTimer animationTimer;
+</db:programlisting>
+<db:para>As usual, the widget uses <db:link xlink:href="">initializeGL()</db:link> to set up geometry for our scene and perform OpenGL initialization tasks. The <db:link xlink:href="">resizeGL()</db:link> function is used to ensure that the 3D graphics in the scene are transformed correctly to the 2D viewport displayed in the widget.</db:para>
+<db:para>Instead of implementing <db:link xlink:href="">paintGL()</db:link> to handle updates to the widget, we implement a normal QWidget::paintEvent(). This allows us to mix OpenGL calls and QPainter operations in a controlled way.</db:para>
+<db:para>In this example, we also implement QWidget::showEvent() to help with the initialization of the 2D graphics used.</db:para>
+<db:para>The new private member functions and variables relate exclusively to the 2D graphics and animation. The <db:code>animate()</db:code> slot is called periodically by the <db:code>animationTimer</db:code> to update the widget; the <db:code>createBubbles()</db:code> function initializes the <db:code>bubbles</db:code> list with instances of a helper class used to draw the animation; the <db:code>drawInstructions()</db:code> function is responsible for a semi-transparent message that is also overpainted onto the OpenGL scene.</db:para>
+</db:section>
+<db:section xml:id="glwidget-class-implementation">
+<db:title>GLWidget Class Implementation</db:title>
+<db:para>Again, we only show the parts of the <db:code>GLWidget</db:code> implementation that are relevant to this example. In the constructor, we initialize a <db:link xlink:href="qtimer.xml">QTimer</db:link> to control the animation:</db:para>
+<db:programlisting language="cpp">GLWidget::GLWidget(QWidget *parent)
+    : QGLWidget(QGLFormat(QGL::SampleBuffers), parent)
+{
+    QTime midnight(0, 0, 0);
+    qsrand(midnight.secsTo(QTime::currentTime()));
+
+    logo = 0;
+    xRot = 0;
+    yRot = 0;
+    zRot = 0;
+
+    qtGreen = QColor::fromCmykF(0.40, 0.0, 1.0, 0.0);
+    qtPurple = QColor::fromCmykF(0.39, 0.39, 0.0, 0.0);
+
+    animationTimer.setSingleShot(false);
+    connect(&amp;animationTimer, SIGNAL(timeout()), this, SLOT(animate()));
+    animationTimer.start(25);
+
+    setAutoFillBackground(false);
+    setMinimumSize(200, 200);
+    setWindowTitle(tr(&quot;Overpainting a Scene&quot;));
+}
+</db:programlisting>
+<db:para>We turn off the widget's autoFillBackground property to instruct OpenGL not to paint a background for the widget when <db:link xlink:href="">QPainter::begin()</db:link> is called.</db:para>
+<db:para>As in the <db:link xlink:href="qtopengl-hellogl-example.xml">Hello GL</db:link> example, the destructor is responsible for freeing any OpenGL-related resources:</db:para>
+<db:programlisting language="cpp">GLWidget::~GLWidget()
+{
+}
+</db:programlisting>
+<db:para>The <db:code>initializeGL()</db:code> function is fairly minimal, only setting up the QtLogo object used in the scene. See the <db:link xlink:href="qtopengl-hellogl-example.xml">Hello GL</db:link> example for details of the QtLogo class.</db:para>
+<db:programlisting language="cpp">void GLWidget::initializeGL()
+{
+    glEnable(GL_MULTISAMPLE);
+
+    logo = new QtLogo(this);
+    logo-&gt;setColor(qtGreen.dark());
+}
+</db:programlisting>
+<db:para>To cooperate fully with QPainter, we defer matrix stack operations and attribute initialization until the widget needs to be updated.</db:para>
+<db:para>In this example, we implement <db:link xlink:href="">paintEvent()</db:link> rather than <db:link xlink:href="">paintGL()</db:link> to render our scene. When drawing on a QGLWidget, the paint engine used by QPainter performs certain operations that change the states of the OpenGL implementation's matrix and property stacks. Therefore, it is necessary to make all the OpenGL calls to display the 3D graphics before we construct a QPainter to draw the 2D overlay.</db:para>
+<db:para>We render a 3D scene by setting up model and projection transformations and other attributes. We use an OpenGL stack operation to preserve the original matrix state, allowing us to recover it later:</db:para>
+<db:programlisting language="cpp">    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+</db:programlisting>
+<db:para>We define a color to use for the widget's background, and set up various attributes that define how the scene will be rendered.</db:para>
+<db:programlisting language="cpp">    qglClearColor(qtPurple.dark());
+    glShadeModel(GL_SMOOTH);
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_MULTISAMPLE);
+    static GLfloat lightPosition[4] = { 0.5, 5.0, 7.0, 1.0 };
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+
+    qreal pixelRatio = devicePixelRatio();
+    setupViewport(width() * pixelRatio, height() * pixelRatio);
+</db:programlisting>
+<db:para>We call the <db:code>setupViewport()</db:code> private function to set up the projection used for the scene. This is unnecessary in OpenGL examples that implement the <db:link xlink:href="">paintGL()</db:link> function because the matrix stacks are usually unmodified between calls to <db:link xlink:href="">resizeGL()</db:link> and <db:link xlink:href="">paintGL()</db:link>.</db:para>
+<db:para>Since the widget's background is not drawn by the system or by Qt, we use an OpenGL call to paint it before positioning the object defined earlier in the scene:</db:para>
+<db:programlisting language="cpp">    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glLoadIdentity();
+    glTranslatef(0.0, 0.0, -10.0);
+    glRotatef(xRot / 16.0, 1.0, 0.0, 0.0);
+    glRotatef(yRot / 16.0, 0.0, 1.0, 0.0);
+    glRotatef(zRot / 16.0, 0.0, 0.0, 1.0);
+
+    logo-&gt;draw();
+</db:programlisting>
+<db:para>Once the QtLogo object's draw method has been executed, the GL states we changed and the matrix stack needs to be restored to its original state at the start of this function before we can begin overpainting:</db:para>
+<db:programlisting language="cpp">    glShadeModel(GL_FLAT);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+
+    glMatrixMode(GL_MODELVIEW);
+    glPopMatrix();
+</db:programlisting>
+<db:para>With the 3D graphics done, we construct a QPainter for use on the widget and simply overpaint the widget with 2D graphics; in this case, using a helper class to draw a number of translucent bubbles onto the widget, and calling <db:code>drawInstructions()</db:code> to overlay some instructions:</db:para>
+<db:programlisting language="cpp">    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    foreach (Bubble *bubble, bubbles) {
+        if (bubble-&gt;rect().intersects(event-&gt;rect()))
+            bubble-&gt;drawBubble(&amp;painter);
+    }
+    drawInstructions(&amp;painter);
+    painter.end();
+}
+</db:programlisting>
+<db:para>When QPainter::end() is called, suitable OpenGL-specific calls are made to write the scene, and its additional contents, onto the widget.</db:para>
+<db:para>With <db:link xlink:href="">paintGL()</db:link> the <db:link xlink:href="">swapBuffers()</db:link> call is done for us. But an explicit call to swapBuffers() is still not required because in the <db:link xlink:href="">paintEvent()</db:link> method the QPainter on the OpenGL widget takes care of this for us.</db:para>
+<db:para>The implementation of the <db:link xlink:href="">resizeGL()</db:link> function sets up the dimensions of the viewport and defines a projection transformation:</db:para>
+<db:programlisting language="cpp">void GLWidget::resizeGL(int width, int height)
+{
+    qreal pixelRatio = devicePixelRatio();
+    setupViewport(width*pixelRatio, height*pixelRatio);
+}
+</db:programlisting>
+<db:para>Ideally, we want to arrange the 2D graphics to suit the widget's dimensions. To achieve this, we implement the <db:link xlink:href="">showEvent()</db:link> handler, creating new graphic elements (bubbles) if necessary at appropriate positions in the widget.</db:para>
+<db:programlisting language="cpp">void GLWidget::showEvent(QShowEvent *event)
+{
+    Q_UNUSED(event);
+    createBubbles(20 - bubbles.count());
+}
+</db:programlisting>
+<db:para>This function only has an effect if less than 20 bubbles have already been created.</db:para>
+<db:para>The <db:code>animate()</db:code> slot is called every time the widget's <db:code>animationTimer</db:code> emits the <db:link xlink:href="qtimer.xml#timeout">timeout</db:link>() signal. This keeps the bubbles moving around.</db:para>
+<db:programlisting language="cpp">void GLWidget::animate()
+{
+    QMutableListIterator&lt;Bubble*&gt; iter(bubbles);
+
+    while (iter.hasNext()) {
+        Bubble *bubble = iter.next();
+        bubble-&gt;move(rect());
+    }
+    update();
+}
+</db:programlisting>
+<db:para>We simply iterate over the bubbles in the <db:code>bubbles</db:code> list, updating the widget before and after each of them is moved.</db:para>
+<db:para>The <db:code>setupViewport()</db:code> function is called from <db:code>paintEvent()</db:code> and <db:code>resizeGL()</db:code>.</db:para>
+<db:programlisting language="cpp">void GLWidget::setupViewport(int width, int height)
+{
+    int side = qMin(width, height);
+    glViewport((width - side) / 2, (height - side) / 2, side, side);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+#ifdef QT_OPENGL_ES
+    glOrthof(-0.5, +0.5, -0.5, 0.5, 4.0, 15.0);
+#else
+    glOrtho(-0.5, +0.5, -0.5, 0.5, 4.0, 15.0);
+#endif
+    glMatrixMode(GL_MODELVIEW);
+}
+</db:programlisting>
+<db:para>The <db:code>drawInstructions()</db:code> function is used to prepare some basic instructions that will be painted with the other 2D graphics over the 3D scene.</db:para>
+<db:programlisting language="cpp">void GLWidget::drawInstructions(QPainter *painter)
+{
+    QString text = tr(&quot;Click and drag with the left mouse button &quot;
+                      &quot;to rotate the Qt logo.&quot;);
+    QFontMetrics metrics = QFontMetrics(font());
+    int border = qMax(4, metrics.leading());
+
+    QRect rect = metrics.boundingRect(0, 0, width() - 2*border, int(height()*0.125),
+                                      Qt::AlignCenter | Qt::TextWordWrap, text);
+    painter-&gt;setRenderHint(QPainter::TextAntialiasing);
+    painter-&gt;fillRect(QRect(0, 0, width(), rect.height() + 2*border),
+                     QColor(0, 0, 0, 127));
+    painter-&gt;setPen(Qt::white);
+    painter-&gt;fillRect(QRect(0, 0, width(), rect.height() + 2*border),
+                      QColor(0, 0, 0, 127));
+    painter-&gt;drawText((width() - rect.width())/2, border,
+                      rect.width(), rect.height(),
+                      Qt::AlignCenter | Qt::TextWordWrap, text);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="summary">
+<db:title>Summary</db:title>
+<db:para>When overpainting 2D content onto 3D content, we need to use a QPainter <db:emphasis>and</db:emphasis> make OpenGL calls to achieve the desired effect. Since QPainter itself uses OpenGL calls when used on a QGLWidget subclass, we need to preserve the state of various OpenGL stacks when we perform our own calls, using the following approach:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Reimplement QGLWidget::initializeGL(), but only perform minimal initialization. QPainter will perform its own initialization routines, modifying the matrix and property stacks, so it is better to defer certain initialization tasks until just before you render the 3D scene.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Reimplement QGLWidget::resizeGL() as in the pure 3D case.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Reimplement QWidget::paintEvent() to draw both 2D and 3D graphics.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The <db:link xlink:href="">paintEvent()</db:link> implementation performs the following tasks:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Push the current OpenGL modelview matrix onto a stack.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Perform initialization tasks usually done in the <db:link xlink:href="">initializeGL()</db:link> function.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Perform code that would normally be located in the widget's <db:link xlink:href="">resizeGL()</db:link> function to set the correct perspective transformation and set up the viewport.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Render the scene using OpenGL calls.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Pop the OpenGL modelview matrix off the stack.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Construct a QPainter object.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Initialize it for use on the widget with the QPainter::begin() function.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Draw primitives using QPainter's member functions.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Call QPainter::end() to finish painting.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/bubble.cpp">overpainting/bubble.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/bubble.h">overpainting/bubble.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/glwidget.cpp">overpainting/glwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/glwidget.h">overpainting/glwidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/main.cpp">overpainting/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="overpainting/overpainting.pro">overpainting/overpainting.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Scene Graph - Simple Material</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to define a scene graph material to fill a shape.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simplematerial-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In this example, we will make use of the <db:link xlink:href="qsgsimplematerialshader-qtquick-proxy.xml">QSGSimpleMaterialShader</db:link> class to fill a shape in the scene graph. This is a convenience class intended to avoid a lot of the boilerplate code required when creating materials with the QSGMaterial, QSGMaterialShader and <db:link xlink:href="qsgmaterialtype.xml">QSGMaterialType</db:link> classes directly.</db:para>
+<db:para>A simple material consists of two parts, the material state and the material shader. The material shader has one instance per scene graph and contains the actual OpenGL shader program and information about which attributes and uniforms it uses. The material state is what we assign to each individual node, in this case to give them different colors.</db:para>
+<db:programlisting language="cpp">struct State
+{
+    QColor color;
+
+    int compare(const State *other) const {
+        uint rgb = color.rgba();
+        uint otherRgb = other-&gt;color.rgba();
+
+        if (rgb == otherRgb) {
+            return 0;
+        } else if (rgb &lt; otherRgb) {
+            return -1;
+        } else {
+            return 1;
+        }
+    }
+};
+</db:programlisting>
+<db:para>The first thing we do when creating custom materials with the simplified scheme is to create a state class. In this case the state class contains only one member, a QColor. It also defines a compare function which the scene graph can use to reorder the node rendering.</db:para>
+<db:programlisting language="cpp">class Shader : public QSGSimpleMaterialShader&lt;State&gt;
+{
+    QSG_DECLARE_SIMPLE_COMPARABLE_SHADER(Shader, State);
+</db:programlisting>
+<db:para>Next we define the material shader, by subclassing a template instantiation of <db:link xlink:href="qsgsimplematerialshader-qtquick-proxy.xml">QSGSimpleMaterialShader</db:link> with our <db:code>State</db:code>.</db:para>
+<db:para>Then we use the macro <db:link xlink:href="qsgsimplematerialshader-qtquick-proxy.xml#QSG_DECLARE_SIMPLE_COMPARABLE_SHADER">QSG_DECLARE_SIMPLE_COMPARABLE_SHADER</db:link>() which will generate some boilerplate code for us. Since our <db:code>State</db:code> class has a compare function, we declare that the states can be compared. It would have been possible to remove the <db:code>State::compare()</db:code> function and instead declare the shader with <db:link xlink:href="qsgsimplematerialshader-qtquick-proxy.xml#QSG_DECLARE_SIMPLE_SHADER">QSG_DECLARE_SIMPLE_SHADER</db:link>(), but this could then reduce performance in certain usecases.</db:para>
+<db:para>The state struct is used as a template parameter to automatically generate a <db:link xlink:href="qsgmaterialtype.xml">QSGMaterialType</db:link> for us, so it is crucial that the pair of shader and state are made up of unique classes. Using the same <db:code>State</db:code> class in multiple shaders will will lead to undefined behavior.</db:para>
+<db:programlisting language="cpp">public:
+
+    const char *vertexShader() const {
+        return
+                &quot;attribute highp vec4 aVertex;                              \n&quot;
+                &quot;attribute highp vec2 aTexCoord;                            \n&quot;
+                &quot;uniform highp mat4 qt_Matrix;                              \n&quot;
+                &quot;varying highp vec2 texCoord;                               \n&quot;
+                &quot;void main() {                                              \n&quot;
+                &quot;    gl_Position = qt_Matrix * aVertex;                     \n&quot;
+                &quot;    texCoord = aTexCoord;                                  \n&quot;
+                &quot;}&quot;;
+    }
+
+    const char *fragmentShader() const {
+        return
+                &quot;uniform lowp float qt_Opacity;                             \n&quot;
+                &quot;uniform lowp vec4 color;                                   \n&quot;
+                &quot;varying highp vec2 texCoord;                               \n&quot;
+                &quot;void main ()                                               \n&quot;
+                &quot;{                                                          \n&quot;
+                &quot;    gl_FragColor = texCoord.y * texCoord.x * color * qt_Opacity;  \n&quot;
+                &quot;}&quot;;
+    }
+</db:programlisting>
+<db:para>Next comes the declaration of the shader source code, where we define a vertex and fragment shader. The simple material assumes the presence of <db:code>qt_Matrix</db:code> in the vertex shader and <db:code>qt_Opacity</db:code> in the fragment shader.</db:para>
+<db:programlisting language="cpp">    QList&lt;QByteArray&gt; attributes() const
+    {
+        return QList&lt;QByteArray&gt;() &lt;&lt; &quot;aVertex&quot; &lt;&lt; &quot;aTexCoord&quot;;
+    }
+</db:programlisting>
+<db:para>We reimplement the <db:code>attributes</db:code> function to return the name of the <db:code>aVertex</db:code> and <db:code>aTexCoord</db:code> attribute names. These attributes will be mapped to attribute indices 0 and 1 in the node's geometry.</db:para>
+<db:programlisting language="cpp">    void resolveUniforms()
+    {
+        id_color = program()-&gt;uniformLocation(&quot;color&quot;);
+    }
+
+private:
+    int id_color;
+</db:programlisting>
+<db:para>Uniforms can be accessed either by name or by index, where index is faster than name, so we reimplement the <db:code>resolveUniforms()</db:code> function to find the index of the <db:code>color</db:code> uniform. We do not have to worry about resolving <db:code>qt_Opacity</db:code> or <db:code>qt_Matrix</db:code> as these are handled by the baseclass.</db:para>
+<db:programlisting language="cpp">    void updateState(const State *state, const State *)
+    {
+        program()-&gt;setUniformValue(id_color, state-&gt;color);
+    }
+</db:programlisting>
+<db:para>The <db:code>updateState()</db:code> function is called once for every unique state and we use it to update the shader program with the current color. The previous state is passed in as a second parameter so that the user can update only that which has changed. In our usecase, where all the colors are different, the updateState will be called once for every node.</db:para>
+<db:programlisting language="cpp">class ColorNode : public QSGGeometryNode
+{
+public:
+    ColorNode()
+        : m_geometry(QSGGeometry::defaultAttributes_TexturedPoint2D(), 4)
+    {
+        setGeometry(&amp;m_geometry);
+
+        QSGSimpleMaterial&lt;State&gt; *material = Shader::createMaterial();
+        material-&gt;setFlag(QSGMaterial::Blending);
+        setMaterial(material);
+        setFlag(OwnsMaterial);
+    }
+
+    QSGGeometry m_geometry;
+};
+</db:programlisting>
+<db:para>The <db:code>ColorNode</db:code> class is supposed to draw something, so it needs to be a subclass of QSGGeometryNode.</db:para>
+<db:para>Since our shader expects both a position and a texture coordinate, we use the default attribute set <db:link xlink:href="">QSGGeometry::defaultAttributes_TexturedPoint2D()</db:link> and define that the geometry consists of a total of four vertices. To avoid the allocation, we make the QSGGeometry a member of the QSGGeometryNode.</db:para>
+<db:para>When used the macro <db:link xlink:href="qsgsimplematerialshader-qtquick-proxy.xml#QSG_DECLARE_SIMPLE_COMPARABLE_SHADER">QSG_DECLARE_SIMPLE_COMPARABLE_SHADER</db:link>() above, it defined the <db:code>createMaterial()</db:code> function which we use to instantiate materials for our <db:code>State</db:code> struct.</db:para>
+<db:para>As we will be making use of opacity in our custom material, we need to set the <db:link xlink:href="">QSGMaterial::Blending</db:link> flag. The scene graph may use this flag to either disable or enable <db:code>GL_BLEND</db:code> when drawing the node or to reorder the drawing of the node.</db:para>
+<db:para>Finally, we tell the node to take ownership of the material, so we do not have to explicitly memorymanage it.</db:para>
+<db:programlisting language="cpp">class Item : public QQuickItem
+{
+    Q_OBJECT
+
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY colorChanged)
+
+public:
+
+    Item()
+    {
+        setFlag(ItemHasContents, true);
+    }
+
+    void setColor(const QColor &amp;color) {
+        if (m_color != color) {
+            m_color = color;
+            emit colorChanged();
+            update();
+        }
+    }
+    QColor color() const {
+        return m_color;
+    }
+
+signals:
+    void colorChanged();
+
+private:
+  QColor m_color;
+
+</db:programlisting>
+<db:para>Since the Item is providing its own graphics to the scene graph, we set the flag <db:link xlink:href="">QQuickItem::ItemHasContents</db:link>.</db:para>
+<db:programlisting language="cpp">public:
+    QSGNode *updatePaintNode(QSGNode *node, UpdatePaintNodeData *)
+    {
+        ColorNode *n = static_cast&lt;ColorNode *&gt;(node);
+        if (!node)
+            n = new ColorNode();
+
+        QSGGeometry::updateTexturedRectGeometry(n-&gt;geometry(), boundingRect(), QRectF(0, 0, 1, 1));
+        static_cast&lt;QSGSimpleMaterial&lt;State&gt;*&gt;(n-&gt;material())-&gt;state()-&gt;color = m_color;
+
+        n-&gt;markDirty(QSGNode::DirtyGeometry | QSGNode::DirtyMaterial);
+
+        return n;
+    }
+};
+</db:programlisting>
+<db:para>Whenever the Item has changed graphically, the <db:link xlink:href="">QQuickItem::updatePaintNode()</db:link> function is called.</db:para>
+<db:note>
+<db:para>The scene graph may be rendered in a different thread than the GUI thread and <db:link xlink:href="">QQuickItem::updatePaintNode()</db:link> is one of the few places where it is safe to access properties of the QML object. Any interaction with the scene graph from a custom QQuickItem should be contained to this function. The function is called on the rendering thread while the GUI thread is blocked.</db:para>
+</db:note>
+<db:para>The first time this function is called for an <db:code>Item</db:code> instance, the node will be 0 and we create a new one. For every consecutive call, the node will be what we returned previously. There are scenarios where the scene graph will be removed and rebuilt from scratch however, so one should always check the node and recreate it if required.</db:para>
+<db:para>Once we have a <db:code>ColorNode</db:code>, we update its geometry and material state. Finally, we notify the scene graph that the node has undergone changes to its geometry and material.</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+
+    qmlRegisterType&lt;Item&gt;(&quot;SimpleMaterial&quot;, 1, 0, &quot;SimpleMaterialItem&quot;);
+
+    QQuickView view;
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setSource(QUrl(&quot;qrc:///scenegraph/simplematerial/main.qml&quot;));
+    view.show();
+
+    return app.exec();
+}
+
+#include &quot;simplematerial.moc&quot;
+</db:programlisting>
+<db:para>The <db:code>main()</db:code> function of the application adds the custom QML type using <db:link xlink:href="">qmlRegisterType()</db:link> and opens up a QQuickView with our QML file.</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+import SimpleMaterial 1.0
+
+Rectangle {
+    width: 320
+    height: 480
+    color: &quot;black&quot;
+
+</db:programlisting>
+<db:para>In the QML file, we import our custom type so we can instantiate it.</db:para>
+<db:programlisting language="qml">    Column {
+        anchors.fill: parent
+
+        SimpleMaterialItem {
+            width: parent.width;
+            height: parent.height / 3;
+            color: &quot;steelblue&quot;
+        }
+
+        SimpleMaterialItem {
+            width: parent.width;
+            height: parent.height / 3;
+            color: &quot;darkorchid&quot;
+        }
+
+         SimpleMaterialItem {
+            width: parent.width;
+            height: parent.height / 3;
+            color: &quot;springgreen&quot;
+        }
+    }
+
+</db:programlisting>
+<db:para>Then we create a column of three instances of our custom item, each with a different color.</db:para>
+<db:programlisting language="qml">    Rectangle {
+        color: Qt.rgba(0, 0, 0, 0.8)
+        radius: 10
+        antialiasing: true
+        border.width: 1
+        border.color: &quot;black&quot;
+        anchors.fill: label
+        anchors.margins: -10
+    }
+
+    Text {
+        id: label
+        color: &quot;white&quot;
+        wrapMode: Text.WordWrap
+        text: &quot;These three gradient boxes are colorized using a custom material.&quot;
+        anchors.right: parent.right
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 20
+    }
+}
+</db:programlisting>
+<db:para>And finally we overlay a short descriptive text.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/simplematerial/main.qml">scenegraph/simplematerial/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/simplematerial/simplematerial.cpp">scenegraph/simplematerial/simplematerial.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/simplematerial/simplematerial.pro">scenegraph/simplematerial/simplematerial.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/simplematerial/simplematerial.qrc">scenegraph/simplematerial/simplematerial.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

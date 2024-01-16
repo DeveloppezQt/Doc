@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Bluetooth Tennis Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Bluetooth Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and Digia.  For licensing terms and
+** conditions see http://qt.digia.com/licensing.  For further information
+** use the contact form at http://qt.digia.com/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL included in the
+** packaging of this file.  Please review the following information to
+** ensure the GNU Lesser General Public License version 2.1 requirements
+** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** In addition, as a special exception, Digia gives you certain additional
+** rights.  These rights are described in the Digia Qt LGPL Exception
+** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3.0 as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL included in the
+** packaging of this file.  Please review the following information to
+** ensure the GNU General Public License version 3.0 requirements will be
+** met: http://www.gnu.org/copyleft/gpl.html.
+**
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;tennisserver.h&quot;
+#include &quot;tennis.h&quot;
+
+#include &lt;qbluetoothserver.h&gt;
+#include &lt;qbluetoothsocket.h&gt;
+
+#include &lt;QDebug&gt;
+
+TennisServer::TennisServer(QObject *parent)
+:   QObject(parent), l2capServer(0), clientSocket(0), stream(0), lagReplyTimeout(0)
+{
+    elapsed.start();
+    ballElapsed.start();
+    lagTimer.setInterval(1000);
+    connect(&amp;lagTimer, SIGNAL(timeout()), this, SLOT(sendEcho()));
+}
+
+TennisServer::~TennisServer()
+{
+    if (stream){
+        QByteArray b;
+        QDataStream s(&amp;b, QIODevice::WriteOnly);
+        s &lt;&lt; QString(&quot;D&quot;);
+        clientSocket-&gt;write(b);
+    }
+
+    stopServer();
+}
+
+void TennisServer::startServer()
+{
+    if (l2capServer)
+        return;
+
+    l2capServer = new QBluetoothServer(QBluetoothServiceInfo::L2capProtocol, this);
+    connect(l2capServer, SIGNAL(newConnection()), this, SLOT(clientConnected()));
+    l2capServer-&gt;listen();
+
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceRecordHandle, (uint)0x00010010);
+
+    QBluetoothServiceInfo::Sequence classId;
+//    classId &lt;&lt; QVariant::fromValue(QBluetoothUuid(serviceUuid));
+    classId &lt;&lt; QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::SerialPort));
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceClassIds, classId);
+
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceName, tr(&quot;Example Tennis Server&quot;));
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceDescription,
+                             tr(&quot;Example bluetooth tennis server&quot;));
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceProvider, tr(&quot;Nokia, QtDF&quot;));
+
+    serviceInfo.setServiceUuid(QBluetoothUuid(serviceUuid));
+
+    serviceInfo.setAttribute(QBluetoothServiceInfo::BrowseGroupList,
+                             QBluetoothUuid(QBluetoothUuid::PublicBrowseGroup));
+
+    QBluetoothServiceInfo::Sequence protocolDescriptorList;
+    QBluetoothServiceInfo::Sequence protocol;
+    protocol &lt;&lt; QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::L2cap))
+             &lt;&lt; QVariant::fromValue(quint16(l2capServer-&gt;serverPort()));
+    protocolDescriptorList.append(QVariant::fromValue(protocol));
+    serviceInfo.setAttribute(QBluetoothServiceInfo::ProtocolDescriptorList,
+                             protocolDescriptorList);
+
+    serviceInfo.registerService();
+
+}
+
+void TennisServer::stopServer()
+{
+    qDebug() &lt;&lt;Q_FUNC_INFO;
+    // Unregister service
+    serviceInfo.unregisterService();
+
+    delete stream;
+    stream = 0;
+
+    // Close sockets
+    delete clientSocket;
+    clientSocket = 0;
+
+    // Close server
+    delete l2capServer;
+    l2capServer = 0;
+}
+
+quint16 TennisServer::serverPort() const
+{
+    return l2capServer-&gt;serverPort();
+}
+
+void TennisServer::moveBall(int x, int y)
+{
+    int msec = ballElapsed.elapsed();
+
+    if (stream &amp;&amp; msec &gt; 30){
+        QByteArray b;
+        QDataStream s(&amp;b, QIODevice::WriteOnly);
+        s &lt;&lt; QString(&quot;m %1 %2&quot;).arg(x).arg(y);
+        //s &lt;&lt; QLatin1String(&quot;m&quot;) &lt;&lt; x &lt;&lt; y;
+        clientSocket-&gt;write(b);
+        ballElapsed.restart();
+    }
+}
+
+void TennisServer::score(int left, int right)
+{
+    if (stream){
+        QByteArray b;
+        QDataStream s(&amp;b, QIODevice::WriteOnly);
+        s &lt;&lt; QString(&quot;s %1 %2&quot;).arg(left).arg(right);
+//        s &lt;&lt; QChar('s') &lt;&lt; left &lt;&lt; right;
+        clientSocket-&gt;write(b);
+    }
+}
+
+void TennisServer::moveLeftPaddle(int y)
+{
+
+    int msec = elapsed.elapsed();
+
+    if (stream &amp;&amp; msec &gt; 50) {
+        QByteArray b;
+        QDataStream s(&amp;b, QIODevice::WriteOnly);
+        s &lt;&lt; QString(&quot;l %1&quot;).arg(y);
+//        s &lt;&lt; QChar('l') &lt;&lt; y;
+        clientSocket-&gt;write(b);
+        elapsed.restart();
+    }
+}
+
+void TennisServer::readSocket()
+{
+    if (!clientSocket)
+        return;
+
+    while (clientSocket-&gt;bytesAvailable()) {
+
+        QString str;
+        *stream &gt;&gt; str;
+        QStringList args = str.split(QChar(' '));
+        QString s = args.takeFirst();
+
+        if (s == &quot;r&quot; &amp;&amp; args.count() == 1){
+            emit moveRightPaddle(args.at(0).toInt());
+        }
+        else if (s == &quot;e&quot; &amp;&amp; args.count() == 1){
+            lagReplyTimeout = 0;
+            QTime then = QTime::fromString(args.at(0), &quot;hh:mm:ss.zzz&quot;);
+            if (then.isValid()) {
+                emit lag(then.msecsTo(QTime::currentTime()));
+//                qDebug() &lt;&lt; &quot;RTT: &quot; &lt;&lt; then.msecsTo(QTime::currentTime()) &lt;&lt; &quot;ms&quot;;
+            }
+        }
+        else if (s == &quot;E&quot;){
+            QByteArray b;
+            QDataStream st(&amp;b, QIODevice::WriteOnly);
+            st &lt;&lt; str;
+            clientSocket-&gt;write(b);
+        }
+        else if (s == &quot;D&quot;){
+            qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;closing!&quot;;
+            clientSocket-&gt;deleteLater();
+            clientSocket = 0;
+        }
+        else {
+            qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;Unknown command&quot; &lt;&lt; str;
+        }
+    }
+}
+
+void TennisServer::clientConnected()
+{
+    qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;connect&quot;;
+
+    QBluetoothSocket *socket = l2capServer-&gt;nextPendingConnection();
+    if (!socket)
+        return;
+
+    if (clientSocket){
+        qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;Closing socket!&quot;;
+        delete socket;
+        return;
+    }
+
+    connect(socket, SIGNAL(readyRead()), this, SLOT(readSocket()));
+    connect(socket, SIGNAL(disconnected()), this, SLOT(clientDisconnected()));
+    connect(socket, SIGNAL(error(QBluetoothSocket::SocketError)), this, SLOT(socketError(QBluetoothSocket::SocketError)));
+
+    stream = new QDataStream(socket);
+
+    clientSocket = socket;
+
+    qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;started&quot;;
+
+    emit clientConnected(clientSocket-&gt;peerName());
+    lagTimer.start();
+}
+
+void TennisServer::socketError(QBluetoothSocket::SocketError err)
+{
+    qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; err;
+}
+
+void TennisServer::sendEcho()
+{
+    if (lagReplyTimeout) {
+        lagReplyTimeout--;
+        return;
+    }
+
+    if (stream) {
+        QByteArray b;
+        QDataStream s(&amp;b, QIODevice::WriteOnly);
+        s &lt;&lt; QString(&quot;e %1&quot;).arg(QTime::currentTime().toString(&quot;hh:mm:ss.zzz&quot;));
+        clientSocket-&gt;write(b);
+        lagReplyTimeout = 10;
+    }
+}
+
+void TennisServer::clientDisconnected()
+{
+    qDebug() &lt;&lt; Q_FUNC_INFO &lt;&lt; &quot;client closing!&quot;;
+
+    lagTimer.stop();
+    lagReplyTimeout = 0;
+    QBluetoothSocket *socket = qobject_cast&lt;QBluetoothSocket *&gt;(sender());
+    if (!socket)
+        return;
+
+    emit clientDisconnected(socket-&gt;peerName());
+
+    clientSocket-&gt;deleteLater();
+    clientSocket = 0;
+    delete stream;
+    stream = 0;
+
+//    socket-&gt;deleteLater();
+}
+
+</db:programlisting>
+</db:article>

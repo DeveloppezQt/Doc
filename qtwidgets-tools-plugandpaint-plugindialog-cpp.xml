@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Plug &amp; Paint Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Plug &amp; Paint example demonstrates how to write Qt applications that can be extended through plugins.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;interfaces.h&quot;
+#include &quot;plugindialog.h&quot;
+
+#include &lt;QPluginLoader&gt;
+#include &lt;QStringList&gt;
+#include &lt;QDir&gt;
+
+#include &lt;QLabel&gt;
+#include &lt;QGridLayout&gt;
+#include &lt;QPushButton&gt;
+#include &lt;QTreeWidget&gt;
+#include &lt;QTreeWidgetItem&gt;
+#include &lt;QHeaderView&gt;
+
+PluginDialog::PluginDialog(const QString &amp;path, const QStringList &amp;fileNames,
+                           QWidget *parent) :
+    QDialog(parent),
+    label(new QLabel),
+    treeWidget(new QTreeWidget),
+    okButton(new QPushButton(tr(&quot;OK&quot;)))
+{
+    treeWidget-&gt;setAlternatingRowColors(false);
+    treeWidget-&gt;setSelectionMode(QAbstractItemView::NoSelection);
+    treeWidget-&gt;setColumnCount(1);
+    treeWidget-&gt;header()-&gt;hide();
+
+    okButton-&gt;setDefault(true);
+
+    connect(okButton, SIGNAL(clicked()), this, SLOT(close()));
+
+    QGridLayout *mainLayout = new QGridLayout;
+    mainLayout-&gt;setColumnStretch(0, 1);
+    mainLayout-&gt;setColumnStretch(2, 1);
+    mainLayout-&gt;addWidget(label, 0, 0, 1, 3);
+    mainLayout-&gt;addWidget(treeWidget, 1, 0, 1, 3);
+    mainLayout-&gt;addWidget(okButton, 2, 1);
+    setLayout(mainLayout);
+
+    interfaceIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_DirOpenIcon),
+                            QIcon::Normal, QIcon::On);
+    interfaceIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_DirClosedIcon),
+                            QIcon::Normal, QIcon::Off);
+    featureIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_FileIcon));
+
+    setWindowTitle(tr(&quot;Plugin Information&quot;));
+    findPlugins(path, fileNames);
+}
+
+void PluginDialog::findPlugins(const QString &amp;path,
+                               const QStringList &amp;fileNames)
+{
+    label-&gt;setText(tr(&quot;Plug &amp; Paint found the following plugins\n&quot;
+                      &quot;(looked in %1):&quot;)
+                   .arg(QDir::toNativeSeparators(path)));
+
+    const QDir dir(path);
+
+    foreach (QObject *plugin, QPluginLoader::staticInstances())
+        populateTreeWidget(plugin, tr(&quot;%1 (Static Plugin)&quot;)
+                                   .arg(plugin-&gt;metaObject()-&gt;className()));
+
+    foreach (QString fileName, fileNames) {
+        QPluginLoader loader(dir.absoluteFilePath(fileName));
+        QObject *plugin = loader.instance();
+        if (plugin)
+            populateTreeWidget(plugin, fileName);
+    }
+}
+
+void PluginDialog::populateTreeWidget(QObject *plugin, const QString &amp;text)
+{
+    QTreeWidgetItem *pluginItem = new QTreeWidgetItem(treeWidget);
+    pluginItem-&gt;setText(0, text);
+    treeWidget-&gt;setItemExpanded(pluginItem, true);
+
+    QFont boldFont = pluginItem-&gt;font(0);
+    boldFont.setBold(true);
+    pluginItem-&gt;setFont(0, boldFont);
+
+    if (plugin) {
+        BrushInterface *iBrush = qobject_cast&lt;BrushInterface *&gt;(plugin);
+        if (iBrush)
+            addItems(pluginItem, &quot;BrushInterface&quot;, iBrush-&gt;brushes());
+
+        ShapeInterface *iShape = qobject_cast&lt;ShapeInterface *&gt;(plugin);
+        if (iShape)
+            addItems(pluginItem, &quot;ShapeInterface&quot;, iShape-&gt;shapes());
+
+        FilterInterface *iFilter =
+                qobject_cast&lt;FilterInterface *&gt;(plugin);
+        if (iFilter)
+            addItems(pluginItem, &quot;FilterInterface&quot;, iFilter-&gt;filters());
+    }
+}
+
+void PluginDialog::addItems(QTreeWidgetItem *pluginItem,
+                            const char *interfaceName,
+                            const QStringList &amp;features)
+{
+    QTreeWidgetItem *interfaceItem = new QTreeWidgetItem(pluginItem);
+    interfaceItem-&gt;setText(0, interfaceName);
+    interfaceItem-&gt;setIcon(0, interfaceIcon);
+
+    foreach (QString feature, features) {
+        if (feature.endsWith(&quot;...&quot;))
+            feature.chop(3);
+        QTreeWidgetItem *featureItem = new QTreeWidgetItem(interfaceItem);
+        featureItem-&gt;setText(0, feature);
+        featureItem-&gt;setIcon(0, featureIcon);
+    }
+}
+
+</db:programlisting>
+</db:article>

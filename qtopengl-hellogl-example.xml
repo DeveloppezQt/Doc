@@ -1,0 +1,425 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Hello GL Example</db:title>
+<db:productname>QtOpenGL</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>QtOpenGL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Hello GL example demonstrates the basic use of the OpenGL-related classes provided with Qt.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/hellogl-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Qt provides the QGLWidget class to enable OpenGL graphics to be rendered within a standard application user interface. By subclassing this class, and providing reimplementations of event handler functions, 3D scenes can be displayed on widgets that can be placed in layouts, connected to other objects using signals and slots, and manipulated like any other widget.</db:para>
+<db:section xml:id="glwidget-class-definition">
+<db:title>GLWidget Class Definition</db:title>
+<db:para>The <db:code>GLWidget</db:code> class contains some standard public definitions for the constructor, destructor, <db:link xlink:href="">sizeHint()</db:link>, and <db:link xlink:href="">minimumSizeHint()</db:link> functions:</db:para>
+<db:programlisting language="cpp">class GLWidget : public QGLWidget
+{
+    Q_OBJECT
+
+public:
+    GLWidget(QWidget *parent = 0);
+    ~GLWidget();
+
+    QSize minimumSizeHint() const;
+    QSize sizeHint() const;
+</db:programlisting>
+<db:para>We use a destructor to ensure that any OpenGL-specific data structures are deleted when the widget is no longer needed (although in this case nothing needs cleaning up).</db:para>
+<db:programlisting language="cpp">public slots:
+    void setXRotation(int angle);
+    void setYRotation(int angle);
+    void setZRotation(int angle);
+
+signals:
+    void xRotationChanged(int angle);
+    void yRotationChanged(int angle);
+    void zRotationChanged(int angle);
+</db:programlisting>
+<db:para>The signals and slots are used to allow other objects to interact with the 3D scene.</db:para>
+<db:programlisting language="cpp">protected:
+    void initializeGL();
+    void paintGL();
+    void resizeGL(int width, int height);
+    void mousePressEvent(QMouseEvent *event);
+    void mouseMoveEvent(QMouseEvent *event);
+</db:programlisting>
+<db:para>OpenGL initialization, viewport resizing, and painting are handled by reimplementing the QGLWidget::initializeGL(), QGLWidget::resizeGL(), and QGLWidget::paintGL() handler functions. To enable the user to interact directly with the scene using the mouse, we reimplement QWidget::mousePressEvent() and QWidget::mouseMoveEvent().</db:para>
+<db:programlisting language="cpp">private:
+    QtLogo *logo;
+    int xRot;
+    int yRot;
+    int zRot;
+    QPoint lastPos;
+    QColor qtGreen;
+    QColor qtPurple;
+};
+</db:programlisting>
+<db:para>The rest of the class contains utility functions and variables that are used to construct and hold orientation information for the scene. The <db:code>logo</db:code> variable will be used to hold a pointer to the QtLogo object which contains all the geometry.</db:para>
+</db:section>
+<db:section xml:id="glwidget-class-implementation">
+<db:title>GLWidget Class Implementation</db:title>
+<db:para>In this example, we split the class into groups of functions and describe them separately. This helps to illustrate the differences between subclasses of native widgets (such as QWidget and QFrame) and QGLWidget subclasses.</db:para>
+<db:section xml:id="widget-construction-and-sizing">
+<db:title>Widget Construction and Sizing</db:title>
+<db:para>The constructor provides default rotation angles for the scene, sets the pointer to the QtLogo object to null, and sets up some colors for later use.</db:para>
+<db:programlisting language="cpp">GLWidget::GLWidget(QWidget *parent)
+    : QGLWidget(QGLFormat(QGL::SampleBuffers), parent)
+{
+    logo = 0;
+    xRot = 0;
+    yRot = 0;
+    zRot = 0;
+
+    qtGreen = QColor::fromCmykF(0.40, 0.0, 1.0, 0.0);
+    qtPurple = QColor::fromCmykF(0.39, 0.39, 0.0, 0.0);
+}
+</db:programlisting>
+<db:para>We also implement a destructor to release OpenGL-related resources when the widget is deleted:</db:para>
+<db:programlisting language="cpp">GLWidget::~GLWidget()
+{
+}
+</db:programlisting>
+<db:para>In this case nothing requires cleaning up.</db:para>
+<db:para>We provide size hint functions to ensure that the widget is shown at a reasonable size:</db:para>
+<db:programlisting language="cpp">QSize GLWidget::minimumSizeHint() const
+{
+    return QSize(50, 50);
+}
+
+QSize GLWidget::sizeHint() const
+{
+    return QSize(400, 400);
+}
+</db:programlisting>
+<db:para>The widget provides three slots that enable other components in the example to change the orientation of the scene:</db:para>
+<db:programlisting language="cpp">void GLWidget::setXRotation(int angle)
+{
+    qNormalizeAngle(angle);
+    if (angle != xRot) {
+        xRot = angle;
+        emit xRotationChanged(angle);
+        updateGL();
+    }
+}
+</db:programlisting>
+<db:para>In the above slot, the <db:code>xRot</db:code> variable is updated only if the new angle is different to the old one, the <db:code>xRotationChanged()</db:code> signal is emitted to allow other components to be updated, and the widget's <db:link xlink:href="">updateGL()</db:link> handler function is called.</db:para>
+<db:para>The <db:code>setYRotation()</db:code> and <db:code>setZRotation()</db:code> slots perform the same task for rotations measured by the <db:code>yRot</db:code> and <db:code>zRot</db:code> variables.</db:para>
+</db:section>
+<db:section xml:id="opengl-initialization">
+<db:title>OpenGL Initialization</db:title>
+<db:para>The <db:link xlink:href="">initializeGL()</db:link> function is used to perform useful initialization tasks that are needed to render the 3D scene. These often involve defining colors and materials, enabling and disabling certain rendering flags, and setting other properties used to customize the rendering process.</db:para>
+<db:programlisting language="cpp">void GLWidget::initializeGL()
+{
+    qglClearColor(qtPurple.dark());
+
+    logo = new QtLogo(this, 64);
+    logo-&gt;setColor(qtGreen.dark());
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+    glShadeModel(GL_SMOOTH);
+    glEnable(GL_LIGHTING);
+    glEnable(GL_LIGHT0);
+    glEnable(GL_MULTISAMPLE);
+    static GLfloat lightPosition[4] = { 0.5, 5.0, 7.0, 1.0 };
+    glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+}
+</db:programlisting>
+<db:para>In this example, we reimplement the function to set the background color, create a QtLogo object instance which will contain all the geometry to display, and set up the rendering process to use a particular shading model and rendering flags.</db:para>
+</db:section>
+<db:section xml:id="resizing-the-viewport">
+<db:title>Resizing the Viewport</db:title>
+<db:para>The <db:link xlink:href="">resizeGL()</db:link> function is used to ensure that the OpenGL implementation renders the scene onto a viewport that matches the size of the widget, using the correct transformation from 3D coordinates to 2D viewport coordinates.</db:para>
+<db:para>The function is called whenever the widget's dimensions change, and is supplied with the new width and height. Here, we define a square viewport based on the length of the smallest side of the widget to ensure that the scene is not distorted if the widget has sides of unequal length:</db:para>
+<db:programlisting language="cpp">void GLWidget::resizeGL(int width, int height)
+{
+    int side = qMin(width, height);
+    glViewport((width - side) / 2, (height - side) / 2, side, side);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+#ifdef QT_OPENGL_ES_1
+    glOrthof(-0.5, +0.5, -0.5, +0.5, 4.0, 15.0);
+#else
+    glOrtho(-0.5, +0.5, -0.5, +0.5, 4.0, 15.0);
+#endif
+    glMatrixMode(GL_MODELVIEW);
+}
+</db:programlisting>
+<db:para>A discussion of the projection transformation used is outside the scope of this example. Please consult the OpenGL reference documentation for an explanation of projection matrices.</db:para>
+</db:section>
+<db:section xml:id="painting-the-scene">
+<db:title>Painting the Scene</db:title>
+<db:para>The <db:link xlink:href="">paintGL()</db:link> function is used to paint the contents of the scene onto the widget. For widgets that only need to be decorated with pure OpenGL content, we reimplement QGLWidget::paintGL() <db:emphasis>instead</db:emphasis> of reimplementing QWidget::paintEvent():</db:para>
+<db:programlisting language="cpp">void GLWidget::paintGL()
+{
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glLoadIdentity();
+    glTranslatef(0.0, 0.0, -10.0);
+    glRotatef(xRot / 16.0, 1.0, 0.0, 0.0);
+    glRotatef(yRot / 16.0, 0.0, 1.0, 0.0);
+    glRotatef(zRot / 16.0, 0.0, 0.0, 1.0);
+    logo-&gt;draw();
+}
+</db:programlisting>
+<db:para>In this example, we clear the widget using the background color that we defined in the <db:link xlink:href="">initializeGL()</db:link> function, set up the frame of reference for the geometry we want to display, and call the draw method of the QtLogo object to render the scene.</db:para>
+</db:section>
+<db:section xml:id="mouse-handling">
+<db:title>Mouse Handling</db:title>
+<db:para>Just as in subclasses of native widgets, mouse events are handled by reimplementing functions such as QWidget::mousePressEvent() and QWidget::mouseMoveEvent().</db:para>
+<db:para>The <db:link xlink:href="">mousePressEvent()</db:link> function simply records the position of the mouse when a button is initially pressed:</db:para>
+<db:programlisting language="cpp">void GLWidget::mousePressEvent(QMouseEvent *event)
+{
+    lastPos = event-&gt;pos();
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="">mouseMoveEvent()</db:link> function uses the previous location of the mouse cursor to determine how much the object in the scene should be rotated, and in which direction:</db:para>
+<db:programlisting language="cpp">void GLWidget::mouseMoveEvent(QMouseEvent *event)
+{
+    int dx = event-&gt;x() - lastPos.x();
+    int dy = event-&gt;y() - lastPos.y();
+
+    if (event-&gt;buttons() &amp; Qt::LeftButton) {
+        setXRotation(xRot + 8 * dy);
+        setYRotation(yRot + 8 * dx);
+    } else if (event-&gt;buttons() &amp; Qt::RightButton) {
+        setXRotation(xRot + 8 * dy);
+        setZRotation(zRot + 8 * dx);
+    }
+    lastPos = event-&gt;pos();
+}
+</db:programlisting>
+<db:para>Since the user is expected to hold down the mouse button and drag the cursor to rotate the object, the cursor's position is updated every time a move event is received.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="qtlogo-class">
+<db:title>QtLogo Class</db:title>
+<db:para>This class encapsulates the OpenGL geometry data which will be rendered in the basic 3D scene.</db:para>
+<db:programlisting language="cpp">class QtLogo : public QObject
+{
+public:
+    explicit QtLogo(QObject *parent, int d = 64, qreal s = 1.0);
+    ~QtLogo();
+    void setColor(QColor c);
+    void draw() const;
+private:
+    void buildGeometry(int d, qreal s);
+
+    QList&lt;Patch *&gt; parts;
+    Geometry *geom;
+};
+</db:programlisting>
+<db:para>The geometry is divided into a list of parts which may be rendered in different ways. The data itself is contained in a Geometry structure that includes the vertices, their lighting normals and index values which point into the vertices, grouping them into faces.</db:para>
+<db:programlisting language="cpp">struct Geometry
+{
+    QVector&lt;GLushort&gt; faces;
+    QVector&lt;QVector3D&gt; vertices;
+    QVector&lt;QVector3D&gt; normals;
+    void appendSmooth(const QVector3D &amp;a, const QVector3D &amp;n, int from);
+    void appendFaceted(const QVector3D &amp;a, const QVector3D &amp;n);
+    void finalize();
+    void loadArrays() const;
+};
+</db:programlisting>
+<db:para>The data in the Geometry class is stored in <db:link xlink:href="qvector.xml">QVector</db:link>&lt;QVector3D&gt; members which are convenient for use with OpenGL because they expose raw contiguous floating point values via the constData() method. Methods are included for adding new vertex data, either with smooth normals, or facetted normals; and for enabling the geometry ready for rendering.</db:para>
+<db:programlisting language="cpp">class Patch
+{
+public:
+    enum Smoothing { Faceted, Smooth };
+    Patch(Geometry *);
+    void setSmoothing(Smoothing s) { sm = s; }
+    void translate(const QVector3D &amp;t);
+    void rotate(qreal deg, QVector3D axis);
+    void draw() const;
+    void addTri(const QVector3D &amp;a, const QVector3D &amp;b, const QVector3D &amp;c, const QVector3D &amp;n);
+    void addQuad(const QVector3D &amp;a, const QVector3D &amp;b,  const QVector3D &amp;c, const QVector3D &amp;d);
+
+    GLushort start;
+    GLushort count;
+    GLushort initv;
+
+    GLfloat faceColor[4];
+    QMatrix4x4 mat;
+    Smoothing sm;
+    Geometry *geom;
+};
+</db:programlisting>
+<db:para>The higher level Patch class has methods for accumulating the geometry one face at a time, and treating collections of faces or &quot;patches&quot; with transformations, applying different colors or smoothing. Although faces may be added as triangles or quads, at the OpenGL level all data is treated as triangles for compatibility with OpenGL/ES.</db:para>
+<db:programlisting language="cpp">void Patch::draw() const
+{
+    glPushMatrix();
+    glMultMatrixf(mat.constData());
+    glMaterialfv(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE, faceColor);
+
+    const GLushort *indices = geom-&gt;faces.constData();
+    glDrawElements(GL_TRIANGLES, count, GL_UNSIGNED_SHORT, indices + start);
+    glPopMatrix();
+}
+</db:programlisting>
+<db:para>Drawing a Patch is simply acheived by applying any transformation, and material effect, then drawing the data using the index range for the patch. The model-view matrix is saved and then restored so that any transformation does not affect other parts of the scene.</db:para>
+<db:programlisting language="cpp">void QtLogo::buildGeometry(int divisions, qreal scale)
+{
+    qreal cw = cross_width * scale;
+    qreal bt = bar_thickness * scale;
+    qreal ld = logo_depth * scale;
+    qreal th = tee_height *scale;
+
+    RectPrism cross(geom, cw, bt, ld);
+    RectPrism stem(geom, bt, th, ld);
+
+    QVector3D z(0.0, 0.0, 1.0);
+    cross.rotate(45.0, z);
+    stem.rotate(45.0, z);
+
+    qreal stem_downshift = (th + bt) / 2.0;
+    stem.translate(QVector3D(0.0, -stem_downshift, 0.0));
+
+    RectTorus body(geom, 0.20, 0.30, 0.1, divisions);
+
+    parts &lt;&lt; stem.parts &lt;&lt; cross.parts &lt;&lt; body.parts;
+
+    geom-&gt;finalize();
+}
+</db:programlisting>
+<db:para>The geometry is built once on construction of the QtLogo, and it is paramaterized on a number of divisions - which controls how &quot;chunky&quot; the curved section of the logo looks - and on a scale, so larger and smaller QtLogo objects can be created without having to use OpenGL scaling (which would force normal recalculation).</db:para>
+<db:para>The building process is done by helper classes (read the source for full details) which only exist during the build phase, to assemble the parts of the scene.</db:para>
+<db:programlisting language="cpp">void QtLogo::draw() const
+{
+    geom-&gt;loadArrays();
+
+    glEnableClientState(GL_VERTEX_ARRAY);
+    glEnableClientState(GL_NORMAL_ARRAY);
+
+    for (int i = 0; i &lt; parts.count(); ++i)
+        parts[i]-&gt;draw();
+
+    glDisableClientState(GL_VERTEX_ARRAY);
+    glDisableClientState(GL_NORMAL_ARRAY);
+}
+</db:programlisting>
+<db:para>Finally the complete QtLogo scene is simply drawn by enabling the data arrays and then iterating over the parts, calling draw() on each one.</db:para>
+</db:section>
+<db:section xml:id="window-class-definition">
+<db:title>Window Class Definition</db:title>
+<db:para>The <db:code>Window</db:code> class is used as a container for the <db:code>GLWidget</db:code> used to display the scene:</db:para>
+<db:programlisting language="cpp">class GLWidget;
+
+class Window : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Window();
+
+protected:
+    void keyPressEvent(QKeyEvent *event);
+
+private:
+    QSlider *createSlider();
+
+    GLWidget *glWidget;
+    QSlider *xSlider;
+    QSlider *ySlider;
+    QSlider *zSlider;
+};
+</db:programlisting>
+<db:para>In addition, it contains sliders that are used to change the orientation of the object in the scene.</db:para>
+</db:section>
+<db:section xml:id="window-class-implementation">
+<db:title>Window Class Implementation</db:title>
+<db:para>The constructor constructs an instance of the <db:code>GLWidget</db:code> class and some sliders to manipulate its contents.</db:para>
+<db:programlisting language="cpp">Window::Window()
+{
+    glWidget = new GLWidget;
+
+    xSlider = createSlider();
+    ySlider = createSlider();
+    zSlider = createSlider();
+
+    connect(xSlider, SIGNAL(valueChanged(int)), glWidget, SLOT(setXRotation(int)));
+    connect(glWidget, SIGNAL(xRotationChanged(int)), xSlider, SLOT(setValue(int)));
+    connect(ySlider, SIGNAL(valueChanged(int)), glWidget, SLOT(setYRotation(int)));
+    connect(glWidget, SIGNAL(yRotationChanged(int)), ySlider, SLOT(setValue(int)));
+    connect(zSlider, SIGNAL(valueChanged(int)), glWidget, SLOT(setZRotation(int)));
+    connect(glWidget, SIGNAL(zRotationChanged(int)), zSlider, SLOT(setValue(int)));
+</db:programlisting>
+<db:para>We connect the <db:link xlink:href="">valueChanged()</db:link> signal from each of the sliders to the appropriate slots in <db:code>glWidget</db:code>. This allows the user to change the orientation of the object by dragging the sliders.</db:para>
+<db:para>We also connect the <db:code>xRotationChanged()</db:code>, <db:code>yRotationChanged()</db:code>, and <db:code>zRotationChanged()</db:code> signals from <db:code>glWidget</db:code> to the <db:link xlink:href="">setValue()</db:link> slots in the corresponding sliders.</db:para>
+<db:programlisting language="cpp">    QHBoxLayout *mainLayout = new QHBoxLayout;
+    mainLayout-&gt;addWidget(glWidget);
+    mainLayout-&gt;addWidget(xSlider);
+    mainLayout-&gt;addWidget(ySlider);
+    mainLayout-&gt;addWidget(zSlider);
+    setLayout(mainLayout);
+
+    xSlider-&gt;setValue(15 * 16);
+    ySlider-&gt;setValue(345 * 16);
+    zSlider-&gt;setValue(0 * 16);
+    setWindowTitle(tr(&quot;Hello GL&quot;));
+}
+</db:programlisting>
+<db:para>The sliders are placed horizontally in a layout alongside the <db:code>GLWidget</db:code>, and initialized with suitable default values.</db:para>
+<db:para>The <db:code>createSlider()</db:code> utility function constructs a QSlider, and ensures that it is set up with a suitable range, step value, tick interval, and page step value before returning it to the calling function:</db:para>
+<db:programlisting language="cpp">QSlider *Window::createSlider()
+{
+    QSlider *slider = new QSlider(Qt::Vertical);
+    slider-&gt;setRange(0, 360 * 16);
+    slider-&gt;setSingleStep(16);
+    slider-&gt;setPageStep(15 * 16);
+    slider-&gt;setTickInterval(15 * 16);
+    slider-&gt;setTickPosition(QSlider::TicksRight);
+    return slider;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="summary">
+<db:title>Summary</db:title>
+<db:para>The <db:code>GLWidget</db:code> class implementation shows how to subclass QGLWidget for the purposes of rendering a 3D scene using OpenGL calls. Since QGLWidget is a subclass of QWidget, subclasses of QGLWidget can be placed in layouts and provided with interactive features just like normal custom widgets.</db:para>
+<db:para>We ensure that the widget is able to correctly render the scene using OpenGL by reimplementing the following functions:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>QGLWidget::initializeGL() sets up resources needed by the OpenGL implementation to render the scene.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QGLWidget::resizeGL() resizes the viewport so that the rendered scene fits onto the widget, and sets up a projection matrix to map 3D coordinates to 2D viewport coordinates.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QGLWidget::paintGL() performs painting operations using OpenGL calls.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Since QGLWidget is a subclass of QWidget, it can also be used as a normal paint device, allowing 2D graphics to be drawn with QPainter. This use of QGLWidget is discussed in the <db:link xlink:href="qtopengl-2dpainting-example.xml">2D Painting</db:link> example.</db:para>
+<db:para>More advanced users may want to paint over parts of a scene rendered using OpenGL. QGLWidget allows pure OpenGL rendering to be mixed with QPainter calls, but care must be taken to maintain the state of the OpenGL implementation. See the <db:link xlink:href="qtopengl-overpainting-example.xml">Overpainting</db:link> example for more information.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/glwidget.cpp">hellogl/glwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/glwidget.h">hellogl/glwidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/hellogl.pro">hellogl/hellogl.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/main.cpp">hellogl/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/window.cpp">hellogl/window.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="hellogl/window.h">hellogl/window.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

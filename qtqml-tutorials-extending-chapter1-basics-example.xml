@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Chapter 1: Creating a New Type</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 5.2.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt QML Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>A common task when extending QML is to provide a new QML type that supports some custom functionality beyond what is provided by the built-in <db:link xlink:href="">Qt Quick types</db:link>. For example, this could be done to implement particular data models, or provide types with custom painting and drawing capabilities, or access system features like network programming that are not accessible through built-in QML features.</db:para>
+<db:para>In this tutorial, we will show how to use the C++ classes in the Qt Quick module to extend QML. The end result will be a simple Pie Chart display implemented by several custom QML types connected together through QML features like bindings and signals, and made available to the QML runtime through a plugin.</db:para>
+<db:para>To begin with, let's create a new QML type called &quot;PieChart&quot; that has two properties: a name and a color. We will make it available in an importable type namespace called &quot;Charts&quot;, with a version of 1.0.</db:para>
+<db:para>We want this <db:code>PieChart</db:code> type to be usable from QML like this:</db:para>
+<db:programlisting language="cpp">import Charts 1.0
+
+PieChart {
+    width: 100; height: 100
+    name: &quot;A simple pie chart&quot;
+    color: &quot;red&quot;
+}
+</db:programlisting>
+<db:para>To do this, we need a C++ class that encapsulates this <db:code>PieChart</db:code> type and its two properties. Since QML makes extensive use of Qt's <db:link xlink:href="metaobjects.xml#meta-object-system">meta object system</db:link>, this new class must:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Inherit from <db:link xlink:href="qobject.xml">QObject</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Declare its properties using the <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> macro</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Here is our <db:code>PieChart</db:code> class, defined in <db:code>piechart.h</db:code>:</db:para>
+<db:programlisting language="cpp">#include &lt;QtQuick/QQuickPaintedItem&gt;
+#include &lt;QColor&gt;
+
+class PieChart : public QQuickPaintedItem
+{
+    Q_OBJECT
+    Q_PROPERTY(QString name READ name WRITE setName)
+    Q_PROPERTY(QColor color READ color WRITE setColor)
+
+public:
+    PieChart(QQuickItem *parent = 0);
+
+    QString name() const;
+    void setName(const QString &amp;name);
+
+    QColor color() const;
+    void setColor(const QColor &amp;color);
+
+    void paint(QPainter *painter);
+
+private:
+    QString m_name;
+    QColor m_color;
+};
+</db:programlisting>
+<db:para>The class inherits from QQuickPaintedItem because we want to override QQuickPaintedItem::paint() in perform drawing operations with the QPainter API. If the class just represented some data type and was not an item that actually needed to be displayed, it could simply inherit from <db:link xlink:href="qobject.xml">QObject</db:link>. Or, if we want to extend the functionality of an existing <db:link xlink:href="qobject.xml">QObject</db:link>-based class, it could inherit from that class instead. Alternatively, if we want to create a visual item that doesn't need to perform drawing operations with the QPainter API, we can just subclass QQuickItem.</db:para>
+<db:para>The <db:code>PieChart</db:code> class defines the two properties, <db:code>name</db:code> and <db:code>color</db:code>, with the <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> macro, and overrides QQuickPaintedItem::paint(). The class implementation in <db:code>piechart.cpp</db:code> simply sets and returns the <db:code>m_name</db:code> and <db:code>m_color</db:code> values as appropriate, and implements <db:code>paint()</db:code> to draw a simple pie chart. It also turns off the QGraphicsItem::ItemHasNoContents flag to enable painting:</db:para>
+<db:programlisting language="cpp">PieChart::PieChart(QQuickItem *parent)
+    : QQuickPaintedItem(parent)
+{
+}
+...
+void PieChart::paint(QPainter *painter)
+{
+    QPen pen(m_color, 2);
+    painter-&gt;setPen(pen);
+    painter-&gt;setRenderHints(QPainter::Antialiasing, true);
+    painter-&gt;drawPie(boundingRect().adjusted(1, 1, -1, -1), 90 * 16, 290 * 16);
+}
+</db:programlisting>
+<db:para>Now that we have defined the <db:code>PieChart</db:code> type, we will use it from QML. The <db:code>app.qml</db:code> file creates a <db:code>PieChart</db:code> item and display the pie chart's details using a standard QML Text item:</db:para>
+<db:programlisting language="qml">import Charts 1.0
+import QtQuick 2.0
+
+Item {
+    width: 300; height: 200
+
+    PieChart {
+        id: aPieChart
+        anchors.centerIn: parent
+        width: 100; height: 100
+        name: &quot;A simple pie chart&quot;
+        color: &quot;red&quot;
+    }
+
+    Text {
+        anchors { bottom: parent.bottom; horizontalCenter: parent.horizontalCenter; bottomMargin: 20 }
+        text: aPieChart.name
+    }
+}
+</db:programlisting>
+<db:para>Notice that although the color is specified as a string in QML, it is automatically converted to a QColor object for the PieChart <db:code>color</db:code> property. Automatic conversions are provided for various other <db:link xlink:href="qtqml-typesystem-basictypes.xml">basic types</db:link>; for example, a string like &quot;640x480&quot; can be automatically converted to a <db:link xlink:href="qsize.xml">QSize</db:link> value.</db:para>
+<db:para>We'll also create a C++ application that uses a QQuickView to run and display <db:code>app.qml</db:code>. The application must register the <db:code>PieChart</db:code> type using the qmlRegisterType() function, to allow it to be used from QML. If you don't register the type, <db:code>app.qml</db:code> won't be able to create a <db:code>PieChart</db:code>.</db:para>
+<db:para>Here is the application <db:code>main.cpp</db:code>:</db:para>
+<db:programlisting language="cpp">#include &quot;piechart.h&quot;
+#include &lt;QtQuick/QQuickView&gt;
+#include &lt;QGuiApplication&gt;
+
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+
+    qmlRegisterType&lt;PieChart&gt;(&quot;Charts&quot;, 1, 0, &quot;PieChart&quot;);
+
+    QQuickView view;
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setSource(QUrl(&quot;qrc:///app.qml&quot;));
+    view.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>This call to qmlRegisterType() registers the <db:code>PieChart</db:code> type as a type called &quot;PieChart&quot;, in a type namespace called &quot;Charts&quot;, with a version of 1.0.</db:para>
+<db:para>Lastly, we write a <db:code>.pro</db:code> project file that includes the files and the <db:code>declarative</db:code> library:</db:para>
+<db:programlisting language="cpp">QT += qml quick
+
+HEADERS += piechart.h
+SOURCES += piechart.cpp \
+           main.cpp
+
+RESOURCES += chapter1-basics.qrc
+
+DESTPATH = $$[QT_INSTALL_EXAMPLES]/qml/tutorials/extending/chapter1-basics
+target.path = $$DESTPATH
+
+qml.files = *.qml
+qml.path = $$DESTPATH
+
+INSTALLS += target qml
+
+</db:programlisting>
+<db:para>Now we can build and run the application:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/extending-tutorial-chapter1.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Try it yourself with the code in Qt's <db:code>examples/qml/tutorials/extending/chapter1-basics</db:code> directory.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/app.qml">tutorials/extending/chapter1-basics/app.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/chapter1-basics.pro">tutorials/extending/chapter1-basics/chapter1-basics.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/chapter1-basics.qrc">tutorials/extending/chapter1-basics/chapter1-basics.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/main.cpp">tutorials/extending/chapter1-basics/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/piechart.cpp">tutorials/extending/chapter1-basics/piechart.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/extending/chapter1-basics/piechart.h">tutorials/extending/chapter1-basics/piechart.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>
