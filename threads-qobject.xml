@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Threads and QObjects</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="threads-reentrancy.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Reentrancy and Thread-Safety"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="threads-modules.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Thread-Support in Qt Modules"/></db:extendedlink>
+<db:abstract>
+<db:para>Qt Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>contentspage</db:code></db:emphasis>Thread Support in Qt</db:para>
+<db:para><db:link xlink:href="qthread.xml">QThread</db:link> inherits QObject. It emits signals to indicate that the thread started or finished executing, and provides a few slots as well.</db:para>
+<db:para>More interesting is that <db:link xlink:href="qobject-proxy.xml">QObject</db:link>s can be used in multiple threads, emit signals that invoke slots in other threads, and post events to objects that &quot;live&quot; in other threads. This is possible because each thread is allowed to have its own event loop.</db:para>
+<db:section xml:id="qobject-reentrancy">
+<db:title>QObject Reentrancy</db:title>
+<db:para>QObject is reentrant. Most of its non-GUI subclasses, such as QTimer, QTcpSocket, QUdpSocket and QProcess, are also reentrant, making it possible to use these classes from multiple threads simultaneously. Note that these classes are designed to be created and used from within a single thread; creating an object in one thread and calling its functions from another thread is not guaranteed to work. There are three constraints to be aware of:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:emphasis>The child of a QObject must always be created in the thread where the parent was created.</db:emphasis> This implies, among other things, that you should never pass the <db:link xlink:href="qthread.xml">QThread</db:link> object (<db:code>this</db:code>) as the parent of an object created in the thread (since the <db:link xlink:href="qthread.xml">QThread</db:link> object itself was created in another thread).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>Event driven objects may only be used in a single thread.</db:emphasis> Specifically, this applies to the <db:link xlink:href="timers.xml">timer mechanism</db:link> and the <db:link xlink:href="qtnetwork-module.xml">network module</db:link>. For example, you cannot start a timer or connect a socket in a thread that is not the <db:link xlink:href="">object's thread</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>You must ensure that all objects created in a thread are deleted before you delete the <db:link xlink:href="qthread.xml">QThread</db:link>.</db:emphasis> This can be done easily by creating the objects on the stack in your run() implementation.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Although QObject is reentrant, the GUI classes, notably QWidget and all its subclasses, are not reentrant. They can only be used from the main thread. As noted earlier, QCoreApplication::exec() must also be called from that thread.</db:para>
+<db:para>In practice, the impossibility of using GUI classes in other threads than the main thread can easily be worked around by putting time-consuming operations in a separate worker thread and displaying the results on screen in the main thread when the worker thread is finished. This is the approach used for implementing the <db:link xlink:href="qtcore-threads-mandelbrot-example.xml">Mandelbrot Example</db:link> and the <db:link xlink:href="qtnetwork-blockingfortuneclient-example.xml">Blocking Fortune Client Example</db:link>.</db:para>
+<db:para>In general, creating QObjects before the QApplication is not supported and can lead to weird crashes on exit, depending on the platform. This means static instances of QObject are also not supported. A properly structured single or multi-threaded application should make the QApplication be the first created, and last destroyed QObject.</db:para>
+</db:section>
+<db:section xml:id="per-thread-event-loop">
+<db:title>Per-Thread Event Loop</db:title>
+<db:para>Each thread can have its own event loop. The initial thread starts its event loop using QCoreApplication::exec(), or for single-dialog GUI applications, sometimes QDialog::exec(). Other threads can start an event loop using QThread::exec(). Like QCoreApplication, <db:link xlink:href="qthread.xml">QThread</db:link> provides an exit(int) function and a quit() slot.</db:para>
+<db:para>An event loop in a thread makes it possible for the thread to use certain non-GUI Qt classes that require the presence of an event loop (such as QTimer, QTcpSocket, and QProcess). It also makes it possible to connect signals from any threads to slots of a specific thread. This is explained in more detail in the <db:link xlink:href="threads-qobject.xml#signals-and-slots-across-threads">Signals and Slots Across Threads</db:link> section below.</db:para>
+<db:mediaobject>
+<db:alt>Threads, objects, and event loops</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/threadsandobjects.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>A QObject instance is said to <db:emphasis>live</db:emphasis> in the thread in which it is created. Events to that object are dispatched by that thread's event loop. The thread in which a QObject lives is available using QObject::thread().</db:para>
+<db:para>The QObject::moveToThread() function changes the thread affinity for an object and its children (the object cannot be moved if it has a parent).</db:para>
+<db:para>Calling <db:code>delete</db:code> on a QObject from a thread other than the one that <db:emphasis>owns</db:emphasis> the object (or accessing the object in other ways) is unsafe, unless you guarantee that the object isn't processing events at that moment. Use QObject::deleteLater() instead, and a DeferredDelete event will be posted, which the event loop of the object's thread will eventually pick up. By default, the thread that <db:emphasis>owns</db:emphasis> a QObject is the thread that <db:emphasis>creates</db:emphasis> the QObject, but not after QObject::moveToThread() has been called.</db:para>
+<db:para>If no event loop is running, events won't be delivered to the object. For example, if you create a QTimer object in a thread but never call exec(), the QTimer will never emit its <db:link xlink:href="">timeout()</db:link> signal. Calling <db:link xlink:href="">deleteLater()</db:link> won't work either. (These restrictions apply to the main thread as well.)</db:para>
+<db:para>You can manually post events to any object in any thread at any time using the thread-safe function QCoreApplication::postEvent(). The events will automatically be dispatched by the event loop of the thread where the object was created.</db:para>
+<db:para>Event filters are supported in all threads, with the restriction that the monitoring object must live in the same thread as the monitored object. Similarly, QCoreApplication::sendEvent() (unlike <db:link xlink:href="">postEvent()</db:link>) can only be used to dispatch events to objects living in the thread from which the function is called.</db:para>
+</db:section>
+<db:section xml:id="accessing-qobject-subclasses-from-other-threads">
+<db:title>Accessing QObject Subclasses from Other Threads</db:title>
+<db:para>QObject and all of its subclasses are not thread-safe. This includes the entire event delivery system. It is important to keep in mind that the event loop may be delivering events to your QObject subclass while you are accessing the object from another thread.</db:para>
+<db:para>If you are calling a function on an QObject subclass that doesn't live in the current thread and the object might receive events, you must protect all access to your QObject subclass's internal data with a mutex; otherwise, you may experience crashes or other undesired behavior.</db:para>
+<db:para>Like other objects, <db:link xlink:href="qthread.xml">QThread</db:link> objects live in the thread where the object was created – <db:emphasis>not</db:emphasis> in the thread that is created when QThread::run() is called. It is generally unsafe to provide slots in your <db:link xlink:href="qthread.xml">QThread</db:link> subclass, unless you protect the member variables with a mutex.</db:para>
+<db:para>On the other hand, you can safely emit signals from your QThread::run() implementation, because signal emission is thread-safe.</db:para>
+</db:section>
+<db:section xml:id="signals-and-slots-across-threads">
+<db:title>Signals and Slots Across Threads</db:title>
+<db:para>Qt supports these signal-slot connection types:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="">Auto Connection</db:link> (default) If the signal is emitted in the thread which the receiving object has affinity then the behavior is the same as the Direct Connection. Otherwise, the behavior is the same as the Queued Connection.&quot;</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="">Direct Connection</db:link> The slot is invoked immediately, when the signal is emitted. The slot is executed in the emitter's thread, which is not necessarily the receiver's thread.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="">Queued Connection</db:link> The slot is invoked when control returns to the event loop of the receiver's thread. The slot is executed in the receiver's thread.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="">Blocking Queued Connection</db:link> The slot is invoked as for the Queued Connection, except the current thread blocks until the slot returns.</db:para>
+<db:note>
+<db:para>Using this type to connect objects in the same thread will cause deadlock.</db:para>
+</db:note>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="">Unique Connection</db:link> The behavior is the same as the Auto Connection, but the connection is made only if it does not duplicate an existing connection. i.e., if the same signal is already connected to the same slot for the same pair of objects, then the connection is not made and connect() returns <db:code>false</db:code>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The connection type can be specified by passing an additional argument to <db:link xlink:href="">connect()</db:link>. Be aware that using direct connections when the sender and receiver live in different threads is unsafe if an event loop is running in the receiver's thread, for the same reason that calling any function on an object living in another thread is unsafe.</db:para>
+<db:para>QObject::connect() itself is thread-safe.</db:para>
+<db:para>The <db:link xlink:href="qtcore-threads-mandelbrot-example.xml">Mandelbrot Example</db:link> uses a queued connection to communicate between a worker thread and the main thread. To avoid freezing the main thread's event loop (and, as a consequence, the application's user interface), all the Mandelbrot fractal computation is done in a separate worker thread. The thread emits a signal when it is done rendering the fractal.</db:para>
+<db:para>Similarly, the <db:link xlink:href="qtnetwork-blockingfortuneclient-example.xml">Blocking Fortune Client Example</db:link> uses a separate thread for communicating with a TCP server asynchronously.</db:para>
+</db:section>
+</db:article>

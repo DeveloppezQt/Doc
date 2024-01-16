@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Transformations Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Transformations example shows how transformations influence the way that QPainter renders graphics primitives.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/transformations-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The application allows the user to manipulate the rendering of a shape by changing the translation, rotation and scale of QPainter's coordinate system.</db:para>
+<db:para>The example consists of two classes and a global enum:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The <db:code>RenderArea</db:code> class controls the rendering of a given shape.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:code>Window</db:code> class is the application's main window.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:code>Operation</db:code> enum describes the various transformation operations available in the application.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>First we will take a quick look at the <db:code>Operation</db:code> enum, then we will review the <db:code>RenderArea</db:code> class to see how a shape is rendered. Finally, we will take a look at the Transformations application's features implemented in the <db:code>Window</db:code> class.</db:para>
+<db:section xml:id="transformation-operations">
+<db:title>Transformation Operations</db:title>
+<db:para>Normally, the QPainter operates on the associated device's own coordinate system, but it also has good support for coordinate transformations.</db:para>
+<db:para>The default coordinate system of a paint device has its origin at the top-left corner. The x values increase to the right and the y values increase downwards. You can scale the coordinate system by a given offset using the QPainter::scale() function, you can rotate it clockwise using the QPainter::rotate() function and you can translate it (i.e. adding a given offset to the points) using the QPainter::translate() function. You can also twist the coordinate system around the origin (called shearing) using the QPainter::shear() function.</db:para>
+<db:para>All the tranformation operations operate on QPainter's tranformation matrix that you can retrieve using the QPainter::worldTransform() function. A matrix transforms a point in the plane to another point. For more information about the transformation matrix, see the <db:link xlink:href="coordsys.xml">Coordinate System</db:link> and QTransform documentation.</db:para>
+<db:programlisting language="cpp">enum Operation { NoTransformation, Translate, Rotate, Scale };
+</db:programlisting>
+<db:para>The global <db:code>Operation</db:code> enum is declared in the <db:code>renderarea.h</db:code> file and describes the various transformation operations available in the Transformations application.</db:para>
+</db:section>
+<db:section xml:id="renderarea-class-definition">
+<db:title>RenderArea Class Definition</db:title>
+<db:para>The <db:code>RenderArea</db:code> class inherits QWidget, and controls the rendering of a given shape.</db:para>
+<db:programlisting language="cpp">class RenderArea : public QWidget
+{
+    Q_OBJECT
+
+public:
+    RenderArea(QWidget *parent = nullptr);
+
+    void setOperations(const QList&amp;lt;Operation&amp;gt; &amp;amp;operations);
+    void setShape(const QPainterPath &amp;amp;shape);
+
+    QSize minimumSizeHint() const override;
+    QSize sizeHint() const override;
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+</db:programlisting>
+<db:para>We declare two public functions, <db:code>setOperations()</db:code> and <db:code>setShape()</db:code>, to be able to specify the <db:code>RenderArea</db:code> widget's shape and to transform the coordinate system the shape is rendered within.</db:para>
+<db:para>We reimplement the QWidget's <db:link xlink:href="">minimumSizeHint()</db:link> and <db:link xlink:href="">sizeHint()</db:link> functions to give the <db:code>RenderArea</db:code> widget a reasonable size within our application, and we reimplement the QWidget::paintEvent() event handler to draw the render area's shape applying the user's transformation choices.</db:para>
+<db:programlisting language="cpp">private:
+    void drawCoordinates(QPainter &amp;amp;painter);
+    void drawOutline(QPainter &amp;amp;painter);
+    void drawShape(QPainter &amp;amp;painter);
+    void transformPainter(QPainter &amp;amp;painter);
+
+    QList&amp;lt;Operation&amp;gt; operations;
+    QPainterPath shape;
+    QRect xBoundingRect;
+    QRect yBoundingRect;
+};
+</db:programlisting>
+<db:para>We also declare several convenience functions to draw the shape, the coordinate system's outline and the coordinates, and to transform the painter according to the chosen transformations.</db:para>
+<db:para>In addition, the <db:code>RenderArea</db:code> widget keeps a list of the currently applied transformation operations, a reference to its shape, and a couple of convenience variables that we will use when rendering the coordinates.</db:para>
+</db:section>
+<db:section xml:id="renderarea-class-implementation">
+<db:title>RenderArea Class Implementation</db:title>
+<db:para>The <db:code>RenderArea</db:code> widget controls the rendering of a given shape, including the transformations of the coordinate system, by reimplementing the QWidget::paintEvent() event handler. But first we will take a quick look at the constructor and at the functions that provides access to the <db:code>RenderArea</db:code> widget:</db:para>
+<db:programlisting language="cpp">RenderArea::RenderArea(QWidget *parent)
+    : QWidget(parent)
+{
+    QFont newFont = font();
+    newFont.setPixelSize(12);
+    setFont(newFont);
+
+    QFontMetrics fontMetrics(newFont);
+    xBoundingRect = fontMetrics.boundingRect(tr(&quot;x&quot;));
+    yBoundingRect = fontMetrics.boundingRect(tr(&quot;y&quot;));
+}
+</db:programlisting>
+<db:para>In the constructor we pass the parent parameter on to the base class, and customize the font that we will use to render the coordinates. The QWidget::font() function returns the font currently set for the widget. As long as no special font has been set, or after QWidget::setFont() is called, this is either a special font for the widget class, the parent's font or (if this widget is a top level widget) the default application font.</db:para>
+<db:para>After ensuring that the font's size is 12 points, we extract the rectangles enclosing the coordinate letters, 'x' and 'y', using the QFontMetrics class.</db:para>
+<db:para>QFontMetrics provides functions to access the individual metrics of the font, its characters, and for strings rendered in the font. The QFontMetrics::boundingRect() function returns the bounding rectangle of the given character relative to the left-most point on the base line.</db:para>
+<db:programlisting language="cpp">void RenderArea::setOperations(const QList&amp;lt;Operation&amp;gt; &amp;amp;operations)
+{
+    this-&amp;gt;operations = operations;
+    update();
+}
+
+void RenderArea::setShape(const QPainterPath &amp;amp;shape)
+{
+    this-&amp;gt;shape = shape;
+    update();
+}
+</db:programlisting>
+<db:para>In the <db:code>setShape()</db:code> and <db:code>setOperations()</db:code> functions we update the <db:code>RenderArea</db:code> widget by storing the new value or values followed by a call to the QWidget::update() slot which schedules a paint event for processing when Qt returns to the main event loop.</db:para>
+<db:programlisting language="cpp">QSize RenderArea::minimumSizeHint() const
+{
+    return QSize(182, 182);
+}
+
+QSize RenderArea::sizeHint() const
+{
+    return QSize(232, 232);
+}
+</db:programlisting>
+<db:para>We reimplement the QWidget's <db:link xlink:href="">minimumSizeHint()</db:link> and <db:link xlink:href="">sizeHint()</db:link> functions to give the <db:code>RenderArea</db:code> widget a reasonable size within our application. The default implementations of these functions returns an invalid size if there is no layout for this widget, and returns the layout's minimum size or preferred size, respectively, otherwise.</db:para>
+<db:programlisting language="cpp">void RenderArea::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillRect(event-&amp;gt;rect(), QBrush(Qt::white));
+
+    painter.translate(66, 66);
+</db:programlisting>
+<db:para>The <db:code>paintEvent()</db:code> event handler receives the <db:code>RenderArea</db:code> widget's paint events. A paint event is a request to repaint all or part of the widget. It can happen as a result of QWidget::repaint() or QWidget::update(), or because the widget was obscured and has now been uncovered, or for many other reasons.</db:para>
+<db:para>First we create a QPainter for the <db:code>RenderArea</db:code> widget. The <db:link xlink:href="">QPainter::Antialiasing</db:link> render hint indicates that the engine should antialias edges of primitives if possible. Then we erase the area that needs to be repainted using the QPainter::fillRect() function.</db:para>
+<db:para>We also translate the coordinate system with an constant offset to ensure that the original shape is renderend with a suitable margin.</db:para>
+<db:programlisting language="cpp">    painter.save();
+    transformPainter(painter);
+    drawShape(painter);
+    painter.restore();
+</db:programlisting>
+<db:para>Before we start to render the shape, we call the QPainter::save() function.</db:para>
+<db:para>QPainter::save() saves the current painter state (i.e. pushes the state onto a stack) including the current coordinate system. The rationale for saving the painter state is that the following call to the <db:code>transformPainter()</db:code> function will transform the coordinate system depending on the currently chosen transformation operations, and we need a way to get back to the original state to draw the outline.</db:para>
+<db:para>After transforming the coordinate system, we draw the <db:code>RenderArea</db:code>'s shape, and then we restore the painter state using the QPainter::restore() function (i.e. popping the saved state off the stack).</db:para>
+<db:programlisting language="cpp">    drawOutline(painter);
+</db:programlisting>
+<db:para>Then we draw the square outline.</db:para>
+<db:programlisting language="cpp">    transformPainter(painter);
+    drawCoordinates(painter);
+}
+</db:programlisting>
+<db:para>Since we want the coordinates to correspond with the coordinate system the shape is rendered within, we must make another call to the <db:code>transformPainter()</db:code> function.</db:para>
+<db:para>The order of the painting operations is essential with respect to the shared pixels. The reason why we don't render the coordinates when the coordinate system already is transformed to render the shape, but instead defer their rendering to the end, is that we want the coordinates to appear on top of the shape and its outline.</db:para>
+<db:para>There is no need to save the QPainter state this time since drawing the coordinates is the last painting operation.</db:para>
+<db:programlisting language="cpp">void RenderArea::drawCoordinates(QPainter &amp;amp;painter)
+{
+    painter.setPen(Qt::red);
+
+    painter.drawLine(0, 0, 50, 0);
+    painter.drawLine(48, -2, 50, 0);
+    painter.drawLine(48, 2, 50, 0);
+    painter.drawText(60 - xBoundingRect.width() / 2,
+                     0 + xBoundingRect.height() / 2, tr(&quot;x&quot;));
+
+    painter.drawLine(0, 0, 0, 50);
+    painter.drawLine(-2, 48, 0, 50);
+    painter.drawLine(2, 48, 0, 50);
+    painter.drawText(0 - yBoundingRect.width() / 2,
+                     60 + yBoundingRect.height() / 2, tr(&quot;y&quot;));
+}
+
+void RenderArea::drawOutline(QPainter &amp;amp;painter)
+{
+    painter.setPen(Qt::darkGreen);
+    painter.setPen(Qt::DashLine);
+    painter.setBrush(Qt::NoBrush);
+    painter.drawRect(0, 0, 100, 100);
+}
+
+void RenderArea::drawShape(QPainter &amp;amp;painter)
+{
+    painter.fillPath(shape, Qt::blue);
+}
+</db:programlisting>
+<db:para>The <db:code>drawCoordinates()</db:code>, <db:code>drawOutline()</db:code> and <db:code>drawShape()</db:code> are convenience functions called from the <db:code>paintEvent()</db:code> event handler. For more information about QPainter's basic drawing operations and how to display basic graphics primitives, see the <db:link xlink:href="qtwidgets-painting-basicdrawing-example.xml">Basic Drawing</db:link> example.</db:para>
+<db:programlisting language="cpp">void RenderArea::transformPainter(QPainter &amp;amp;painter)
+{
+    for (int i = 0; i &amp;lt; operations.size(); ++i) {
+        switch (operations[i]) {
+        case Translate:
+            painter.translate(50, 50);
+            break;
+        case Scale:
+            painter.scale(0.75, 0.75);
+            break;
+        case Rotate:
+            painter.rotate(60);
+            break;
+        case NoTransformation:
+        default:
+            ;
+        }
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>transformPainter()</db:code> convenience function is also called from the <db:code>paintEvent()</db:code> event handler, and transforms the given QPainter's coordinate system according to the user's transformation choices.</db:para>
+</db:section>
+<db:section xml:id="window-class-definition">
+<db:title>Window Class Definition</db:title>
+<db:para>The <db:code>Window</db:code> class is the Transformations application's main window.</db:para>
+<db:para>The application displays four <db:code>RenderArea</db:code> widgets. The left-most widget renders the shape in QPainter's default coordinate system, the others render the shape with the chosen transformation in addition to all the transformations applied to the <db:code>RenderArea</db:code> widgets to their left.</db:para>
+<db:programlisting language="cpp">class Window : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Window();
+
+public slots:
+    void operationChanged();
+    void shapeSelected(int index);
+</db:programlisting>
+<db:para>We declare two public slots to make the application able to respond to user interaction, updating the displayed <db:code>RenderArea</db:code> widgets according to the user's transformation choices.</db:para>
+<db:para>The <db:code>operationChanged()</db:code> slot updates each of the <db:code>RenderArea</db:code> widgets applying the currently chosen transformation operations, and is called whenever the user changes the selected operations. The <db:code>shapeSelected()</db:code> slot updates the <db:code>RenderArea</db:code> widgets' shapes whenever the user changes the preferred shape.</db:para>
+<db:programlisting language="cpp">private:
+    void setupShapes();
+
+    enum { NumTransformedAreas = 3 };
+    RenderArea *originalRenderArea;
+    RenderArea *transformedRenderAreas[NumTransformedAreas];
+    QComboBox *shapeComboBox;
+    QComboBox *operationComboBoxes[NumTransformedAreas];
+    QList&amp;lt;QPainterPath&amp;gt; shapes;
+};
+</db:programlisting>
+<db:para>We also declare a private convenience function, <db:code>setupShapes()</db:code>, that is used when constructing the <db:code>Window</db:code> widget, and we declare pointers to the various components of the widget. We choose to keep the available shapes in a <db:link xlink:href="qlist.xml">QList</db:link> of QPainterPaths. In addition we declare a private enum counting the number of displayed <db:code>RenderArea</db:code> widgets except the widget that renders the shape in QPainter's default coordinate system.</db:para>
+</db:section>
+<db:section xml:id="window-class-implementation">
+<db:title>Window Class Implementation</db:title>
+<db:para>In the constructor we create and initialize the application's components:</db:para>
+<db:programlisting language="cpp">Window::Window()
+{
+    originalRenderArea = new RenderArea;
+
+    shapeComboBox = new QComboBox;
+    shapeComboBox-&amp;gt;addItem(tr(&quot;Clock&quot;));
+    shapeComboBox-&amp;gt;addItem(tr(&quot;House&quot;));
+    shapeComboBox-&amp;gt;addItem(tr(&quot;Text&quot;));
+    shapeComboBox-&amp;gt;addItem(tr(&quot;Truck&quot;));
+
+    QGridLayout *layout = new QGridLayout;
+    layout-&amp;gt;addWidget(originalRenderArea, 0, 0);
+    layout-&amp;gt;addWidget(shapeComboBox, 1, 0);
+</db:programlisting>
+<db:para>First we create the <db:code>RenderArea</db:code> widget that will render the shape in the default coordinate system. We also create the associated QComboBox that allows the user to choose among four different shapes: A clock, a house, a text and a truck. The shapes themselves are created at the end of the constructor, using the <db:code>setupShapes()</db:code> convenience function.</db:para>
+<db:programlisting language="cpp">    for (int i = 0; i &amp;lt; NumTransformedAreas; ++i) {
+        transformedRenderAreas[i] = new RenderArea;
+
+        operationComboBoxes[i] = new QComboBox;
+        operationComboBoxes[i]-&amp;gt;addItem(tr(&quot;No transformation&quot;));
+        operationComboBoxes[i]-&amp;gt;addItem(tr(&quot;Rotate by 60\xC2\xB0&quot;));
+        operationComboBoxes[i]-&amp;gt;addItem(tr(&quot;Scale to 75%&quot;));
+        operationComboBoxes[i]-&amp;gt;addItem(tr(&quot;Translate by (50, 50)&quot;));
+
+        connect(operationComboBoxes[i], QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::activated),
+                this, &amp;amp;Window::operationChanged);
+
+        layout-&amp;gt;addWidget(transformedRenderAreas[i], 0, i + 1);
+        layout-&amp;gt;addWidget(operationComboBoxes[i], 1, i + 1);
+    }
+</db:programlisting>
+<db:para>Then we create the <db:code>RenderArea</db:code> widgets that will render their shapes with coordinate tranformations. By default the applied operation is <db:guilabel>No Transformation</db:guilabel>, i.e. the shapes are rendered within the default coordinate system. We create and initialize the associated QComboBoxes with items corresponding to the various transformation operations decribed by the global <db:code>Operation</db:code> enum.</db:para>
+<db:para>We also connect the QComboBoxes' <db:link xlink:href="">activated()</db:link> signal to the <db:code>operationChanged()</db:code> slot to update the application whenever the user changes the selected transformation operations.</db:para>
+<db:programlisting language="cpp">    setLayout(layout);
+    setupShapes();
+    shapeSelected(0);
+
+    setWindowTitle(tr(&quot;Transformations&quot;));
+}
+</db:programlisting>
+<db:para>Finally, we set the layout for the application window using the QWidget::setLayout() function, construct the available shapes using the private <db:code>setupShapes()</db:code> convenience function, and make the application show the clock shape on startup using the public <db:code>shapeSelected()</db:code> slot before we set the window title.</db:para>
+<db:programlisting language="cpp">void Window::setupShapes()
+{
+    QPainterPath truck;
+    QPainterPath clock;
+    QPainterPath house;
+    QPainterPath text;
+    ...
+    shapes.append(clock);
+    shapes.append(house);
+    shapes.append(text);
+    shapes.append(truck);
+
+    connect(shapeComboBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::activated),
+            this, &amp;amp;Window::shapeSelected);
+}
+</db:programlisting>
+<db:para>The <db:code>setupShapes()</db:code> function is called from the constructor and create the QPainterPath objects representing the shapes that are used in the application. For construction details, see the <db:code>painting/transformations/window.cpp</db:code> example file. The shapes are stored in a <db:link xlink:href="qlist.xml">QList</db:link>. The <db:link xlink:href="qlist.xml#append">QList::append</db:link>() function inserts the given shape at the end of the list.</db:para>
+<db:para>We also connect the associated QComboBox's <db:link xlink:href="">activated()</db:link> signal to the <db:code>shapeSelected()</db:code> slot to update the application when the user changes the preferred shape.</db:para>
+<db:programlisting language="cpp">void Window::operationChanged()
+{
+    static const Operation operationTable[] = {
+        NoTransformation, Rotate, Scale, Translate
+    };
+
+    QList&amp;lt;Operation&amp;gt; operations;
+    for (int i = 0; i &amp;lt; NumTransformedAreas; ++i) {
+        int index = operationComboBoxes[i]-&amp;gt;currentIndex();
+        operations.append(operationTable[index]);
+        transformedRenderAreas[i]-&amp;gt;setOperations(operations);
+    }
+}
+</db:programlisting>
+<db:para>The public <db:code>operationChanged()</db:code> slot is called whenever the user changes the selected operations.</db:para>
+<db:para>We retrieve the chosen transformation operation for each of the transformed <db:code>RenderArea</db:code> widgets by querying the associated QComboBoxes. The transformed <db:code>RenderArea</db:code> widgets are supposed to render the shape with the transformation specified by its associated combobox <db:emphasis>in addition to</db:emphasis> all the transformations applied to the <db:code>RenderArea</db:code> widgets to its left. For that reason, for each widget we query, we append the associated operation to a <db:link xlink:href="qlist.xml">QList</db:link> of transformations which we apply to the widget before proceeding to the next.</db:para>
+<db:programlisting language="cpp">void Window::shapeSelected(int index)
+{
+    QPainterPath shape = shapes[index];
+    originalRenderArea-&amp;gt;setShape(shape);
+    for (int i = 0; i &amp;lt; NumTransformedAreas; ++i)
+        transformedRenderAreas[i]-&amp;gt;setShape(shape);
+}
+</db:programlisting>
+<db:para>The <db:code>shapeSelected()</db:code> slot is called whenever the user changes the preferred shape, updating the <db:code>RenderArea</db:code> widgets using their public <db:code>setShape()</db:code> function.</db:para>
+</db:section>
+<db:section xml:id="summary">
+<db:title>Summary</db:title>
+<db:para>The Transformations example shows how transformations influence the way that QPainter renders graphics primitives. Normally, the QPainter operates on the device's own coordinate system, but it also has good support for coordinate transformations. With the Transformations application you can scale, rotate and translate QPainter's coordinate system. The order in which these tranformations are applied is essential for the result.</db:para>
+<db:para>All the tranformation operations operate on QPainter's tranformation matrix. For more information about the transformation matrix, see the <db:link xlink:href="coordsys.xml">Coordinate System</db:link> and QTransform documentation.</db:para>
+<db:para>The Qt reference documentation provides several painting examples. Among these is the <db:link xlink:href="qtwidgets-painting-affine-example.xml">Affine Transformations</db:link> example that shows Qt's ability to perform transformations on painting operations. The example also allows the user to experiment with the various transformation operations.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/painting/transformations?h=5.14">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

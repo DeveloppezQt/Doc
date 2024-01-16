@@ -1,0 +1,445 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Container Extension Example</db:title>
+<db:productname>QtDesigner</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Designer Manual</db:titleabbrev>
+<db:abstract>
+<db:para>Creating a custom multi-page plugin for <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Container Extension example shows how to create a custom multi-page plugin for <db:emphasis>Qt Designer</db:emphasis> using the <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> class.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/containerextension-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>To provide a custom widget that can be used with <db:emphasis>Qt Designer</db:emphasis>, we need to supply a self-contained implementation. In this example we use a custom multi-page widget designed to show the container extension feature.</db:para>
+<db:para>An extension is an object which modifies the behavior of <db:emphasis>Qt Designer</db:emphasis>. The <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> enables <db:emphasis>Qt Designer</db:emphasis> to manage and manipulate a custom multi-page widget, i.e. adding and deleting pages to the widget.</db:para>
+<db:para>There are four available types of extensions in <db:emphasis>Qt Designer</db:emphasis>:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qdesignermembersheetextension.xml">QDesignerMemberSheetExtension</db:link> provides an extension that allows you to manipulate a widget's member functions which is displayed when configuring connections using Qt Designer's mode for editing signals and slots.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qdesignerpropertysheetextension.xml">QDesignerPropertySheetExtension</db:link> provides an extension that allows you to manipulate a widget's properties which is displayed in Qt Designer's property editor.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qdesignertaskmenuextension.xml">QDesignerTaskMenuExtension</db:link> provides an extension that allows you to add custom menu entries to <db:emphasis>Qt Designer</db:emphasis>'s task menu.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> provides an extension that allows you to add (and delete) pages to a multi-page container plugin in <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>You can use all the extensions following the same pattern as in this example, only replacing the respective extension base class. For more information, see <db:link xlink:href="qtdesigner-module.xml">Qt Designer C++ Classes</db:link>.</db:para>
+<db:para>The Container Extension example consists of four classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>MultiPageWidget</db:code> is a custom container widget that lets the user manipulate and populate its pages, and navigate among these using a combobox.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>MultiPageWidgetPlugin</db:code> exposes the <db:code>MultiPageWidget</db:code> class to <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>MultiPageWidgetExtensionFactory</db:code> creates a <db:code>MultiPageWidgetContainerExtension</db:code> object.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>MultiPageWidgetContainerExtension</db:code> provides the container extension.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The project file for custom widget plugins needs some additional information to ensure that they will work within <db:emphasis>Qt Designer</db:emphasis>. For example, custom widget plugins rely on components supplied with <db:emphasis>Qt Designer</db:emphasis>, and this must be specified in the project file that we use. We will first take a look at the plugin's project file.</db:para>
+<db:para>Then we will continue by reviewing the <db:code>MultiPageWidgetPlugin</db:code> class, and take a look at the <db:code>MultiPageWidgetExtensionFactory</db:code> and <db:code>MultiPageWidgetContainerExtension</db:code> classes. Finally, we will take a quick look at the <db:code>MultiPageWidget</db:code> class definition.</db:para>
+<db:section xml:id="the-project-file-containerextension-pro">
+<db:title>The Project File: containerextension.pro</db:title>
+<db:para>The project file must contain some additional information to ensure that the plugin will work as expected:</db:para>
+<db:programlisting language="cpp">TEMPLATE = lib
+CONFIG  += plugin
+QT      += widgets designer
+</db:programlisting>
+<db:para>The <db:code>TEMPLATE</db:code> variable's value makes <db:code>qmake</db:code> create the custom widget as a library. Later, we will ensure that the widget will be recognized as a plugin by Qt by using the <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() macro to export the relevant widget information.</db:para>
+<db:para>The <db:code>CONFIG</db:code> variable is set to <db:code>plugin</db:code>, which ensures that <db:code>qmake</db:code> considers the custom widget a plugin library.</db:para>
+<db:para>The <db:code>QT</db:code> variable contains the value <db:code>designer</db:code>. Since the plugin uses components supplied with <db:emphasis>Qt Designer</db:emphasis> that require linkage, this value ensures that our plugin links against <db:emphasis>Qt Designer</db:emphasis>'s library (<db:code>libQtDesigner.so</db:code>).</db:para>
+<db:para>The header and source files for the widget are declared in the usual way:</db:para>
+<db:programlisting language="cpp">HEADERS += multipagewidget.h \
+           multipagewidgetplugin.h \
+           multipagewidgetcontainerextension.h \
+           multipagewidgetextensionfactory.h
+
+SOURCES += multipagewidget.cpp \
+           multipagewidgetplugin.cpp \
+           multipagewidgetcontainerextension.cpp \
+           multipagewidgetextensionfactory.cpp
+
+OTHER_FILES += multipagewidget.json
+</db:programlisting>
+<db:para>We provide an implementation of the plugin interface so that <db:emphasis>Qt Designer</db:emphasis> can use the custom widget. In this particular example we also provide implementations of the container extension interface and the extension factory.</db:para>
+<db:para>It is important to ensure that the plugin is installed in a location that is searched by <db:emphasis>Qt Designer</db:emphasis>. We do this by specifying a target path for the project and adding it to the list of items to install:</db:para>
+<db:programlisting language="cpp">target.path = $$[QT_INSTALL_PLUGINS]/designer
+INSTALLS += target
+</db:programlisting>
+<db:para>The container extension is created as a library, and will be installed alongside the other <db:emphasis>Qt Designer</db:emphasis> plugins when the project is installed (using <db:code>make install</db:code> or an equivalent installation procedure).</db:para>
+<db:para>Note that if you want the plugins to appear in a Visual Studio integration, the plugins must be built in release mode and their libraries must be copied into the plugin directory in the install path of the integration (for an example, see <db:code>C:/program files/trolltech as/visual studio integration/plugins</db:code>).</db:para>
+<db:para>For more information about plugins, see the <db:link xlink:href="plugins-howto.xml">How to Create Qt Plugins</db:link> documentation.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetplugin-class-definition">
+<db:title>MultiPageWidgetPlugin Class Definition</db:title>
+<db:para>The <db:code>MultiPageWidgetPlugin</db:code> class exposes the <db:code>MultiPageWidget</db:code> class to <db:emphasis>Qt Designer</db:emphasis>. Its definition is similar to the <db:link xlink:href="qtdesigner-customwidgetplugin-example.xml">Custom Widget Plugin</db:link> example's plugin class which is explained in detail. The parts of the class definition that is specific to this particular custom widget is the class name and a couple of private slots:</db:para>
+<db:programlisting language="cpp">#ifndef MULTIPAGEWIDGETPLUGIN_H
+#define MULTIPAGEWIDGETPLUGIN_H
+
+#include &amp;lt;QtUiPlugin/QDesignerCustomWidgetInterface&amp;gt;
+
+class QIcon;
+class QWidget;
+
+class MultiPageWidgetPlugin: public QObject, public QDesignerCustomWidgetInterface
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID &quot;org.qt-project.Qt.QDesignerCustomWidget&quot;)
+    Q_INTERFACES(QDesignerCustomWidgetInterface)
+public:
+    explicit MultiPageWidgetPlugin(QObject *parent = nullptr);
+
+    QString name() const override;
+    QString group() const override;
+    QString toolTip() const override;
+    QString whatsThis() const override;
+    QString includeFile() const override;
+    QIcon icon() const override;
+    bool isContainer() const override;
+    QWidget *createWidget(QWidget *parent) override;
+    bool isInitialized() const override;
+    void initialize(QDesignerFormEditorInterface *formEditor) override;
+    QString domXml() const override;
+
+private slots:
+    void currentIndexChanged(int index);
+    void pageTitleChanged(const QString &amp;amp;title);
+
+private:
+    bool initialized = false;
+};
+
+#endif
+</db:programlisting>
+<db:para>The plugin class provides <db:emphasis>Qt Designer</db:emphasis> with basic information about our plugin, such as its class name and its include file. Furthermore it knows how to create instances of the <db:code>MultiPageWidget</db:code> widget. <db:code>MultiPageWidgetPlugin</db:code> also defines the <db:link xlink:href="qdesignercustomwidgetinterface.xml#initialize">initialize</db:link>() function which is called after the plugin is loaded into <db:emphasis>Qt Designer</db:emphasis>. The function's QDesignerFormEditorInterface parameter provides the plugin with a gateway to all of <db:emphasis>Qt Designer</db:emphasis>'s API's.</db:para>
+<db:para>In the case of a multipage widget such as ours, we must also implement two private slots, currentIndexChanged() and pageTitleChanged(), to be able to update <db:emphasis>Qt Designer</db:emphasis>'s property editor whenever the user views another page or changes one of the page titles. To be able to give each page their own title, we have chosen to use the QWidget::windowTitle property to store the page title (for more information see the MultiPageWidget class implementation in <db:emphasis>containerextension/multipagewidget.cpp</db:emphasis>. Note that currently there is no way of adding a custom property (for example, a page title) to the pages without using a predefined property as placeholder.</db:para>
+<db:para>The <db:code>MultiPageWidgetPlugin</db:code> class inherits from both QObject and <db:link xlink:href="qdesignercustomwidgetinterface.xml">QDesignerCustomWidgetInterface</db:link>. It is important to remember, when using multiple inheritance, to ensure that all the interfaces (i.e. the classes that doesn't inherit <db:link xlink:href="qobject-proxy.xml#Q_OBJECT">Q_OBJECT</db:link>) are made known to the meta object system using the <db:link xlink:href="qobject-proxy.xml#Q_INTERFACES">Q_INTERFACES</db:link>() macro. This enables <db:emphasis>Qt Designer</db:emphasis> to use <db:link xlink:href="">qobject_cast(QObject * object)</db:link> to query for supported interfaces using nothing but a QObject pointer.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetplugin-class-implementation">
+<db:title>MultiPageWidgetPlugin Class Implementation</db:title>
+<db:para>The MultiPageWidgetPlugin class implementation is in most parts equivalent to the <db:link xlink:href="qtdesigner-customwidgetplugin-example.xml">Custom Widget Plugin</db:link> example's plugin class:</db:para>
+<db:programlisting language="cpp">MultiPageWidgetPlugin::MultiPageWidgetPlugin(QObject *parent)
+    : QObject(parent)
+{
+}
+
+QString MultiPageWidgetPlugin::name() const
+{
+    return QLatin1String(&quot;MultiPageWidget&quot;);
+}
+
+QString MultiPageWidgetPlugin::group() const
+{
+    return QLatin1String(&quot;Display Widgets [Examples]&quot;);
+}
+
+QString MultiPageWidgetPlugin::toolTip() const
+{
+    return QString();
+}
+
+QString MultiPageWidgetPlugin::whatsThis() const
+{
+    return QString();
+}
+
+QString MultiPageWidgetPlugin::includeFile() const
+{
+    return QLatin1String(&quot;multipagewidget.h&quot;);
+}
+
+QIcon MultiPageWidgetPlugin::icon() const
+{
+    return QIcon();
+}
+
+bool MultiPageWidgetPlugin::isInitialized() const
+{
+    return initialized;
+}
+</db:programlisting>
+<db:para>One of the functions that differ is the isContainer() function which returns true in this example since our custom widget is intended to be used as a container.</db:para>
+<db:programlisting language="cpp">bool MultiPageWidgetPlugin::isContainer() const
+{
+    return true;
+}
+</db:programlisting>
+<db:para>Another function that differ is the function creating our custom widget:</db:para>
+<db:programlisting language="cpp">QWidget *MultiPageWidgetPlugin::createWidget(QWidget *parent)
+{
+    MultiPageWidget *widget = new MultiPageWidget(parent);
+    connect(widget, &amp;amp;MultiPageWidget::currentIndexChanged,
+            this, &amp;amp;MultiPageWidgetPlugin::currentIndexChanged);
+    connect(widget, &amp;amp;MultiPageWidget::pageTitleChanged,
+            this, &amp;amp;MultiPageWidgetPlugin::pageTitleChanged);
+    return widget;
+}
+</db:programlisting>
+<db:para>In addition to create and return the widget, we connect our custom container widget's currentIndexChanged() signal to the plugin's currentIndexChanged() slot to ensure that <db:emphasis>Qt Designer</db:emphasis>'s property editor is updated whenever the user views another page. We also connect the widget's pageTitleChanged() signal to the plugin's pageTitleChanged() slot.</db:para>
+<db:para>The currentIndexChanged() slot is called whenever our custom widget's currentIndexChanged() <db:emphasis>signal</db:emphasis> is emitted, i.e. whenever the user views another page:</db:para>
+<db:programlisting language="cpp">void MultiPageWidgetPlugin::currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+    MultiPageWidget *widget = qobject_cast&amp;lt;MultiPageWidget*&amp;gt;(sender());
+</db:programlisting>
+<db:para>First, we retrieve the object emitting the signal using the QObject::sender() and <db:link xlink:href="qobject-proxy.xml#qobject_cast-1">qobject_cast</db:link>() functions. If it's called in a slot activated by a signal, QObject::sender() returns a pointer to the object that sent the signal; otherwise it returns 0.</db:para>
+<db:programlisting language="cpp">    if (widget) {
+        QDesignerFormWindowInterface *form = QDesignerFormWindowInterface::findFormWindow(widget);
+        if (form)
+            form-&amp;gt;emitSelectionChanged();
+    }
+}
+</db:programlisting>
+<db:para>Once we have the widget we can update the property editor. <db:emphasis>Qt Designer</db:emphasis> uses the <db:link xlink:href="qdesignerpropertysheetextension.xml">QDesignerPropertySheetExtension</db:link> class to feed its property editor, and whenever a widget is selected in its workspace, Qt Designer will query for the widget's property sheet extension and update the property editor.</db:para>
+<db:para>So what we want to achieve is to notify <db:emphasis>Qt Designer</db:emphasis> that our widget's <db:emphasis>internal</db:emphasis> selection has changed: First we use the static QDesignerFormWindowInterface::findFormWindow() function to retrieve the QDesignerFormWindowInterface object containing the widget. The QDesignerFormWindowInterface class allows you to query and manipulate form windows appearing in Qt Designer's workspace. Then, all we have to do is to emit its <db:link xlink:href="">emitSelectionChanged()</db:link> signal, forcing an update of the property editor.</db:para>
+<db:para>When changing a page title a generic refresh of the property editor is not enough because it is actually the page's property extension that needs to be updated. For that reason we need to access the <db:link xlink:href="qdesignerpropertysheetextension.xml">QDesignerPropertySheetExtension</db:link> object for the page which title we want to change. The <db:link xlink:href="qdesignerpropertysheetextension.xml">QDesignerPropertySheetExtension</db:link> class also allows you to manipulate a widget's properties, but to get hold of the extension we must first retrieve access to <db:emphasis>Qt Designer</db:emphasis>'s extension manager:</db:para>
+<db:programlisting language="cpp">void MultiPageWidgetPlugin::pageTitleChanged(const QString &amp;amp;title)
+{
+    Q_UNUSED(title);
+    MultiPageWidget *widget = qobject_cast&amp;lt;MultiPageWidget*&amp;gt;(sender());
+    if (widget) {
+        QWidget *page = widget-&amp;gt;widget(widget-&amp;gt;currentIndex());
+        QDesignerFormWindowInterface *form;
+        form = QDesignerFormWindowInterface::findFormWindow(widget);
+</db:programlisting>
+<db:para>Again we first retrieve the widget emitting the signal, using the QObject::sender() and <db:link xlink:href="qobject-proxy.xml#qobject_cast-1">qobject_cast</db:link>() functions. Then we retrieve the current page from the widget that emitted the signal, and we use the static QDesignerFormWindowInterface::findFormWindow() function to retrieve the form containing our widget.</db:para>
+<db:programlisting language="cpp">            QDesignerFormEditorInterface *editor = form-&amp;gt;core();
+            QExtensionManager *manager = editor-&amp;gt;extensionManager();
+</db:programlisting>
+<db:para>Now that we have the form window, the QDesignerFormWindowInterface class provides the <db:link xlink:href="">core()</db:link> function which returns the current QDesignerFormEditorInterface object. The QDesignerFormEditorInterface class allows you to access Qt Designer's various components. In particular, the QDesignerFormEditorInterface::extensionManager() function returns a reference to the current extension manager.</db:para>
+<db:programlisting language="cpp">            QDesignerPropertySheetExtension *sheet;
+            sheet = qt_extension&amp;lt;QDesignerPropertySheetExtension*&amp;gt;(manager, page);
+            const int propertyIndex = sheet-&amp;gt;indexOf(QLatin1String(&quot;windowTitle&quot;));
+            sheet-&amp;gt;setChanged(propertyIndex, true);
+        }
+    }
+}
+</db:programlisting>
+<db:para>Once we have the extension manager we can update the extension sheet: First we retrieve the property extension for the page which title we want to change, using the qt_extension() function. Then we retrieve the index for the page title using the <db:link xlink:href="qdesignerpropertysheetextension.xml#indexOf">QDesignerPropertySheetExtension::indexOf</db:link>() function. As previously mentioned, we have chosen to use the QWidget::windowTitle property to store the page title (for more information see the MultiPageWidget class implementation in <db:emphasis>containerextension/multipagewidget.cpp</db:emphasis>. Finally, we implicitly force an update of the page's property sheet by calling the <db:link xlink:href="qdesignerpropertysheetextension.xml#setChanged">QDesignerPropertySheetExtension::setChanged</db:link>() function.</db:para>
+<db:programlisting language="cpp">void MultiPageWidgetPlugin::initialize(QDesignerFormEditorInterface *formEditor)
+{
+    if (initialized)
+        return;
+</db:programlisting>
+<db:para>Note also the initialize() function: The <db:code>initialize()</db:code> function takes a QDesignerFormEditorInterface object as argument.</db:para>
+<db:programlisting language="cpp">    QExtensionManager *manager = formEditor-&amp;gt;extensionManager();
+</db:programlisting>
+<db:para>When creating extensions associated with custom widget plugins, we need to access <db:emphasis>Qt Designer</db:emphasis>'s current extension manager which we retrieve from the QDesignerFormEditorInterface parameter.</db:para>
+<db:para>In addition to allowing you to manipulate a widget's properties, the QExtensionManager class provides extension management facilities for <db:emphasis>Qt Designer</db:emphasis>. Using <db:emphasis>Qt Designer</db:emphasis>'s current extension manager you can retrieve the extension for a given object. You can also register and unregister an extension for a given object. Remember that an extension is an object which modifies the behavior of <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+<db:para>When registrering an extension, it is actually the associated extension factory that is registered. In <db:emphasis>Qt Designer</db:emphasis>, extension factories are used to look up and create named extensions as they are required. So, in this example, the container extension itself is not created until <db:emphasis>Qt Designer</db:emphasis> must know whether the associated widget is a container, or not.</db:para>
+<db:programlisting language="cpp">    QExtensionFactory *factory = new MultiPageWidgetExtensionFactory(manager);
+
+    Q_ASSERT(manager != 0);
+    manager-&amp;gt;registerExtensions(factory, Q_TYPEID(QDesignerContainerExtension));
+
+    initialized = true;
+}
+</db:programlisting>
+<db:para>We create a <db:code>MultiPageWidgetExtensionFactory</db:code> object that we register using <db:emphasis>Qt Designer</db:emphasis>'s current <db:link xlink:href="qextensionmanager-proxy.xml">extension manager</db:link> retrieved from the QDesignerFormEditorInterface parameter. The first argument is the newly created factory and the second argument is an extension identifier which is a string. The <db:code>Q_TYPEID()</db:code> macro simply convert the string into a <db:link xlink:href="qlatin1string.xml">QLatin1String</db:link>.</db:para>
+<db:para>The <db:code>MultiPageWidgetExtensionFactory</db:code> class is a subclass of QExtensionFactory. When <db:emphasis>Qt Designer</db:emphasis> must know whether a widget is a container, or not, <db:emphasis>Qt Designer</db:emphasis>'s extension manager will run through all its registered factories invoking the first one which is able to create a container extension for that widget. This factory will in turn create a <db:code>MultiPageWidgetExtension</db:code> object.</db:para>
+<db:programlisting language="cpp">QString MultiPageWidgetPlugin::domXml() const
+{
+    return QLatin1String(&quot;\
+&amp;lt;ui language=\&quot;c++\&quot;&amp;gt;\
+    &amp;lt;widget class=\&quot;MultiPageWidget\&quot; name=\&quot;multipagewidget\&quot;&amp;gt;\
+        &amp;lt;widget class=\&quot;QWidget\&quot; name=\&quot;page\&quot; /&amp;gt;\
+    &amp;lt;/widget&amp;gt;\
+    &amp;lt;customwidgets&amp;gt;\
+        &amp;lt;customwidget&amp;gt;\
+            &amp;lt;class&amp;gt;MultiPageWidget&amp;lt;/class&amp;gt;\
+            &amp;lt;extends&amp;gt;QWidget&amp;lt;/extends&amp;gt;\
+            &amp;lt;addpagemethod&amp;gt;addPage&amp;lt;/addpagemethod&amp;gt;\
+        &amp;lt;/customwidget&amp;gt;\
+    &amp;lt;/customwidgets&amp;gt;\
+&amp;lt;/ui&amp;gt;&quot;);
+}
+</db:programlisting>
+<db:para>Finally, take a look at the <db:code>domXml()</db:code> function. This function includes default settings for the widget in the standard XML format used by <db:emphasis>Qt Designer</db:emphasis>. In this case, we specify the container's first page; any inital pages of a multi-page widget must be specified within this function.</db:para>
+<db:programlisting language="cpp">    Q_PLUGIN_METADATA(IID &quot;org.qt-project.Qt.QDesignerCustomWidget&quot;)
+</db:programlisting>
+<db:para>Remember to use the <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() macro to export the MultiPageWidgetPlugin class for use with Qt's plugin handling classes: This macro ensures that <db:emphasis>Qt Designer</db:emphasis> can access and construct the custom widget. Without this macro, there is no way for <db:emphasis>Qt Designer</db:emphasis> to use the widget.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetextensionfactory-class-definition">
+<db:title>MultiPageWidgetExtensionFactory Class Definition</db:title>
+<db:para>The <db:code>MultiPageWidgetExtensionFactory</db:code> class inherits QExtensionFactory which provides a standard extension factory for <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+<db:programlisting language="cpp">class MultiPageWidgetExtensionFactory: public QExtensionFactory
+{
+    Q_OBJECT
+
+public:
+    explicit MultiPageWidgetExtensionFactory(QExtensionManager *parent = nullptr);
+
+protected:
+    QObject *createExtension(QObject *object, const QString &amp;amp;iid, QObject *parent) const override;
+};
+</db:programlisting>
+<db:para>The subclass's purpose is to reimplement the QExtensionFactory::createExtension() function, making it able to create a <db:code>MultiPageWidget</db:code> container extension.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetextensionfactory-class-implementation">
+<db:title>MultiPageWidgetExtensionFactory Class Implementation</db:title>
+<db:para>The class constructor simply calls the QExtensionFactory base class constructor:</db:para>
+<db:programlisting language="cpp">MultiPageWidgetExtensionFactory::MultiPageWidgetExtensionFactory(QExtensionManager *parent)
+    : QExtensionFactory(parent)
+{}
+</db:programlisting>
+<db:para>As described above, the factory is invoked when <db:emphasis>Qt Designer</db:emphasis> must know whether the associated widget is a container, or not.</db:para>
+<db:programlisting language="cpp">QObject *MultiPageWidgetExtensionFactory::createExtension(QObject *object,
+                                                          const QString &amp;amp;iid,
+                                                          QObject *parent) const
+{
+    MultiPageWidget *widget = qobject_cast&amp;lt;MultiPageWidget*&amp;gt;(object);
+
+    if (widget &amp;amp;&amp;amp; (iid == Q_TYPEID(QDesignerContainerExtension)))
+        return new MultiPageWidgetContainerExtension(widget, parent);
+    return nullptr;
+}
+</db:programlisting>
+<db:para><db:emphasis>Qt Designer</db:emphasis>'s behavior is the same whether the requested extension is associated with a container, a member sheet, a property sheet or a task menu: Its extension manager runs through all its registered extension factories calling <db:code>createExtension()</db:code> for each until one responds by creating the requested extension.</db:para>
+<db:para>So the first thing we do in <db:code>MultiPageWidgetExtensionFactory::createExtension()</db:code> is to check if the QObject, for which the extension is requested, is in fact a <db:code>MultiPageWidget</db:code> object. Then we check if the requested extension is a container extension.</db:para>
+<db:para>If the object is a MultiPageWidget requesting a container extension, we create and return a <db:code>MultiPageWidgetExtension</db:code> object. Otherwise, we simply return a null pointer, allowing <db:emphasis>Qt Designer</db:emphasis>'s extension manager to continue its search through the registered factories.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetcontainerextension-class-definition">
+<db:title>MultiPageWidgetContainerExtension Class Definition</db:title>
+<db:para>The <db:code>MultiPageWidgetContainerExtension</db:code> class inherits <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> which allows you to add (and delete) pages to a multi-page container plugin in <db:emphasis>Qt Designer</db:emphasis>.</db:para>
+<db:programlisting language="cpp">class MultiPageWidgetContainerExtension: public QObject,
+                                         public QDesignerContainerExtension
+{
+    Q_OBJECT
+    Q_INTERFACES(QDesignerContainerExtension)
+
+public:
+    explicit MultiPageWidgetContainerExtension(MultiPageWidget *widget, QObject *parent);
+
+    void addWidget(QWidget *widget) override;
+    int count() const override;
+    int currentIndex() const override;
+    void insertWidget(int index, QWidget *widget) override;
+    void remove(int index) override;
+    void setCurrentIndex(int index) override;
+    QWidget *widget(int index) const override;
+
+private:
+    MultiPageWidget *myWidget;
+};
+</db:programlisting>
+<db:para>It is important to recognize that the <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> class only is intended to provide <db:emphasis>Qt Designer</db:emphasis> access to your custom multi-page widget's functionality; your custom multi-page widget must implement functionality corresponding to the extension's functions.</db:para>
+<db:para>Note also that we implement a constructor that takes <db:emphasis>two</db:emphasis> arguments: the parent widget, and the <db:code>MultiPageWidget</db:code> object for which the task menu is requested.</db:para>
+<db:para><db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> provides a couple of menu entries in <db:emphasis>Qt Designer</db:emphasis>'s task menu by default, enabling the user to add or delete pages to the associated custom multi-page widget in <db:emphasis>Qt Designer</db:emphasis>'s workspace.</db:para>
+</db:section>
+<db:section xml:id="multipagewidgetcontainerextension-class-implementation">
+<db:title>MultiPageWidgetContainerExtension Class Implementation</db:title>
+<db:para>In the constructor we save the reference to the <db:code>MultiPageWidget</db:code> object sent as parameter, i.e the widget associated with the extension. We will need this later to access the custom multi-page widget performing the requested actions.</db:para>
+<db:programlisting language="cpp">MultiPageWidgetContainerExtension::MultiPageWidgetContainerExtension(MultiPageWidget *widget,
+                                                                     QObject *parent)
+    : QObject(parent)
+    , myWidget(widget)
+{
+}
+</db:programlisting>
+<db:para>To fully enable <db:emphasis>Qt Designer</db:emphasis> to manage and manipulate your custom multi-page widget, you must reimplement all the functions of <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link>:</db:para>
+<db:programlisting language="cpp">void MultiPageWidgetContainerExtension::addWidget(QWidget *widget)
+{
+    myWidget-&amp;gt;addPage(widget);
+}
+
+int MultiPageWidgetContainerExtension::count() const
+{
+    return myWidget-&amp;gt;count();
+}
+
+int MultiPageWidgetContainerExtension::currentIndex() const
+{
+    return myWidget-&amp;gt;currentIndex();
+}
+</db:programlisting>
+<db:para>You must reimplement <db:link xlink:href="qdesignercontainerextension.xml#addWidget">addWidget</db:link>() adding a given page to the container, <db:link xlink:href="qdesignercontainerextension.xml#count">count</db:link>() returning the number of pages in the container, and <db:link xlink:href="qdesignercontainerextension.xml#currentIndex">currentIndex</db:link>() returning the index of the currently selected page.</db:para>
+<db:programlisting language="cpp">void MultiPageWidgetContainerExtension::insertWidget(int index, QWidget *widget)
+{
+    myWidget-&amp;gt;insertPage(index, widget);
+}
+
+void MultiPageWidgetContainerExtension::remove(int index)
+{
+    myWidget-&amp;gt;removePage(index);
+}
+
+void MultiPageWidgetContainerExtension::setCurrentIndex(int index)
+{
+    myWidget-&amp;gt;setCurrentIndex(index);
+}
+
+QWidget* MultiPageWidgetContainerExtension::widget(int index) const
+{
+    return myWidget-&amp;gt;widget(index);
+}
+</db:programlisting>
+<db:para>You must reimplement <db:link xlink:href="qdesignercontainerextension.xml#insertWidget">insertWidget</db:link>() adding a given page to the container at a given index, <db:link xlink:href="qdesignercontainerextension.xml#remove">remove</db:link>() deleting the page at a given index, <db:link xlink:href="qdesignercontainerextension.xml#setCurrentIndex">setCurrentIndex</db:link>() setting the index of the currently selected page, and finally <db:link xlink:href="qdesignercontainerextension.xml#widget">widget</db:link>() returning the page at a given index.</db:para>
+</db:section>
+<db:section xml:id="multipagewidget-class-definition">
+<db:title>MultiPageWidget Class Definition</db:title>
+<db:para>The MultiPageWidget class is a custom container widget that lets the user manipulate and populate its pages, and navigate among these using a combobox.</db:para>
+<db:programlisting language="cpp">class MultiPageWidget : public QWidget
+{
+    Q_OBJECT
+    Q_PROPERTY(int currentIndex READ currentIndex WRITE setCurrentIndex)
+    Q_PROPERTY(QString pageTitle READ pageTitle WRITE setPageTitle STORED false)
+
+public:
+    explicit MultiPageWidget(QWidget *parent = nullptr);
+
+    QSize sizeHint() const override;
+
+    int count() const;
+    int currentIndex() const;
+    QWidget *widget(int index);
+    QString pageTitle() const;
+
+public slots:
+    void addPage(QWidget *page);
+    void insertPage(int index, QWidget *page);
+    void removePage(int index);
+    void setPageTitle(QString const &amp;amp;newTitle);
+    void setCurrentIndex(int index);
+
+private slots:
+    void pageWindowTitleChanged();
+
+signals:
+    void currentIndexChanged(int index);
+    void pageTitleChanged(const QString &amp;amp;title);
+
+private:
+    QStackedWidget *stackWidget;
+    QComboBox *comboBox;
+};
+</db:programlisting>
+<db:para>The main detail to observe is that your custom multi-page widget must implement functionality corresponding to the <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link>'s member functions since the <db:link xlink:href="qdesignercontainerextension.xml">QDesignerContainerExtension</db:link> class only is intended to provide Qt Designer access to your custom multi-page widget's functionality.</db:para>
+<db:para>In addition, we declare the <db:code>currentIndex</db:code> and <db:code>pageTitle</db:code> properties, and their associated set and get functions. By declaring these attributes as properties, we allow <db:emphasis>Qt Designer</db:emphasis> to manage them in the same way it manages the properties the MultiPageWidget widget inherits from QWidget and QObject, for example featuring the property editor.</db:para>
+<db:para>Note the <db:code>STORED</db:code> attribute in the declaration of the <db:code>pageTitle</db:code> property: The <db:code>STORED</db:code> attribute indicates persistence, i.e. it declares whether the property's value must be remembered when storing an object's state. As mentioned above, we have chosen to store the page title using the QWidget::windowTitle property to be able to give each page their own title. For that reason the <db:code>pageTitle</db:code> property is a &quot;fake&quot; property, provided for editing purposes, and doesn't need to be stored.</db:para>
+<db:para>We must also implement and emit the currentIndexChanged() and pageTitleChanged() signals to ensure that <db:emphasis>Qt Designer</db:emphasis>'s property editor is updated whenever the user views another page or changes one of the page titles.</db:para>
+<db:para>See the MultiPageWidget class implementation in <db:emphasis>containerextension/multipagewidget.cpp</db:emphasis> for more details.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qttools.git/tree/examples/designer/containerextension?h=5.14">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

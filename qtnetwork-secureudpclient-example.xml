@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>DTLS client</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example demonstrates how to implement client-side DTLS connections.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the DTLS client example.</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/secureudpclient-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>The DTLS client example is intended to be run alongside the <db:link xlink:href="qtnetwork-secureudpserver-example.xml">DTLS server</db:link> example.</db:para>
+</db:note>
+<db:para>The example DTLS client can establish several DTLS connections to one or many DTLS servers. A client-side DTLS connection is implemented by the DtlsAssociation class. This class uses QUdpSocket to read and write datagrams and QDtls for encryption:</db:para>
+<db:programlisting language="cpp">class DtlsAssociation : public QObject
+{
+    Q_OBJECT
+
+public:
+    DtlsAssociation(const QHostAddress &amp;amp;address, quint16 port,
+                    const QString &amp;amp;connectionName);
+    ~DtlsAssociation();
+    void startHandshake();
+
+signals:
+    void errorMessage(const QString &amp;amp;message);
+    void warningMessage(const QString &amp;amp;message);
+    void infoMessage(const QString &amp;amp;message);
+    void serverResponse(const QString &amp;amp;clientInfo, const QByteArray &amp;amp;datagraam,
+                        const QByteArray &amp;amp;plainText);
+
+private slots:
+    void udpSocketConnected();
+    void readyRead();
+    void handshakeTimeout();
+    void pskRequired(QSslPreSharedKeyAuthenticator *auth);
+    void pingTimeout();
+
+private:
+    QString name;
+    QUdpSocket socket;
+    QDtls crypto;
+
+    QTimer pingTimer;
+    unsigned ping = 0;
+
+    Q_DISABLE_COPY(DtlsAssociation)
+};
+</db:programlisting>
+<db:para>The constructor sets the minimal TLS configuration for the new DTLS connection, and sets the address and the port of the server:</db:para>
+<db:programlisting language="cpp">    ...
+auto configuration = QSslConfiguration::defaultDtlsConfiguration();
+configuration.setPeerVerifyMode(QSslSocket::VerifyNone);
+crypto.setPeer(address, port);
+crypto.setDtlsConfiguration(configuration);
+    ...
+</db:programlisting>
+<db:para>The QDtls::handshakeTimeout() signal is connected to the handleTimeout() slot to deal with packet loss and retransmission during the handshake phase:</db:para>
+<db:programlisting language="cpp">    ...
+connect(&amp;amp;crypto, &amp;amp;QDtls::handshakeTimeout, this, &amp;amp;DtlsAssociation::handshakeTimeout);
+    ...
+</db:programlisting>
+<db:para>To ensure we receive only the datagrams from the server, we connect our UDP socket to the server:</db:para>
+<db:programlisting language="cpp">    ...
+socket.connectToHost(address.toString(), port);
+    ...
+</db:programlisting>
+<db:para>The QUdpSocket::readyRead() signal is connected to the readyRead() slot:</db:para>
+<db:programlisting language="cpp">    ...
+connect(&amp;amp;socket, &amp;amp;QUdpSocket::readyRead, this, &amp;amp;DtlsAssociation::readyRead);
+    ...
+</db:programlisting>
+<db:para>When a secure connection to a server is established, a DtlsAssociation object will be sending short ping messages to the server, using a timer:</db:para>
+<db:programlisting language="cpp">pingTimer.setInterval(5000);
+connect(&amp;amp;pingTimer, &amp;amp;QTimer::timeout, this, &amp;amp;DtlsAssociation::pingTimeout);
+</db:programlisting>
+<db:para>startHandshake() starts a handshake with the server:</db:para>
+<db:programlisting language="cpp">void DtlsAssociation::startHandshake()
+{
+    if (socket.state() != QAbstractSocket::ConnectedState) {
+        emit infoMessage(tr(&quot;%1: connecting UDP socket first ...&quot;).arg(name));
+        connect(&amp;amp;socket, &amp;amp;QAbstractSocket::connected, this, &amp;amp;DtlsAssociation::udpSocketConnected);
+        return;
+    }
+
+    if (!crypto.doHandshake(&amp;amp;socket))
+        emit errorMessage(tr(&quot;%1: failed to start a handshake - %2&quot;).arg(name, crypto.dtlsErrorString()));
+    else
+        emit infoMessage(tr(&quot;%1: starting a handshake&quot;).arg(name));
+}
+</db:programlisting>
+<db:para>The readyRead() slot reads a datagram sent by the server:</db:para>
+<db:programlisting language="cpp">QByteArray dgram(socket.pendingDatagramSize(), Qt::Uninitialized);
+const qint64 bytesRead = socket.readDatagram(dgram.data(), dgram.size());
+if (bytesRead &amp;lt;= 0) {
+    emit warningMessage(tr(&quot;%1: spurious read notification?&quot;).arg(name));
+    return;
+}
+
+dgram.resize(bytesRead);
+</db:programlisting>
+<db:para>If the handshake was already completed, this datagram is decrypted:</db:para>
+<db:programlisting language="cpp">if (crypto.isConnectionEncrypted()) {
+    const QByteArray plainText = crypto.decryptDatagram(&amp;amp;socket, dgram);
+    if (plainText.size()) {
+        emit serverResponse(name, dgram, plainText);
+        return;
+    }
+
+    if (crypto.dtlsError() == QDtlsError::RemoteClosedConnectionError) {
+        emit errorMessage(tr(&quot;%1: shutdown alert received&quot;).arg(name));
+        socket.close();
+        pingTimer.stop();
+        return;
+    }
+
+    emit warningMessage(tr(&quot;%1: zero-length datagram received?&quot;).arg(name));
+} else {
+</db:programlisting>
+<db:para>otherwise, we try to continue the handshake:</db:para>
+<db:programlisting language="cpp">    if (!crypto.doHandshake(&amp;amp;socket, dgram)) {
+        emit errorMessage(tr(&quot;%1: handshake error - %2&quot;).arg(name, crypto.dtlsErrorString()));
+        return;
+    }
+</db:programlisting>
+<db:para>When the handshake has completed, we send our first ping message:</db:para>
+<db:programlisting language="cpp">    if (crypto.isConnectionEncrypted()) {
+        emit infoMessage(tr(&quot;%1: encrypted connection established!&quot;).arg(name));
+        pingTimer.start();
+        pingTimeout();
+    } else {
+</db:programlisting>
+<db:para>The pskRequired() slot provides the Pre-Shared Key (PSK) needed during the handshake phase:</db:para>
+<db:programlisting language="cpp">void DtlsAssociation::pskRequired(QSslPreSharedKeyAuthenticator *auth)
+{
+    Q_ASSERT(auth);
+
+    emit infoMessage(tr(&quot;%1: providing pre-shared key ...&quot;).arg(name));
+    auth-&amp;gt;setIdentity(name.toLatin1());
+    auth-&amp;gt;setPreSharedKey(QByteArrayLiteral(&quot;\x1a\x2b\x3c\x4d\x5e\x6f&quot;));
+}
+</db:programlisting>
+<db:note>
+<db:para>For the sake of brevity, the definition of pskRequired() is oversimplified. The documentation for the <db:link xlink:href="qsslpresharedkeyauthenticator.xml">QSslPreSharedKeyAuthenticator</db:link> class explains in detail how this slot can be properly implemented.</db:para>
+</db:note>
+<db:para>pingTimeout() sends an encrypted message to the server:</db:para>
+<db:programlisting language="cpp">void DtlsAssociation::pingTimeout()
+{
+    static const QString message = QStringLiteral(&quot;I am %1, please, accept our ping %2&quot;);
+    const qint64 written = crypto.writeDatagramEncrypted(&amp;amp;socket, message.arg(name).arg(ping).toLatin1());
+    if (written &amp;lt;= 0) {
+        emit errorMessage(tr(&quot;%1: failed to send a ping - %2&quot;).arg(name, crypto.dtlsErrorString()));
+        pingTimer.stop();
+        return;
+    }
+
+    ++ping;
+}
+</db:programlisting>
+<db:para>During the handshake phase the client must handle possible timeouts, which can happen due to packet loss. The handshakeTimeout() slot retransmits the handshake messages:</db:para>
+<db:programlisting language="cpp">void DtlsAssociation::handshakeTimeout()
+{
+    emit warningMessage(tr(&quot;%1: handshake timeout, trying to re-transmit&quot;).arg(name));
+    if (!crypto.handleTimeout(&amp;amp;socket))
+        emit errorMessage(tr(&quot;%1: failed to re-transmit - %2&quot;).arg(name, crypto.dtlsErrorString()));
+}
+</db:programlisting>
+<db:para>Before a client connection is destroyed, its DTLS connection must be shut down:</db:para>
+<db:programlisting language="cpp">DtlsAssociation::~DtlsAssociation()
+{
+    if (crypto.isConnectionEncrypted())
+        crypto.shutdown(&amp;amp;socket);
+}
+</db:programlisting>
+<db:para>Error messages, informational messages, and decrypted responses from servers are displayed by the UI:</db:para>
+<db:programlisting language="cpp">const QString colorizer(QStringLiteral(&quot;&amp;lt;font color=\&quot;%1\&quot;&amp;gt;%2&amp;lt;/font&amp;gt;&amp;lt;br&amp;gt;&quot;));
+
+void MainWindow::addErrorMessage(const QString &amp;amp;message)
+{
+    ui-&amp;gt;clientMessages-&amp;gt;insertHtml(colorizer.arg(QStringLiteral(&quot;Crimson&quot;), message));
+}
+
+void MainWindow::addWarningMessage(const QString &amp;amp;message)
+{
+    ui-&amp;gt;clientMessages-&amp;gt;insertHtml(colorizer.arg(QStringLiteral(&quot;DarkOrange&quot;), message));
+}
+
+void MainWindow::addInfoMessage(const QString &amp;amp;message)
+{
+    ui-&amp;gt;clientMessages-&amp;gt;insertHtml(colorizer.arg(QStringLiteral(&quot;DarkBlue&quot;), message));
+}
+
+void MainWindow::addServerResponse(const QString &amp;amp;clientInfo, const QByteArray &amp;amp;datagram,
+                                   const QByteArray &amp;amp;plainText)
+{
+    static const QString messageColor = QStringLiteral(&quot;DarkMagenta&quot;);
+    static const QString formatter = QStringLiteral(&quot;&amp;lt;br&amp;gt;---------------&quot;
+                                                    &quot;&amp;lt;br&amp;gt;%1 received a DTLS datagram:&amp;lt;br&amp;gt; %2&quot;
+                                                    &quot;&amp;lt;br&amp;gt;As plain text:&amp;lt;br&amp;gt; %3&quot;);
+
+    const QString html = formatter.arg(clientInfo, QString::fromUtf8(datagram.toHex(' ')),
+                                       QString::fromUtf8(plainText));
+    ui-&amp;gt;serverMessages-&amp;gt;insertHtml(colorizer.arg(messageColor, html));
+}
+
+</db:programlisting>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/network/secureudpclient?h=5.14">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
