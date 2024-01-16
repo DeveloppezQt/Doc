@@ -1,0 +1,281 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Surface Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using Q3DSurface in a widget application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;surfacegraph.h&quot;
+
+#include &lt;QtDataVisualization/QValue3DAxis&gt;
+#include &lt;QtDataVisualization/Q3DTheme&gt;
+#include &lt;QtGui/QImage&gt;
+#include &lt;QtCore/qmath.h&gt;
+
+using namespace QtDataVisualization;
+
+const int sampleCountX = 50;
+const int sampleCountZ = 50;
+const int heightMapGridStepX = 6;
+const int heightMapGridStepZ = 6;
+const float sampleMin = -8.0f;
+const float sampleMax = 8.0f;
+
+SurfaceGraph::SurfaceGraph(Q3DSurface *surface)
+    : m_graph(surface)
+{
+    m_graph-&gt;setAxisX(new QValue3DAxis);
+    m_graph-&gt;setAxisY(new QValue3DAxis);
+    m_graph-&gt;setAxisZ(new QValue3DAxis);
+
+    m_sqrtSinProxy = new QSurfaceDataProxy();
+    m_sqrtSinSeries = new QSurface3DSeries(m_sqrtSinProxy);
+    fillSqrtSinProxy();
+
+    QImage heightMapImage(&quot;:/maps/mountain&quot;);
+    m_heightMapProxy = new QHeightMapSurfaceDataProxy(heightMapImage);
+    m_heightMapSeries = new QSurface3DSeries(m_heightMapProxy);
+    m_heightMapSeries-&gt;setItemLabelFormat(QStringLiteral(&quot;(@xLabel, @zLabel): @yLabel&quot;));
+    m_heightMapProxy-&gt;setValueRanges(34.0f, 40.0f, 18.0f, 24.0f);
+    m_heightMapWidth = heightMapImage.width();
+    m_heightMapHeight = heightMapImage.height();
+}
+
+SurfaceGraph::~SurfaceGraph()
+{
+    delete m_graph;
+}
+
+void SurfaceGraph::fillSqrtSinProxy()
+{
+    float stepX = (sampleMax - sampleMin) / float(sampleCountX - 1);
+    float stepZ = (sampleMax - sampleMin) / float(sampleCountZ - 1);
+
+    QSurfaceDataArray *dataArray = new QSurfaceDataArray;
+    dataArray-&gt;reserve(sampleCountZ);
+    for (int i = 0 ; i &lt; sampleCountZ ; i++) {
+        QSurfaceDataRow *newRow = new QSurfaceDataRow(sampleCountX);
+        // Keep values within range bounds, since just adding step can cause minor drift due
+        // to the rounding errors.
+        float z = qMin(sampleMax, (i * stepZ + sampleMin));
+        int index = 0;
+        for (int j = 0; j &lt; sampleCountX; j++) {
+            float x = qMin(sampleMax, (j * stepX + sampleMin));
+            float R = qSqrt(z * z + x * x) + 0.01f;
+            float y = (qSin(R) / R + 0.24f) * 1.61f;
+            (*newRow)[index++].setPosition(QVector3D(x, y, z));
+        }
+        *dataArray &lt;&lt; newRow;
+    }
+
+    m_sqrtSinProxy-&gt;resetArray(dataArray);
+}
+
+void SurfaceGraph::enableSqrtSinModel(bool enable)
+{
+    if (enable) {
+        m_sqrtSinSeries-&gt;setDrawMode(QSurface3DSeries::DrawSurfaceAndWireframe);
+        m_sqrtSinSeries-&gt;setFlatShadingEnabled(true);
+
+        m_graph-&gt;axisX()-&gt;setLabelFormat(&quot;%.2f&quot;);
+        m_graph-&gt;axisZ()-&gt;setLabelFormat(&quot;%.2f&quot;);
+        m_graph-&gt;axisX()-&gt;setRange(sampleMin, sampleMax);
+        m_graph-&gt;axisY()-&gt;setRange(0.0f, 2.0f);
+        m_graph-&gt;axisZ()-&gt;setRange(sampleMin, sampleMax);
+        m_graph-&gt;axisX()-&gt;setLabelAutoRotation(30);
+        m_graph-&gt;axisY()-&gt;setLabelAutoRotation(90);
+        m_graph-&gt;axisZ()-&gt;setLabelAutoRotation(30);
+
+        m_graph-&gt;removeSeries(m_heightMapSeries);
+        m_graph-&gt;addSeries(m_sqrtSinSeries);
+
+        // Reset range sliders for Sqrt&amp;Sin
+        m_rangeMinX = sampleMin;
+        m_rangeMinZ = sampleMin;
+        m_stepX = (sampleMax - sampleMin) / float(sampleCountX - 1);
+        m_stepZ = (sampleMax - sampleMin) / float(sampleCountZ - 1);
+        m_axisMinSliderX-&gt;setMaximum(sampleCountX - 2);
+        m_axisMinSliderX-&gt;setValue(0);
+        m_axisMaxSliderX-&gt;setMaximum(sampleCountX - 1);
+        m_axisMaxSliderX-&gt;setValue(sampleCountX - 1);
+        m_axisMinSliderZ-&gt;setMaximum(sampleCountZ - 2);
+        m_axisMinSliderZ-&gt;setValue(0);
+        m_axisMaxSliderZ-&gt;setMaximum(sampleCountZ - 1);
+        m_axisMaxSliderZ-&gt;setValue(sampleCountZ - 1);
+    }
+}
+
+void SurfaceGraph::enableHeightMapModel(bool enable)
+{
+    if (enable) {
+        m_heightMapSeries-&gt;setDrawMode(QSurface3DSeries::DrawSurface);
+        m_heightMapSeries-&gt;setFlatShadingEnabled(false);
+
+        m_graph-&gt;axisX()-&gt;setLabelFormat(&quot;%.1f N&quot;);
+        m_graph-&gt;axisZ()-&gt;setLabelFormat(&quot;%.1f E&quot;);
+        m_graph-&gt;axisX()-&gt;setRange(34.0f, 40.0f);
+        m_graph-&gt;axisY()-&gt;setAutoAdjustRange(true);
+        m_graph-&gt;axisZ()-&gt;setRange(18.0f, 24.0f);
+
+        m_graph-&gt;axisX()-&gt;setTitle(QStringLiteral(&quot;Latitude&quot;));
+        m_graph-&gt;axisY()-&gt;setTitle(QStringLiteral(&quot;Height&quot;));
+        m_graph-&gt;axisZ()-&gt;setTitle(QStringLiteral(&quot;Longitude&quot;));
+
+        m_graph-&gt;removeSeries(m_sqrtSinSeries);
+        m_graph-&gt;addSeries(m_heightMapSeries);
+
+        // Reset range sliders for height map
+        int mapGridCountX = m_heightMapWidth / heightMapGridStepX;
+        int mapGridCountZ = m_heightMapHeight / heightMapGridStepZ;
+        m_rangeMinX = 34.0f;
+        m_rangeMinZ = 18.0f;
+        m_stepX = 6.0f / float(mapGridCountX - 1);
+        m_stepZ = 6.0f / float(mapGridCountZ - 1);
+        m_axisMinSliderX-&gt;setMaximum(mapGridCountX - 2);
+        m_axisMinSliderX-&gt;setValue(0);
+        m_axisMaxSliderX-&gt;setMaximum(mapGridCountX - 1);
+        m_axisMaxSliderX-&gt;setValue(mapGridCountX - 1);
+        m_axisMinSliderZ-&gt;setMaximum(mapGridCountZ - 2);
+        m_axisMinSliderZ-&gt;setValue(0);
+        m_axisMaxSliderZ-&gt;setMaximum(mapGridCountZ - 1);
+        m_axisMaxSliderZ-&gt;setValue(mapGridCountZ - 1);
+    }
+}
+
+void SurfaceGraph::adjustXMin(int min)
+{
+    float minX = m_stepX * float(min) + m_rangeMinX;
+
+    int max = m_axisMaxSliderX-&gt;value();
+    if (min &gt;= max) {
+        max = min + 1;
+        m_axisMaxSliderX-&gt;setValue(max);
+    }
+    float maxX = m_stepX * max + m_rangeMinX;
+
+    setAxisXRange(minX, maxX);
+}
+
+void SurfaceGraph::adjustXMax(int max)
+{
+    float maxX = m_stepX * float(max) + m_rangeMinX;
+
+    int min = m_axisMinSliderX-&gt;value();
+    if (max &lt;= min) {
+        min = max - 1;
+        m_axisMinSliderX-&gt;setValue(min);
+    }
+    float minX = m_stepX * min + m_rangeMinX;
+
+    setAxisXRange(minX, maxX);
+}
+
+void SurfaceGraph::adjustZMin(int min)
+{
+    float minZ = m_stepZ * float(min) + m_rangeMinZ;
+
+    int max = m_axisMaxSliderZ-&gt;value();
+    if (min &gt;= max) {
+        max = min + 1;
+        m_axisMaxSliderZ-&gt;setValue(max);
+    }
+    float maxZ = m_stepZ * max + m_rangeMinZ;
+
+    setAxisZRange(minZ, maxZ);
+}
+
+void SurfaceGraph::adjustZMax(int max)
+{
+    float maxX = m_stepZ * float(max) + m_rangeMinZ;
+
+    int min = m_axisMinSliderZ-&gt;value();
+    if (max &lt;= min) {
+        min = max - 1;
+        m_axisMinSliderZ-&gt;setValue(min);
+    }
+    float minX = m_stepZ * min + m_rangeMinZ;
+
+    setAxisZRange(minX, maxX);
+}
+
+void SurfaceGraph::setAxisXRange(float min, float max)
+{
+    m_graph-&gt;axisX()-&gt;setRange(min, max);
+}
+
+void SurfaceGraph::setAxisZRange(float min, float max)
+{
+    m_graph-&gt;axisZ()-&gt;setRange(min, max);
+}
+
+void SurfaceGraph::changeTheme(int theme)
+{
+    m_graph-&gt;activeTheme()-&gt;setType(Q3DTheme::Theme(theme));
+}
+
+void SurfaceGraph::setBlackToYellowGradient()
+{
+    QLinearGradient gr;
+    gr.setColorAt(0.0, Qt::black);
+    gr.setColorAt(0.33, Qt::blue);
+    gr.setColorAt(0.67, Qt::red);
+    gr.setColorAt(1.0, Qt::yellow);
+
+    m_graph-&gt;seriesList().at(0)-&gt;setBaseGradient(gr);
+    m_graph-&gt;seriesList().at(0)-&gt;setColorStyle(Q3DTheme::ColorStyleRangeGradient);
+}
+
+void SurfaceGraph::setGreenToRedGradient()
+{
+    QLinearGradient gr;
+    gr.setColorAt(0.0, Qt::darkGreen);
+    gr.setColorAt(0.5, Qt::yellow);
+    gr.setColorAt(0.8, Qt::red);
+    gr.setColorAt(1.0, Qt::darkRed);
+
+    m_graph-&gt;seriesList().at(0)-&gt;setBaseGradient(gr);
+    m_graph-&gt;seriesList().at(0)-&gt;setColorStyle(Q3DTheme::ColorStyleRangeGradient);
+}
+
+</db:programlisting>
+</db:article>

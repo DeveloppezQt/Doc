@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Audiolevels Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Simple application showing real time audio data.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;audiolevelsiodevice.h&quot;
+#include &quot;audiolevels.h&quot;
+
+#include &lt;QtDataVisualization/qbardataproxy.h&gt;
+#include &lt;QtDataVisualization/qvalue3daxis.h&gt;
+#include &lt;QtDataVisualization/q3dscene.h&gt;
+#include &lt;QtDataVisualization/q3dcamera.h&gt;
+#include &lt;QtDataVisualization/qbar3dseries.h&gt;
+#include &lt;QtDataVisualization/q3dtheme.h&gt;
+#include &lt;QtDataVisualization/qcustom3dlabel.h&gt;
+
+#include &lt;QtMultimedia/QAudioDeviceInfo&gt;
+#include &lt;QtMultimedia/QAudioInput&gt;
+
+using namespace QtDataVisualization;
+
+AudioLevels::AudioLevels(Q3DBars *graph, QObject *parent)
+    : QObject(parent),
+      m_graph(graph),
+      m_device(0),
+      m_audioInput(0)
+{
+    // Set up the graph
+    m_graph-&gt;setBarThickness(0.5f);
+    m_graph-&gt;setBarSpacing(QSizeF(0.0, 1.0));
+    m_graph-&gt;valueAxis()-&gt;setRange(-100.0f, 100.0f);
+    m_graph-&gt;valueAxis()-&gt;setSegmentCount(20);
+    m_graph-&gt;valueAxis()-&gt;setLabelFormat(QStringLiteral(&quot;%d%%&quot;));
+    m_graph-&gt;setShadowQuality(QAbstract3DGraph::ShadowQualityNone);
+    m_graph-&gt;setSelectionMode(QAbstract3DGraph::SelectionNone);
+    m_graph-&gt;scene()-&gt;activeCamera()-&gt;setCameraPosition(-25.0f, 10.0f, 190.0f);
+    m_graph-&gt;activeTheme()-&gt;setType(Q3DTheme::ThemeIsabelle);
+    m_graph-&gt;activeTheme()-&gt;setGridEnabled(true);
+    m_graph-&gt;activeTheme()-&gt;setBackgroundEnabled(false);
+    QFont font = m_graph-&gt;activeTheme()-&gt;font();
+    font.setPointSize(10);
+    m_graph-&gt;activeTheme()-&gt;setFont(font);
+    QBar3DSeries *series = new QBar3DSeries;
+    series-&gt;setMesh(QAbstract3DSeries::MeshBar);
+    m_graph-&gt;addSeries(series);
+
+    QAudioDeviceInfo inputDevice = QAudioDeviceInfo::defaultInputDevice();
+
+    if (inputDevice.supportedSampleRates().size() &gt; 0
+            &amp;&amp; inputDevice.supportedChannelCounts().size() &gt; 0
+            &amp;&amp; inputDevice.supportedSampleSizes().size() &gt; 0
+            &amp;&amp; inputDevice.supportedCodecs().size() &gt; 0) {
+        QAudioFormat formatAudio;
+        formatAudio.setSampleRate(inputDevice.supportedSampleRates().at(0));
+        formatAudio.setChannelCount(inputDevice.supportedChannelCounts().at(0));
+        formatAudio.setSampleSize(inputDevice.supportedSampleSizes().at(0));
+        formatAudio.setCodec(inputDevice.supportedCodecs().at(0));
+        formatAudio.setByteOrder(QAudioFormat::LittleEndian);
+        formatAudio.setSampleType(QAudioFormat::UnSignedInt);
+
+        m_audioInput = new QAudioInput(inputDevice, formatAudio, this);
+#ifdef Q_OS_MAC
+        // OS X seems to wait for entire buffer to fill before calling writeData, so use smaller buffer
+        m_audioInput-&gt;setBufferSize(256);
+#else
+        m_audioInput-&gt;setBufferSize(1024);
+#endif
+
+        m_device = new AudioLevelsIODevice(m_graph-&gt;seriesList().at(0)-&gt;dataProxy(), this);
+        m_device-&gt;open(QIODevice::WriteOnly);
+
+        m_audioInput-&gt;start(m_device);
+    } else {
+        // No graph content can be shown, so add a custom warning label
+        QCustom3DLabel *titleLabel = new QCustom3DLabel(&quot;No valid audio input device found&quot;,
+                                                        QFont(),
+                                                        QVector3D(0.2f, 0.2f, 0.0f),
+                                                        QVector3D(1.0f, 1.0f, 0.0f),
+                                                        QQuaternion());
+        titleLabel-&gt;setPositionAbsolute(true);
+        titleLabel-&gt;setFacingCamera(true);
+        m_graph-&gt;addCustomItem(titleLabel);
+    }
+}
+
+AudioLevels::~AudioLevels()
+{
+    if (m_audioInput)
+        m_audioInput-&gt;stop();
+    if (m_device)
+        m_device-&gt;close();
+}
+
+</db:programlisting>
+</db:article>

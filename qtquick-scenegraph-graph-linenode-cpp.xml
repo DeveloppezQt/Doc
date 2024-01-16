@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Graph</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how one can combine custom materials and geometries under a single <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;linenode.h&quot;
+
+#include &lt;QtGui/QColor&gt;
+
+#include &lt;QtQuick/QSGSimpleMaterial&gt;
+
+struct LineMaterial
+{
+    QColor color;
+    float spread;
+    float size;
+};
+
+class LineShader : public QSGSimpleMaterialShader&lt;LineMaterial&gt;
+{
+    QSG_DECLARE_SIMPLE_SHADER(LineShader, LineMaterial)
+
+public:
+    LineShader() : id_color(-1), id_spread(-1), id_size(-1) {
+        setShaderSourceFile(QOpenGLShader::Vertex, &quot;:/scenegraph/graph/shaders/line.vsh&quot;);
+        setShaderSourceFile(QOpenGLShader::Fragment, &quot;:/scenegraph/graph/shaders/line.fsh&quot;);
+    }
+
+    QList&lt;QByteArray&gt; attributes() const {  return QList&lt;QByteArray&gt;() &lt;&lt; &quot;pos&quot; &lt;&lt; &quot;t&quot;; }
+
+    void updateState(const LineMaterial *m, const LineMaterial *) {
+        program()-&gt;setUniformValue(id_color, m-&gt;color);
+        program()-&gt;setUniformValue(id_spread, m-&gt;spread);
+        program()-&gt;setUniformValue(id_size, m-&gt;size);
+    }
+
+    void resolveUniforms() {
+        id_spread = program()-&gt;uniformLocation(&quot;spread&quot;);
+        id_size = program()-&gt;uniformLocation(&quot;size&quot;);
+        id_color = program()-&gt;uniformLocation(&quot;color&quot;);
+    }
+
+private:
+    int id_color;
+    int id_spread;
+    int id_size;
+};
+
+struct LineVertex {
+    float x;
+    float y;
+    float t;
+    inline void set(float xx, float yy, float tt) { x = xx; y = yy; t = tt; }
+};
+
+static const QSGGeometry::AttributeSet &amp;attributes()
+{
+    static QSGGeometry::Attribute attr[] = {
+        QSGGeometry::Attribute::create(0, 2, GL_FLOAT, true),
+        QSGGeometry::Attribute::create(1, 1, GL_FLOAT)
+    };
+    static QSGGeometry::AttributeSet set = { 2, 3 * sizeof(float), attr };
+    return set;
+}
+
+LineNode::LineNode(float size, float spread, const QColor &amp;color)
+    : m_geometry(attributes(), 0)
+{
+    setGeometry(&amp;m_geometry);
+    m_geometry.setDrawingMode(GL_TRIANGLE_STRIP);
+
+    QSGSimpleMaterial&lt;LineMaterial&gt; *m = LineShader::createMaterial();
+    m-&gt;state()-&gt;color = color;
+    m-&gt;state()-&gt;size = size;
+    m-&gt;state()-&gt;spread = spread;
+    m-&gt;setFlag(QSGMaterial::Blending);
+    setMaterial(m);
+    setFlag(OwnsMaterial);
+}
+
+/*
+ * Assumes that samples have values in the range of 0 to 1 and scales them to
+ * the height of bounds. The samples are stretched out horizontally along the
+ * width of the bounds.
+ *
+ * The position of each pair of points is identical, but we use the third value
+ * &quot;t&quot; to shift the point up or down and to add antialiasing.
+ */
+void LineNode::updateGeometry(const QRectF &amp;bounds, const QList&lt;qreal&gt; &amp;samples)
+{
+    m_geometry.allocate(samples.size() * 2);
+
+    float x = bounds.x();
+    float y = bounds.y();
+    float w = bounds.width();
+    float h = bounds.height();
+
+    float dx = w / (samples.size() - 1);
+
+    LineVertex *v = (LineVertex *) m_geometry.vertexData();
+    for (int i=0; i&lt;samples.size(); ++i) {
+        v[i*2+0].set(x + dx * i, y + samples.at(i) * h, 0);
+        v[i*2+1].set(x + dx * i, y + samples.at(i) * h, 1);
+    }
+
+    markDirty(QSGNode::DirtyGeometry);
+}
+
+</db:programlisting>
+</db:article>

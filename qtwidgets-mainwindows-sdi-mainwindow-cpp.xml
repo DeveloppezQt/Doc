@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SDI Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The SDI example shows how to create a Single Document Interface. It uses a number of top-level windows to display the contents of different text files.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;mainwindow.h&quot;
+
+MainWindow::MainWindow()
+{
+    init();
+    setCurrentFile(QString());
+}
+
+MainWindow::MainWindow(const QString &amp;fileName)
+{
+    init();
+    loadFile(fileName);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (maybeSave()) {
+        writeSettings();
+        event-&gt;accept();
+    } else {
+        event-&gt;ignore();
+    }
+}
+
+void MainWindow::newFile()
+{
+    MainWindow *other = new MainWindow;
+    other-&gt;tile(this);
+    other-&gt;show();
+}
+
+void MainWindow::open()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this);
+    if (!fileName.isEmpty())
+        openFile(fileName);
+}
+
+void MainWindow::openFile(const QString &amp;fileName)
+{
+    MainWindow *existing = findMainWindow(fileName);
+    if (existing) {
+        existing-&gt;show();
+        existing-&gt;raise();
+        existing-&gt;activateWindow();
+        return;
+    }
+
+    if (isUntitled &amp;&amp; textEdit-&gt;document()-&gt;isEmpty() &amp;&amp; !isWindowModified()) {
+        loadFile(fileName);
+        return;
+    }
+
+    MainWindow *other = new MainWindow(fileName);
+    if (other-&gt;isUntitled) {
+        delete other;
+        return;
+    }
+    other-&gt;tile(this);
+    other-&gt;show();
+}
+
+bool MainWindow::save()
+{
+    return isUntitled ? saveAs() : saveFile(curFile);
+}
+
+bool MainWindow::saveAs()
+{
+    QString fileName = QFileDialog::getSaveFileName(this, tr(&quot;Save As&quot;),
+                                                    curFile);
+    if (fileName.isEmpty())
+        return false;
+
+    return saveFile(fileName);
+}
+
+void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About SDI&quot;),
+            tr(&quot;The &lt;b&gt;SDI&lt;/b&gt; example demonstrates how to write single &quot;
+               &quot;document interface applications using Qt.&quot;));
+}
+
+void MainWindow::documentWasModified()
+{
+    setWindowModified(true);
+}
+
+void MainWindow::init()
+{
+    setAttribute(Qt::WA_DeleteOnClose);
+
+    isUntitled = true;
+
+    textEdit = new QTextEdit;
+    setCentralWidget(textEdit);
+
+    createActions();
+    createStatusBar();
+
+    readSettings();
+
+    connect(textEdit-&gt;document(), &amp;QTextDocument::contentsChanged,
+            this, &amp;MainWindow::documentWasModified);
+
+    setUnifiedTitleAndToolBarOnMac(true);
+}
+
+void MainWindow::tile(const QMainWindow *previous)
+{
+    if (!previous)
+        return;
+    int topFrameWidth = previous-&gt;geometry().top() - previous-&gt;pos().y();
+    if (!topFrameWidth)
+        topFrameWidth = 40;
+    const QPoint pos = previous-&gt;pos() + 2 * QPoint(topFrameWidth, topFrameWidth);
+    if (QApplication::desktop()-&gt;availableGeometry(this).contains(rect().bottomRight() + pos))
+        move(pos);
+}
+
+void MainWindow::createActions()
+{
+    QMenu *fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    QToolBar *fileToolBar = addToolBar(tr(&quot;File&quot;));
+
+    const QIcon newIcon = QIcon::fromTheme(&quot;document-new&quot;, QIcon(&quot;:/images/new.png&quot;));
+    QAction *newAct = new QAction(newIcon, tr(&quot;&amp;New&quot;), this);
+    newAct-&gt;setShortcuts(QKeySequence::New);
+    newAct-&gt;setStatusTip(tr(&quot;Create a new file&quot;));
+    connect(newAct, &amp;QAction::triggered, this, &amp;MainWindow::newFile);
+    fileMenu-&gt;addAction(newAct);
+    fileToolBar-&gt;addAction(newAct);
+
+    const QIcon openIcon = QIcon::fromTheme(&quot;document-open&quot;, QIcon(&quot;:/images/open.png&quot;));
+    QAction *openAct = new QAction(openIcon, tr(&quot;&amp;Open...&quot;), this);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+    openAct-&gt;setStatusTip(tr(&quot;Open an existing file&quot;));
+    connect(openAct, &amp;QAction::triggered, this, &amp;MainWindow::open);
+    fileMenu-&gt;addAction(openAct);
+    fileToolBar-&gt;addAction(openAct);
+
+    const QIcon saveIcon = QIcon::fromTheme(&quot;document-save&quot;, QIcon(&quot;:/images/save.png&quot;));
+    QAction *saveAct = new QAction(saveIcon, tr(&quot;&amp;Save&quot;), this);
+    saveAct-&gt;setShortcuts(QKeySequence::Save);
+    saveAct-&gt;setStatusTip(tr(&quot;Save the document to disk&quot;));
+    connect(saveAct, &amp;QAction::triggered, this, &amp;MainWindow::save);
+    fileMenu-&gt;addAction(saveAct);
+    fileToolBar-&gt;addAction(saveAct);
+
+    const QIcon saveAsIcon = QIcon::fromTheme(&quot;document-save-as&quot;);
+    QAction *saveAsAct = fileMenu-&gt;addAction(saveAsIcon, tr(&quot;Save &amp;As...&quot;), this, &amp;MainWindow::saveAs);
+    saveAsAct-&gt;setShortcuts(QKeySequence::SaveAs);
+    saveAsAct-&gt;setStatusTip(tr(&quot;Save the document under a new name&quot;));
+
+    fileMenu-&gt;addSeparator();
+
+    QMenu *recentMenu = fileMenu-&gt;addMenu(tr(&quot;Recent...&quot;));
+    connect(recentMenu, &amp;QMenu::aboutToShow, this, &amp;MainWindow::updateRecentFileActions);
+    recentFileSubMenuAct = recentMenu-&gt;menuAction();
+
+    for (int i = 0; i &lt; MaxRecentFiles; ++i) {
+        recentFileActs[i] = recentMenu-&gt;addAction(QString(), this, &amp;MainWindow::openRecentFile);
+        recentFileActs[i]-&gt;setVisible(false);
+    }
+
+    recentFileSeparator = fileMenu-&gt;addSeparator();
+
+    setRecentFilesVisible(MainWindow::hasRecentFiles());
+
+    QAction *closeAct = fileMenu-&gt;addAction(tr(&quot;&amp;Close&quot;), this, &amp;QWidget::close);
+    closeAct-&gt;setShortcut(tr(&quot;Ctrl+W&quot;));
+    closeAct-&gt;setStatusTip(tr(&quot;Close this window&quot;));
+
+    const QIcon exitIcon = QIcon::fromTheme(&quot;application-exit&quot;);
+    QAction *exitAct = fileMenu-&gt;addAction(exitIcon, tr(&quot;E&amp;xit&quot;), qApp, &amp;QApplication::closeAllWindows);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+    exitAct-&gt;setStatusTip(tr(&quot;Exit the application&quot;));
+
+    QMenu *editMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Edit&quot;));
+    QToolBar *editToolBar = addToolBar(tr(&quot;Edit&quot;));
+
+#ifndef QT_NO_CLIPBOARD
+    const QIcon cutIcon = QIcon::fromTheme(&quot;edit-cut&quot;, QIcon(&quot;:/images/cut.png&quot;));
+    QAction *cutAct = new QAction(cutIcon, tr(&quot;Cu&amp;t&quot;), this);
+    cutAct-&gt;setShortcuts(QKeySequence::Cut);
+    cutAct-&gt;setStatusTip(tr(&quot;Cut the current selection's contents to the &quot;
+                            &quot;clipboard&quot;));
+    connect(cutAct, &amp;QAction::triggered, textEdit, &amp;QTextEdit::cut);
+    editMenu-&gt;addAction(cutAct);
+    editToolBar-&gt;addAction(cutAct);
+
+    const QIcon copyIcon = QIcon::fromTheme(&quot;edit-copy&quot;, QIcon(&quot;:/images/copy.png&quot;));
+    QAction *copyAct = new QAction(copyIcon, tr(&quot;&amp;Copy&quot;), this);
+    copyAct-&gt;setShortcuts(QKeySequence::Copy);
+    copyAct-&gt;setStatusTip(tr(&quot;Copy the current selection's contents to the &quot;
+                             &quot;clipboard&quot;));
+    connect(copyAct, &amp;QAction::triggered, textEdit, &amp;QTextEdit::copy);
+    editMenu-&gt;addAction(copyAct);
+    editToolBar-&gt;addAction(copyAct);
+
+    const QIcon pasteIcon = QIcon::fromTheme(&quot;edit-paste&quot;, QIcon(&quot;:/images/paste.png&quot;));
+    QAction *pasteAct = new QAction(pasteIcon, tr(&quot;&amp;Paste&quot;), this);
+    pasteAct-&gt;setShortcuts(QKeySequence::Paste);
+    pasteAct-&gt;setStatusTip(tr(&quot;Paste the clipboard's contents into the current &quot;
+                              &quot;selection&quot;));
+    connect(pasteAct, &amp;QAction::triggered, textEdit, &amp;QTextEdit::paste);
+    editMenu-&gt;addAction(pasteAct);
+    editToolBar-&gt;addAction(pasteAct);
+
+    menuBar()-&gt;addSeparator();
+#endif // !QT_NO_CLIPBOARD
+
+    QMenu *helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    QAction *aboutAct = helpMenu-&gt;addAction(tr(&quot;&amp;About&quot;), this, &amp;MainWindow::about);
+    aboutAct-&gt;setStatusTip(tr(&quot;Show the application's About box&quot;));
+
+    QAction *aboutQtAct = helpMenu-&gt;addAction(tr(&quot;About &amp;Qt&quot;), qApp, &amp;QApplication::aboutQt);
+    aboutQtAct-&gt;setStatusTip(tr(&quot;Show the Qt library's About box&quot;));
+
+#ifndef QT_NO_CLIPBOARD
+    cutAct-&gt;setEnabled(false);
+    copyAct-&gt;setEnabled(false);
+    connect(textEdit, &amp;QTextEdit::copyAvailable, cutAct, &amp;QAction::setEnabled);
+    connect(textEdit, &amp;QTextEdit::copyAvailable, copyAct, &amp;QAction::setEnabled);
+#endif // !QT_NO_CLIPBOARD
+}
+
+void MainWindow::createStatusBar()
+{
+    statusBar()-&gt;showMessage(tr(&quot;Ready&quot;));
+}
+
+void MainWindow::readSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    const QByteArray geometry = settings.value(&quot;geometry&quot;, QByteArray()).toByteArray();
+    if (geometry.isEmpty()) {
+        const QRect availableGeometry = QApplication::desktop()-&gt;availableGeometry(this);
+        resize(availableGeometry.width() / 3, availableGeometry.height() / 2);
+        move((availableGeometry.width() - width()) / 2,
+             (availableGeometry.height() - height()) / 2);
+    } else {
+        restoreGeometry(geometry);
+    }
+}
+
+void MainWindow::writeSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    settings.setValue(&quot;geometry&quot;, saveGeometry());
+}
+
+bool MainWindow::maybeSave()
+{
+    if (!textEdit-&gt;document()-&gt;isModified())
+        return true;
+    const QMessageBox::StandardButton ret
+        = QMessageBox::warning(this, tr(&quot;SDI&quot;),
+                               tr(&quot;The document has been modified.\n&quot;
+                                  &quot;Do you want to save your changes?&quot;),
+                               QMessageBox::Save | QMessageBox::Discard
+                               | QMessageBox::Cancel);
+    switch (ret) {
+    case QMessageBox::Save:
+        return save();
+    case QMessageBox::Cancel:
+        return false;
+    default:
+        break;
+    }
+    return true;
+}
+
+void MainWindow::loadFile(const QString &amp;fileName)
+{
+
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;SDI&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName), file.errorString()));
+        return;
+    }
+
+    QTextStream in(&amp;file);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    textEdit-&gt;setPlainText(in.readAll());
+    QApplication::restoreOverrideCursor();
+
+    setCurrentFile(fileName);
+    statusBar()-&gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+}
+
+void MainWindow::setRecentFilesVisible(bool visible)
+{
+    recentFileSubMenuAct-&gt;setVisible(visible);
+    recentFileSeparator-&gt;setVisible(visible);
+}
+
+static inline QString recentFilesKey() { return QStringLiteral(&quot;recentFileList&quot;); }
+static inline QString fileKey() { return QStringLiteral(&quot;file&quot;); }
+
+static QStringList readRecentFiles(QSettings &amp;settings)
+{
+    QStringList result;
+    const int count = settings.beginReadArray(recentFilesKey());
+    for (int i = 0; i &lt; count; ++i) {
+        settings.setArrayIndex(i);
+        result.append(settings.value(fileKey()).toString());
+    }
+    settings.endArray();
+    return result;
+}
+
+static void writeRecentFiles(const QStringList &amp;files, QSettings &amp;settings)
+{
+    const int count = files.size();
+    settings.beginWriteArray(recentFilesKey());
+    for (int i = 0; i &lt; count; ++i) {
+        settings.setArrayIndex(i);
+        settings.setValue(fileKey(), files.at(i));
+    }
+    settings.endArray();
+}
+
+bool MainWindow::hasRecentFiles()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    const int count = settings.beginReadArray(recentFilesKey());
+    settings.endArray();
+    return count &gt; 0;
+}
+
+void MainWindow::prependToRecentFiles(const QString &amp;fileName)
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+    const QStringList oldRecentFiles = readRecentFiles(settings);
+    QStringList recentFiles = oldRecentFiles;
+    recentFiles.removeAll(fileName);
+    recentFiles.prepend(fileName);
+    if (oldRecentFiles != recentFiles)
+        writeRecentFiles(recentFiles, settings);
+
+    setRecentFilesVisible(!recentFiles.isEmpty());
+}
+
+void MainWindow::updateRecentFileActions()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+    const QStringList recentFiles = readRecentFiles(settings);
+    const int count = qMin(int(MaxRecentFiles), recentFiles.size());
+    int i = 0;
+    for ( ; i &lt; count; ++i) {
+        const QString fileName = MainWindow::strippedName(recentFiles.at(i));
+        recentFileActs[i]-&gt;setText(tr(&quot;&amp;%1 %2&quot;).arg(i + 1).arg(fileName));
+        recentFileActs[i]-&gt;setData(recentFiles.at(i));
+        recentFileActs[i]-&gt;setVisible(true);
+    }
+    for ( ; i &lt; MaxRecentFiles; ++i)
+        recentFileActs[i]-&gt;setVisible(false);
+}
+
+void MainWindow::openRecentFile()
+{
+    if (const QAction *action = qobject_cast&lt;const QAction *&gt;(sender()))
+        openFile(action-&gt;data().toString());
+}
+
+bool MainWindow::saveFile(const QString &amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;SDI&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName), file.errorString()));
+        return false;
+    }
+
+    QTextStream out(&amp;file);
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    out &lt;&lt; textEdit-&gt;toPlainText();
+    QApplication::restoreOverrideCursor();
+
+    setCurrentFile(fileName);
+    statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+    return true;
+}
+
+void MainWindow::setCurrentFile(const QString &amp;fileName)
+{
+    static int sequenceNumber = 1;
+
+    isUntitled = fileName.isEmpty();
+    if (isUntitled) {
+        curFile = tr(&quot;document%1.txt&quot;).arg(sequenceNumber++);
+    } else {
+        curFile = QFileInfo(fileName).canonicalFilePath();
+    }
+
+    textEdit-&gt;document()-&gt;setModified(false);
+    setWindowModified(false);
+
+    if (!isUntitled &amp;&amp; windowFilePath() != curFile)
+        MainWindow::prependToRecentFiles(curFile);
+
+    setWindowFilePath(curFile);
+}
+
+QString MainWindow::strippedName(const QString &amp;fullFileName)
+{
+    return QFileInfo(fullFileName).fileName();
+}
+
+MainWindow *MainWindow::findMainWindow(const QString &amp;fileName) const
+{
+    QString canonicalFilePath = QFileInfo(fileName).canonicalFilePath();
+
+    foreach (QWidget *widget, QApplication::topLevelWidgets()) {
+        MainWindow *mainWin = qobject_cast&lt;MainWindow *&gt;(widget);
+        if (mainWin &amp;&amp; mainWin-&gt;curFile == canonicalFilePath)
+            return mainWin;
+    }
+
+    return 0;
+}
+
+</db:programlisting>
+</db:article>

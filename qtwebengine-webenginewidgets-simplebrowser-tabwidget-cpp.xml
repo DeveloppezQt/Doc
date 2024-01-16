@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Simple Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;tabwidget.h&quot;
+#include &quot;webpage.h&quot;
+#include &quot;webview.h&quot;
+#include &lt;QMenu&gt;
+#include &lt;QTabBar&gt;
+#include &lt;QWebEngineProfile&gt;
+
+TabWidget::TabWidget(QWidget *parent)
+    : QTabWidget(parent)
+{
+    QTabBar *tabBar = this-&gt;tabBar();
+    tabBar-&gt;setTabsClosable(true);
+    tabBar-&gt;setSelectionBehaviorOnRemove(QTabBar::SelectPreviousTab);
+    tabBar-&gt;setMovable(true);
+    tabBar-&gt;setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(tabBar, &amp;QTabBar::customContextMenuRequested, this, &amp;TabWidget::handleContextMenuRequested);
+    connect(tabBar, &amp;QTabBar::tabCloseRequested, this, &amp;TabWidget::closeTab);
+    connect(tabBar, &amp;QTabBar::tabBarDoubleClicked, [this](int index) {
+        if (index != -1)
+            return;
+        createTab();
+    });
+
+    setDocumentMode(true);
+    setElideMode(Qt::ElideRight);
+
+    connect(this, &amp;QTabWidget::currentChanged, this, &amp;TabWidget::handleCurrentChanged);
+}
+
+TabWidget::~TabWidget()
+{
+}
+
+void TabWidget::handleCurrentChanged(int index)
+{
+    if (index != -1) {
+        WebView *view = webView(index);
+        if (!view-&gt;url().isEmpty())
+            view-&gt;setFocus();
+        emit titleChanged(view-&gt;title());
+        emit loadProgress(view-&gt;loadProgress());
+        emit urlChanged(view-&gt;url());
+        QIcon pageIcon = view-&gt;page()-&gt;icon();
+        if (!pageIcon.isNull())
+            emit iconChanged(pageIcon);
+        else
+            emit iconChanged(QIcon(QStringLiteral(&quot;:defaulticon.png&quot;)));
+        emit webActionEnabledChanged(QWebEnginePage::Back, view-&gt;isWebActionEnabled(QWebEnginePage::Back));
+        emit webActionEnabledChanged(QWebEnginePage::Forward, view-&gt;isWebActionEnabled(QWebEnginePage::Forward));
+        emit webActionEnabledChanged(QWebEnginePage::Stop, view-&gt;isWebActionEnabled(QWebEnginePage::Stop));
+        emit webActionEnabledChanged(QWebEnginePage::Reload,view-&gt;isWebActionEnabled(QWebEnginePage::Reload));
+    } else {
+        emit titleChanged(QString());
+        emit loadProgress(0);
+        emit urlChanged(QUrl());
+        emit iconChanged(QIcon(QStringLiteral(&quot;:defaulticon.png&quot;)));
+        emit webActionEnabledChanged(QWebEnginePage::Back, false);
+        emit webActionEnabledChanged(QWebEnginePage::Forward, false);
+        emit webActionEnabledChanged(QWebEnginePage::Stop, false);
+        emit webActionEnabledChanged(QWebEnginePage::Reload, true);
+    }
+}
+
+void TabWidget::handleContextMenuRequested(const QPoint &amp;pos)
+{
+    QMenu menu;
+    menu.addAction(tr(&quot;New &amp;Tab&quot;), this, &amp;TabWidget::createTab, QKeySequence::AddTab);
+    int index = tabBar()-&gt;tabAt(pos);
+    if (index != -1) {
+        QAction *action = menu.addAction(tr(&quot;Clone Tab&quot;));
+        connect(action, &amp;QAction::triggered, this, [this,index]() {
+            cloneTab(index);
+        });
+        menu.addSeparator();
+        action = menu.addAction(tr(&quot;&amp;Close Tab&quot;));
+        action-&gt;setShortcut(QKeySequence::Close);
+        connect(action, &amp;QAction::triggered, this, [this,index]() {
+            closeTab(index);
+        });
+        action = menu.addAction(tr(&quot;Close &amp;Other Tabs&quot;));
+        connect(action, &amp;QAction::triggered, this, [this,index]() {
+            closeOtherTabs(index);
+        });
+        menu.addSeparator();
+        action = menu.addAction(tr(&quot;Reload Tab&quot;));
+        action-&gt;setShortcut(QKeySequence::Refresh);
+        connect(action, &amp;QAction::triggered, this, [this,index]() {
+            reloadTab(index);
+        });
+    } else {
+        menu.addSeparator();
+    }
+    menu.addAction(tr(&quot;Reload All Tabs&quot;), this, &amp;TabWidget::reloadAllTabs);
+    menu.exec(QCursor::pos());
+}
+
+WebView *TabWidget::currentWebView() const
+{
+    return webView(currentIndex());
+}
+
+WebView *TabWidget::webView(int index) const
+{
+    return qobject_cast&lt;WebView*&gt;(widget(index));
+}
+
+void TabWidget::setupView(WebView *webView)
+{
+    QWebEnginePage *webPage = webView-&gt;page();
+
+    connect(webView, &amp;QWebEngineView::titleChanged, [this, webView](const QString &amp;title) {
+        int index = indexOf(webView);
+        if (index != -1)
+            setTabText(index, title);
+        if (currentIndex() == index)
+            emit titleChanged(title);
+    });
+    connect(webView, &amp;QWebEngineView::urlChanged, [this, webView](const QUrl &amp;url) {
+        int index = indexOf(webView);
+        if (index != -1)
+            tabBar()-&gt;setTabData(index, url);
+        if (currentIndex() == index)
+            emit urlChanged(url);
+    });
+    connect(webView, &amp;QWebEngineView::loadProgress, [this, webView](int progress) {
+        if (currentIndex() == indexOf(webView))
+            emit loadProgress(progress);
+    });
+    connect(webPage, &amp;QWebEnginePage::linkHovered, [this, webView](const QString &amp;url) {
+        if (currentIndex() == indexOf(webView))
+            emit linkHovered(url);
+    });
+    connect(webPage, &amp;WebPage::iconChanged, [this, webView](const QIcon &amp;icon) {
+        int index = indexOf(webView);
+        QIcon ico = icon.isNull() ? QIcon(QStringLiteral(&quot;:defaulticon.png&quot;)) : icon;
+
+        if (index != -1)
+            setTabIcon(index, ico);
+        if (currentIndex() == index)
+            emit iconChanged(ico);
+    });
+    connect(webView, &amp;WebView::webActionEnabledChanged, [this, webView](QWebEnginePage::WebAction action, bool enabled) {
+        if (currentIndex() ==  indexOf(webView))
+            emit webActionEnabledChanged(action,enabled);
+    });
+    connect(webView, &amp;QWebEngineView::loadStarted, [this, webView]() {
+        int index = indexOf(webView);
+        if (index != -1) {
+            QIcon icon(QLatin1String(&quot;:view-refresh.png&quot;));
+            setTabIcon(index, icon);
+        }
+    });
+    connect(webPage, &amp;QWebEnginePage::windowCloseRequested, [this, webView]() {
+        int index = indexOf(webView);
+        if (index &gt;= 0)
+            closeTab(index);
+    });
+}
+
+WebView *TabWidget::createTab(bool makeCurrent)
+{
+    WebView *webView = new WebView;
+    WebPage *webPage = new WebPage(QWebEngineProfile::defaultProfile(), webView);
+    webView-&gt;setPage(webPage);
+    setupView(webView);
+    addTab(webView, tr(&quot;(Untitled)&quot;));
+    if (makeCurrent)
+        setCurrentWidget(webView);
+    return webView;
+}
+
+void TabWidget::reloadAllTabs()
+{
+    for (int i = 0; i &lt; count(); ++i)
+        webView(i)-&gt;reload();
+}
+
+void TabWidget::closeOtherTabs(int index)
+{
+    for (int i = count() - 1; i &gt; index; --i)
+        closeTab(i);
+    for (int i = index - 1; i &gt;= 0; --i)
+        closeTab(i);
+}
+
+void TabWidget::closeTab(int index)
+{
+    if (WebView *view = webView(index)) {
+        bool hasFocus = view-&gt;hasFocus();
+        removeTab(index);
+        if (hasFocus &amp;&amp; count() &gt; 0)
+            currentWebView()-&gt;setFocus();
+        if (count() == 0)
+            createTab();
+        view-&gt;deleteLater();
+    }
+}
+
+void TabWidget::cloneTab(int index)
+{
+    if (WebView *view = webView(index)) {
+        WebView *tab = createTab(false);
+        tab-&gt;setUrl(view-&gt;url());
+    }
+}
+
+void TabWidget::setUrl(const QUrl &amp;url)
+{
+    if (WebView *view = currentWebView()) {
+        view-&gt;setUrl(url);
+        view-&gt;setFocus();
+    }
+}
+
+void TabWidget::triggerWebPageAction(QWebEnginePage::WebAction action)
+{
+    if (WebView *webView = currentWebView()) {
+        webView-&gt;triggerPageAction(action);
+        webView-&gt;setFocus();
+    }
+}
+
+void TabWidget::nextTab()
+{
+    int next = currentIndex() + 1;
+    if (next == count())
+        next = 0;
+    setCurrentIndex(next);
+}
+
+void TabWidget::previousTab()
+{
+    int next = currentIndex() - 1;
+    if (next &lt; 0)
+        next = count() - 1;
+    setCurrentIndex(next);
+}
+
+void TabWidget::reloadTab(int index)
+{
+    if (WebView *view = webView(index))
+        view-&gt;reload();
+}
+
+</db:programlisting>
+</db:article>

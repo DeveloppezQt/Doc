@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Simple Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simplebrowser.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Simple Browser</db:emphasis> demonstrates how to use the <db:link xlink:href="qtwebenginewidgets-module.xml">Qt WebEngine C++ classes</db:link> to develop a small Web browser application that contains the following elements:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Menu bar for opening stored pages and managing windows and tabs.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Navigation bar for entering a URL and for moving backward and forward in the web page browsing history.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Multi-tab area for displaying web content within tabs.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Status bar for displaying hovered links.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The web content can be opened in new tabs or separate windows. HTTP and proxy authentication can be used for accessing web pages.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="class-hierarchy">
+<db:title>Class Hierarchy</db:title>
+<db:para>We start with sketching a diagram of the classes that we are going to implement:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simplebrowser-model.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>Browser</db:code> is a singleton class managing the application windows.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>BrowserWindow</db:code> is a <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> showing the menu, a navigation bar, <db:code>TabWidget</db:code>, and a status bar.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>TabWidget</db:code> is a <db:link xlink:href="qtabwidget.xml">QTabWidget</db:link> and contains one or multiple browser tabs.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>WebView</db:code> is a <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>, provides a view for <db:code>WebPage</db:code>, and is added as a tab in <db:code>TabWidget</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>WebPage</db:code> is a <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> that represents website content.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="creating-the-browser-main-window">
+<db:title>Creating the Browser Main Window</db:title>
+<db:para>This example supports multiple main windows that are owned by a <db:code>Browser</db:code> singleton object. This class could also be used for further functionality, such as downloading files, bookmarks, and history managers.</db:para>
+<db:para>In <db:code>main.cpp</db:code>, we create the first <db:code>BrowserWindow</db:code> instance and add it to the <db:code>Browser</db:code> object. If no arguments are passed on the command line, we open the <db:link xlink:href="http://qt.io/">Qt Homepage</db:link>:</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+
+    QApplication app(argc, argv);
+    app.setWindowIcon(QIcon(QLatin1String(&quot;:simplebrowser.svg&quot;)));
+
+    QWebEngineSettings::defaultSettings()-&gt;setAttribute(QWebEngineSettings::PluginsEnabled, true);
+
+    BrowserWindow *window = new BrowserWindow();
+    Browser::instance().addWindow(window);
+
+    const QString url = getCommandLineUrlArgument();
+    if (!url.isEmpty())
+        window-&gt;loadPage(url);
+    else
+        window-&gt;loadHomePage();
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="creating-tabs">
+<db:title>Creating Tabs</db:title>
+<db:para>The <db:code>BrowserWindow</db:code> constructor initializes all the necessary user interface related objects. The <db:code>centralWidget</db:code> of <db:code>BrowserWindow</db:code> contains an instance of <db:code>TabWidget</db:code>. The <db:code>TabWidget</db:code> contains one or several <db:code>WebView</db:code> instances as tabs, and delegates it's signals and slots to the currently selected one:</db:para>
+<db:programlisting language="cpp">class TabWidget : public QTabWidget
+{
+    ...
+signals:
+    // current tab/page signals
+    void linkHovered(const QString &amp;link);
+    void loadProgress(int progress);
+    void titleChanged(const QString &amp;title);
+    void urlChanged(const QUrl &amp;url);
+    void iconChanged(const QIcon &amp;icon);
+    void webActionEnabledChanged(QWebEnginePage::WebAction action, bool enabled);
+
+public slots:
+    // current tab/page slots
+    void setUrl(const QUrl &amp;url);
+    void triggerWebPageAction(QWebEnginePage::WebAction action);
+    ...
+};
+
+</db:programlisting>
+<db:para>Each tab contains an instance of <db:code>WebView</db:code>:</db:para>
+<db:programlisting language="cpp">WebView *TabWidget::createTab(bool makeCurrent)
+{
+    WebView *webView = new WebView;
+    WebPage *webPage = new WebPage(QWebEngineProfile::defaultProfile(), webView);
+    webView-&gt;setPage(webPage);
+    setupView(webView);
+    addTab(webView, tr(&quot;(Untitled)&quot;));
+    if (makeCurrent)
+        setCurrentWidget(webView);
+    return webView;
+}
+
+</db:programlisting>
+<db:para>In <db:code>TabWidget::setupView()</db:code>, we make sure that the <db:code>TabWidget</db:code> always forwards the signals of the currently selected <db:code>WebView</db:code>:</db:para>
+<db:programlisting language="cpp">void TabWidget::setupView(WebView *webView)
+{
+    QWebEnginePage *webPage = webView-&gt;page();
+
+    connect(webView, &amp;QWebEngineView::titleChanged, [this, webView](const QString &amp;title) {
+        int index = indexOf(webView);
+        if (index != -1)
+            setTabText(index, title);
+        if (currentIndex() == index)
+            emit titleChanged(title);
+    });
+    connect(webView, &amp;QWebEngineView::urlChanged, [this, webView](const QUrl &amp;url) {
+        int index = indexOf(webView);
+        if (index != -1)
+            tabBar()-&gt;setTabData(index, url);
+        if (currentIndex() == index)
+            emit urlChanged(url);
+    });
+    connect(webView, &amp;QWebEngineView::loadProgress, [this, webView](int progress) {
+        if (currentIndex() == indexOf(webView))
+            emit loadProgress(progress);
+    });
+    ...
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-webview-functionality">
+<db:title>Implementing WebView Functionality</db:title>
+<db:para>The <db:code>WebView</db:code> is derived from <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> to support the following functionality:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Displaying error messages in case <db:code>renderProcess</db:code> dies</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Handling <db:code>createWindow</db:code> requests</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Adding custom menu items to context menus</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>First, we create the <db:link xlink:href="qml-qtwebview-webview.xml">WebView</db:link> with the necessary methods and signals:</db:para>
+<db:programlisting language="cpp">class WebView : public QWebEngineView
+{
+    Q_OBJECT
+
+public:
+    WebView(QWidget *parent = nullptr);
+    ...
+protected:
+    void contextMenuEvent(QContextMenuEvent *event) override;
+    QWebEngineView *createWindow(QWebEnginePage::WebWindowType type) override;
+
+signals:
+    void webActionEnabledChanged(QWebEnginePage::WebAction webAction, bool enabled);
+    ...
+};
+
+</db:programlisting>
+<db:section xml:id="displaying-error-messages">
+<db:title>Displaying Error Messages</db:title>
+<db:para>If the render process is terminated, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> with an error code, and then we reload the page:</db:para>
+<db:programlisting language="cpp">WebView::WebView(QWidget *parent)
+    : QWebEngineView(parent)
+    , m_loadProgress(0)
+{
+    ...
+    connect(this, &amp;QWebEngineView::renderProcessTerminated,
+            [this](QWebEnginePage::RenderProcessTerminationStatus termStatus, int statusCode) {
+        QString status;
+        switch (termStatus) {
+        case QWebEnginePage::NormalTerminationStatus:
+            status = tr(&quot;Render process normal exit&quot;);
+            break;
+        case QWebEnginePage::AbnormalTerminationStatus:
+            status = tr(&quot;Render process abnormal exit&quot;);
+            break;
+        case QWebEnginePage::CrashedTerminationStatus:
+            status = tr(&quot;Render process crashed&quot;);
+            break;
+        case QWebEnginePage::KilledTerminationStatus:
+            status = tr(&quot;Render process killed&quot;);
+            break;
+        }
+        QMessageBox::StandardButton btn = QMessageBox::question(window(), status,
+                                                   tr(&quot;Render process exited with code: %1\n&quot;
+                                                      &quot;Do you want to reload the page ?&quot;).arg(statusCode));
+        if (btn == QMessageBox::Yes)
+            QTimer::singleShot(0, [this] { reload(); });
+    });
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="managing-webwindows">
+<db:title>Managing WebWindows</db:title>
+<db:para>The loaded page might want to create windows of the type <db:link xlink:href="qwebenginepage.xml#WebWindowType-enum">QWebEnginePage::WebWindowType</db:link>, for example, when a JavaScript program requests to open a document in a new window or dialog. This is handled by overriding <db:code>QWebView::createWindow()</db:code>:</db:para>
+<db:programlisting language="cpp">QWebEngineView *WebView::createWindow(QWebEnginePage::WebWindowType type)
+{
+    switch (type) {
+    case QWebEnginePage::WebBrowserTab: {
+        BrowserWindow *mainWindow = qobject_cast&lt;BrowserWindow*&gt;(window());
+        return mainWindow-&gt;tabWidget()-&gt;createTab();
+    }
+    case QWebEnginePage::WebBrowserBackgroundTab: {
+        BrowserWindow *mainWindow = qobject_cast&lt;BrowserWindow*&gt;(window());
+        return mainWindow-&gt;tabWidget()-&gt;createTab(false);
+    }
+    case QWebEnginePage::WebBrowserWindow: {
+        BrowserWindow *mainWindow = new BrowserWindow();
+        Browser::instance().addWindow(mainWindow);
+        return mainWindow-&gt;currentTab();
+    }
+    case QWebEnginePage::WebDialog: {
+        WebPopupWindow *popup = new WebPopupWindow(page()-&gt;profile());
+        return popup-&gt;view();
+    }
+    }
+    return nullptr;
+}
+
+</db:programlisting>
+<db:para>In case of <db:code>QWebEnginePage::WebDialog</db:code>, we create an instance of a custom <db:code>WebPopupWindow</db:code> class:</db:para>
+<db:programlisting language="cpp">class WebPopupWindow : public QWidget
+{
+    Q_OBJECT
+
+public:
+    WebPopupWindow(QWebEngineProfile *profile);
+    QWebEngineView *view() const;
+    void setUrl(const QUrl &amp;url);
+
+private slots:
+    void handleGeometryChangeRequested(const QRect &amp;newGeometry);
+    void handleIconChanged(const QIcon &amp;icon);
+
+private:
+    UrlLineEdit *m_addressBar;
+    WebView *m_view;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="adding-context-menu-items">
+<db:title>Adding Context Menu Items</db:title>
+<db:para>We add menu items to the context menu, so that users can right-click a link to have it opened in the same tab, a new window, or a new tab. We override <db:link xlink:href="qwebengineview.xml#contextMenuEvent">QWebEngineView::contextMenuEvent</db:link> and use QWebEnginePage::createStandardContextMenu to create a default <db:link xlink:href="qmenu.xml">QMenu</db:link> with a default list of <db:link xlink:href="qwebenginepage.xml#WebAction-enum">QWebEnginePage::WebAction</db:link> actions.</db:para>
+<db:para>The default name for <db:link xlink:href="qwebenginepage.xml#WebAction-enum">QWebEnginePage::OpenLinkInThisWindow</db:link> action is <db:guilabel>Follow</db:guilabel>. For clarity, we rename it <db:guilabel>Open Link in This Tab</db:guilabel>. Also, we add the actions for opening links in a separate window or in a new tab:</db:para>
+<db:programlisting language="cpp">void WebView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu = page()-&gt;createStandardContextMenu();
+    const QList&lt;QAction*&gt; actions = menu-&gt;actions();
+    auto it = std::find(actions.cbegin(), actions.cend(), page()-&gt;action(QWebEnginePage::OpenLinkInThisWindow));
+    if (it != actions.cend()) {
+        (*it)-&gt;setText(tr(&quot;Open Link in This Tab&quot;));
+        ++it;
+        QAction *before(it == actions.cend() ? nullptr : *it);
+        menu-&gt;insertAction(before, page()-&gt;action(QWebEnginePage::OpenLinkInNewWindow));
+        menu-&gt;insertAction(before, page()-&gt;action(QWebEnginePage::OpenLinkInNewTab));
+    }
+    connect(menu, &amp;QMenu::aboutToHide, menu, &amp;QObject::deleteLater);
+    menu-&gt;popup(event-&gt;globalPos());
+}
+
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="implementing-webpage-functionality">
+<db:title>Implementing WebPage Functionality</db:title>
+<db:para>As mentioned earlier, each <db:code>WebView</db:code> contains a <db:code>WebPage</db:code> instance that was created by using <db:link xlink:href="qwebengineprofile.xml#defaultProfile">QWebEngineProfile::defaultProfile</db:link>().</db:para>
+<db:para>We implement <db:code>WebPage</db:code> as a subclass of <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> to enable HTTP, proxy authentication, and ignoring SSL certificate errors when accessing web pages:</db:para>
+<db:programlisting language="cpp">class WebPage : public QWebEnginePage
+{
+    Q_OBJECT
+
+public:
+    WebPage(QWebEngineProfile *profile, QObject *parent = nullptr);
+
+protected:
+    bool certificateError(const QWebEngineCertificateError &amp;error) override;
+
+private slots:
+    void handleAuthenticationRequired(const QUrl &amp;requestUrl, QAuthenticator *auth);
+    void handleProxyAuthenticationRequired(const QUrl &amp;requestUrl, QAuthenticator *auth, const QString &amp;proxyHost);
+};
+
+</db:programlisting>
+<db:para>In all the cases above, we display the appropriate dialog to the user. In case of authentication, we need to set the correct credential values on the <db:link xlink:href="qauthenticator.xml">QAuthenticator</db:link> object:</db:para>
+<db:programlisting language="cpp">void WebPage::handleAuthenticationRequired(const QUrl &amp;requestUrl, QAuthenticator *auth)
+{
+    QWidget *mainWindow = view()-&gt;window();
+    QDialog dialog(mainWindow);
+    dialog.setModal(true);
+    dialog.setWindowFlags(dialog.windowFlags() &amp; ~Qt::WindowContextHelpButtonHint);
+
+    Ui::PasswordDialog passwordDialog;
+    passwordDialog.setupUi(&amp;dialog);
+
+    passwordDialog.m_iconLabel-&gt;setText(QString());
+    QIcon icon(mainWindow-&gt;style()-&gt;standardIcon(QStyle::SP_MessageBoxQuestion, 0, mainWindow));
+    passwordDialog.m_iconLabel-&gt;setPixmap(icon.pixmap(32, 32));
+
+    QString introMessage(tr(&quot;Enter username and password for \&quot;%1\&quot; at %2&quot;)
+                         .arg(auth-&gt;realm()).arg(requestUrl.toString().toHtmlEscaped()));
+    passwordDialog.m_infoLabel-&gt;setText(introMessage);
+    passwordDialog.m_infoLabel-&gt;setWordWrap(true);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        auth-&gt;setUser(passwordDialog.m_userNameLineEdit-&gt;text());
+        auth-&gt;setPassword(passwordDialog.m_passwordLineEdit-&gt;text());
+    } else {
+        // Set authenticator null if dialog is cancelled
+        *auth = QAuthenticator();
+    }
+}
+
+</db:programlisting>
+<db:para>The <db:code>handleProxyAuthenticationRequired</db:code> signal handler implements the very same steps for the authentication of HTTP proxies.</db:para>
+<db:para>In case of SSL errors, we just need to return a boolean value indicating whether the certificate should be ignored.</db:para>
+<db:programlisting language="cpp">bool WebPage::certificateError(const QWebEngineCertificateError &amp;error)
+{
+    QWidget *mainWindow = view()-&gt;window();
+    if (error.isOverridable()) {
+        QDialog dialog(mainWindow);
+        dialog.setModal(true);
+        dialog.setWindowFlags(dialog.windowFlags() &amp; ~Qt::WindowContextHelpButtonHint);
+        Ui::CertificateErrorDialog certificateDialog;
+        certificateDialog.setupUi(&amp;dialog);
+        certificateDialog.m_iconLabel-&gt;setText(QString());
+        QIcon icon(mainWindow-&gt;style()-&gt;standardIcon(QStyle::SP_MessageBoxWarning, 0, mainWindow));
+        certificateDialog.m_iconLabel-&gt;setPixmap(icon.pixmap(32, 32));
+        certificateDialog.m_errorLabel-&gt;setText(error.errorDescription());
+        dialog.setWindowTitle(tr(&quot;Certificate Error&quot;));
+        return dialog.exec() == QDialog::Accepted;
+    }
+
+    QMessageBox::critical(mainWindow, tr(&quot;Certificate Error&quot;), error.errorDescription());
+    return false;
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="opening-a-web-page">
+<db:title>Opening a Web Page</db:title>
+<db:para>This section describes the workflow for opening a new page. When the user enters a URL in the navigation bar and presses <db:guilabel>Enter</db:guilabel>, <db:code>QLineEdit::returnPressed</db:code> is emitted, which lets <db:code>BrowserWindow</db:code> load the requested page:</db:para>
+<db:programlisting language="cpp">    connect(m_urlLineEdit, &amp;QLineEdit::returnPressed, this, [this]() {
+        m_urlLineEdit-&gt;setFavIcon(QIcon(QStringLiteral(&quot;:defaulticon.png&quot;)));
+        loadPage(m_urlLineEdit-&gt;url());
+    });
+
+</db:programlisting>
+<db:para>The <db:code>loadPage()</db:code> method calls the <db:code>setUrl()</db:code> method of <db:code>TabWidget</db:code>:</db:para>
+<db:programlisting language="cpp">void BrowserWindow::loadPage(const QUrl &amp;url)
+{
+    if (url.isValid()) {
+        m_urlLineEdit-&gt;setUrl(url);
+        m_tabWidget-&gt;setUrl(url);
+    }
+}
+
+</db:programlisting>
+<db:para>The call is forwarded to the currently selected tab:</db:para>
+<db:programlisting language="cpp">void TabWidget::setUrl(const QUrl &amp;url)
+{
+    if (WebView *view = currentWebView()) {
+        view-&gt;setUrl(url);
+        view-&gt;setFocus();
+    }
+}
+
+</db:programlisting>
+<db:para>The <db:code>setUrl()</db:code> method of <db:code>WebView</db:code> just forwards the <db:code>url</db:code> to the associated <db:code>WebPage</db:code>, which in turn starts the downloading of the page's content in the background.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/browser.cpp">webenginewidgets/simplebrowser/browser.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/browser.h">webenginewidgets/simplebrowser/browser.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/browserwindow.cpp">webenginewidgets/simplebrowser/browserwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/browserwindow.h">webenginewidgets/simplebrowser/browserwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/certificateerrordialog.ui">webenginewidgets/simplebrowser/certificateerrordialog.ui</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/simplebrowser.qrc">webenginewidgets/simplebrowser/data/simplebrowser.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/simplebrowser.svg">webenginewidgets/simplebrowser/data/simplebrowser.svg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/main.cpp">webenginewidgets/simplebrowser/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/passworddialog.ui">webenginewidgets/simplebrowser/passworddialog.ui</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/simplebrowser.pro">webenginewidgets/simplebrowser/simplebrowser.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/tabwidget.cpp">webenginewidgets/simplebrowser/tabwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/tabwidget.h">webenginewidgets/simplebrowser/tabwidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/urllineedit.cpp">webenginewidgets/simplebrowser/urllineedit.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/urllineedit.h">webenginewidgets/simplebrowser/urllineedit.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webpage.cpp">webenginewidgets/simplebrowser/webpage.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webpage.h">webenginewidgets/simplebrowser/webpage.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webpopupwindow.cpp">webenginewidgets/simplebrowser/webpopupwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webpopupwindow.h">webenginewidgets/simplebrowser/webpopupwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webview.cpp">webenginewidgets/simplebrowser/webview.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/webview.h">webenginewidgets/simplebrowser/webview.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/addtab.png">webenginewidgets/simplebrowser/data/addtab.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/closetab.png">webenginewidgets/simplebrowser/data/closetab.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/defaulticon.png">webenginewidgets/simplebrowser/data/defaulticon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/go-next.png">webenginewidgets/simplebrowser/data/go-next.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/go-previous.png">webenginewidgets/simplebrowser/data/go-previous.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/process-stop.png">webenginewidgets/simplebrowser/data/process-stop.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="webenginewidgets/simplebrowser/data/view-refresh.png">webenginewidgets/simplebrowser/data/view-refresh.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

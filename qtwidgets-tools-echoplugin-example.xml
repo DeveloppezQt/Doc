@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Echo Plugin Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to create a Qt plugin.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/echopluginexample.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>There are two kinds of plugins in Qt: plugins that extend Qt itself and plugins that extend applications written in Qt. In this example, we show the procedure of implementing plugins that extend applications. When you create a plugin you declare an interface, which is a class with only pure virtual functions. This interface is inherited by the class that implements the plugin. The class is stored in a shared library and can therefore be loaded by applications at run-time. When loaded, the plugin is dynamically cast to the interface using Qt's <db:link xlink:href="metaobjects.xml">meta-object system</db:link>. The plugin <db:link xlink:href="plugins-howto.xml">overview document</db:link> gives a high-level introduction to plugins.</db:para>
+<db:para>We have implemented a plugin, the EchoPlugin, which implements the EchoInterface. The interface consists of echo(), which takes a <db:link xlink:href="qstring.xml">QString</db:link> as argument. The EchoPlugin returns the string unaltered (i.e., it works as the familiar echo command found in both Unix and Windows).</db:para>
+<db:para>We test the plugin in EchoWindow: when you push the <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> (as seen in the image above), the application sends the text in the <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> to the plugin, which echoes it back to the application. The answer from the plugin is displayed in the <db:link xlink:href="qlabel.xml">QLabel</db:link>.</db:para>
+<db:section xml:id="echowindow-class-definition">
+<db:title>EchoWindow Class Definition</db:title>
+<db:para>The EchoWindow class lets us test the EchoPlugin through a GUI.</db:para>
+<db:programlisting language="cpp">class EchoWindow : public QWidget
+{
+    Q_OBJECT
+
+public:
+    EchoWindow();
+
+private slots:
+    void sendEcho();
+
+private:
+    void createGUI();
+    bool loadPlugin();
+
+    EchoInterface *echoInterface;
+    QLineEdit *lineEdit;
+    QLabel *label;
+    QPushButton *button;
+    QGridLayout *layout;
+};
+</db:programlisting>
+<db:para>We load the plugin in loadPlugin() and cast it to EchoInterface. When the user clicks the button we take the text in lineEdit and call the interface's echo() with it.</db:para>
+</db:section>
+<db:section xml:id="echowindow-class-implementation">
+<db:title>EchoWindow Class Implementation</db:title>
+<db:para>We start with a look at the constructor:</db:para>
+<db:programlisting language="cpp">EchoWindow::EchoWindow()
+{
+    createGUI();
+    setLayout(layout);
+    setWindowTitle(&quot;Echo Plugin Example&quot;);
+
+    if (!loadPlugin()) {
+        QMessageBox::information(this, &quot;Error&quot;, &quot;Could not load the plugin&quot;);
+        lineEdit-&gt;setEnabled(false);
+        button-&gt;setEnabled(false);
+    }
+}
+</db:programlisting>
+<db:para>We create the widgets and set a title for the window. We then load the plugin. loadPlugin() returns false if the plugin could not be loaded, in which case we disable the widgets. If you wish a more detailed error message, you can use <db:link xlink:href="qpluginloader.xml#errorString">errorString</db:link>(); we will look more closely at <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link> later.</db:para>
+<db:para>Here is the implementation of sendEcho():</db:para>
+<db:programlisting language="cpp">void EchoWindow::sendEcho()
+{
+    QString text = echoInterface-&gt;echo(lineEdit-&gt;text());
+    label-&gt;setText(text);
+}
+</db:programlisting>
+<db:para>This slot is called when the user pushes button or presses enter in lineEdit. We call echo() of the echo interface. In our example this is the EchoPlugin, but it could be any plugin that inherit the EchoInterface. We take the <db:link xlink:href="qstring.xml">QString</db:link> returned from echo() and display it in the label.</db:para>
+<db:para>Here is the implementation of createGUI():</db:para>
+<db:programlisting language="cpp">void EchoWindow::createGUI()
+{
+    lineEdit = new QLineEdit;
+    label = new QLabel;
+    label-&gt;setFrameStyle(QFrame::Box | QFrame::Plain);
+    button = new QPushButton(tr(&quot;Send Message&quot;));
+
+    connect(lineEdit, SIGNAL(editingFinished()),
+            this, SLOT(sendEcho()));
+    connect(button, SIGNAL(clicked()),
+            this, SLOT(sendEcho()));
+
+    layout = new QGridLayout;
+    layout-&gt;addWidget(new QLabel(tr(&quot;Message:&quot;)), 0, 0);
+    layout-&gt;addWidget(lineEdit, 0, 1);
+    layout-&gt;addWidget(new QLabel(tr(&quot;Answer:&quot;)), 1, 0);
+    layout-&gt;addWidget(label, 1, 1);
+    layout-&gt;addWidget(button, 2, 1, Qt::AlignRight);
+    layout-&gt;setSizeConstraint(QLayout::SetFixedSize);
+}
+</db:programlisting>
+<db:para>We create the widgets and lay them out in a grid layout. We connect the label and line edit to our sendEcho() slot.</db:para>
+<db:para>Here is the loadPlugin() function:</db:para>
+<db:programlisting language="cpp">bool EchoWindow::loadPlugin()
+{
+    QDir pluginsDir(qApp-&gt;applicationDirPath());
+#if defined(Q_OS_WIN)
+    if (pluginsDir.dirName().toLower() == &quot;debug&quot; || pluginsDir.dirName().toLower() == &quot;release&quot;)
+        pluginsDir.cdUp();
+#elif defined(Q_OS_MAC)
+    if (pluginsDir.dirName() == &quot;MacOS&quot;) {
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+    }
+#endif
+    pluginsDir.cd(&quot;plugins&quot;);
+    foreach (QString fileName, pluginsDir.entryList(QDir::Files)) {
+        QPluginLoader pluginLoader(pluginsDir.absoluteFilePath(fileName));
+        QObject *plugin = pluginLoader.instance();
+        if (plugin) {
+            echoInterface = qobject_cast&lt;EchoInterface *&gt;(plugin);
+            if (echoInterface)
+                return true;
+        }
+    }
+
+    return false;
+}
+</db:programlisting>
+<db:para>Access to plugins at run-time is provided by <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link>. You supply it with the filename of the shared library the plugin is stored in and call <db:link xlink:href="qpluginloader.xml#instance">instance</db:link>(), which loads and returns the root component of the plugin (i.e., it resolves the type of the plugin and creates a <db:link xlink:href="qobject.xml">QObject</db:link> instance of it). If the plugin was not successfully loaded, it will be null, so we return false. If it was loaded correctly, we can cast the plugin to our EchoInterface and return true. In the case that the plugin loaded does not implement the EchoInterface, instance() will return null, but this cannot happen in our example. Notice that the location of the plugin is not the same for all platforms.</db:para>
+</db:section>
+<db:section xml:id="echointerface-class-definition">
+<db:title>EchoInterface Class Definition</db:title>
+<db:para>The EchoInterface defines the functions that the plugin will provide. An interface is a class that only consists of pure virtual functions. If non virtual functions were present in the class you would get misleading compile errors in the moc files.</db:para>
+<db:programlisting language="cpp">class EchoInterface
+{
+public:
+    virtual ~EchoInterface() {}
+    virtual QString echo(const QString &amp;message) = 0;
+};
+
+#define EchoInterface_iid &quot;org.qt-project.Qt.Examples.EchoInterface&quot;
+
+Q_DECLARE_INTERFACE(EchoInterface, EchoInterface_iid)
+
+</db:programlisting>
+<db:para>We declare echo(). In our EchoPlugin we use this method to return, or echo, <db:code role="parameter">message</db:code>.</db:para>
+<db:para>We use the <db:link xlink:href="qtplugin.xml#Q_DECLARE_INTERFACE">Q_DECLARE_INTERFACE</db:link> macro to let <db:link xlink:href="metaobjects.xml">Qt's meta object system</db:link> aware of the interface. We do this so that it will be possible to identify plugins that implements the interface at run-time. The second argument is a string that must identify the interface in a unique way.</db:para>
+</db:section>
+<db:section xml:id="echoplugin-class-definition">
+<db:title>EchoPlugin Class Definition</db:title>
+<db:para>We inherit both <db:link xlink:href="qobject.xml">QObject</db:link> and EchoInterface to make this class a plugin. The <db:link xlink:href="qobject.xml#Q_INTERFACES">Q_INTERFACES</db:link> macro tells Qt which interfaces the class implements. In our case we only implement the EchoInterface. If a class implements more than one interface, they are given as a space separated list. The <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link> macro is included next to the <db:link xlink:href="qobject.xml#Q_OBJECT">Q_OBJECT</db:link> macro. It contains the plugins IID and a filename pointing to a json file containing the metadata for the plugin. The json file is compiled into the plugin and does not need to be installed.</db:para>
+<db:programlisting language="cpp">class EchoPlugin : public QObject, EchoInterface
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID &quot;org.qt-project.Qt.Examples.EchoInterface&quot; FILE &quot;echoplugin.json&quot;)
+    Q_INTERFACES(EchoInterface)
+
+public:
+    QString echo(const QString &amp;message) override;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="echoplugin-class-implementation">
+<db:title>EchoPlugin Class Implementation</db:title>
+<db:para>Here is the implementation of echo():</db:para>
+<db:programlisting language="cpp">QString EchoPlugin::echo(const QString &amp;message)
+{
+    return message;
+}
+</db:programlisting>
+<db:para>We simply return the functions parameter.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() function</db:title>
+<db:programlisting language="cpp">int main(int argv, char *args[])
+{
+    QApplication app(argv, args);
+
+    EchoWindow window;
+    window.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>We create an EchoWindow and display it as a top-level window.</db:para>
+</db:section>
+<db:section xml:id="the-profiles">
+<db:title>The Profiles</db:title>
+<db:para>When creating plugins the profiles need to be adjusted. We show here what changes need to be done.</db:para>
+<db:para>The profile in the echoplugin directory uses the subdirs template and simply includes includes to directories in which the echo window and echo plugin lives:</db:para>
+<db:programlisting language="cpp">TEMPLATE    = subdirs
+SUBDIRS     = echowindow \
+              plugin
+</db:programlisting>
+<db:para>The profile for the echo window does not need any plugin specific settings. We move on to the plugin profile:</db:para>
+<db:programlisting language="cpp">TEMPLATE        = lib
+CONFIG         += plugin
+QT             += widgets
+INCLUDEPATH    += ../echowindow
+HEADERS         = echoplugin.h
+SOURCES         = echoplugin.cpp
+TARGET          = $$qtLibraryTarget(echoplugin)
+DESTDIR         = ../plugins
+</db:programlisting>
+<db:para>We need to set the TEMPLATE as we now want to make a library instead of an executable. We also need to tell qmake that we are creating a plugin. The EchoInterface that the plugin implements lives in the echowindow directory, so we need to add that directory to the include path. We set the TARGET of the project, which is the name of the library file in which the plugin will be stored; qmake appends the appropriate file extension depending on the platform. By convention the target should have the same name as the plugin (set with Q_EXPORT_PLUGIN2)</db:para>
+</db:section>
+<db:section xml:id="further-reading-and-examples">
+<db:title>Further Reading and Examples</db:title>
+<db:para>The <db:link xlink:href="qtplugin.xml">Defining Plugins</db:link> page presents an overview of the macros needed to create plugins.</db:para>
+<db:para>We give an example of a plugin that extends Qt in the <db:link xlink:href="qtwidgets-tools-styleplugin-example.xml">style plugin</db:link> example. The <db:link xlink:href="qtwidgets-tools-plugandpaint-app-example.xml">plug and paint</db:link> example shows how to create static plugins.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echoplugin.pro">tools/echoplugin/echoplugin.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echowindow/echointerface.h">tools/echoplugin/echowindow/echointerface.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echowindow/echowindow.cpp">tools/echoplugin/echowindow/echowindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echowindow/echowindow.h">tools/echoplugin/echowindow/echowindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echowindow/echowindow.pro">tools/echoplugin/echowindow/echowindow.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/echowindow/main.cpp">tools/echoplugin/echowindow/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/plugin/echoplugin.cpp">tools/echoplugin/plugin/echoplugin.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/plugin/echoplugin.h">tools/echoplugin/plugin/echoplugin.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/echoplugin/plugin/plugin.pro">tools/echoplugin/plugin/plugin.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Semaphores Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates multi-thread programming using Qt.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The producer writes data to the buffer until it reaches the end of the buffer, at which point it restarts from the beginning, overwriting existing data. The consumer thread reads the data as it is produced and writes it to standard error.</db:para>
+<db:para>Semaphores make it possible to have a higher level of concurrency than mutexes. If accesses to the buffer were guarded by a <db:link xlink:href="qmutex.xml">QMutex</db:link>, the consumer thread couldn't access the buffer at the same time as the producer thread. Yet, there is no harm in having both threads working on <db:emphasis>different parts</db:emphasis> of the buffer at the same time.</db:para>
+<db:para>The example comprises two classes: Producer and Consumer. Both inherit from <db:link xlink:href="qthread.xml">QThread</db:link>. The circular buffer used for communicating between these two classes and the semaphores that protect it are global variables.</db:para>
+<db:para>An alternative to using <db:link xlink:href="qsemaphore.xml">QSemaphore</db:link> to solve the producer-consumer problem is to use <db:link xlink:href="qwaitcondition.xml">QWaitCondition</db:link> and <db:link xlink:href="qmutex.xml">QMutex</db:link>. This is what the <db:link xlink:href="qtcore-threads-waitconditions-example.xml">Wait Conditions Example</db:link> does.</db:para>
+<db:section xml:id="global-variables">
+<db:title>Global Variables</db:title>
+<db:para>Let's start by reviewing the circular buffer and the associated semaphores:</db:para>
+<db:programlisting language="cpp">const int DataSize = 100000;
+
+const int BufferSize = 8192;
+char buffer[BufferSize];
+
+QSemaphore freeBytes(BufferSize);
+QSemaphore usedBytes;
+</db:programlisting>
+<db:para>DataSize is the amout of data that the producer will generate. To keep the example as simple as possible, we make it a constant. BufferSize is the size of the circular buffer. It is less than DataSize, meaning that at some point the producer will reach the end of the buffer and restart from the beginning.</db:para>
+<db:para>To synchronize the producer and the consumer, we need two semaphores. The freeBytes semaphore controls the &quot;free&quot; area of the buffer (the area that the producer hasn't filled with data yet or that the consumer has already read). The usedBytes semaphore controls the &quot;used&quot; area of the buffer (the area that the producer has filled but that the consumer hasn't read yet).</db:para>
+<db:para>Together, the semaphores ensure that the producer is never more than BufferSize bytes ahead of the consumer, and that the consumer never reads data that the producer hasn't generated yet.</db:para>
+<db:para>The freeBytes semaphore is initialized with BufferSize, because initially the entire buffer is empty. The usedBytes semaphore is initialized to 0 (the default value if none is specified).</db:para>
+</db:section>
+<db:section xml:id="producer-class">
+<db:title>Producer Class</db:title>
+<db:para>Let's review the code for the Producer class:</db:para>
+<db:programlisting language="cpp">class Producer : public QThread
+{
+public:
+    void run() override
+    {
+        qsrand(QTime(0,0,0).secsTo(QTime::currentTime()));
+        for (int i = 0; i &lt; DataSize; ++i) {
+            freeBytes.acquire();
+            buffer[i % BufferSize] = &quot;ACGT&quot;[(int)qrand() % 4];
+            usedBytes.release();
+        }
+    }
+};
+</db:programlisting>
+<db:para>The producer generates DataSize bytes of data. Before it writes a byte to the circular buffer, it must acquire a &quot;free&quot; byte using the freeBytes semaphore. The <db:link xlink:href="qsemaphore.xml#acquire">QSemaphore::acquire</db:link>() call might block if the consumer hasn't kept up the pace with the producer.</db:para>
+<db:para>At the end, the producer releases a byte using the usedBytes semaphore. The &quot;free&quot; byte has successfully been transformed into a &quot;used&quot; byte, ready to be read by the consumer.</db:para>
+</db:section>
+<db:section xml:id="consumer-class">
+<db:title>Consumer Class</db:title>
+<db:para>Let's now turn to the Consumer class:</db:para>
+<db:programlisting language="cpp">class Consumer : public QThread
+{
+    Q_OBJECT
+public:
+    void run() override
+    {
+        for (int i = 0; i &lt; DataSize; ++i) {
+            usedBytes.acquire();
+            fprintf(stderr, &quot;%c&quot;, buffer[i % BufferSize]);
+            freeBytes.release();
+        }
+        fprintf(stderr, &quot;\n&quot;);
+    }
+
+signals:
+    void stringConsumed(const QString &amp;text);
+
+protected:
+    bool finish;
+};
+</db:programlisting>
+<db:para>The code is very similar to the producer, except that this time we acquire a &quot;used&quot; byte and release a &quot;free&quot; byte, instead of the opposite.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:para>In main(), we create the two threads and call <db:link xlink:href="qthread.xml#wait">QThread::wait</db:link>() to ensure that both threads get time to finish before we exit:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+    Producer producer;
+    Consumer consumer;
+    producer.start();
+    consumer.start();
+    producer.wait();
+    consumer.wait();
+    return 0;
+}
+</db:programlisting>
+<db:para>So what happens when we run the program? Initially, the producer thread is the only one that can do anything; the consumer is blocked waiting for the usedBytes semaphore to be released (its initial <db:link xlink:href="qsemaphore.xml#available">available</db:link>() count is 0). Once the producer has put one byte in the buffer, freeBytes.available() is BufferSize - 1 and usedBytes.available() is 1. At that point, two things can happen: Either the consumer thread takes over and reads that byte, or the producer thread gets to produce a second byte.</db:para>
+<db:para>The producer-consumer model presented in this example makes it possible to write highly concurrent multithreaded applications. On a multiprocessor machine, the program is potentially up to twice as fast as the equivalent mutex-based program, since the two threads can be active at the same time on different parts of the buffer.</db:para>
+<db:para>Be aware though that these benefits aren't always realized. Acquiring and releasing a <db:link xlink:href="qsemaphore.xml">QSemaphore</db:link> has a cost. In practice, it would probably be worthwhile to divide the buffer into chunks and to operate on chunks instead of individual bytes. The buffer size is also a parameter that must be selected carefully, based on experimentation.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="threads/semaphores/semaphores.cpp">threads/semaphores/semaphores.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threads/semaphores/semaphores.pro">threads/semaphores/semaphores.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

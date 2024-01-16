@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>OpenGL Accelerated Series Example</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to enable OpenGL acceleration for QLineSeries and QScatterSeries.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Charts module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;datasource.h&quot;
+#include &lt;QtCore/QtMath&gt;
+
+QT_CHARTS_USE_NAMESPACE
+
+DataSource::DataSource(QObject *parent) :
+    QObject(parent),
+    m_index(-1)
+{
+    generateData(0, 0, 0);
+}
+
+void DataSource::update(QAbstractSeries *series, int seriesIndex)
+{
+    if (series) {
+        QXYSeries *xySeries = static_cast&lt;QXYSeries *&gt;(series);
+        const QVector&lt;QVector&lt;QPointF&gt; &gt; &amp;seriesData = m_data.at(seriesIndex);
+        if (seriesIndex == 0)
+            m_index++;
+        if (m_index &gt; seriesData.count() - 1)
+            m_index = 0;
+
+        QVector&lt;QPointF&gt; points = seriesData.at(m_index);
+        // Use replace instead of clear + append, it's optimized for performance
+        xySeries-&gt;replace(points);
+    }
+}
+
+void DataSource::handleSceneChanged()
+{
+    m_dataUpdater.start();
+}
+
+void DataSource::updateAllSeries()
+{
+    static int frameCount = 0;
+    static QString labelText = QStringLiteral(&quot;FPS: %1&quot;);
+
+    for (int i = 0; i &lt; m_seriesList.size(); i++)
+        update(m_seriesList[i], i);
+
+    frameCount++;
+    int elapsed = m_fpsTimer.elapsed();
+    if (elapsed &gt;= 1000) {
+        elapsed = m_fpsTimer.restart();
+        qreal fps = qreal(0.1 * int(10000.0 * (qreal(frameCount) / qreal(elapsed))));
+        m_fpsLabel-&gt;setText(labelText.arg(QString::number(fps, 'f', 1)));
+        m_fpsLabel-&gt;adjustSize();
+        frameCount = 0;
+    }
+}
+
+void DataSource::startUpdates(const QList&lt;QXYSeries *&gt; &amp;seriesList, QLabel *fpsLabel)
+{
+    m_seriesList = seriesList;
+    m_fpsLabel = fpsLabel;
+
+    m_dataUpdater.setInterval(0);
+    m_dataUpdater.setSingleShot(true);
+    QObject::connect(&amp;m_dataUpdater, &amp;QTimer::timeout,
+                     this, &amp;DataSource::updateAllSeries);
+
+    m_fpsTimer.start();
+    updateAllSeries();
+}
+
+void DataSource::generateData(int seriesCount, int rowCount, int colCount)
+{
+    // Remove previous data
+    foreach (QVector&lt;QVector&lt;QPointF&gt; &gt; seriesData, m_data) {
+        foreach (QVector&lt;QPointF&gt; row, seriesData)
+            row.clear();
+    }
+
+    m_data.clear();
+
+    qreal xAdjustment = 20.0 / (colCount * rowCount);
+    qreal yMultiplier = 3.0 / qreal(seriesCount);
+
+    // Append the new data depending on the type
+    for (int k(0); k &lt; seriesCount; k++) {
+        QVector&lt;QVector&lt;QPointF&gt; &gt; seriesData;
+        qreal height = qreal(k) * (10.0 / qreal(seriesCount)) + 0.3;
+        for (int i(0); i &lt; rowCount; i++) {
+            QVector&lt;QPointF&gt; points;
+            points.reserve(colCount);
+            for (int j(0); j &lt; colCount; j++) {
+                qreal x(0);
+                qreal y(0);
+                // data with sin + random component
+                y = height + (yMultiplier * qSin(3.14159265358979 / 50 * j)
+                              + (yMultiplier * (qreal) rand() / (qreal) RAND_MAX));
+                // 0.000001 added to make values logaxis compatible
+                x = 0.000001 + 20.0 * (qreal(j) / qreal(colCount)) + (xAdjustment * qreal(i));
+                points.append(QPointF(x, y));
+            }
+            seriesData.append(points);
+        }
+        m_data.append(seriesData);
+    }
+}
+
+</db:programlisting>
+</db:article>

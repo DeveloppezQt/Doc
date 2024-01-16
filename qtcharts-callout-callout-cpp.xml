@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Callout Example</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to draw an additional element (a callout) on top of the chart.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Charts module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;callout.h&quot;
+#include &lt;QtGui/QPainter&gt;
+#include &lt;QtGui/QFontMetrics&gt;
+#include &lt;QtWidgets/QGraphicsSceneMouseEvent&gt;
+#include &lt;QtGui/QMouseEvent&gt;
+#include &lt;QtCharts/QChart&gt;
+
+Callout::Callout(QChart *chart):
+    QGraphicsItem(chart),
+    m_chart(chart)
+{
+}
+
+QRectF Callout::boundingRect() const
+{
+    QPointF anchor = mapFromParent(m_chart-&gt;mapToPosition(m_anchor));
+    QRectF rect;
+    rect.setLeft(qMin(m_rect.left(), anchor.x()));
+    rect.setRight(qMax(m_rect.right(), anchor.x()));
+    rect.setTop(qMin(m_rect.top(), anchor.y()));
+    rect.setBottom(qMax(m_rect.bottom(), anchor.y()));
+    return rect;
+}
+
+void Callout::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
+{
+    Q_UNUSED(option)
+    Q_UNUSED(widget)
+    QPainterPath path;
+    path.addRoundedRect(m_rect, 5, 5);
+
+    QPointF anchor = mapFromParent(m_chart-&gt;mapToPosition(m_anchor));
+    if (!m_rect.contains(anchor)) {
+        QPointF point1, point2;
+
+        // establish the position of the anchor point in relation to m_rect
+        bool above = anchor.y() &lt;= m_rect.top();
+        bool aboveCenter = anchor.y() &gt; m_rect.top() &amp;&amp; anchor.y() &lt;= m_rect.center().y();
+        bool belowCenter = anchor.y() &gt; m_rect.center().y() &amp;&amp; anchor.y() &lt;= m_rect.bottom();
+        bool below = anchor.y() &gt; m_rect.bottom();
+
+        bool onLeft = anchor.x() &lt;= m_rect.left();
+        bool leftOfCenter = anchor.x() &gt; m_rect.left() &amp;&amp; anchor.x() &lt;= m_rect.center().x();
+        bool rightOfCenter = anchor.x() &gt; m_rect.center().x() &amp;&amp; anchor.x() &lt;= m_rect.right();
+        bool onRight = anchor.x() &gt; m_rect.right();
+
+        // get the nearest m_rect corner.
+        qreal x = (onRight + rightOfCenter) * m_rect.width();
+        qreal y = (below + belowCenter) * m_rect.height();
+        bool cornerCase = (above &amp;&amp; onLeft) || (above &amp;&amp; onRight) || (below &amp;&amp; onLeft) || (below &amp;&amp; onRight);
+        bool vertical = qAbs(anchor.x() - x) &gt; qAbs(anchor.y() - y);
+
+        qreal x1 = x + leftOfCenter * 10 - rightOfCenter * 20 + cornerCase * !vertical * (onLeft * 10 - onRight * 20);
+        qreal y1 = y + aboveCenter * 10 - belowCenter * 20 + cornerCase * vertical * (above * 10 - below * 20);;
+        point1.setX(x1);
+        point1.setY(y1);
+
+        qreal x2 = x + leftOfCenter * 20 - rightOfCenter * 10 + cornerCase * !vertical * (onLeft * 20 - onRight * 10);;
+        qreal y2 = y + aboveCenter * 20 - belowCenter * 10 + cornerCase * vertical * (above * 20 - below * 10);;
+        point2.setX(x2);
+        point2.setY(y2);
+
+        path.moveTo(point1);
+        path.lineTo(anchor);
+        path.lineTo(point2);
+        path = path.simplified();
+    }
+    painter-&gt;setBrush(QColor(255, 255, 255));
+    painter-&gt;drawPath(path);
+    painter-&gt;drawText(m_textRect, m_text);
+}
+
+void Callout::mousePressEvent(QGraphicsSceneMouseEvent *event)
+{
+    event-&gt;setAccepted(true);
+}
+
+void Callout::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (event-&gt;buttons() &amp; Qt::LeftButton){
+        setPos(mapToParent(event-&gt;pos() - event-&gt;buttonDownPos(Qt::LeftButton)));
+        event-&gt;setAccepted(true);
+    } else {
+        event-&gt;setAccepted(false);
+    }
+}
+
+void Callout::setText(const QString &amp;text)
+{
+    m_text = text;
+    QFontMetrics metrics(m_font);
+    m_textRect = metrics.boundingRect(QRect(0, 0, 150, 150), Qt::AlignLeft, m_text);
+    m_textRect.translate(5, 5);
+    prepareGeometryChange();
+    m_rect = m_textRect.adjusted(-5, -5, 5, 5);
+}
+
+void Callout::setAnchor(QPointF point)
+{
+    m_anchor = point;
+}
+
+void Callout::updateGeometry()
+{
+    prepareGeometryChange();
+    setPos(m_chart-&gt;mapToPosition(m_anchor) + QPoint(10, -50));
+}
+
+</db:programlisting>
+</db:article>

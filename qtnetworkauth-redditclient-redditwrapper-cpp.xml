@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Reddit Example</db:title>
+<db:productname>QtNetworkAuth</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Authorization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates authenticating with OAuth 2 to access Reddit.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Network Auth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;redditwrapper.h&quot;
+
+#include &lt;QtGui&gt;
+#include &lt;QtCore&gt;
+#include &lt;QtNetworkAuth&gt;
+
+const QUrl newUrl(&quot;https://oauth.reddit.com/new&quot;);
+const QUrl hotUrl(&quot;https://oauth.reddit.com/hot&quot;);
+const QUrl liveThreadsUrl(&quot;https://oauth.reddit.com/live/XXXX/about.json&quot;);
+
+RedditWrapper::RedditWrapper(QObject *parent) : QObject(parent)
+{
+    auto replyHandler = new QOAuthHttpServerReplyHandler(1337, this);
+    oauth2.setReplyHandler(replyHandler);
+    oauth2.setAuthorizationUrl(QUrl(&quot;https://www.reddit.com/api/v1/authorize&quot;));
+    oauth2.setAccessTokenUrl(QUrl(&quot;https://www.reddit.com/api/v1/access_token&quot;));
+    oauth2.setScope(&quot;identity read&quot;);
+
+    connect(&amp;oauth2, &amp;QOAuth2AuthorizationCodeFlow::statusChanged, [=](
+            QAbstractOAuth::Status status) {
+        if (status == QAbstractOAuth::Status::Granted)
+            emit authenticated();
+    });
+    oauth2.setModifyParametersFunction([&amp;](QAbstractOAuth::Stage stage, QVariantMap *parameters) {
+        if (stage == QAbstractOAuth::Stage::RequestingAuthorization &amp;&amp; isPermanent())
+            parameters-&gt;insert(&quot;duration&quot;, &quot;permanent&quot;);
+    });
+    connect(&amp;oauth2, &amp;QOAuth2AuthorizationCodeFlow::authorizeWithBrowser,
+            &amp;QDesktopServices::openUrl);
+}
+
+RedditWrapper::RedditWrapper(const QString &amp;clientIdentifier, QObject *parent) :
+    RedditWrapper(parent)
+{
+    oauth2.setClientIdentifier(clientIdentifier);
+}
+
+QNetworkReply *RedditWrapper::requestHotThreads()
+{
+    qDebug() &lt;&lt; &quot;Getting hot threads...&quot;;
+    return oauth2.get(hotUrl);
+}
+
+bool RedditWrapper::isPermanent() const
+{
+    return permanent;
+}
+
+void RedditWrapper::setPermanent(bool value)
+{
+    permanent = value;
+}
+
+void RedditWrapper::grant()
+{
+    oauth2.grant();
+}
+
+void RedditWrapper::subscribeToLiveUpdates()
+{
+    qDebug() &lt;&lt; &quot;Susbscribing...&quot;;
+    QNetworkReply *reply = oauth2.get(liveThreadsUrl);
+    connect(reply, &amp;QNetworkReply::finished, [=]() {
+        if (reply-&gt;error() != QNetworkReply::NoError) {
+            qCritical() &lt;&lt; &quot;Reddit error:&quot; &lt;&lt; reply-&gt;errorString();
+            return;
+        }
+
+        const auto json = reply-&gt;readAll();
+
+        const auto document = QJsonDocument::fromJson(json);
+        Q_ASSERT(document.isObject());
+        const auto rootObject = document.object();
+        const auto dataValue = rootObject.value(&quot;data&quot;);
+        Q_ASSERT(dataValue.isObject());
+        const auto dataObject = dataValue.toObject();
+        const auto websocketUrlValue = dataObject.value(&quot;websocket_url&quot;);
+        Q_ASSERT(websocketUrlValue.isString() &amp;&amp; websocketUrlValue.toString().size());
+        const QUrl websocketUrl(websocketUrlValue.toString());
+        emit subscribed(websocketUrl);
+    });
+}
+
+</db:programlisting>
+</db:article>
