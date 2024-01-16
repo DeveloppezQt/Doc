@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QML Advanced Tutorial 4 - Finishing Touches</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qtquick-tutorials-samegame-samegame3-example.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="QML Advanced Tutorial 3 - Implementing the Game Logic"/></db:extendedlink>
+<db:abstract>
+<db:para>Qt Quick Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/* This script file handles the game logic */
+.import QtQuick.LocalStorage 2.0 as Sql
+.import QtQuick 2.0 as Quick
+
+var maxColumn = 10;
+var maxRow = 15;
+var maxIndex = maxColumn * maxRow;
+var board = new Array(maxIndex);
+var component;
+var scoresURL = &quot;&quot;;
+var gameDuration;
+
+//Index function used instead of a 2D array
+function index(column, row) {
+    return column + (row * maxColumn);
+}
+
+function startNewGame() {
+    //Delete blocks from previous game
+    for (var i = 0; i &lt; maxIndex; i++) {
+        if (board[i] != null)
+            board[i].destroy();
+    }
+
+    //Calculate board size
+    maxColumn = Math.floor(gameCanvas.width / gameCanvas.blockSize);
+    maxRow = Math.floor(gameCanvas.height / gameCanvas.blockSize);
+    maxIndex = maxRow * maxColumn;
+
+    //Close dialogs
+    nameInputDialog.hide();
+    dialog.hide();
+
+    //Initialize Board
+    board = new Array(maxIndex);
+    gameCanvas.score = 0;
+    for (var column = 0; column &lt; maxColumn; column++) {
+        for (var row = 0; row &lt; maxRow; row++) {
+            board[index(column, row)] = null;
+            createBlock(column, row);
+        }
+    }
+
+    gameDuration = new Date();
+}
+
+function createBlock(column, row) {
+    if (component == null)
+        component = Qt.createComponent(&quot;BoomBlock.qml&quot;);
+
+    // Note that if Block.qml was not a local file, component.status would be
+    // Loading and we should wait for the component's statusChanged() signal to
+    // know when the file is downloaded and ready before calling createObject().
+    if (component.status == Quick.Component.Ready) {
+        var dynamicObject = component.createObject(gameCanvas);
+        if (dynamicObject == null) {
+            console.log(&quot;error creating block&quot;);
+            console.log(component.errorString());
+            return false;
+        }
+        dynamicObject.type = Math.floor(Math.random() * 3);
+        dynamicObject.x = column * gameCanvas.blockSize;
+        dynamicObject.y = row * gameCanvas.blockSize;
+        dynamicObject.width = gameCanvas.blockSize;
+        dynamicObject.height = gameCanvas.blockSize;
+        dynamicObject.spawned = true;
+        board[index(column, row)] = dynamicObject;
+    } else {
+        console.log(&quot;error loading block component&quot;);
+        console.log(component.errorString());
+        return false;
+    }
+    return true;
+}
+
+var fillFound; //Set after a floodFill call to the number of blocks found
+var floodBoard; //Set to 1 if the floodFill reaches off that node
+
+function handleClick(xPos, yPos) {
+    var column = Math.floor(xPos / gameCanvas.blockSize);
+    var row = Math.floor(yPos / gameCanvas.blockSize);
+    if (column &gt;= maxColumn || column &lt; 0 || row &gt;= maxRow || row &lt; 0)
+        return;
+    if (board[index(column, row)] == null)
+        return;
+    //If it's a valid block, remove it and all connected (does nothing if it's not connected)
+    floodFill(column, row, -1);
+    if (fillFound &lt;= 0)
+        return;
+    gameCanvas.score += (fillFound - 1) * (fillFound - 1);
+    shuffleDown();
+    victoryCheck();
+}
+
+function floodFill(column, row, type) {
+    if (board[index(column, row)] == null)
+        return;
+    var first = false;
+    if (type == -1) {
+        first = true;
+        type = board[index(column, row)].type;
+
+        //Flood fill initialization
+        fillFound = 0;
+        floodBoard = new Array(maxIndex);
+    }
+    if (column &gt;= maxColumn || column &lt; 0 || row &gt;= maxRow || row &lt; 0)
+        return;
+    if (floodBoard[index(column, row)] == 1 || (!first &amp;&amp; type != board[index(column, row)].type))
+        return;
+    floodBoard[index(column, row)] = 1;
+    floodFill(column + 1, row, type);
+    floodFill(column - 1, row, type);
+    floodFill(column, row + 1, type);
+    floodFill(column, row - 1, type);
+    if (first == true &amp;&amp; fillFound == 0)
+        return;     //Can't remove single blocks
+    board[index(column, row)].dying = true;
+    board[index(column, row)] = null;
+    fillFound += 1;
+}
+
+function shuffleDown() {
+    //Fall down
+    for (var column = 0; column &lt; maxColumn; column++) {
+        var fallDist = 0;
+        for (var row = maxRow - 1; row &gt;= 0; row--) {
+            if (board[index(column, row)] == null) {
+                fallDist += 1;
+            } else {
+                if (fallDist &gt; 0) {
+                    var obj = board[index(column, row)];
+                    obj.y = (row + fallDist) * gameCanvas.blockSize;
+                    board[index(column, row + fallDist)] = obj;
+                    board[index(column, row)] = null;
+                }
+            }
+        }
+    }
+    //Fall to the left
+    fallDist = 0;
+    for (column = 0; column &lt; maxColumn; column++) {
+        if (board[index(column, maxRow - 1)] == null) {
+            fallDist += 1;
+        } else {
+            if (fallDist &gt; 0) {
+                for (row = 0; row &lt; maxRow; row++) {
+                    obj = board[index(column, row)];
+                    if (obj == null)
+                        continue;
+                    obj.x = (column - fallDist) * gameCanvas.blockSize;
+                    board[index(column - fallDist, row)] = obj;
+                    board[index(column, row)] = null;
+                }
+            }
+        }
+    }
+}
+
+function victoryCheck() {
+    //Award bonus points if no blocks left
+    var deservesBonus = true;
+    for (var column = maxColumn - 1; column &gt;= 0; column--)
+        if (board[index(column, maxRow - 1)] != null)
+        deservesBonus = false;
+    if (deservesBonus)
+        gameCanvas.score += 500;
+
+    //Check whether game has finished
+    if (deservesBonus || !(floodMoveCheck(0, maxRow - 1, -1))) {
+        gameDuration = new Date() - gameDuration;
+        nameInputDialog.showWithInput(&quot;You won! Please enter your name: &quot;);
+    }
+}
+
+//only floods up and right, to see if it can find adjacent same-typed blocks
+function floodMoveCheck(column, row, type) {
+    if (column &gt;= maxColumn || column &lt; 0 || row &gt;= maxRow || row &lt; 0)
+        return false;
+    if (board[index(column, row)] == null)
+        return false;
+    var myType = board[index(column, row)].type;
+    if (type == myType)
+        return true;
+    return floodMoveCheck(column + 1, row, myType) || floodMoveCheck(column, row - 1, board[index(column, row)].type);
+}
+
+function saveHighScore(name) {
+    if (scoresURL != &quot;&quot;)
+        sendHighScore(name);
+
+    var db = Sql.LocalStorage.openDatabaseSync(&quot;SameGameScores&quot;, &quot;1.0&quot;, &quot;Local SameGame High Scores&quot;, 100);
+    var dataStr = &quot;INSERT INTO Scores VALUES(?, ?, ?, ?)&quot;;
+    var data = [name, gameCanvas.score, maxColumn + &quot;x&quot; + maxRow, Math.floor(gameDuration / 1000)];
+    db.transaction(function(tx) {
+        tx.executeSql('CREATE TABLE IF NOT EXISTS Scores(name TEXT, score NUMBER, gridSize TEXT, time NUMBER)');
+        tx.executeSql(dataStr, data);
+
+        var rs = tx.executeSql('SELECT * FROM Scores WHERE gridSize = &quot;12x17&quot; ORDER BY score desc LIMIT 10');
+        var r = &quot;\nHIGH SCORES for a standard sized grid\n\n&quot;
+        for (var i = 0; i &lt; rs.rows.length; i++) {
+            r += (i + 1) + &quot;. &quot; + rs.rows.item(i).name + ' got ' + rs.rows.item(i).score + ' points in ' + rs.rows.item(i).time + ' seconds.\n';
+        }
+        dialog.show(r);
+    });
+}
+
+function sendHighScore(name) {
+    var postman = new XMLHttpRequest()
+        var postData = &quot;name=&quot; + name + &quot;&amp;score=&quot; + gameCanvas.score + &quot;&amp;gridSize=&quot; + maxColumn + &quot;x&quot; + maxRow + &quot;&amp;time=&quot; + Math.floor(gameDuration / 1000);
+    postman.open(&quot;POST&quot;, scoresURL, true);
+    postman.setRequestHeader(&quot;Content-Type&quot;, &quot;application/x-www-form-urlencoded&quot;);
+    postman.onreadystatechange = function() {
+        if (postman.readyState == postman.DONE) {
+            dialog.show(&quot;Your score has been uploaded.&quot;);
+        }
+    }
+    postman.send(postData);
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 2 Oscilloscope Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of a hybrid C++ and QML application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+import QtQuick 2.1
+import QtQuick.Layouts 1.0
+import QtQuick.Controls 1.0
+import QtDataVisualization 1.1
+import &quot;.&quot;
+
+Item {
+    id: mainView
+    width: 1280
+    height: 1024
+
+    property int sampleColumns: sampleSlider.value
+    property int sampleRows: sampleColumns / 2
+    property int sampleCache: 24
+
+    onSampleRowsChanged: {
+        surfaceSeries.selectedPoint = surfaceSeries.invalidSelectionPosition
+        generateData()
+    }
+
+    Item {
+        id: dataView
+        anchors.bottom: parent.bottom
+        width: parent.width
+        height: parent.height - buttonLayout.height
+
+        Surface3D {
+            id: surfaceGraph
+
+            width: dataView.width
+            height: dataView.height
+            shadowQuality: AbstractGraph3D.ShadowQualityNone
+            selectionMode: AbstractGraph3D.SelectionSlice | AbstractGraph3D.SelectionItemAndRow
+            renderingMode: AbstractGraph3D.RenderDirectToBackground
+
+            axisX.labelFormat: &quot;%d ms&quot;
+            axisY.labelFormat: &quot;%d W&quot;
+            axisZ.labelFormat: &quot;%d mV&quot;
+            axisX.min: 0
+            axisY.min: 0
+            axisZ.min: 0
+            axisX.max: 1000
+            axisY.max: 100
+            axisZ.max: 800
+            axisX.segmentCount: 4
+            axisY.segmentCount: 4
+            axisZ.segmentCount: 4
+            measureFps: true
+
+            onCurrentFpsChanged: {
+                if (fps &gt; 10)
+                    fpsText.text = &quot;FPS: &quot; + Math.round(surfaceGraph.currentFps)
+                else
+                    fpsText.text = &quot;FPS: &quot; + Math.round(surfaceGraph.currentFps * 10.0) / 10.0
+            }
+
+            Surface3DSeries {
+                id: surfaceSeries
+                drawMode: Surface3DSeries.DrawSurface;
+                flatShadingEnabled: false;
+                meshSmooth: true
+                itemLabelFormat: &quot;@xLabel, @zLabel: @yLabel&quot;
+                itemLabelVisible: false
+
+                onItemLabelChanged: {
+                    if (surfaceSeries.selectedPoint === surfaceSeries.invalidSelectionPosition)
+                        selectionText.text = &quot;No selection&quot;
+                    else
+                        selectionText.text = surfaceSeries.itemLabel
+                }
+            }
+
+            Component.onCompleted: mainView.generateData()
+        }
+    }
+
+    Timer {
+        id: refreshTimer
+        interval: 1000 / frequencySlider.value
+        running: true
+        repeat: true
+        onTriggered: dataSource.update(surfaceSeries)
+    }
+
+    Rectangle {
+        width: parent.width
+        height: flatShadingToggle.height * 2
+        anchors.left: parent.left
+        anchors.top: parent.top
+        color: surfaceGraph.theme.backgroundColor
+
+        ColumnLayout {
+            anchors.fill: parent
+            RowLayout {
+                id: sliderLayout
+                anchors.top: parent.top
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+                Layout.minimumHeight: flatShadingToggle.height
+                spacing: 0
+
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: samplesText.implicitWidth + 120
+                    Layout.maximumWidth: samplesText.implicitWidth + 120
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                    border.color: &quot;gray&quot;
+                    border.width: 1
+                    radius: 4
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: parent.border.width + 1
+
+                        Slider {
+                            id: sampleSlider
+                            Layout.fillHeight: true
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                            Layout.minimumWidth: 80
+                            minimumValue: mainView.sampleCache * 2
+                            maximumValue: minimumValue * 10
+                            stepSize: mainView.sampleCache
+                            updateValueWhileDragging: false
+                            Component.onCompleted: value = minimumValue * 2
+                        }
+
+                        Rectangle {
+                            Layout.fillHeight: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: samplesText.implicitWidth + 10
+                            Layout.maximumWidth: samplesText.implicitWidth + 10
+                            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                            Text {
+                                id: samplesText
+                                text: &quot;Samples: &quot; + (mainView.sampleRows * mainView.sampleColumns)
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: frequencyText.implicitWidth + 120
+                    Layout.maximumWidth: frequencyText.implicitWidth + 120
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                    border.color: &quot;gray&quot;
+                    border.width: 1
+                    radius: 4
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: parent.border.width + 1
+
+                        Slider {
+                            id: frequencySlider
+                            Layout.fillHeight: true
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                            Layout.minimumWidth: 80
+                            minimumValue: 2
+                            maximumValue: 60
+                            stepSize: 2
+                            updateValueWhileDragging: true
+                            value: 30
+                        }
+
+                        Rectangle {
+                            Layout.fillHeight: true
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: frequencyText.implicitWidth + 10
+                            Layout.maximumWidth: frequencyText.implicitWidth + 10
+                            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                            Text {
+                                id: frequencyText
+                                text: &quot;Freq: &quot; + frequencySlider.value + &quot; Hz&quot;
+                                anchors.fill: parent
+                                verticalAlignment: Text.AlignVCenter
+                                horizontalAlignment: Text.AlignHCenter
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: fpsText.implicitWidth + 10
+                    Layout.maximumWidth: fpsText.implicitWidth + 10
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                    border.color: &quot;gray&quot;
+                    border.width: 1
+                    radius: 4
+
+                    Text {
+                        id: fpsText
+                        anchors.fill: parent
+                        verticalAlignment: Text.AlignVCenter
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+                    Layout.minimumWidth: selectionText.implicitWidth + 10
+                    Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+
+                    border.color: &quot;gray&quot;
+                    border.width: 1
+                    radius: 4
+
+                    Text {
+                        id: selectionText
+                        anchors.fill: parent
+                        verticalAlignment: Text.AlignVCenter
+                        horizontalAlignment: Text.AlignHCenter
+                        text: &quot;No selection&quot;
+                    }
+                }
+            }
+
+            RowLayout {
+                id: buttonLayout
+                Layout.fillHeight: true
+                Layout.fillWidth: true
+                Layout.minimumHeight: flatShadingToggle.height
+                anchors.bottom: parent.bottom
+                spacing: 0
+
+                NewButton {
+                    id: flatShadingToggle
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+
+                    text: surfaceSeries.flatShadingSupported ? &quot;Show Flat&quot; : &quot;Flat not supported&quot;
+                    enabled: surfaceSeries.flatShadingSupported
+
+                    onClicked: {
+                        if (surfaceSeries.flatShadingEnabled === true) {
+                            surfaceSeries.flatShadingEnabled = false;
+                            text = &quot;Show Flat&quot;
+                        } else {
+                            surfaceSeries.flatShadingEnabled = true;
+                            text = &quot;Show Smooth&quot;
+                        }
+                    }
+                }
+
+                NewButton {
+                    id: surfaceGridToggle
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+
+                    text: &quot;Show Surface Grid&quot;
+
+                    onClicked: {
+                        if (surfaceSeries.drawMode &amp; Surface3DSeries.DrawWireframe) {
+                            surfaceSeries.drawMode &amp;= ~Surface3DSeries.DrawWireframe;
+                            text = &quot;Show Surface Grid&quot;
+                        } else {
+                            surfaceSeries.drawMode |= Surface3DSeries.DrawWireframe;
+                            text = &quot;Hide Surface Grid&quot;
+                        }
+                    }
+                }
+
+                NewButton {
+                    id: exitButton
+                    Layout.fillHeight: true
+                    Layout.fillWidth: true
+
+                    text: &quot;Quit&quot;
+
+                    onClicked: Qt.quit(0);
+                }
+            }
+        }
+
+    }
+
+    function generateData() {
+        dataSource.generateData(mainView.sampleCache, mainView.sampleRows,
+                                mainView.sampleColumns, surfaceGraph.axisX.min,
+                                surfaceGraph.axisX.max, surfaceGraph.axisY.min,
+                                surfaceGraph.axisY.max, surfaceGraph.axisZ.min,
+                                surfaceGraph.axisZ.max)
+    }
+}
+
+</db:programlisting>
+</db:article>

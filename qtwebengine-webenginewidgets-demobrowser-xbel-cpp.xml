@@ -1,0 +1,310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;xbel.h&quot;
+
+#include &lt;QtCore/QFile&gt;
+
+BookmarkNode::BookmarkNode(BookmarkNode::Type type, BookmarkNode *parent) :
+     expanded(false)
+   , m_parent(parent)
+   , m_type(type)
+{
+    if (parent)
+        parent-&gt;add(this);
+}
+
+BookmarkNode::~BookmarkNode()
+{
+    if (m_parent)
+        m_parent-&gt;remove(this);
+    qDeleteAll(m_children);
+    m_parent = 0;
+    m_type = BookmarkNode::Root;
+}
+
+bool BookmarkNode::operator==(const BookmarkNode &amp;other)
+{
+    if (url != other.url
+        || title != other.title
+        || desc != other.desc
+        || expanded != other.expanded
+        || m_type != other.m_type
+        || m_children.count() != other.m_children.count())
+        return false;
+
+    for (int i = 0; i &lt; m_children.count(); ++i)
+        if (!((*(m_children[i])) == (*(other.m_children[i]))))
+            return false;
+    return true;
+}
+
+BookmarkNode::Type BookmarkNode::type() const
+{
+    return m_type;
+}
+
+void BookmarkNode::setType(Type type)
+{
+    m_type = type;
+}
+
+QList&lt;BookmarkNode *&gt; BookmarkNode::children() const
+{
+    return m_children;
+}
+
+BookmarkNode *BookmarkNode::parent() const
+{
+    return m_parent;
+}
+
+void BookmarkNode::add(BookmarkNode *child, int offset)
+{
+    Q_ASSERT(child-&gt;m_type != Root);
+    if (child-&gt;m_parent)
+        child-&gt;m_parent-&gt;remove(child);
+    child-&gt;m_parent = this;
+    if (-1 == offset)
+        offset = m_children.size();
+    m_children.insert(offset, child);
+}
+
+void BookmarkNode::remove(BookmarkNode *child)
+{
+    child-&gt;m_parent = 0;
+    m_children.removeAll(child);
+}
+
+XbelReader::XbelReader()
+{
+}
+
+BookmarkNode *XbelReader::read(const QString &amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.exists()) {
+        return new BookmarkNode(BookmarkNode::Root);
+    }
+    file.open(QFile::ReadOnly);
+    return read(&amp;file);
+}
+
+BookmarkNode *XbelReader::read(QIODevice *device)
+{
+    BookmarkNode *root = new BookmarkNode(BookmarkNode::Root);
+    setDevice(device);
+    if (readNextStartElement()) {
+        QString version = attributes().value(QLatin1String(&quot;version&quot;)).toString();
+        if (name() == QLatin1String(&quot;xbel&quot;)
+            &amp;&amp; (version.isEmpty() || version == QLatin1String(&quot;1.0&quot;))) {
+            readXBEL(root);
+        } else {
+            raiseError(QObject::tr(&quot;The file is not an XBEL version 1.0 file.&quot;));
+        }
+    }
+    return root;
+}
+
+void XbelReader::readXBEL(BookmarkNode *parent)
+{
+    Q_ASSERT(isStartElement() &amp;&amp; name() == QLatin1String(&quot;xbel&quot;));
+
+    while (readNextStartElement()) {
+        if (name() == QLatin1String(&quot;folder&quot;))
+            readFolder(parent);
+        else if (name() == QLatin1String(&quot;bookmark&quot;))
+            readBookmarkNode(parent);
+        else if (name() == QLatin1String(&quot;separator&quot;))
+            readSeparator(parent);
+        else
+            skipCurrentElement();
+    }
+}
+
+void XbelReader::readFolder(BookmarkNode *parent)
+{
+    Q_ASSERT(isStartElement() &amp;&amp; name() == QLatin1String(&quot;folder&quot;));
+
+    BookmarkNode *folder = new BookmarkNode(BookmarkNode::Folder, parent);
+    folder-&gt;expanded = (attributes().value(QLatin1String(&quot;folded&quot;)) == QLatin1String(&quot;no&quot;));
+
+    while (readNextStartElement()) {
+        if (name() == QLatin1String(&quot;title&quot;))
+            readTitle(folder);
+        else if (name() == QLatin1String(&quot;desc&quot;))
+            readDescription(folder);
+        else if (name() == QLatin1String(&quot;folder&quot;))
+            readFolder(folder);
+        else if (name() == QLatin1String(&quot;bookmark&quot;))
+            readBookmarkNode(folder);
+        else if (name() == QLatin1String(&quot;separator&quot;))
+            readSeparator(folder);
+        else
+            skipCurrentElement();
+    }
+}
+
+void XbelReader::readTitle(BookmarkNode *parent)
+{
+    Q_ASSERT(isStartElement() &amp;&amp; name() == QLatin1String(&quot;title&quot;));
+    parent-&gt;title = readElementText();
+}
+
+void XbelReader::readDescription(BookmarkNode *parent)
+{
+    Q_ASSERT(isStartElement() &amp;&amp; name() == QLatin1String(&quot;desc&quot;));
+    parent-&gt;desc = readElementText();
+}
+
+void XbelReader::readSeparator(BookmarkNode *parent)
+{
+    new BookmarkNode(BookmarkNode::Separator, parent);
+    // empty elements have a start and end element
+    readNext();
+}
+
+void XbelReader::readBookmarkNode(BookmarkNode *parent)
+{
+    Q_ASSERT(isStartElement() &amp;&amp; name() == QLatin1String(&quot;bookmark&quot;));
+    BookmarkNode *bookmark = new BookmarkNode(BookmarkNode::Bookmark, parent);
+    bookmark-&gt;url = attributes().value(QLatin1String(&quot;href&quot;)).toString();
+    while (readNextStartElement()) {
+        if (name() == QLatin1String(&quot;title&quot;))
+            readTitle(bookmark);
+        else if (name() == QLatin1String(&quot;desc&quot;))
+            readDescription(bookmark);
+        else
+            skipCurrentElement();
+    }
+    if (bookmark-&gt;title.isEmpty())
+        bookmark-&gt;title = QObject::tr(&quot;Unknown title&quot;);
+}
+
+XbelWriter::XbelWriter()
+{
+    setAutoFormatting(true);
+}
+
+bool XbelWriter::write(const QString &amp;fileName, const BookmarkNode *root)
+{
+    QFile file(fileName);
+    if (!root || !file.open(QFile::WriteOnly))
+        return false;
+    return write(&amp;file, root);
+}
+
+bool XbelWriter::write(QIODevice *device, const BookmarkNode *root)
+{
+    setDevice(device);
+
+    writeStartDocument();
+    writeDTD(QLatin1String(&quot;&lt;!DOCTYPE xbel&gt;&quot;));
+    writeStartElement(QLatin1String(&quot;xbel&quot;));
+    writeAttribute(QLatin1String(&quot;version&quot;), QLatin1String(&quot;1.0&quot;));
+    if (root-&gt;type() == BookmarkNode::Root) {
+        for (int i = 0; i &lt; root-&gt;children().count(); ++i)
+            writeItem(root-&gt;children().at(i));
+    } else {
+        writeItem(root);
+    }
+
+    writeEndDocument();
+    return true;
+}
+
+void XbelWriter::writeItem(const BookmarkNode *parent)
+{
+    switch (parent-&gt;type()) {
+    case BookmarkNode::Folder:
+        writeStartElement(QLatin1String(&quot;folder&quot;));
+        writeAttribute(QLatin1String(&quot;folded&quot;), parent-&gt;expanded ? QLatin1String(&quot;no&quot;) : QLatin1String(&quot;yes&quot;));
+        writeTextElement(QLatin1String(&quot;title&quot;), parent-&gt;title);
+        for (int i = 0; i &lt; parent-&gt;children().count(); ++i)
+            writeItem(parent-&gt;children().at(i));
+        writeEndElement();
+        break;
+    case BookmarkNode::Bookmark:
+        writeStartElement(QLatin1String(&quot;bookmark&quot;));
+        if (!parent-&gt;url.isEmpty())
+            writeAttribute(QLatin1String(&quot;href&quot;), parent-&gt;url);
+        writeTextElement(QLatin1String(&quot;title&quot;), parent-&gt;title);
+        if (!parent-&gt;desc.isEmpty())
+            writeAttribute(QLatin1String(&quot;desc&quot;), parent-&gt;desc);
+        writeEndElement();
+        break;
+    case BookmarkNode::Separator:
+        writeEmptyElement(QLatin1String(&quot;separator&quot;));
+        break;
+    default:
+        break;
+    }
+}
+
+</db:programlisting>
+</db:article>

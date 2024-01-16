@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Simple Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;browser.h&quot;
+#include &quot;browserwindow.h&quot;
+#include &quot;tabwidget.h&quot;
+#include &quot;webpage.h&quot;
+#include &quot;webpopupwindow.h&quot;
+#include &quot;webview.h&quot;
+#include &lt;QContextMenuEvent&gt;
+#include &lt;QDebug&gt;
+#include &lt;QMenu&gt;
+#include &lt;QMessageBox&gt;
+#include &lt;QTimer&gt;
+
+WebView::WebView(QWidget *parent)
+    : QWebEngineView(parent)
+    , m_loadProgress(0)
+{
+    connect(this, &amp;QWebEngineView::loadProgress, [this](int progress) {
+        m_loadProgress = progress;
+    });
+    connect(this, &amp;QWebEngineView::loadFinished, [this](bool success) {
+        if (!success) {
+            m_loadProgress = 0;
+        }
+    });
+
+    connect(this, &amp;QWebEngineView::renderProcessTerminated,
+            [this](QWebEnginePage::RenderProcessTerminationStatus termStatus, int statusCode) {
+        QString status;
+        switch (termStatus) {
+        case QWebEnginePage::NormalTerminationStatus:
+            status = tr(&quot;Render process normal exit&quot;);
+            break;
+        case QWebEnginePage::AbnormalTerminationStatus:
+            status = tr(&quot;Render process abnormal exit&quot;);
+            break;
+        case QWebEnginePage::CrashedTerminationStatus:
+            status = tr(&quot;Render process crashed&quot;);
+            break;
+        case QWebEnginePage::KilledTerminationStatus:
+            status = tr(&quot;Render process killed&quot;);
+            break;
+        }
+        QMessageBox::StandardButton btn = QMessageBox::question(window(), status,
+                                                   tr(&quot;Render process exited with code: %1\n&quot;
+                                                      &quot;Do you want to reload the page ?&quot;).arg(statusCode));
+        if (btn == QMessageBox::Yes)
+            QTimer::singleShot(0, [this] { reload(); });
+    });
+}
+
+void WebView::setPage(WebPage *page)
+{
+    createWebActionTrigger(page,QWebEnginePage::Forward);
+    createWebActionTrigger(page,QWebEnginePage::Back);
+    createWebActionTrigger(page,QWebEnginePage::Reload);
+    createWebActionTrigger(page,QWebEnginePage::Stop);
+    QWebEngineView::setPage(page);
+}
+
+int WebView::loadProgress() const
+{
+    return m_loadProgress;
+}
+
+void WebView::createWebActionTrigger(QWebEnginePage *page, QWebEnginePage::WebAction webAction)
+{
+    QAction *action = page-&gt;action(webAction);
+    connect(action, &amp;QAction::changed, [this, action, webAction]{
+        emit webActionEnabledChanged(webAction, action-&gt;isEnabled());
+    });
+}
+
+bool WebView::isWebActionEnabled(QWebEnginePage::WebAction webAction) const
+{
+    return page()-&gt;action(webAction)-&gt;isEnabled();
+}
+
+QWebEngineView *WebView::createWindow(QWebEnginePage::WebWindowType type)
+{
+    switch (type) {
+    case QWebEnginePage::WebBrowserTab: {
+        BrowserWindow *mainWindow = qobject_cast&lt;BrowserWindow*&gt;(window());
+        return mainWindow-&gt;tabWidget()-&gt;createTab();
+    }
+    case QWebEnginePage::WebBrowserBackgroundTab: {
+        BrowserWindow *mainWindow = qobject_cast&lt;BrowserWindow*&gt;(window());
+        return mainWindow-&gt;tabWidget()-&gt;createTab(false);
+    }
+    case QWebEnginePage::WebBrowserWindow: {
+        BrowserWindow *mainWindow = new BrowserWindow();
+        Browser::instance().addWindow(mainWindow);
+        return mainWindow-&gt;currentTab();
+    }
+    case QWebEnginePage::WebDialog: {
+        WebPopupWindow *popup = new WebPopupWindow(page()-&gt;profile());
+        return popup-&gt;view();
+    }
+    }
+    return nullptr;
+}
+
+void WebView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu = page()-&gt;createStandardContextMenu();
+    const QList&lt;QAction*&gt; actions = menu-&gt;actions();
+    auto it = std::find(actions.cbegin(), actions.cend(), page()-&gt;action(QWebEnginePage::OpenLinkInThisWindow));
+    if (it != actions.cend()) {
+        (*it)-&gt;setText(tr(&quot;Open Link in This Tab&quot;));
+        ++it;
+        QAction *before(it == actions.cend() ? nullptr : *it);
+        menu-&gt;insertAction(before, page()-&gt;action(QWebEnginePage::OpenLinkInNewWindow));
+        menu-&gt;insertAction(before, page()-&gt;action(QWebEnginePage::OpenLinkInNewTab));
+    }
+    connect(menu, &amp;QMenu::aboutToHide, menu, &amp;QObject::deleteLater);
+    menu-&gt;popup(event-&gt;globalPos());
+}
+
+</db:programlisting>
+</db:article>

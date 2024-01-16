@@ -1,0 +1,309 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick Scene Graph</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Quick Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="the-scene-graph-in-qt-quick">
+<db:title>The Scene Graph in Qt Quick</db:title>
+<db:para>Qt Quick 2 makes use of a dedicated scene graph based on OpenGL ES 2.0 or OpenGL 2.0 for its rendering. Using a scene graph for graphics rather than the traditional imperative painting systems (<db:link xlink:href="qpainter.xml">QPainter</db:link> and similar), means the scene to be rendered can be retained between frames and the complete set of primitives to render is known before rendering starts. This opens up for a number of optimizations, such as batch rendering to minimize state changes and discarding obscured primitives.</db:para>
+<db:para>For example, say a user-interface contains a list of ten items where each item has a background color, an icon and a text. Using the traditional drawing techniques, this would result in 30 draw calls and a similar amount of state changes. A scene graph, on the other hand, could reorganize the primitives to render such that all backgrounds are drawn in one call, then all icons, then all the text, reducing the total amount of draw calls to only 3. Batching and state change reduction like this can greatly improve performance on some hardware.</db:para>
+<db:para>The scene graph is closely tied to Qt Quick 2.0 and can not be used stand-alone. The scene graph is managed and rendered by the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> class and custom Item types can add their graphical primitives into the scene graph through a call to <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>().</db:para>
+<db:para>The scene graph is a graphical representation of the Item scene, an independent structure that contains enough information to render all the items. Once it has been set up, it can be manipulated and rendered independently of the state of the items. On many platforms, the scene graph will even be rendered on a dedicated render thread while the GUI thread is preparing the next frame's state.</db:para>
+</db:section>
+<db:section xml:id="qt-quick-scene-graph-structure">
+<db:title>Qt Quick Scene Graph Structure</db:title>
+<db:para>The scene graph is composed of a number of predefined node types, each serving a dedicated purpose. Although we refer to it as a scene graph, a more precise definition is node tree. The tree is built from <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> types in the QML scene and internally the scene is then processed by a renderer which draws the scene. The nodes themselves do <db:emphasis role="bold">not</db:emphasis> contain any active drawing code nor virtual <db:code>paint()</db:code> function.</db:para>
+<db:para>Even though the node tree is mostly built internally by the existing Qt Quick QML types, it is possible for users to also add complete subtrees with their own content, including subtrees that represent 3D models.</db:para>
+<db:section xml:id="nodes">
+<db:title>Nodes</db:title>
+<db:para>The most important node for users is the <db:link xlink:href="qsggeometrynode.xml">QSGGeometryNode</db:link>. It is used to define custom graphics by defining its geometry and material. The geometry is defined using <db:link xlink:href="qsggeometry.xml">QSGGeometry</db:link> and describes the shape or mesh of the graphical primitive. It can be a line, a rectangle, a polygon, many disconnected rectangles, or complex 3D mesh. The material defines how the pixels in this shape are filled.</db:para>
+<db:para>A node can have any number of children and geometry nodes will be rendered so they appear in child-order with parents behind their children.</db:para>
+<db:note>
+<db:para>This does not say anything about the actual rendering order in the renderer. Only the visual output is guaranteed.</db:para>
+</db:note>
+<db:para>The available nodes are: <db:variablelist role="qtquick-scenegraph-nodes">
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgclipnode.xml" xlink:role="class">QSGClipNode</db:link></db:term>
+<db:listitem>
+<db:para>The QSGClipNode class implements the clipping functionality in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsggeometrynode.xml" xlink:role="class">QSGGeometryNode</db:link></db:term>
+<db:listitem>
+<db:para>The QSGGeometryNode class is used for all rendered content in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgnode.xml" xlink:role="class">QSGNode</db:link></db:term>
+<db:listitem>
+<db:para>The QSGNode class is the base class for all nodes in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgopacitynode.xml" xlink:role="class">QSGOpacityNode</db:link></db:term>
+<db:listitem>
+<db:para>The QSGOpacityNode class is used to change opacity of nodes.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgtransformnode.xml" xlink:role="class">QSGTransformNode</db:link></db:term>
+<db:listitem>
+<db:para>The QSGTransformNode class implements transformations in the scene graph</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:para>
+<db:para>Custom nodes are added to the scene graph by subclassing <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>() and setting the <db:link xlink:href="qquickitem.xml#Flag-enum">QQuickItem::ItemHasContents</db:link> flag.</db:para>
+<db:warning>
+<db:para>It is crucial that OpenGL operations and interaction with the scene graph happens exclusively on the render thread, primarily during the updatePaintNode() call. The rule of thumb is to only use classes with the &quot;QSG&quot; prefix inside the <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>() function.</db:para>
+</db:warning>
+<db:para>For more details, see the <db:link xlink:href="qtquick-scenegraph-customgeometry-example.xml">Scene Graph - Custom Geometry</db:link>.</db:para>
+<db:section xml:id="preprocessing">
+<db:title>Preprocessing</db:title>
+<db:para>Nodes have a virtual <db:link xlink:href="qsgnode.xml#preprocess">QSGNode::preprocess</db:link>() function, which will be called before the scene graph is rendered. Node subclasses can set the flag <db:link xlink:href="qsgnode.xml#Flag-enum">QSGNode::UsePreprocess</db:link> and override the <db:link xlink:href="qsgnode.xml#preprocess">QSGNode::preprocess</db:link>() function to do final preparation of their node. For example, dividing a bezier curve into the correct level of detail for the current scale factor or updating a section of a texture.</db:para>
+</db:section>
+<db:section xml:id="node-ownership">
+<db:title>Node Ownership</db:title>
+<db:para>Ownership of the nodes is either done explicitly by the creator or by the scene graph by setting the flag <db:link xlink:href="qsgnode.xml#Flag-enum">QSGNode::OwnedByParent</db:link>. Assigning ownership to the scene graph is often preferable as it simplifies cleanup when the scene graph lives outside the GUI thread.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="materials">
+<db:title>Materials</db:title>
+<db:para>The material describes how the interior of a geometry in a <db:link xlink:href="qsggeometrynode.xml">QSGGeometryNode</db:link> is filled. It encapsulates an OpenGL shader program and provides ample flexibility in what can be achieved, though most of the Qt Quick items themselves only use very basic materials, such as solid color and texture fills.</db:para>
+<db:para>For users who just want to apply custom shading to a QML Item type, it is possible to do this directly in QML using the <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link> type.</db:para>
+<db:para>Below is a complete list of material classes: <db:variablelist role="qtquick-scenegraph-materials">
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgflatcolormaterial.xml" xlink:role="class">QSGFlatColorMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGFlatColorMaterial class provides a convenient way of rendering solid colored geometry in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgmaterial.xml" xlink:role="class">QSGMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGMaterial class encapsulates rendering state for a shader program.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgmaterialshader.xml" xlink:role="class">QSGMaterialShader</db:link></db:term>
+<db:listitem>
+<db:para>The QSGMaterialShader class represents an OpenGL shader program in the renderer.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgmaterialtype.xml" xlink:role="class">QSGMaterialType</db:link></db:term>
+<db:listitem>
+<db:para>The QSGMaterialType class is used as a unique type token in combination with QSGMaterial.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgopaquetexturematerial.xml" xlink:role="class">QSGOpaqueTextureMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGOpaqueTextureMaterial class provides a convenient way of rendering textured geometry in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgsimplematerial.xml" xlink:role="class">QSGSimpleMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGSimpleMaterial class is a template generated class used to store the state used with a QSGSimpleMateralShader.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgsimplematerialshader.xml" xlink:role="class">QSGSimpleMaterialShader</db:link></db:term>
+<db:listitem>
+<db:para>The QSGSimpleMaterialShader class provides a convenient way of building custom materials for the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgtexturematerial.xml" xlink:role="class">QSGTextureMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGTextureMaterial class provides a convenient way of rendering textured geometry in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qsgvertexcolormaterial.xml" xlink:role="class">QSGVertexColorMaterial</db:link></db:term>
+<db:listitem>
+<db:para>The QSGVertexColorMaterial class provides a convenient way of rendering per-vertex colored geometry in the scene graph.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:para>
+<db:para>For more details, see the <db:link xlink:href="qtquick-scenegraph-simplematerial-example.xml">Scene Graph - Simple Material</db:link></db:para>
+</db:section>
+<db:section xml:id="convenience-nodes">
+<db:title>Convenience Nodes</db:title>
+<db:para>The scene graph API is very low-level and focuses on performance rather than convenience. Writing custom geometries and materials from scratch, even the most basic ones, requires a non-trivial amount of code. For this reason, the API includes a few convenience classes to make the most common custom nodes readily available.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qsgsimplerectnode.xml">QSGSimpleRectNode</db:link> - a <db:link xlink:href="qsggeometrynode.xml">QSGGeometryNode</db:link> subclass which defines a rectangular geometry with a solid color material.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qsgsimpletexturenode.xml">QSGSimpleTextureNode</db:link> - a <db:link xlink:href="qsggeometrynode.xml">QSGGeometryNode</db:link> subclass which defines a rectangular geometry with a texture material.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+<db:section xml:id="scene-graph-and-rendering">
+<db:title>Scene Graph and Rendering</db:title>
+<db:para>The rendering of the scene graph happens internally in the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> class, and there is no public API to access it. There are, however, a few places in the rendering pipeline where the user can attach application code. This can be used to add custom scene graph content or render raw OpenGL content. The integration points are defined by the render loop.</db:para>
+<db:para>For detailed description of how the scene graph renderer works, see <db:link xlink:href="qtquick-visualcanvas-scenegraph-renderer.xml">Qt Quick Scene Graph Renderer</db:link>.</db:para>
+<db:para>There are three render loop variants available: <db:code>basic</db:code>, <db:code>windows</db:code>, and <db:code>threaded</db:code>. Out of these, <db:code>basic</db:code> and <db:code>windows</db:code> are single-threaded, while <db:code>threaded</db:code> performs scene graph rendering on a dedicated thread. Qt attempts to choose a suitable loop based on the platform and possibly the graphics drivers in use. When this is not satisfactory, or for testing purposes, the environment variable <db:code>QSG_RENDER_LOOP</db:code> can be used to force the usage of a given loop. To verify which render loop is in use, enable the <db:code>qt.scenegraph.general</db:code> <db:link xlink:href="qloggingcategory.xml">logging category</db:link>.</db:para>
+<db:note>
+<db:para>The <db:code>threaded</db:code> and <db:code>windows</db:code> render loops rely on the OpenGL implementation for throttling by requesting a swap interval of 1. Some graphics drivers allow users to override this setting and turn it off, ignoring Qt's request. Without blocking in the swap buffers operation (or elsewhere), the render loop will run animations too fast and spin the CPU at 100%. If a system is known to be unable to provide vsync-based throttling, use the <db:code>basic</db:code> render loop instead by setting <db:code>QSG_RENDER_LOOP=basic</db:code> in the environment.</db:para>
+</db:note>
+<db:section xml:id="threaded-render-loop-threaded">
+<db:title>Threaded Render Loop (&quot;threaded&quot;)</db:title>
+<db:para>On many configurations, the scene graph rendering will happen on a dedicated render thread. This is done to increase parallelism of multi-core processors and make better use of stall times such as waiting for a blocking swap buffer call. This offers significant performance improvements, but imposes certain restrictions on where and when interaction with the scene graph can happen.</db:para>
+<db:para>The following is a simple outline of how a frame gets composed with the threaded render loop.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/sg-renderloop-threaded.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>A change occurs in the QML scene, causing <db:code>QQuickItem::update()</db:code> to be called. This can be the result of for instance an animation or user input. An event is posted to the render thread to initiate a new frame.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The render thread prepares to draw a new frame and makes the OpenGL context current and initiates a block on the GUI thread.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>While the render thread is preparing the new frame, the GUI thread calls <db:link xlink:href="qquickitem.xml#updatePolish">QQuickItem::updatePolish</db:link>() to do final touch-up of items before they are rendered.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>GUI thread is blocked.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:link xlink:href="qquickwindow.xml#beforeSynchronizing">QQuickWindow::beforeSynchronizing</db:link>() signal is emitted. Applications can make direct connections (using <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::DirectConnection</db:link>) to this signal to do any preparation required before calls to <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>().</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Synchronization of the QML state into the scene graph. This is done by calling the <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>() function on all items that have changed since the previous frame. This is the only time the QML items and the nodes in the scene graph interact.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>GUI thread block is released.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The scene graph is rendered:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>The <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() signal is emitted. Applications can make direct connections (using <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::DirectConnection</db:link>) to this signal to use custom OpenGL calls which will then stack visually beneath the QML scene.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Items that have specified <db:link xlink:href="qsgnode.xml#Flag-enum">QSGNode::UsePreprocess</db:link>, will have their <db:link xlink:href="qsgnode.xml#preprocess">QSGNode::preprocess</db:link>() function invoked.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The renderer processes the nodes and calls OpenGL functions.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:link xlink:href="qquickwindow.xml#afterRendering">QQuickWindow::afterRendering</db:link>() signal is emitted. Applications can make direct connections (using <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::DirectConnection</db:link>) to this signal to use custom OpenGL calls which will then stack visually over the QML scene.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The rendered frame is swapped and <db:link xlink:href="qquickwindow.xml#frameSwapped">QQuickWindow::frameSwapped</db:link>() is emitted.</db:para>
+</db:listitem>
+</db:orderedlist>
+</db:listitem>
+<db:listitem>
+<db:para>While the render thread is rendering, the GUI is free to advance animations, process events, etc.</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>The threaded renderer is currently used by default on Windows with opengl32.dll, Linux with non-Mesa based drivers, macOS, mobile platforms, and Embedded Linux with EGLFS but this is subject to change. It is possible to force use of the threaded renderer by setting <db:code>QSG_RENDER_LOOP=threaded</db:code> in the environment.</db:para>
+</db:section>
+<db:section xml:id="non-threaded-render-loops-basic-and-windows">
+<db:title>Non-threaded Render Loops (&quot;basic&quot; and &quot;windows&quot;)</db:title>
+<db:para>The non-threaded render loop is currently used by default on Windows with ANGLE or a non-default opengl32 implementation and Linux with Mesa drivers. For the latter this is mostly a precautionary measure, as not all combinations of OpenGL drivers and windowing systems have been tested. At the same time implementations like ANGLE or Mesa llvmpipe are not able to function properly with threaded rendering at all so not using threaded rendering is essential for these.</db:para>
+<db:para>By default <db:code>windows</db:code> is used for non-threaded rendering on Windows with ANGLE, while <db:code>basic</db:code> is used for all other platforms when non-threaded rendering is needed.</db:para>
+<db:para>Even when using the non-threaded render loop, you should write your code as if you are using the threaded renderer, as failing to do so will make the code non-portable.</db:para>
+<db:para>The following is a simplified illustration of the frame rendering sequence in the non-threaded renderer.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/sg-renderloop-singlethreaded.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section xml:id="custom-control-over-rendering-with-qquickrendercontrol">
+<db:title>Custom control over rendering with QQuickRenderControl</db:title>
+<db:para>When using <db:link xlink:href="qquickrendercontrol.xml">QQuickRenderControl</db:link>, the responsibility for driving the rendering loop is transferred to the application. In this case no built-in render loop is used. Instead, it is up to the application to invoke the polish, synchronize and rendering steps at the appropriate time. It is possible to implement either a threaded or non-threaded behavior similar to the ones shown above.</db:para>
+</db:section>
+<db:section xml:id="mixing-scene-graph-and-opengl">
+<db:title>Mixing Scene Graph and OpenGL</db:title>
+<db:para>The scene graph offers two methods for integrating OpenGL content: by calling OpenGL commands directly and by creating a textured node in the scene graph.</db:para>
+<db:para>By connecting to the <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#afterRendering">QQuickWindow::afterRendering</db:link>() signals, applications can make OpenGL calls directly into the same context as the scene graph is rendering to. As the signal names indicate, the user can then render OpenGL content either under a Qt Quick scene or over it. The benefit of integrating in this manner is that no extra framebuffer nor memory is needed to perform the rendering. The downside is that Qt Quick decides when to call the signals and this is the only time the OpenGL application is allowed to draw.</db:para>
+<db:para>The <db:link xlink:href="qtquick-scenegraph-openglunderqml-example.xml">Scene Graph - OpenGL Under QML</db:link> example gives an example on how to use these signals.</db:para>
+<db:para>The other alternative is to create a <db:link xlink:href="qquickframebufferobject.xml">QQuickFramebufferObject</db:link>, render into it, and let it be displayed in the scene graph as a texture. The <db:link xlink:href="qtquick-scenegraph-textureinsgnode-example.xml">Scene Graph - Rendering FBOs</db:link> example shows how this can be done. It is also possible to combine multiple rendering contexts and multiple threads to create content to be displayed in the scene graph. The <db:link xlink:href="qtquick-scenegraph-textureinthread-example.xml">Scene Graph - Rendering FBOs in a thread</db:link> examples show how this can be done.</db:para>
+<db:warning>
+<db:para>When mixing OpenGL content with scene graph rendering, it is important the application does not leave the OpenGL context in a state with buffers bound, attributes enabled, special values in the z-buffer or stencil-buffer or similar. Doing so can result in unpredictable behavior.</db:para>
+</db:warning>
+<db:warning>
+<db:para>The OpenGL rendering code must be thread aware, as the rendering might be happening outside the GUI thread.</db:para>
+</db:warning>
+</db:section>
+<db:section xml:id="custom-items-using-qpainter">
+<db:title>Custom Items using QPainter</db:title>
+<db:para>The <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> provides a subclass, <db:link xlink:href="qquickpainteditem.xml">QQuickPaintedItem</db:link>, which allows the users to render content using <db:link xlink:href="qpainter.xml">QPainter</db:link>.</db:para>
+<db:warning>
+<db:para>Using <db:link xlink:href="qquickpainteditem.xml">QQuickPaintedItem</db:link> uses an indirect 2D surface to render its content, either using software rasterization or using an OpenGL framebuffer object (FBO), so the rendering is a two-step operation. First rasterize the surface, then draw the surface. Using scene graph API directly is always significantly faster.</db:para>
+</db:warning>
+</db:section>
+</db:section>
+<db:section xml:id="logging-support">
+<db:title>Logging Support</db:title>
+<db:para>The scene graph has support for a number of logging categories. These can be useful in tracking down both performance issues and bugs in addition to being helpful to Qt contributors.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.time.texture</db:code> - logs the time spent doing texture uploads</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.time.compilation</db:code> - logs the time spent doing shader compilation</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.time.renderer</db:code> - logs the time spent in the various steps of the renderer</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.time.renderloop</db:code> - logs the time spent in the various steps of the render loop</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.time.glyph</db:code> - logs the time spent preparing distance field glyphs</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.general</db:code> - logs general information about various parts of the scene graph and the graphics stack</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt.scenegraph.renderloop</db:code> - creates a detailed log of the various stages involved in rendering. This log mode is primarily useful for developers working on Qt.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="scene-graph-backend">
+<db:title>Scene Graph Backend</db:title>
+<db:para>In addition to the public API, the scene graph has an adaptation layer which opens up the implementation to do hardware specific adaptations. This is an undocumented, internal and private plugin API, which lets hardware adaptation teams make the most of their hardware. It includes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Custom textures; specifically the implementation of <db:link xlink:href="qquickwindow.xml#createTextureFromImage">QQuickWindow::createTextureFromImage</db:link> and the internal representation of the texture used by <db:link xlink:href="qml-qtquick-image.xml">Image</db:link> and <db:link xlink:href="qml-qtquick-borderimage.xml">BorderImage</db:link> types.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Custom renderer; the adaptation layer lets the plugin decide how the scene graph is traversed and rendered, making it possible to optimize the rendering algorithm for a specific hardware or to make use of extensions which improve performance.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Custom scene graph implementation of many of the default QML types, including its text and font rendering.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Custom animation driver; allows the animation system to hook into the low-level display vertical refresh to get smooth rendering.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Custom render loop; allows better control over how QML deals with multiple windows.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:article>

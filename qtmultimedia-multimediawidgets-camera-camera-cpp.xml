@@ -1,0 +1,456 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Camera Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Camera Example shows how to use the API to capture a still image or video.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;camera.h&quot;
+#include &quot;ui_camera.h&quot;
+#include &quot;videosettings.h&quot;
+#include &quot;imagesettings.h&quot;
+
+#include &lt;QMediaService&gt;
+#include &lt;QMediaRecorder&gt;
+#include &lt;QCameraViewfinder&gt;
+#include &lt;QCameraInfo&gt;
+#include &lt;QMediaMetaData&gt;
+
+#include &lt;QMessageBox&gt;
+#include &lt;QPalette&gt;
+
+#include &lt;QtWidgets&gt;
+
+Q_DECLARE_METATYPE(QCameraInfo)
+
+Camera::Camera(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::Camera),
+    camera(0),
+    imageCapture(0),
+    mediaRecorder(0),
+    isCapturingImage(false),
+    applicationExiting(false)
+{
+    ui-&gt;setupUi(this);
+
+    //Camera devices:
+
+    QActionGroup *videoDevicesGroup = new QActionGroup(this);
+    videoDevicesGroup-&gt;setExclusive(true);
+    foreach (const QCameraInfo &amp;cameraInfo, QCameraInfo::availableCameras()) {
+        QAction *videoDeviceAction = new QAction(cameraInfo.description(), videoDevicesGroup);
+        videoDeviceAction-&gt;setCheckable(true);
+        videoDeviceAction-&gt;setData(QVariant::fromValue(cameraInfo));
+        if (cameraInfo == QCameraInfo::defaultCamera())
+            videoDeviceAction-&gt;setChecked(true);
+
+        ui-&gt;menuDevices-&gt;addAction(videoDeviceAction);
+    }
+
+    connect(videoDevicesGroup, SIGNAL(triggered(QAction*)), SLOT(updateCameraDevice(QAction*)));
+    connect(ui-&gt;captureWidget, SIGNAL(currentChanged(int)), SLOT(updateCaptureMode()));
+
+    setCamera(QCameraInfo::defaultCamera());
+}
+
+Camera::~Camera()
+{
+    delete mediaRecorder;
+    delete imageCapture;
+    delete camera;
+}
+
+void Camera::setCamera(const QCameraInfo &amp;cameraInfo)
+{
+    delete imageCapture;
+    delete mediaRecorder;
+    delete camera;
+
+    camera = new QCamera(cameraInfo);
+
+    connect(camera, SIGNAL(stateChanged(QCamera::State)), this, SLOT(updateCameraState(QCamera::State)));
+    connect(camera, SIGNAL(error(QCamera::Error)), this, SLOT(displayCameraError()));
+
+    mediaRecorder = new QMediaRecorder(camera);
+    connect(mediaRecorder, SIGNAL(stateChanged(QMediaRecorder::State)), this, SLOT(updateRecorderState(QMediaRecorder::State)));
+
+    imageCapture = new QCameraImageCapture(camera);
+
+    connect(mediaRecorder, SIGNAL(durationChanged(qint64)), this, SLOT(updateRecordTime()));
+    connect(mediaRecorder, SIGNAL(error(QMediaRecorder::Error)), this, SLOT(displayRecorderError()));
+
+    mediaRecorder-&gt;setMetaData(QMediaMetaData::Title, QVariant(QLatin1String(&quot;Test Title&quot;)));
+
+    connect(ui-&gt;exposureCompensation, SIGNAL(valueChanged(int)), SLOT(setExposureCompensation(int)));
+
+    camera-&gt;setViewfinder(ui-&gt;viewfinder);
+
+    updateCameraState(camera-&gt;state());
+    updateLockStatus(camera-&gt;lockStatus(), QCamera::UserRequest);
+    updateRecorderState(mediaRecorder-&gt;state());
+
+    connect(imageCapture, SIGNAL(readyForCaptureChanged(bool)), this, SLOT(readyForCapture(bool)));
+    connect(imageCapture, SIGNAL(imageCaptured(int,QImage)), this, SLOT(processCapturedImage(int,QImage)));
+    connect(imageCapture, SIGNAL(imageSaved(int,QString)), this, SLOT(imageSaved(int,QString)));
+    connect(imageCapture, SIGNAL(error(int,QCameraImageCapture::Error,QString)), this,
+            SLOT(displayCaptureError(int,QCameraImageCapture::Error,QString)));
+
+    connect(camera, SIGNAL(lockStatusChanged(QCamera::LockStatus,QCamera::LockChangeReason)),
+            this, SLOT(updateLockStatus(QCamera::LockStatus,QCamera::LockChangeReason)));
+
+    ui-&gt;captureWidget-&gt;setTabEnabled(0, (camera-&gt;isCaptureModeSupported(QCamera::CaptureStillImage)));
+    ui-&gt;captureWidget-&gt;setTabEnabled(1, (camera-&gt;isCaptureModeSupported(QCamera::CaptureVideo)));
+
+    updateCaptureMode();
+    camera-&gt;start();
+}
+
+void Camera::keyPressEvent(QKeyEvent * event)
+{
+    if (event-&gt;isAutoRepeat())
+        return;
+
+    switch (event-&gt;key()) {
+    case Qt::Key_CameraFocus:
+        displayViewfinder();
+        camera-&gt;searchAndLock();
+        event-&gt;accept();
+        break;
+    case Qt::Key_Camera:
+        if (camera-&gt;captureMode() == QCamera::CaptureStillImage) {
+            takeImage();
+        } else {
+            if (mediaRecorder-&gt;state() == QMediaRecorder::RecordingState)
+                stop();
+            else
+                record();
+        }
+        event-&gt;accept();
+        break;
+    default:
+        QMainWindow::keyPressEvent(event);
+    }
+}
+
+void Camera::keyReleaseEvent(QKeyEvent *event)
+{
+    if (event-&gt;isAutoRepeat())
+        return;
+
+    switch (event-&gt;key()) {
+    case Qt::Key_CameraFocus:
+        camera-&gt;unlock();
+        break;
+    default:
+        QMainWindow::keyReleaseEvent(event);
+    }
+}
+
+void Camera::updateRecordTime()
+{
+    QString str = QString(&quot;Recorded %1 sec&quot;).arg(mediaRecorder-&gt;duration()/1000);
+    ui-&gt;statusbar-&gt;showMessage(str);
+}
+
+void Camera::processCapturedImage(int requestId, const QImage&amp; img)
+{
+    Q_UNUSED(requestId);
+    QImage scaledImage = img.scaled(ui-&gt;viewfinder-&gt;size(),
+                                    Qt::KeepAspectRatio,
+                                    Qt::SmoothTransformation);
+
+    ui-&gt;lastImagePreviewLabel-&gt;setPixmap(QPixmap::fromImage(scaledImage));
+
+    // Display captured image for 4 seconds.
+    displayCapturedImage();
+    QTimer::singleShot(4000, this, SLOT(displayViewfinder()));
+}
+
+void Camera::configureCaptureSettings()
+{
+    switch (camera-&gt;captureMode()) {
+    case QCamera::CaptureStillImage:
+        configureImageSettings();
+        break;
+    case QCamera::CaptureVideo:
+        configureVideoSettings();
+        break;
+    default:
+        break;
+    }
+}
+
+void Camera::configureVideoSettings()
+{
+    VideoSettings settingsDialog(mediaRecorder);
+
+    settingsDialog.setAudioSettings(audioSettings);
+    settingsDialog.setVideoSettings(videoSettings);
+    settingsDialog.setFormat(videoContainerFormat);
+
+    if (settingsDialog.exec()) {
+        audioSettings = settingsDialog.audioSettings();
+        videoSettings = settingsDialog.videoSettings();
+        videoContainerFormat = settingsDialog.format();
+
+        mediaRecorder-&gt;setEncodingSettings(
+                    audioSettings,
+                    videoSettings,
+                    videoContainerFormat);
+    }
+}
+
+void Camera::configureImageSettings()
+{
+    ImageSettings settingsDialog(imageCapture);
+
+    settingsDialog.setImageSettings(imageSettings);
+
+    if (settingsDialog.exec()) {
+        imageSettings = settingsDialog.imageSettings();
+        imageCapture-&gt;setEncodingSettings(imageSettings);
+    }
+}
+
+void Camera::record()
+{
+    mediaRecorder-&gt;record();
+    updateRecordTime();
+}
+
+void Camera::pause()
+{
+    mediaRecorder-&gt;pause();
+}
+
+void Camera::stop()
+{
+    mediaRecorder-&gt;stop();
+}
+
+void Camera::setMuted(bool muted)
+{
+    mediaRecorder-&gt;setMuted(muted);
+}
+
+void Camera::toggleLock()
+{
+    switch (camera-&gt;lockStatus()) {
+    case QCamera::Searching:
+    case QCamera::Locked:
+        camera-&gt;unlock();
+        break;
+    case QCamera::Unlocked:
+        camera-&gt;searchAndLock();
+    }
+}
+
+void Camera::updateLockStatus(QCamera::LockStatus status, QCamera::LockChangeReason reason)
+{
+    QColor indicationColor = Qt::black;
+
+    switch (status) {
+    case QCamera::Searching:
+        indicationColor = Qt::yellow;
+        ui-&gt;statusbar-&gt;showMessage(tr(&quot;Focusing...&quot;));
+        ui-&gt;lockButton-&gt;setText(tr(&quot;Focusing...&quot;));
+        break;
+    case QCamera::Locked:
+        indicationColor = Qt::darkGreen;
+        ui-&gt;lockButton-&gt;setText(tr(&quot;Unlock&quot;));
+        ui-&gt;statusbar-&gt;showMessage(tr(&quot;Focused&quot;), 2000);
+        break;
+    case QCamera::Unlocked:
+        indicationColor = reason == QCamera::LockFailed ? Qt::red : Qt::black;
+        ui-&gt;lockButton-&gt;setText(tr(&quot;Focus&quot;));
+        if (reason == QCamera::LockFailed)
+            ui-&gt;statusbar-&gt;showMessage(tr(&quot;Focus Failed&quot;), 2000);
+    }
+
+    QPalette palette = ui-&gt;lockButton-&gt;palette();
+    palette.setColor(QPalette::ButtonText, indicationColor);
+    ui-&gt;lockButton-&gt;setPalette(palette);
+}
+
+void Camera::takeImage()
+{
+    isCapturingImage = true;
+    imageCapture-&gt;capture();
+}
+
+void Camera::displayCaptureError(int id, const QCameraImageCapture::Error error, const QString &amp;errorString)
+{
+    Q_UNUSED(id);
+    Q_UNUSED(error);
+    QMessageBox::warning(this, tr(&quot;Image Capture Error&quot;), errorString);
+    isCapturingImage = false;
+}
+
+void Camera::startCamera()
+{
+    camera-&gt;start();
+}
+
+void Camera::stopCamera()
+{
+    camera-&gt;stop();
+}
+
+void Camera::updateCaptureMode()
+{
+    int tabIndex = ui-&gt;captureWidget-&gt;currentIndex();
+    QCamera::CaptureModes captureMode = tabIndex == 0 ? QCamera::CaptureStillImage : QCamera::CaptureVideo;
+
+    if (camera-&gt;isCaptureModeSupported(captureMode))
+        camera-&gt;setCaptureMode(captureMode);
+}
+
+void Camera::updateCameraState(QCamera::State state)
+{
+    switch (state) {
+    case QCamera::ActiveState:
+        ui-&gt;actionStartCamera-&gt;setEnabled(false);
+        ui-&gt;actionStopCamera-&gt;setEnabled(true);
+        ui-&gt;captureWidget-&gt;setEnabled(true);
+        ui-&gt;actionSettings-&gt;setEnabled(true);
+        break;
+    case QCamera::UnloadedState:
+    case QCamera::LoadedState:
+        ui-&gt;actionStartCamera-&gt;setEnabled(true);
+        ui-&gt;actionStopCamera-&gt;setEnabled(false);
+        ui-&gt;captureWidget-&gt;setEnabled(false);
+        ui-&gt;actionSettings-&gt;setEnabled(false);
+    }
+}
+
+void Camera::updateRecorderState(QMediaRecorder::State state)
+{
+    switch (state) {
+    case QMediaRecorder::StoppedState:
+        ui-&gt;recordButton-&gt;setEnabled(true);
+        ui-&gt;pauseButton-&gt;setEnabled(true);
+        ui-&gt;stopButton-&gt;setEnabled(false);
+        break;
+    case QMediaRecorder::PausedState:
+        ui-&gt;recordButton-&gt;setEnabled(true);
+        ui-&gt;pauseButton-&gt;setEnabled(false);
+        ui-&gt;stopButton-&gt;setEnabled(true);
+        break;
+    case QMediaRecorder::RecordingState:
+        ui-&gt;recordButton-&gt;setEnabled(false);
+        ui-&gt;pauseButton-&gt;setEnabled(true);
+        ui-&gt;stopButton-&gt;setEnabled(true);
+        break;
+    }
+}
+
+void Camera::setExposureCompensation(int index)
+{
+    camera-&gt;exposure()-&gt;setExposureCompensation(index*0.5);
+}
+
+void Camera::displayRecorderError()
+{
+    QMessageBox::warning(this, tr(&quot;Capture error&quot;), mediaRecorder-&gt;errorString());
+}
+
+void Camera::displayCameraError()
+{
+    QMessageBox::warning(this, tr(&quot;Camera error&quot;), camera-&gt;errorString());
+}
+
+void Camera::updateCameraDevice(QAction *action)
+{
+    setCamera(qvariant_cast&lt;QCameraInfo&gt;(action-&gt;data()));
+}
+
+void Camera::displayViewfinder()
+{
+    ui-&gt;stackedWidget-&gt;setCurrentIndex(0);
+}
+
+void Camera::displayCapturedImage()
+{
+    ui-&gt;stackedWidget-&gt;setCurrentIndex(1);
+}
+
+void Camera::readyForCapture(bool ready)
+{
+    ui-&gt;takeImageButton-&gt;setEnabled(ready);
+}
+
+void Camera::imageSaved(int id, const QString &amp;fileName)
+{
+    Q_UNUSED(id);
+    Q_UNUSED(fileName);
+
+    isCapturingImage = false;
+    if (applicationExiting)
+        close();
+}
+
+void Camera::closeEvent(QCloseEvent *event)
+{
+    if (isCapturingImage) {
+        setEnabled(false);
+        applicationExiting = true;
+        event-&gt;ignore();
+    } else {
+        event-&gt;accept();
+    }
+}
+
+</db:programlisting>
+</db:article>

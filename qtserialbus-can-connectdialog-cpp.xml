@@ -1,0 +1,278 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>CAN Bus example</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example sends and receives CAN bus frames.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtSerialBus module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;connectdialog.h&quot;
+#include &quot;ui_connectdialog.h&quot;
+
+#include &lt;QCanBus&gt;
+#include &lt;QDebug&gt;
+
+ConnectDialog::ConnectDialog(QWidget *parent) :
+    QDialog(parent),
+    m_ui(new Ui::ConnectDialog),
+    m_customSpeedValidator(0)
+{
+    m_ui-&gt;setupUi(this);
+
+    m_customSpeedValidator = new QIntValidator(0, 1000000, this);
+    m_ui-&gt;errorFilterEdit-&gt;setValidator(new QIntValidator(0, 0x1FFFFFFFU, this));
+
+    m_ui-&gt;loopbackBox-&gt;addItem(tr(&quot;unspecified&quot;), QVariant());
+    m_ui-&gt;loopbackBox-&gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&gt;loopbackBox-&gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    m_ui-&gt;receiveOwnBox-&gt;addItem(tr(&quot;unspecified&quot;), QVariant());
+    m_ui-&gt;receiveOwnBox-&gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&gt;receiveOwnBox-&gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    m_ui-&gt;canFdBox-&gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&gt;canFdBox-&gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    connect(m_ui-&gt;okButton, &amp;QPushButton::clicked, this, &amp;ConnectDialog::ok);
+    connect(m_ui-&gt;cancelButton, &amp;QPushButton::clicked, this, &amp;ConnectDialog::cancel);
+    connect(m_ui-&gt;useConfigurationBox, &amp;QCheckBox::clicked, m_ui-&gt;configurationBox, &amp;QGroupBox::setEnabled);
+
+    connect(m_ui-&gt;speedBox, static_cast&lt;void (QComboBox::*)(int)&gt;(&amp;QComboBox::currentIndexChanged),
+            this, &amp;ConnectDialog::checkCustomSpeedPolicy);
+    connect(m_ui-&gt;backendListBox, &amp;QComboBox::currentTextChanged,
+            this, &amp;ConnectDialog::backendChanged);
+    m_ui-&gt;rawFilterEdit-&gt;hide();
+    m_ui-&gt;rawFilterLabel-&gt;hide();
+
+    fillBackends();
+    fillSpeeds();
+
+    updateSettings();
+}
+
+ConnectDialog::~ConnectDialog()
+{
+    delete m_ui;
+}
+
+ConnectDialog::Settings ConnectDialog::settings() const
+{
+    return m_currentSettings;
+}
+
+void ConnectDialog::checkCustomSpeedPolicy(int idx)
+{
+    const bool isCustomSpeed = !m_ui-&gt;speedBox-&gt;itemData(idx).isValid();
+    m_ui-&gt;speedBox-&gt;setEditable(isCustomSpeed);
+    if (isCustomSpeed) {
+        m_ui-&gt;speedBox-&gt;clearEditText();
+        QLineEdit *edit = m_ui-&gt;speedBox-&gt;lineEdit();
+        edit-&gt;setValidator(m_customSpeedValidator);
+    }
+}
+
+void ConnectDialog::backendChanged(const QString &amp;backend)
+{
+    if (backend == QStringLiteral(&quot;generic&quot;))
+        m_ui-&gt;interfaceNameEdit-&gt;setPlaceholderText(QStringLiteral(&quot;can0&quot;));
+    else if (backend == QStringLiteral(&quot;peakcan&quot;))
+        m_ui-&gt;interfaceNameEdit-&gt;setPlaceholderText(QStringLiteral(&quot;usbbus1&quot;));
+    else if (backend == QStringLiteral(&quot;socketcan&quot;))
+        m_ui-&gt;interfaceNameEdit-&gt;setPlaceholderText(QStringLiteral(&quot;can0&quot;));
+    else if (backend == QStringLiteral(&quot;tinycan&quot;))
+        m_ui-&gt;interfaceNameEdit-&gt;setPlaceholderText(QStringLiteral(&quot;channela&quot;));
+}
+
+void ConnectDialog::ok()
+{
+    updateSettings();
+    accept();
+}
+
+void ConnectDialog::cancel()
+{
+    revertSettings();
+    reject();
+}
+
+QString ConnectDialog::configurationValue(QCanBusDevice::ConfigurationKey key)
+{
+    QVariant result;
+
+    foreach (const ConfigurationItem &amp;item, m_currentSettings.configurations) {
+        if (item.first == key) {
+            result = item.second;
+            break;
+        }
+    }
+
+    if (result.isNull() &amp;&amp; (
+                key == QCanBusDevice::LoopbackKey ||
+                key == QCanBusDevice::ReceiveOwnKey)) {
+        return tr(&quot;unspecified&quot;);
+    }
+
+    return result.toString();
+}
+
+void ConnectDialog::revertSettings()
+{
+    m_ui-&gt;backendListBox-&gt;setCurrentText(m_currentSettings.backendName);
+    m_ui-&gt;interfaceNameEdit-&gt;setText(m_currentSettings.deviceInterfaceName);
+    m_ui-&gt;useConfigurationBox-&gt;setChecked(m_currentSettings.useConfigurationEnabled);
+
+    QString value = configurationValue(QCanBusDevice::LoopbackKey);
+    m_ui-&gt;loopbackBox-&gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::ReceiveOwnKey);
+    m_ui-&gt;receiveOwnBox-&gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::ErrorFilterKey);
+    m_ui-&gt;errorFilterEdit-&gt;setText(value);
+
+    value = configurationValue(QCanBusDevice::BitRateKey);
+    m_ui-&gt;speedBox-&gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::CanFdKey);
+    m_ui-&gt;canFdBox-&gt;setCurrentText(value);
+}
+
+void ConnectDialog::updateSettings()
+{
+    m_currentSettings.backendName = m_ui-&gt;backendListBox-&gt;currentText();
+    m_currentSettings.deviceInterfaceName = m_ui-&gt;interfaceNameEdit-&gt;text();
+    m_currentSettings.useConfigurationEnabled = m_ui-&gt;useConfigurationBox-&gt;isChecked();
+
+    if (m_currentSettings.useConfigurationEnabled) {
+        m_currentSettings.configurations.clear();
+        // process LoopBack
+        if (m_ui-&gt;loopbackBox-&gt;currentIndex() != 0) {
+            ConfigurationItem item;
+            item.first = QCanBusDevice::LoopbackKey;
+            item.second = m_ui-&gt;loopbackBox-&gt;currentData();
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process ReceiveOwnKey
+        if (m_ui-&gt;receiveOwnBox-&gt;currentIndex() != 0) {
+            ConfigurationItem item;
+            item.first = QCanBusDevice::ReceiveOwnKey;
+            item.second = m_ui-&gt;receiveOwnBox-&gt;currentData();
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process error filter
+        if (!m_ui-&gt;errorFilterEdit-&gt;text().isEmpty()) {
+            QString value = m_ui-&gt;errorFilterEdit-&gt;text();
+            bool ok = false;
+            int dec = value.toInt(&amp;ok);
+            if (ok) {
+                ConfigurationItem item;
+                item.first = QCanBusDevice::ErrorFilterKey;
+                item.second = QVariant::fromValue(QCanBusFrame::FrameErrors(dec));
+                m_currentSettings.configurations.append(item);
+            }
+        }
+
+        // process raw filter list
+        if (!m_ui-&gt;rawFilterEdit-&gt;text().isEmpty()) {
+            //TODO current ui not sfficient to reflect this param
+        }
+
+        // process bitrate
+        bool ok = false;
+        int bitrate = 0;
+        if (m_ui-&gt;speedBox-&gt;currentIndex() == (m_ui-&gt;speedBox-&gt;count() - 1))
+            bitrate = m_ui-&gt;speedBox-&gt;currentText().toInt(&amp;ok);
+        else
+            bitrate = m_ui-&gt;speedBox-&gt;itemData(m_ui-&gt;speedBox-&gt;currentIndex()).toInt(&amp;ok);
+
+        if (ok &amp;&amp; (bitrate &gt; 0)) {
+            ConfigurationItem item;
+            item.first = QCanBusDevice::BitRateKey;
+            item.second = QVariant(bitrate);
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process CAN FD setting
+        ConfigurationItem fdItem;
+        fdItem.first = QCanBusDevice::CanFdKey;
+        fdItem.second = m_ui-&gt;canFdBox-&gt;currentData();
+        m_currentSettings.configurations.append(fdItem);
+    }
+}
+
+void ConnectDialog::fillBackends()
+{
+    foreach (const QByteArray &amp;backend, QCanBus::instance()-&gt;plugins())
+        m_ui-&gt;backendListBox-&gt;addItem(backend);
+}
+
+void ConnectDialog::fillSpeeds()
+{
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;10000&quot;), 10000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;20000&quot;), 20000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;50000&quot;), 50000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;100000&quot;), 100000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;125000&quot;), 125000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;250000&quot;), 250000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;500000&quot;), 500000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;800000&quot;), 800000);
+    m_ui-&gt;speedBox-&gt;addItem(QStringLiteral(&quot;1000000&quot;), 1000000);
+    m_ui-&gt;speedBox-&gt;addItem(tr(&quot;Custom&quot;));
+
+    m_ui-&gt;speedBox-&gt;setCurrentIndex(6); // setup 500000 bits/sec by default
+}
+
+</db:programlisting>
+</db:article>

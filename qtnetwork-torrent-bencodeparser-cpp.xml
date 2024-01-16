@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Torrent Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates complex TCP/IP operations.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;bencodeparser.h&quot;
+
+#include &lt;QList&gt;
+#include &lt;QMetaType&gt;
+
+BencodeParser::BencodeParser()
+{
+}
+
+bool BencodeParser::parse(const QByteArray &amp;content)
+{
+    if (content.isEmpty()) {
+        errString = QString(&quot;No content&quot;);
+        return false;
+    }
+
+    this-&gt;content = content;
+    index = 0;
+    infoStart = 0;
+    infoLength = 0;
+    return getDictionary(&amp;dictionaryValue);
+}
+
+QString BencodeParser::errorString() const
+{
+    return errString;
+}
+
+QMap&lt;QByteArray, QVariant&gt; BencodeParser::dictionary() const
+{
+    return dictionaryValue;
+}
+
+QByteArray BencodeParser::infoSection() const
+{
+    return content.mid(infoStart, infoLength);
+}
+
+bool BencodeParser::getByteString(QByteArray *byteString)
+{
+    const int contentSize = content.size();
+    int size = -1;
+    do {
+        char c = content.at(index);
+        if (c &lt; '0' || c &gt; '9') {
+            if (size == -1)
+                return false;
+            if (c != ':') {
+                errString = QString(&quot;Unexpected character at pos %1: %2&quot;)
+                        .arg(index).arg(c);
+                return false;
+            }
+            ++index;
+            break;
+        }
+        if (size == -1)
+            size = 0;
+        size *= 10;
+        size += c - '0';
+    } while (++index &lt; contentSize);
+
+    if (byteString)
+        *byteString = content.mid(index, size);
+    index += size;
+    return true;
+}
+
+bool BencodeParser::getInteger(qint64 *integer)
+{
+    const int contentSize = content.size();
+    if (content.at(index) != 'i')
+        return false;
+
+    ++index;
+    qint64 num = -1;
+    bool negative = false;
+
+    do {
+        char c = content.at(index);
+        if (c &lt; '0' || c &gt; '9') {
+            if (num == -1) {
+                if (c != '-' || negative)
+                    return false;
+                negative = true;
+                continue;
+            } else {
+                if (c != 'e') {
+                    errString = QString(&quot;Unexpected character at pos %1: %2&quot;)
+                            .arg(index).arg(c);
+                    return false;
+                }
+                ++index;
+                break;
+            }
+        }
+        if (num == -1)
+            num = 0;
+        num *= 10;
+        num += c - '0';
+    } while (++index &lt; contentSize);
+
+    if (integer)
+        *integer = negative ? -num : num;
+    return true;
+}
+
+bool BencodeParser::getList(QList&lt;QVariant&gt; *list)
+{
+    const int contentSize = content.size();
+    if (content.at(index) != 'l')
+        return false;
+
+    QList&lt;QVariant&gt; tmp;
+    ++index;
+
+    do {
+        if (content.at(index) == 'e') {
+            ++index;
+            break;
+        }
+
+        qint64 number;
+        QByteArray byteString;
+        QList&lt;QVariant&gt; tmpList;
+        QMap&lt;QByteArray, QVariant&gt; dictionary;
+
+        if (getInteger(&amp;number))
+            tmp &lt;&lt; number;
+        else if (getByteString(&amp;byteString))
+            tmp &lt;&lt; byteString;
+        else if (getList(&amp;tmpList))
+            tmp &lt;&lt; tmpList;
+        else if (getDictionary(&amp;dictionary))
+            tmp &lt;&lt; QVariant::fromValue&lt;QMap&lt;QByteArray, QVariant&gt; &gt;(dictionary);
+        else {
+            errString = QString(&quot;error at index %1&quot;).arg(index);
+            return false;
+        }
+    } while (index &lt; contentSize);
+
+    if (list)
+        *list = tmp;
+    return true;
+}
+
+bool BencodeParser::getDictionary(QMap&lt;QByteArray, QVariant&gt; *dictionary)
+{
+    const int contentSize = content.size();
+    if (content.at(index) != 'd')
+        return false;
+
+    QMap&lt;QByteArray, QVariant&gt; tmp;
+    ++index;
+
+    do {
+        if (content.at(index) == 'e') {
+            ++index;
+            break;
+        }
+
+        QByteArray key;
+        if (!getByteString(&amp;key))
+            break;
+
+        if (key == &quot;info&quot;)
+            infoStart = index;
+
+        qint64 number;
+        QByteArray byteString;
+        QList&lt;QVariant&gt; tmpList;
+        QMap&lt;QByteArray, QVariant&gt; dictionary;
+
+        if (getInteger(&amp;number))
+            tmp.insert(key, number);
+        else if (getByteString(&amp;byteString))
+            tmp.insert(key, byteString);
+        else if (getList(&amp;tmpList))
+            tmp.insert(key, tmpList);
+        else if (getDictionary(&amp;dictionary))
+            tmp.insert(key, QVariant::fromValue&lt;QMap&lt;QByteArray, QVariant&gt; &gt;(dictionary));
+        else {
+            errString = QString(&quot;error at index %1&quot;).arg(index);
+            return false;
+        }
+
+        if (key == &quot;info&quot;)
+            infoLength = index - infoStart;
+
+    } while (index &lt; contentSize);
+
+    if (dictionary)
+        *dictionary = tmp;
+    return true;
+}
+
+</db:programlisting>
+</db:article>

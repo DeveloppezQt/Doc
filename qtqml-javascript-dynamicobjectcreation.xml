@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Dynamic QML Object Creation from JavaScript</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>instantiating and managing QML objects from JavaScript.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>QML supports the dynamic creation of objects from within JavaScript. This is useful to delay instantiation of objects until necessary, thereby improving application startup time. It also allows visual objects to be dynamically created and added to the scene in reaction to user input or other events.</db:para>
+<db:para>See the <db:link xlink:href="qtqml-dynamicscene-example.xml">Dynamic Scene example</db:link> for a demonstration of the concepts discussed on this page.</db:para>
+<db:section xml:id="creating-objects-dynamically">
+<db:title>Creating Objects Dynamically</db:title>
+<db:para>There are two ways to create objects dynamically from JavaScript. You can either call <db:link xlink:href="qml-qtqml-qt.xml#createComponent-method">Qt.createComponent</db:link>() to dynamically create a <db:link xlink:href="qml-qtqml-component.xml">Component</db:link> object, or use <db:link xlink:href="qml-qtqml-qt.xml#createQmlObject-method">Qt.createQmlObject</db:link>() to create an object from a string of QML. Creating a component is better if you have an existing component defined in a QML document and you want to dynamically create instances of that component. Otherwise, creating an object from a string of QML is useful when the object QML itself is generated at runtime.</db:para>
+<db:section xml:id="creating-a-component-dynamically">
+<db:title>Creating a Component Dynamically</db:title>
+<db:para>To dynamically load a component defined in a QML file, call the <db:link xlink:href="qml-qtqml-qt.xml#createComponent-method">Qt.createComponent</db:link>() function in the <db:link xlink:href="qml-qtqml-qt.xml">Qt object</db:link>. This function takes the URL of the QML file as its only argument and creates a <db:link xlink:href="qml-qtqml-component.xml">Component</db:link> object from this URL.</db:para>
+<db:para>Once you have a <db:link xlink:href="qml-qtqml-component.xml">Component</db:link>, you can call its <db:link xlink:href="qml-qtqml-component.xml#createObject-method">createObject</db:link>() method to create an instance of the component. This function can take one or two arguments:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The first is the parent for the new object. The parent can be a graphical object (i.e. of the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> type) or non-graphical object (i.e. of the <db:link xlink:href="qml-qtqml-qtobject.xml">QtObject</db:link> or C++ <db:link xlink:href="qobject.xml">QObject</db:link> type). Only graphical objects with graphical parent objects will be rendered to the <db:link xlink:href="qtquick-index.xml">Qt Quick</db:link> visual canvas. If you wish to set the parent later you can safely pass <db:code>null</db:code> to this function.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The second is optional and is a map of property-value pairs that define initial any property values for the object. Property values specified by this argument are applied to the object before its creation is finalized, avoiding binding errors that may occur if particular properties must be initialized to enable other property bindings. Additionally, there are small performance benefits when compared to defining property values and bindings after the object is created.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Here is an example. First there is <db:code>Sprite.qml</db:code>, which defines a simple QML component:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle { width: 80; height: 50; color: &quot;red&quot; }
+</db:programlisting>
+<db:para>Our main application file, <db:code>main.qml</db:code>, imports a <db:code>componentCreation.js</db:code> JavaScript file that will create <db:code>Sprite</db:code> objects:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+import &quot;componentCreation.js&quot; as MyScript
+
+Rectangle {
+    id: appWindow
+    width: 300; height: 300
+
+    Component.onCompleted: MyScript.createSpriteObjects();
+}
+</db:programlisting>
+<db:para>Here is <db:code>componentCreation.js</db:code>. Notice it checks whether the component <db:link xlink:href="qml-qtqml-component.xml#status-prop">status</db:link> is <db:code>Component.Ready</db:code> before calling <db:link xlink:href="qml-qtqml-component.xml#createObject-method">createObject</db:link>() in case the QML file is loaded over a network and thus is not ready immediately.</db:para>
+<db:programlisting language="cpp">var component;
+var sprite;
+
+function createSpriteObjects() {
+    component = Qt.createComponent(&quot;Sprite.qml&quot;);
+    if (component.status == Component.Ready)
+        finishCreation();
+    else
+        component.statusChanged.connect(finishCreation);
+}
+
+function finishCreation() {
+    if (component.status == Component.Ready) {
+        sprite = component.createObject(appWindow, {&quot;x&quot;: 100, &quot;y&quot;: 100});
+        if (sprite == null) {
+            // Error Handling
+            console.log(&quot;Error creating object&quot;);
+        }
+    } else if (component.status == Component.Error) {
+        // Error Handling
+        console.log(&quot;Error loading component:&quot;, component.errorString());
+    }
+}
+</db:programlisting>
+<db:para>If you are certain the QML file to be loaded is a local file, you could omit the <db:code>finishCreation()</db:code> function and call <db:link xlink:href="qml-qtqml-component.xml#createObject-method">createObject</db:link>() immediately:</db:para>
+<db:programlisting language="cpp">function createSpriteObjects() {
+    component = Qt.createComponent(&quot;Sprite.qml&quot;);
+    sprite = component.createObject(appWindow, {&quot;x&quot;: 100, &quot;y&quot;: 100});
+
+    if (sprite == null) {
+        // Error Handling
+        console.log(&quot;Error creating object&quot;);
+    }
+}
+</db:programlisting>
+<db:para>Notice in both instances, <db:link xlink:href="qml-qtqml-component.xml#createObject-method">createObject</db:link>() is called with <db:code>appWindow</db:code> passed as the parent argument, since the dynamically created object is a visual (Qt Quick) object. The created object will become a child of the <db:code>appWindow</db:code> object in <db:code>main.qml</db:code>, and appear in the scene.</db:para>
+<db:para>When using files with relative paths, the path should be relative to the file where <db:link xlink:href="qml-qtqml-qt.xml#createComponent-method">Qt.createComponent</db:link>() is executed.</db:para>
+<db:para>To connect signals to (or receive signals from) dynamically created objects, use the signal <db:code>connect()</db:code> method. See <db:link xlink:href="qtqml-syntax-signals.xml#connecting-signals-to-methods-and-signals">Connecting Signals to Methods and Signals</db:link> for more information.</db:para>
+<db:para>It is also possible to instantiate components without blocking via the <db:link xlink:href="qml-qtqml-component.xml#incubateObject-method">incubateObject</db:link>() function.</db:para>
+</db:section>
+<db:section xml:id="creating-an-object-from-a-string-of-qml">
+<db:title>Creating an Object from a String of QML</db:title>
+<db:para>If the QML is not defined until runtime, you can create a QML object from a string of QML using the <db:link xlink:href="qml-qtqml-qt.xml#createQmlObject-method">Qt.createQmlObject</db:link>() function, as in the following example:</db:para>
+<db:programlisting language="qml">var newObject = Qt.createQmlObject('import QtQuick 2.0; Rectangle {color: &quot;red&quot;; width: 20; height: 20}',
+                                   parentItem,
+                                   &quot;dynamicSnippet1&quot;);
+</db:programlisting>
+<db:para>The first argument is the string of QML to create. Just like in a new file, you will need to import any types you wish to use. The second argument is the parent object for the new object, and the parent argument semantics which apply to components are similarly applicable for <db:code>createQmlObject()</db:code>. The third argument is the file path to associate with the new object; this is used for error reporting.</db:para>
+<db:para>If the string of QML imports files using relative paths, the path should be relative to the file in which the parent object (the second argument to the method) is defined.</db:para>
+<db:important>
+<db:para>When building static QML applications, which is enforced on platforms like iOS, QML files are scanned to detect import dependencies. That way, all necessary plugins and resources are resolved at compile time. However, only explicit import statements are considered (those found at the top of a QML file), and not import statements enclosed within string literals. To support static builds, you therefore need to ensure that QML files using <db:link xlink:href="qml-qtqml-qt.xml#createQmlObject-method">Qt.createQmlObject</db:link>(), explicitly contain all necessary imports at the top of the file in addition to inside the string literals.</db:para>
+</db:important>
+</db:section>
+</db:section>
+<db:section xml:id="maintaining-dynamically-created-objects">
+<db:title>Maintaining Dynamically Created Objects</db:title>
+<db:para>When managing dynamically created objects, you must ensure the creation context outlives the created object. Otherwise, if the creation context is destroyed first, the bindings in the dynamic object will no longer work.</db:para>
+<db:para>The actual creation context depends on how an object is created:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>If <db:link xlink:href="qml-qtqml-qt.xml#createComponent-method">Qt.createComponent</db:link>() is used, the creation context is the <db:link xlink:href="qqmlcontext.xml">QQmlContext</db:link> in which this method is called</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If <db:link xlink:href="qml-qtqml-qt.xml#createQmlObject-method">Qt.createQmlObject</db:link>() is called, the creation context is the context of the parent object passed to this method</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If a <db:code>Component{}</db:code> object is defined and <db:link xlink:href="qml-qtqml-component.xml#createObject-method">createObject</db:link>() or <db:link xlink:href="qml-qtqml-component.xml#incubateObject-method">incubateObject</db:link>() is called on that object, the creation context is the context in which the <db:code>Component</db:code> is defined</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Also, note that while dynamically created objects may be used the same as other objects, they do not have an id in QML.</db:para>
+</db:section>
+<db:section xml:id="deleting-objects-dynamically">
+<db:title>Deleting Objects Dynamically</db:title>
+<db:para>In many user interfaces, it is sufficient to set a visual object's opacity to 0 or to move the visual object off the screen instead of deleting it. If you have lots of dynamically created objects, however, you may receive a worthwhile performance benefit if unused objects are deleted.</db:para>
+<db:para>Note that you should never manually delete objects that were dynamically created by convenience QML object factories (such as <db:link xlink:href="qml-qtquick-loader.xml">Loader</db:link> and <db:link xlink:href="qml-qtquick-repeater.xml">Repeater</db:link>). Also, you should avoid deleting objects that you did not dynamically create yourself.</db:para>
+<db:para>Items can be deleted using the <db:code>destroy()</db:code> method. This method has an optional argument (which defaults to 0) that specifies the approximate delay in milliseconds before the object is to be destroyed.</db:para>
+<db:para>Here is an example. The <db:code>application.qml</db:code> creates five instances of the <db:code>SelfDestroyingRect.qml</db:code> component. Each instance runs a <db:link xlink:href="qml-qtquick-numberanimation.xml">NumberAnimation</db:link>, and when the animation has finished, calls <db:code>destroy()</db:code> on its root object to destroy itself:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>application.qml</db:code></db:para>
+</db:td>
+<db:td>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Item {
+    id: container
+    width: 500; height: 100
+
+    Component.onCompleted: {
+        var component = Qt.createComponent(&quot;SelfDestroyingRect.qml&quot;);
+        for (var i=0; i&lt;5; i++) {
+            var object = component.createObject(container);
+            object.x = (object.width + 10) * i;
+        }
+    }
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>SelfDestroyingRect.qml</db:code></db:para>
+</db:td>
+<db:td>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle {
+    id: rect
+    width: 80; height: 80
+    color: &quot;red&quot;
+
+    NumberAnimation on opacity {
+        to: 0
+        duration: 1000
+
+        onRunningChanged: {
+            if (!running) {
+                console.log(&quot;Destroying...&quot;)
+                rect.destroy();
+            }
+        }
+    }
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>Alternatively, the <db:code>application.qml</db:code> could have destroyed the created object by calling <db:code>object.destroy()</db:code>.</db:para>
+<db:para>Note that it is safe to call destroy() on an object within that object. Objects are not destroyed the instant destroy() is called, but are cleaned up sometime between the end of that script block and the next frame (unless you specified a non-zero delay).</db:para>
+<db:para>Note also that if a <db:code>SelfDestroyingRect</db:code> instance was created statically like this:</db:para>
+<db:programlisting language="qml">Item {
+    SelfDestroyingRect {
+        // ...
+    }
+}
+</db:programlisting>
+<db:para>This would result in an error, since objects can only be dynamically destroyed if they were dynamically created.</db:para>
+<db:para>Objects created with <db:link xlink:href="qml-qtqml-qt.xml#createQmlObject-method">Qt.createQmlObject</db:link>() can similarly be destroyed using <db:code>destroy()</db:code>:</db:para>
+<db:programlisting language="qml">var newObject = Qt.createQmlObject('import QtQuick 2.0; Rectangle {color: &quot;red&quot;; width: 20; height: 20}',
+                                   parentItem,
+                                   &quot;dynamicSnippet1&quot;);
+newObject.destroy(1000);
+</db:programlisting>
+</db:section>
+</db:article>

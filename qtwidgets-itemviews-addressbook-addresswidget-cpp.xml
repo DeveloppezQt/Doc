@@ -1,0 +1,247 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Address Book Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The address book example shows how to use proxy models to display different views onto data from a single model.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;adddialog.h&quot;
+#include &quot;addresswidget.h&quot;
+
+#include &lt;QtWidgets&gt;
+
+AddressWidget::AddressWidget(QWidget *parent)
+    : QTabWidget(parent)
+{
+    table = new TableModel(this);
+    newAddressTab = new NewAddressTab(this);
+    connect(newAddressTab, &amp;NewAddressTab::sendDetails,
+        this, &amp;AddressWidget::addEntry);
+
+    addTab(newAddressTab, &quot;Address Book&quot;);
+
+    setupTabs();
+}
+
+void AddressWidget::showAddEntryDialog()
+{
+    AddDialog aDialog;
+
+    if (aDialog.exec()) {
+        QString name = aDialog.nameText-&gt;text();
+        QString address = aDialog.addressText-&gt;toPlainText();
+
+        addEntry(name, address);
+    }
+}
+
+void AddressWidget::addEntry(QString name, QString address)
+{
+    QList&lt;QPair&lt;QString, QString&gt; &gt;list = table-&gt;getList();
+    QPair&lt;QString, QString&gt; pair(name, address);
+
+    if (!list.contains(pair)) {
+        table-&gt;insertRows(0, 1, QModelIndex());
+
+        QModelIndex index = table-&gt;index(0, 0, QModelIndex());
+        table-&gt;setData(index, name, Qt::EditRole);
+        index = table-&gt;index(0, 1, QModelIndex());
+        table-&gt;setData(index, address, Qt::EditRole);
+        removeTab(indexOf(newAddressTab));
+    } else {
+        QMessageBox::information(this, tr(&quot;Duplicate Name&quot;),
+            tr(&quot;The name \&quot;%1\&quot; already exists.&quot;).arg(name));
+    }
+}
+
+void AddressWidget::editEntry()
+{
+    QTableView *temp = static_cast&lt;QTableView*&gt;(currentWidget());
+    QSortFilterProxyModel *proxy = static_cast&lt;QSortFilterProxyModel*&gt;(temp-&gt;model());
+    QItemSelectionModel *selectionModel = temp-&gt;selectionModel();
+
+    QModelIndexList indexes = selectionModel-&gt;selectedRows();
+    QString name;
+    QString address;
+    int row = -1;
+
+    foreach (QModelIndex index, indexes) {
+        row = proxy-&gt;mapToSource(index).row();
+        QModelIndex nameIndex = table-&gt;index(row, 0, QModelIndex());
+        QVariant varName = table-&gt;data(nameIndex, Qt::DisplayRole);
+        name = varName.toString();
+
+        QModelIndex addressIndex = table-&gt;index(row, 1, QModelIndex());
+        QVariant varAddr = table-&gt;data(addressIndex, Qt::DisplayRole);
+        address = varAddr.toString();
+    }
+
+    AddDialog aDialog;
+    aDialog.setWindowTitle(tr(&quot;Edit a Contact&quot;));
+
+    aDialog.nameText-&gt;setReadOnly(true);
+    aDialog.nameText-&gt;setText(name);
+    aDialog.addressText-&gt;setText(address);
+
+    if (aDialog.exec()) {
+        QString newAddress = aDialog.addressText-&gt;toPlainText();
+        if (newAddress != address) {
+            QModelIndex index = table-&gt;index(row, 1, QModelIndex());
+            table-&gt;setData(index, newAddress, Qt::EditRole);
+        }
+    }
+}
+
+void AddressWidget::removeEntry()
+{
+    QTableView *temp = static_cast&lt;QTableView*&gt;(currentWidget());
+    QSortFilterProxyModel *proxy = static_cast&lt;QSortFilterProxyModel*&gt;(temp-&gt;model());
+    QItemSelectionModel *selectionModel = temp-&gt;selectionModel();
+
+    QModelIndexList indexes = selectionModel-&gt;selectedRows();
+
+    foreach (QModelIndex index, indexes) {
+        int row = proxy-&gt;mapToSource(index).row();
+        table-&gt;removeRows(row, 1, QModelIndex());
+    }
+
+    if (table-&gt;rowCount(QModelIndex()) == 0) {
+        insertTab(0, newAddressTab, &quot;Address Book&quot;);
+    }
+}
+
+void AddressWidget::setupTabs()
+{
+    QStringList groups;
+    groups &lt;&lt; &quot;ABC&quot; &lt;&lt; &quot;DEF&quot; &lt;&lt; &quot;GHI&quot; &lt;&lt; &quot;JKL&quot; &lt;&lt; &quot;MNO&quot; &lt;&lt; &quot;PQR&quot; &lt;&lt; &quot;STU&quot; &lt;&lt; &quot;VW&quot; &lt;&lt; &quot;XYZ&quot;;
+
+    for (int i = 0; i &lt; groups.size(); ++i) {
+        QString str = groups.at(i);
+        QString regExp = QString(&quot;^[%1].*&quot;).arg(str);
+
+        proxyModel = new QSortFilterProxyModel(this);
+        proxyModel-&gt;setSourceModel(table);
+        proxyModel-&gt;setFilterRegExp(QRegExp(regExp, Qt::CaseInsensitive));
+        proxyModel-&gt;setFilterKeyColumn(0);
+
+        QTableView *tableView = new QTableView;
+        tableView-&gt;setModel(proxyModel);
+
+        tableView-&gt;setSelectionBehavior(QAbstractItemView::SelectRows);
+        tableView-&gt;horizontalHeader()-&gt;setStretchLastSection(true);
+        tableView-&gt;verticalHeader()-&gt;hide();
+        tableView-&gt;setEditTriggers(QAbstractItemView::NoEditTriggers);
+        tableView-&gt;setSelectionMode(QAbstractItemView::SingleSelection);
+
+        tableView-&gt;setSortingEnabled(true);
+
+        connect(tableView-&gt;selectionModel(),
+            &amp;QItemSelectionModel::selectionChanged,
+            this, &amp;AddressWidget::selectionChanged);
+
+        addTab(tableView, str);
+    }
+}
+
+void AddressWidget::readFromFile(const QString &amp;fileName)
+{
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+            file.errorString());
+        return;
+    }
+
+    QList&lt;QPair&lt;QString, QString&gt; &gt; pairs = table-&gt;getList();
+    QDataStream in(&amp;file);
+    in &gt;&gt; pairs;
+
+    if (pairs.isEmpty()) {
+        QMessageBox::information(this, tr(&quot;No contacts in file&quot;),
+                                 tr(&quot;The file you are attempting to open contains no contacts.&quot;));
+    } else {
+        for (int i=0; i&lt;pairs.size(); ++i) {
+            QPair&lt;QString, QString&gt; p = pairs.at(i);
+            addEntry(p.first, p.second);
+        }
+    }
+}
+
+void AddressWidget::writeToFile(const QString &amp;fileName)
+{
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;), file.errorString());
+        return;
+    }
+
+    QList&lt;QPair&lt;QString, QString&gt; &gt; pairs = table-&gt;getList();
+    QDataStream out(&amp;file);
+    out &lt;&lt; pairs;
+}
+
+</db:programlisting>
+</db:article>

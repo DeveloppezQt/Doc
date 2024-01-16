@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>MIME Type Browser Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows the hierarchy of MIME types and can be used to determine the MIME type of a file.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mimetypemodel.h&quot;
+
+#include &lt;QIcon&gt;
+
+#include &lt;QDebug&gt;
+#include &lt;QMimeDatabase&gt;
+#include &lt;QTextStream&gt;
+#include &lt;QVariant&gt;
+
+#include &lt;algorithm&gt;
+
+Q_DECLARE_METATYPE(QMimeType)
+
+typedef QList&lt;QStandardItem *&gt; StandardItemList;
+
+enum { mimeTypeRole = Qt::UserRole + 1, iconQueriedRole = Qt::UserRole + 2 };
+
+bool operator&lt;(const QMimeType &amp;t1, const QMimeType &amp;t2)
+{
+    return t1.name() &lt; t2.name();
+}
+
+static StandardItemList createRow(const QMimeType &amp;t)
+{
+    const QVariant v = QVariant::fromValue(t);
+    QStandardItem *nameItem = new QStandardItem(t.name());
+    const Qt::ItemFlags flags = Qt::ItemIsSelectable | Qt::ItemIsEnabled;
+    nameItem-&gt;setData(v, mimeTypeRole);
+    nameItem-&gt;setData(QVariant(false), iconQueriedRole);
+    nameItem-&gt;setFlags(flags);
+    nameItem-&gt;setToolTip(t.comment());
+    return StandardItemList{nameItem};
+}
+
+MimetypeModel::MimetypeModel(QObject *parent)
+    : QStandardItemModel(0, ColumnCount, parent)
+{
+    setHorizontalHeaderLabels(QStringList{tr(&quot;Name&quot;)});
+    populate();
+}
+
+QVariant MimetypeModel::data(const QModelIndex &amp;index, int role) const
+{
+    if (role != Qt::DecorationRole || !index.isValid() || index.data(iconQueriedRole).toBool())
+        return QStandardItemModel::data(index, role);
+    QStandardItem *item = itemFromIndex(index);
+    const QString iconName = item-&gt;data(mimeTypeRole).value&lt;QMimeType&gt;().iconName();
+    if (!iconName.isEmpty())
+        item-&gt;setIcon(QIcon::fromTheme(iconName));
+    item-&gt;setData(QVariant(true), iconQueriedRole);
+    return item-&gt;icon();
+}
+
+QMimeType MimetypeModel::mimeType(const QModelIndex &amp;index) const
+{
+    return index.data(mimeTypeRole).value&lt;QMimeType&gt;();
+}
+
+void MimetypeModel::populate()
+{
+    typedef QList&lt;QMimeType&gt;::Iterator Iterator;
+
+    QMimeDatabase mimeDatabase;
+    QList&lt;QMimeType&gt; allTypes = mimeDatabase.allMimeTypes();
+
+    // Move top level types to rear end of list, sort this partition,
+    // create top level items and truncate the list.
+    Iterator end = allTypes.end();
+    const Iterator topLevelStart =
+        std::stable_partition(allTypes.begin(), end,
+                              [](const QMimeType &amp;t) { return !t.parentMimeTypes().isEmpty(); });
+    std::stable_sort(topLevelStart, end);
+    for (Iterator it = topLevelStart; it != end; ++it) {
+        const StandardItemList row = createRow(*it);
+        appendRow(row);
+        m_nameIndexHash.insert(it-&gt;name(), indexFromItem(row.constFirst()));
+    }
+    allTypes.erase(topLevelStart, end);
+
+    while (!allTypes.isEmpty()) {
+        // Find a type inheriting one that is already in the model.
+        end = allTypes.end();
+        auto nameIndexIt = m_nameIndexHash.constEnd();
+        for (Iterator it = allTypes.begin(); it != end; ++it) {
+            nameIndexIt = m_nameIndexHash.constFind(it-&gt;parentMimeTypes().constFirst());
+            if (nameIndexIt != m_nameIndexHash.constEnd())
+                break;
+        }
+        if (nameIndexIt == m_nameIndexHash.constEnd()) {
+            qWarning() &lt;&lt; &quot;Orphaned mime types:&quot; &lt;&lt; allTypes;
+            break;
+        }
+
+        // Move types inheriting the parent type to rear end of list, sort this partition,
+        // append the items to parent and truncate the list.
+        const QString &amp;parentName = nameIndexIt.key();
+        const Iterator start =
+            std::stable_partition(allTypes.begin(), end, [parentName](const QMimeType &amp;t)
+                                  { return !t.parentMimeTypes().contains(parentName); });
+        std::stable_sort(start, end);
+        QStandardItem *parentItem = itemFromIndex(nameIndexIt.value());
+        for (Iterator it = start; it != end; ++it) {
+            const StandardItemList row = createRow(*it);
+            parentItem-&gt;appendRow(row);
+            m_nameIndexHash.insert(it-&gt;name(), indexFromItem(row.constFirst()));
+        }
+        allTypes.erase(start, end);
+    }
+}
+
+QTextStream &amp;operator&lt;&lt;(QTextStream &amp;stream, const QStringList &amp;list)
+{
+    for (int i = 0, size = list.size(); i &lt; size; ++i) {
+        if (i)
+            stream &lt;&lt; &quot;, &quot;;
+        stream &lt;&lt; list.at(i);
+    }
+    return stream;
+}
+
+QString MimetypeModel::formatMimeTypeInfo(const QMimeType &amp;t)
+{
+    QString result;
+    QTextStream str(&amp;result);
+    str &lt;&lt; &quot;&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;h3&gt;&lt;center&gt;&quot; &lt;&lt; t.name() &lt;&lt; &quot;&lt;/center&gt;&lt;/h3&gt;&lt;br&gt;&lt;table&gt;&quot;;
+
+    const QStringList &amp;aliases = t.aliases();
+    if (!aliases.isEmpty())
+        str &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Aliases:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; &quot; (&quot; &lt;&lt; aliases &lt;&lt; ')';
+
+    str &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;
+        &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Comment:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; t.comment() &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;
+        &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Icon name:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; t.iconName() &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;
+        &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Generic icon name&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; t.genericIconName() &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;
+
+    const QString &amp;filter = t.filterString();
+    if (!filter.isEmpty())
+        str &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Filter:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; t.filterString() &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;
+
+    const QStringList &amp;patterns = t.globPatterns();
+    if (!patterns.isEmpty())
+        str &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Glob patterns:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; patterns &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;
+
+    const QStringList &amp;parentMimeTypes = t.parentMimeTypes();
+    if (!parentMimeTypes.isEmpty())
+        str &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Parent types:&lt;/td&gt;&lt;td&gt;&quot; &lt;&lt; t.parentMimeTypes() &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;
+
+    QStringList suffixes = t.suffixes();
+    if (!suffixes.isEmpty()) {
+        str &lt;&lt; &quot;&lt;tr&gt;&lt;td&gt;Suffixes:&lt;/td&gt;&lt;td&gt;&quot;;
+        const QString &amp;preferredSuffix = t.preferredSuffix();
+        if (!preferredSuffix.isEmpty()) {
+            suffixes.removeOne(preferredSuffix);
+            str &lt;&lt; &quot;&lt;b&gt;&quot; &lt;&lt; preferredSuffix &lt;&lt; &quot;&lt;/b&gt; &quot;;
+        }
+        str &lt;&lt; suffixes &lt;&lt; &quot;&lt;/td&gt;&lt;/tr&gt;&quot;;
+    }
+    str &lt;&lt; &quot;&lt;/table&gt;&lt;/body&gt;&lt;/html&gt;&quot;;
+    return result;
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Getting Started with Qt Purchasing in QML</db:title>
+<db:productname>QtPurchasing</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Purchasing Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Guide to getting started with Qt Purchasing using QML.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This guide assumes that you have registered the in-app products for your application in the external store. For more information about registering products, see <db:link xlink:href="qtpurchasing-googleplay.xml">Registering Products in Google Play</db:link> and <db:link xlink:href="qtpurchasing-appstore.xml">Registering Products in App Store</db:link></db:para>
+<db:section xml:id="preparing-the-application">
+<db:title>Preparing The Application</db:title>
+<db:para>Use the following <db:code>import</db:code> statement in the QML files to access the Qt Purchasing QML types:</db:para>
+<db:programlisting language="qml">import QtPurchasing 1.0
+</db:programlisting>
+<db:para>Add the following statement to your <db:code>.pro</db:code> file to link against the Qt Purchasing library:</db:para>
+<db:programlisting language="cpp">QT += purchasing
+</db:programlisting>
+</db:section>
+<db:section xml:id="registering-products">
+<db:title>Registering Products</db:title>
+<db:para>Before you can operate on the products in your code, they must be registered in the QML graph. You start by making a <db:link xlink:href="qml-qtpurchasing-store.xml">Store</db:link> item, and then create each product as a child of this.</db:para>
+<db:programlisting language="qml">Store {
+    Product {
+        identifier: &quot;consumableProduct&quot;
+        type: Product.Consumable
+
+        // ...
+    }
+
+    Product {
+        identifier: &quot;unlockableProduct&quot;
+        type: Product.Unlockable
+
+        // ...
+    }
+}
+</db:programlisting>
+<db:para>As you can see, there are consumable products and unlockable products. The former can be purchased any number of times by the same user, while the latter can only be purchased once.</db:para>
+</db:section>
+<db:section xml:id="the-product-declaration">
+<db:title>The Product Declaration</db:title>
+<db:para>For each product you must fill out the <db:code>identifier</db:code>, before the product can be queried from the external store. You should also always add a <db:link xlink:href="qml-qtpurchasing-product.xml#onPurchaseSucceeded-signal">onPurchaseSucceeded</db:link> and a <db:link xlink:href="qml-qtpurchasing-product.xml#onPurchaseFailed-signal">onPurchaseFailed</db:link> handler if you intend to provide the option to purchase the products. If you are also using the restore functionality, you should add a <db:link xlink:href="qml-qtpurchasing-product.xml#onPurchaseRestored-signal">onPurchaseRestored</db:link> handler to your unlockable products.</db:para>
+<db:para>The signal handlers should handle the incoming transaction. Once the transaction has been handled appropriately, it should be finalized. For instance, when a purchase has succeeded, it's appropriate to save information about the purchased product in persistent storage, so that this product can still be available the next time the application launches.</db:para>
+<db:para>The following example calls custom methods to save data about a succeeded purchase so that it survives across application runs. After verifying that the data has been stored, it finalizes the transaction. When the transaction has failed, it displays information about the failure to the user and finalizes the transaction.</db:para>
+<db:programlisting language="qml">Store {
+    id: store
+    Product {
+        id: healthPotionProduct
+        identifier: &quot;healthPotion&quot;
+        type: Product.Consumable
+
+        property bool purchasing: false
+
+        onPurchaseSucceeded: {
+            if (!hasAlreadyStoredTransaction(transaction.orderId)) {
+                ++healthPotions
+                if (!addHealthPotionToPersistentStorage(transaction.orderId)) {
+                    popupErrorDialog(qsTr(&quot;Unable to write to persistent storage. Please make sure there is sufficient space and restart.&quot;))
+                } else {
+                    transaction.finalize()
+                }
+            }
+
+            // Reset purchasing flag
+            purchasing = false
+        }
+
+        onPurchaseFailed: {
+            popupErrorDialog(qsTr(&quot;Purchase not completed.&quot;))
+            transaction.finalize()
+
+            // Reset purchasing flag
+            purchasing = false
+        }
+    }
+}
+</db:programlisting>
+<db:para>If a transaction is not finalized, it will be called again for the same transaction the next time the application starts up, providing another chance to store the data. The transaction for a consumable product has to be finalized before the product can be purchased again.</db:para>
+</db:section>
+<db:section xml:id="purchasing-a-product">
+<db:title>Purchasing A Product</db:title>
+<db:para>In order to purchase a product, call the object's purchase() method. This launches a platform-specific, asynchronous process to purchase the product, for example by requesting the user's password and confirmation of the purchase. In most cases, you should make sure that the application UI is not accepting input while the purchasing request is being processed, as this is not handled automatically on all platforms.</db:para>
+<db:para>The following example adds a button to be used with the example product in the previous section:</db:para>
+<db:programlisting language="qml">Rectangle {
+    id: button
+    width: 100
+    height: 50
+
+    Text {
+        anchors.centerIn: parent
+        text: qsTr(&quot;Buy health potion for only &quot; + healthPotionProduct.price + &quot;!&quot;)
+    }
+
+    MouseArea {
+        enabled: !healthPotionProduct.purchasing &amp;&amp; healthPotionProduct.status === Product.Registered
+        anchors.fill: parent
+        onClicked: {
+            healthPotionProduct.purchasing = true
+            healthPotionProduct.purchase()
+        }
+    }
+}
+</db:programlisting>
+<db:para>When the button is clicked, the purchase process is started. At some point in the future, either the <db:link xlink:href="qml-qtpurchasing-product.xml#onPurchaseFailed-signal">onPurchaseFailed</db:link> handler will be called (for example if the user cancels the transaction), or the <db:link xlink:href="qml-qtpurchasing-product.xml#onPurchaseSucceeded-signal">onPurchaseSucceeded</db:link> handler will be called.</db:para>
+<db:note>
+<db:para>The button is only enabled if the product's status is set to Registered. The registration process for a product is asynchronous, so purchases attempted on a product before it has been successfully registered will always fail.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="restoring-previously-purchased-products">
+<db:title>Restoring Previously Purchased Products</db:title>
+<db:para>If the application is uninstalled and subsequently reinstalled (or installed by the same user on a different device) you should provide a way to restore the previously purchased unlockable products in the external market place.</db:para>
+<db:para>To start the process of restoring purchases, you should call the restorePurchases() method in the <db:link xlink:href="qml-qtpurchasing-store.xml">Store</db:link> object. This will cause the onPurchaseRestored handler to be called in each of the application's unlockable products that has previously been purchased by the current user.</db:para>
+<db:para>Continuing on the example from before, which could be some sort of role-playing computer game, lets imagine that the game has downloadable content that you can buy to expand the game further. This should be an unlockable product, because the user should not have to purchase it more than once.</db:para>
+<db:programlisting language="qml">Store {
+    id: store
+
+    // ... other products
+
+    Product {
+        id: dlcForestOfFooBarProduct
+        identifier: &quot;dlcForestOfFooBar&quot;
+        type: Product.Unlockable
+
+        property bool purchasing: false
+
+        onPurchaseSucceeded: {
+            if (!hasMap(&quot;forestOfFooBar.map&quot;)) {
+                if (!downloadExtraMap(&quot;forestOfFooBar.map&quot;)) {
+                    popupErrorDialog(qsTr(&quot;Unable to download The Forest of FooBar map. Please make sure there is sufficient space and restart.&quot;))
+                } else {
+                    transaction.finalize()
+                }
+            }
+
+            // Reset purchasing flag
+            purchasing = false
+        }
+
+        onPurchaseFailed: {
+            popupErrorDialog(qsTr(&quot;Purchase not completed.&quot;))
+            transaction.finalize()
+
+            // Reset purchasing flag
+            purchasing = false
+        }
+
+        onPurchaseRestored: {
+            if (!hasMap(&quot;forestOfFooBar.map&quot;)) {
+                if (!downloadExtraMap(&quot;forestOfFooBar.map&quot;)) {
+                    popupErrorDialog(qsTr(&quot;Unable to download The Forest of FooBar map. Please make sure there is sufficient space and restart.&quot;))
+                } else {
+                    transaction.finalize()
+                }
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>If a user buys the downloadable content and later either installs the game on another device or uninstalls and reinstalls the game, you can provide a way to restore the purchase, such as the following button:</db:para>
+<db:programlisting language="qml">Rectangle {
+    id: restoreButton
+    width: 100
+    height: 50
+
+    Text {
+        anchors.centerIn: parent
+        text: &quot;Restore previously purchased content&quot;
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: {
+            store.restorePurchases()
+        }
+    }
+}
+</db:programlisting>
+<db:para>Restoring purchases should always be done as a reaction to user input, as it may present a password dialog on some platforms. Calling the restorePurchases() method launches the restore process asynchronously. At some point in the future the onPurchaseRestored handler will be called if the product has previously been purchased.</db:para>
+<db:note>
+<db:para>While the function behaves as documented on Android, this functionality is technically not needed there. The reason for this is that the Android device manages all unlockable purchases with no intervention from the application. If an application is uninstalled and reinstalled (or installed on a different device) on Android, then onPurchaseSucceeded will be called for each previously purchased, unlockable product when the application starts up.</db:para>
+</db:note>
+</db:section>
+</db:article>

@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Custom Proxy Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using Q3DBars with a custom proxy.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;rainfallgraph.h&quot;
+#include &lt;QtDataVisualization/qcategory3daxis.h&gt;
+#include &lt;QtDataVisualization/qvalue3daxis.h&gt;
+#include &lt;QtDataVisualization/q3dscene.h&gt;
+#include &lt;QtDataVisualization/q3dcamera.h&gt;
+#include &lt;QtDataVisualization/qbar3dseries.h&gt;
+#include &lt;QtDataVisualization/q3dtheme.h&gt;
+#include &lt;QtGui/QGuiApplication&gt;
+#include &lt;QtGui/QFont&gt;
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtCore/QTextStream&gt;
+#include &lt;QtCore/QFile&gt;
+
+using namespace QtDataVisualization;
+
+RainfallGraph::RainfallGraph(Q3DBars *rainfall)
+    : m_graph(rainfall)
+{
+    // In data file the months are in numeric format, so create custom list
+    for (int i = 1; i &lt;= 12; i++)
+        m_numericMonths &lt;&lt; QString::number(i);
+
+    m_columnCount = m_numericMonths.size();
+
+    m_proxy = new VariantBarDataProxy;
+    QBar3DSeries *series = new QBar3DSeries(m_proxy);
+    m_graph-&gt;addSeries(series);
+
+    updateYearsList(2000, 2012);
+
+    // Set up bar specifications; make the bars as wide as they are deep,
+    // and add a small space between the bars
+    m_graph-&gt;setBarThickness(1.0f);
+    m_graph-&gt;setBarSpacing(QSizeF(1.1, 1.1));
+
+    // Set axis labels and titles
+    QStringList months;
+    months &lt;&lt; &quot;January&quot; &lt;&lt; &quot;February&quot; &lt;&lt; &quot;March&quot; &lt;&lt; &quot;April&quot; &lt;&lt; &quot;May&quot; &lt;&lt; &quot;June&quot; &lt;&lt; &quot;July&quot; &lt;&lt; &quot;August&quot; &lt;&lt; &quot;September&quot; &lt;&lt; &quot;October&quot; &lt;&lt; &quot;November&quot; &lt;&lt; &quot;December&quot;;
+    m_graph-&gt;rowAxis()-&gt;setTitle(&quot;Year&quot;);
+    m_graph-&gt;columnAxis()-&gt;setTitle(&quot;Month&quot;);
+    m_graph-&gt;valueAxis()-&gt;setTitle(&quot;rainfall&quot;);
+    m_graph-&gt;valueAxis()-&gt;setLabelFormat(&quot;%d mm&quot;);
+    m_graph-&gt;valueAxis()-&gt;setSegmentCount(5);
+    m_graph-&gt;rowAxis()-&gt;setLabels(m_years);
+    m_graph-&gt;columnAxis()-&gt;setLabels(months);
+
+    // Set bar type to cylinder
+    series-&gt;setMesh(QAbstract3DSeries::MeshCylinder);
+
+    // Set shadows to medium
+    m_graph-&gt;setShadowQuality(QAbstract3DGraph::ShadowQualityMedium);
+
+    // Set selection mode to bar and column
+    m_graph-&gt;setSelectionMode(QAbstract3DGraph::SelectionItemAndColumn | QAbstract3DGraph::SelectionSlice);
+
+    // Set theme
+    m_graph-&gt;activeTheme()-&gt;setType(Q3DTheme::ThemeArmyBlue);
+
+    // Override font in theme
+    m_graph-&gt;activeTheme()-&gt;setFont(QFont(&quot;Century Gothic&quot;, 30));
+
+    // Override label background for theme
+    m_graph-&gt;activeTheme()-&gt;setLabelBackgroundEnabled(false);
+
+    // Set camera position and zoom
+    m_graph-&gt;scene()-&gt;activeCamera()-&gt;setCameraPreset(Q3DCamera::CameraPresetIsometricRightHigh);
+
+    // Set window title
+    m_graph-&gt;setTitle(QStringLiteral(&quot;Monthly rainfall in Northern Finland&quot;));
+
+    // Set reflections on
+    m_graph-&gt;setReflection(true);
+}
+
+RainfallGraph::~RainfallGraph()
+{
+    delete m_mapping;
+    delete m_dataSet;
+    delete m_graph;
+}
+
+void RainfallGraph::start()
+{
+    addDataSet();
+}
+
+void RainfallGraph::updateYearsList(int start, int end)
+{
+    m_years.clear();
+    for (int i = start; i &lt;= end; i++)
+        m_years &lt;&lt; QString::number(i);
+
+    m_rowCount = m_years.size();
+}
+
+void RainfallGraph::addDataSet()
+{
+    // Create a new variant data set and data item list
+    m_dataSet =  new VariantDataSet;
+    VariantDataItemList *itemList = new VariantDataItemList;
+
+    // Read data from a data file into the data item list
+    QTextStream stream;
+    QFile dataFile(&quot;:/data/raindata.txt&quot;);
+    if (dataFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        stream.setDevice(&amp;dataFile);
+        while (!stream.atEnd()) {
+            QString line = stream.readLine();
+            if (line.startsWith(&quot;#&quot;)) // Ignore comments
+                continue;
+            QStringList strList = line.split(&quot;,&quot;, QString::SkipEmptyParts);
+            // Each line has three data items: Year, month, and rainfall value
+            if (strList.size() &lt; 3) {
+                qWarning() &lt;&lt; &quot;Invalid row read from data:&quot; &lt;&lt; line;
+                continue;
+            }
+            // Store year and month as strings, and rainfall value as double
+            // into a variant data item and add the item to the item list.
+            VariantDataItem *newItem = new VariantDataItem;
+            for (int i = 0; i &lt; 2; i++)
+                newItem-&gt;append(strList.at(i).trimmed());
+            newItem-&gt;append(strList.at(2).trimmed().toDouble());
+            itemList-&gt;append(newItem);
+        }
+    } else {
+        qWarning() &lt;&lt; &quot;Unable to open data file:&quot; &lt;&lt; dataFile.fileName();
+    }
+
+    // Add items to the data set and set it to the proxy
+    m_dataSet-&gt;addItems(itemList);
+    m_proxy-&gt;setDataSet(m_dataSet);
+
+    // Create new mapping for the data and set it to the proxy
+    m_mapping =  new VariantBarDataMapping(0, 1, 2, m_years, m_numericMonths);
+    m_proxy-&gt;setMapping(m_mapping);
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#ifndef BOOKMARKS_H
+#define BOOKMARKS_H
+
+#include &lt;QtCore/QObject&gt;
+#include &lt;QtCore/QAbstractItemModel&gt;
+
+#include &lt;QtWidgets/QUndoCommand&gt;
+
+/*!
+    Bookmark manager, owner of the bookmarks, loads, saves and basic tasks
+  */
+class AutoSaver;
+class BookmarkNode;
+class BookmarksModel;
+class BookmarksManager : public QObject
+{
+    Q_OBJECT
+
+signals:
+    void entryAdded(BookmarkNode *item);
+    void entryRemoved(BookmarkNode *parent, int row, BookmarkNode *item);
+    void entryChanged(BookmarkNode *item);
+
+public:
+    BookmarksManager(QObject *parent = 0);
+    ~BookmarksManager();
+
+    void addBookmark(BookmarkNode *parent, BookmarkNode *node, int row = -1);
+    void removeBookmark(BookmarkNode *node);
+    void setTitle(BookmarkNode *node, const QString &amp;newTitle);
+    void setUrl(BookmarkNode *node, const QString &amp;newUrl);
+    void changeExpanded();
+
+    BookmarkNode *bookmarks();
+    BookmarkNode *menu();
+    BookmarkNode *toolbar();
+
+    BookmarksModel *bookmarksModel();
+    QUndoStack *undoRedoStack() { return &amp;m_commands; };
+
+public slots:
+    void importBookmarks();
+    void exportBookmarks();
+
+private slots:
+    void save() const;
+
+private:
+    void load();
+
+    bool m_loaded;
+    AutoSaver *m_saveTimer;
+    BookmarkNode *m_bookmarkRootNode;
+    BookmarksModel *m_bookmarkModel;
+    QUndoStack m_commands;
+
+    friend class RemoveBookmarksCommand;
+    friend class ChangeBookmarkCommand;
+};
+
+class RemoveBookmarksCommand : public QUndoCommand
+{
+
+public:
+    RemoveBookmarksCommand(BookmarksManager *m_bookmarkManagaer, BookmarkNode *parent, int row);
+    ~RemoveBookmarksCommand();
+    void undo();
+    void redo();
+
+protected:
+    int m_row;
+    BookmarksManager *m_bookmarkManagaer;
+    BookmarkNode *m_node;
+    BookmarkNode *m_parent;
+    bool m_done;
+};
+
+class InsertBookmarksCommand : public RemoveBookmarksCommand
+{
+
+public:
+    InsertBookmarksCommand(BookmarksManager *m_bookmarkManagaer,
+        BookmarkNode *parent, BookmarkNode *node, int row);
+    void undo() { RemoveBookmarksCommand::redo(); }
+    void redo() { RemoveBookmarksCommand::undo(); }
+
+};
+
+class ChangeBookmarkCommand : public QUndoCommand
+{
+
+public:
+    ChangeBookmarkCommand(BookmarksManager *m_bookmarkManagaer,
+        BookmarkNode *node, const QString &amp;newValue, bool title);
+    void undo();
+    void redo();
+
+private:
+    BookmarksManager *m_bookmarkManagaer;
+    bool m_title;
+    QString m_oldValue;
+    QString m_newValue;
+    BookmarkNode *m_node;
+};
+
+/*!
+    BookmarksModel is a QAbstractItemModel wrapper around the BookmarkManager
+  */
+class BookmarksModel : public QAbstractItemModel
+{
+    Q_OBJECT
+
+public slots:
+    void entryAdded(BookmarkNode *item);
+    void entryRemoved(BookmarkNode *parent, int row, BookmarkNode *item);
+    void entryChanged(BookmarkNode *item);
+
+public:
+    enum Roles {
+        TypeRole = Qt::UserRole + 1,
+        UrlRole = Qt::UserRole + 2,
+        UrlStringRole = Qt::UserRole + 3,
+        SeparatorRole = Qt::UserRole + 4
+    };
+
+    BookmarksModel(BookmarksManager *bookmarkManager, QObject *parent = 0);
+    inline BookmarksManager *bookmarksManager() const { return m_bookmarksManager; }
+
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
+    QVariant data(const QModelIndex &amp;index, int role = Qt::DisplayRole) const;
+    int columnCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex index(int, int, const QModelIndex&amp; = QModelIndex()) const;
+    QModelIndex parent(const QModelIndex&amp; index= QModelIndex()) const;
+    Qt::ItemFlags flags(const QModelIndex &amp;index) const;
+    Qt::DropActions supportedDropActions () const;
+    bool removeRows(int row, int count, const QModelIndex &amp;parent = QModelIndex());
+    bool setData(const QModelIndex &amp;index, const QVariant &amp;value, int role = Qt::EditRole);
+    QMimeData *mimeData(const QModelIndexList &amp;indexes) const;
+    QStringList mimeTypes() const;
+    bool dropMimeData(const QMimeData *data,
+        Qt::DropAction action, int row, int column, const QModelIndex &amp;parent);
+    bool hasChildren(const QModelIndex &amp;parent = QModelIndex()) const;
+
+    BookmarkNode *node(const QModelIndex &amp;index) const;
+    QModelIndex index(BookmarkNode *node) const;
+
+private:
+
+    bool m_endMacro;
+    BookmarksManager *m_bookmarksManager;
+};
+
+// Menu that is dynamically populated from the bookmarks
+#include &quot;modelmenu.h&quot;
+class BookmarksMenu : public ModelMenu
+{
+    Q_OBJECT
+
+signals:
+    void openUrl(const QUrl &amp;url);
+
+public:
+     BookmarksMenu(QWidget *parent = 0);
+     void setInitialActions(QList&lt;QAction*&gt; actions);
+
+protected:
+    bool prePopulated();
+
+private slots:
+    void activated(const QModelIndex &amp;index);
+
+private:
+    BookmarksManager *m_bookmarksManager;
+    QList&lt;QAction*&gt; m_initialActions;
+};
+
+/*
+    Proxy model that filters out the bookmarks so only the folders
+    are left behind.  Used in the add bookmark dialog combobox.
+ */
+#include &lt;QtCore/QSortFilterProxyModel&gt;
+class AddBookmarkProxyModel : public QSortFilterProxyModel
+{
+    Q_OBJECT
+public:
+    AddBookmarkProxyModel(QObject * parent = 0);
+    int columnCount(const QModelIndex &amp; parent = QModelIndex()) const;
+
+protected:
+    bool filterAcceptsRow(int source_row, const QModelIndex &amp;source_parent) const;
+};
+
+/*!
+    Add bookmark dialog
+ */
+#include &quot;ui_addbookmarkdialog.h&quot;
+class AddBookmarkDialog : public QDialog, public Ui_AddBookmarkDialog
+{
+    Q_OBJECT
+
+public:
+    AddBookmarkDialog(const QString &amp;url, const QString &amp;title, QWidget *parent = 0, BookmarksManager *bookmarkManager = 0);
+
+private slots:
+    void accept();
+
+private:
+    QString m_url;
+    BookmarksManager *m_bookmarksManager;
+    AddBookmarkProxyModel *m_proxyModel;
+};
+
+#include &quot;ui_bookmarks.h&quot;
+class TreeProxyModel;
+class BookmarksDialog : public QDialog, public Ui_BookmarksDialog
+{
+    Q_OBJECT
+
+signals:
+    void openUrl(const QUrl &amp;url);
+
+public:
+    BookmarksDialog(QWidget *parent = 0, BookmarksManager *manager = 0);
+    ~BookmarksDialog();
+
+private slots:
+    void customContextMenuRequested(const QPoint &amp;pos);
+    void open();
+    void newFolder();
+
+private:
+    void expandNodes(BookmarkNode *node);
+    bool saveExpandedNodes(const QModelIndex &amp;parent);
+
+    BookmarksManager *m_bookmarksManager;
+    BookmarksModel *m_bookmarksModel;
+    TreeProxyModel *m_proxyModel;
+};
+
+#include &lt;QtWidgets/QToolBar&gt;
+class BookmarksToolBar : public QToolBar
+{
+    Q_OBJECT
+
+signals:
+    void openUrl(const QUrl &amp;url);
+
+public:
+    BookmarksToolBar(BookmarksModel *model, QWidget *parent = 0);
+    void setRootIndex(const QModelIndex &amp;index);
+    QModelIndex rootIndex() const;
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event);
+    void dropEvent(QDropEvent *event);
+
+private slots:
+    void triggered(QAction *action);
+    void activated(const QModelIndex &amp;index);
+    void build();
+
+private:
+    BookmarksModel *m_bookmarksModel;
+    QPersistentModelIndex m_root;
+};
+
+#endif // BOOKMARKS_H
+
+</db:programlisting>
+</db:article>

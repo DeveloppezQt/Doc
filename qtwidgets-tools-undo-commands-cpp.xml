@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Undo Framework</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows Qt's undo framework in action.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;commands.h&quot;
+
+static const int setShapeRectCommandId = 1;
+static const int setShapeColorCommandId = 2;
+
+/******************************************************************************
+** AddShapeCommand
+*/
+
+AddShapeCommand::AddShapeCommand(Document *doc, const Shape &amp;shape, QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    m_doc = doc;
+    m_shape = shape;
+}
+
+void AddShapeCommand::undo()
+{
+    m_doc-&gt;deleteShape(m_shapeName);
+}
+
+void AddShapeCommand::redo()
+{
+    // A shape only gets a name when it is inserted into a document
+    m_shapeName = m_doc-&gt;addShape(m_shape);
+    setText(QObject::tr(&quot;Add %1&quot;).arg(m_shapeName));
+}
+
+/******************************************************************************
+** RemoveShapeCommand
+*/
+
+RemoveShapeCommand::RemoveShapeCommand(Document *doc, const QString &amp;shapeName,
+                                        QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    setText(QObject::tr(&quot;Remove %1&quot;).arg(shapeName));
+    m_doc = doc;
+    m_shape = doc-&gt;shape(shapeName);
+    m_shapeName = shapeName;
+}
+
+void RemoveShapeCommand::undo()
+{
+    m_shapeName = m_doc-&gt;addShape(m_shape);
+}
+
+void RemoveShapeCommand::redo()
+{
+    m_doc-&gt;deleteShape(m_shapeName);
+}
+
+/******************************************************************************
+** SetShapeColorCommand
+*/
+
+SetShapeColorCommand::SetShapeColorCommand(Document *doc, const QString &amp;shapeName,
+                                            const QColor &amp;color, QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    setText(QObject::tr(&quot;Set %1's color&quot;).arg(shapeName));
+
+    m_doc = doc;
+    m_shapeName = shapeName;
+    m_oldColor = doc-&gt;shape(shapeName).color();
+    m_newColor = color;
+}
+
+void SetShapeColorCommand::undo()
+{
+    m_doc-&gt;setShapeColor(m_shapeName, m_oldColor);
+}
+
+void SetShapeColorCommand::redo()
+{
+    m_doc-&gt;setShapeColor(m_shapeName, m_newColor);
+}
+
+bool SetShapeColorCommand::mergeWith(const QUndoCommand *command)
+{
+    if (command-&gt;id() != setShapeColorCommandId)
+        return false;
+
+    const SetShapeColorCommand *other = static_cast&lt;const SetShapeColorCommand*&gt;(command);
+    if (m_shapeName != other-&gt;m_shapeName)
+        return false;
+
+    m_newColor = other-&gt;m_newColor;
+    return true;
+}
+
+int SetShapeColorCommand::id() const
+{
+    return setShapeColorCommandId;
+}
+
+/******************************************************************************
+** SetShapeRectCommand
+*/
+
+SetShapeRectCommand::SetShapeRectCommand(Document *doc, const QString &amp;shapeName,
+                                            const QRect &amp;rect, QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    setText(QObject::tr(&quot;Change %1's geometry&quot;).arg(shapeName));
+
+    m_doc = doc;
+    m_shapeName = shapeName;
+    m_oldRect = doc-&gt;shape(shapeName).rect();
+    m_newRect = rect;
+}
+
+void SetShapeRectCommand::undo()
+{
+    m_doc-&gt;setShapeRect(m_shapeName, m_oldRect);
+}
+
+void SetShapeRectCommand::redo()
+{
+    m_doc-&gt;setShapeRect(m_shapeName, m_newRect);
+}
+
+bool SetShapeRectCommand::mergeWith(const QUndoCommand *command)
+{
+    if (command-&gt;id() != setShapeRectCommandId)
+        return false;
+
+    const SetShapeRectCommand *other = static_cast&lt;const SetShapeRectCommand*&gt;(command);
+    if (m_shapeName != other-&gt;m_shapeName)
+        return false;
+
+    m_newRect = other-&gt;m_newRect;
+    return true;
+}
+
+int SetShapeRectCommand::id() const
+{
+    return setShapeRectCommandId;
+}
+
+</db:programlisting>
+</db:article>

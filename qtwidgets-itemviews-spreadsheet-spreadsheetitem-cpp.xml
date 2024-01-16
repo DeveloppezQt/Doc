@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Spreadsheet</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Spreadsheet example shows how to create a simple spreadsheet application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;spreadsheetitem.h&quot;
+
+SpreadSheetItem::SpreadSheetItem()
+        : QTableWidgetItem(), isResolving(false)
+{
+}
+
+SpreadSheetItem::SpreadSheetItem(const QString &amp;text)
+        : QTableWidgetItem(text), isResolving(false)
+{
+}
+
+QTableWidgetItem *SpreadSheetItem::clone() const
+{
+    SpreadSheetItem *item = new SpreadSheetItem();
+    *item = *this;
+    return item;
+}
+
+QVariant SpreadSheetItem::data(int role) const
+{
+    if (role == Qt::EditRole || role == Qt::StatusTipRole)
+        return formula();
+
+    if (role == Qt::DisplayRole)
+        return display();
+
+    QString t = display().toString();
+    bool isNumber = false;
+    int number = t.toInt(&amp;isNumber);
+
+    if (role == Qt::TextColorRole) {
+        if (!isNumber)
+            return QVariant::fromValue(QColor(Qt::black));
+        else if (number &lt; 0)
+            return QVariant::fromValue(QColor(Qt::red));
+        return QVariant::fromValue(QColor(Qt::blue));
+    }
+
+     if (role == Qt::TextAlignmentRole)
+         if (!t.isEmpty() &amp;&amp; (t.at(0).isNumber() || t.at(0) == '-'))
+             return (int)(Qt::AlignRight | Qt::AlignVCenter);
+
+     return QTableWidgetItem::data(role);
+ }
+
+void SpreadSheetItem::setData(int role, const QVariant &amp;value)
+{
+    QTableWidgetItem::setData(role, value);
+    if (tableWidget())
+        tableWidget()-&gt;viewport()-&gt;update();
+}
+
+QVariant SpreadSheetItem::display() const
+{
+    // avoid circular dependencies
+    if (isResolving)
+        return QVariant();
+
+    isResolving = true;
+    QVariant result = computeFormula(formula(), tableWidget(), this);
+    isResolving = false;
+    return result;
+}
+
+QVariant SpreadSheetItem::computeFormula(const QString &amp;formula,
+                                         const QTableWidget *widget,
+                                         const QTableWidgetItem *self)
+{
+    // check if the s tring is actually a formula or not
+    QStringList list = formula.split(' ');
+    if (list.isEmpty() || !widget)
+        return formula; // it is a normal string
+
+    QString op = list.value(0).toLower();
+
+    int firstRow = -1;
+    int firstCol = -1;
+    int secondRow = -1;
+    int secondCol = -1;
+
+    if (list.count() &gt; 1)
+        decode_pos(list.value(1), &amp;firstRow, &amp;firstCol);
+
+    if (list.count() &gt; 2)
+        decode_pos(list.value(2), &amp;secondRow, &amp;secondCol);
+
+    const QTableWidgetItem *start = widget-&gt;item(firstRow, firstCol);
+    const QTableWidgetItem *end = widget-&gt;item(secondRow, secondCol);
+
+    int firstVal = start ? start-&gt;text().toInt() : 0;
+    int secondVal = end ? end-&gt;text().toInt() : 0;
+
+    QVariant result;
+    if (op == &quot;sum&quot;) {
+        int sum = 0;
+        for (int r = firstRow; r &lt;= secondRow; ++r) {
+            for (int c = firstCol; c &lt;= secondCol; ++c) {
+                const QTableWidgetItem *tableItem = widget-&gt;item(r, c);
+                if (tableItem &amp;&amp; tableItem != self)
+                    sum += tableItem-&gt;text().toInt();
+            }
+        }
+
+        result = sum;
+    } else if (op == &quot;+&quot;) {
+        result = (firstVal + secondVal);
+    } else if (op == &quot;-&quot;) {
+        result = (firstVal - secondVal);
+    } else if (op == &quot;*&quot;) {
+        result = (firstVal * secondVal);
+    } else if (op == &quot;/&quot;) {
+        if (secondVal == 0)
+            result = QString(&quot;nan&quot;);
+        else
+            result = (firstVal / secondVal);
+    } else if (op == &quot;=&quot;) {
+        if (start)
+            result = start-&gt;text();
+    } else {
+        result = formula;
+    }
+
+    return result;
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,571 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Places (C++)</db:title>
+<db:productname>QtLocation</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Location Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Location Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>The Places API allows users to discover places/points of interest and view details about them such as address and contact information; some places may even have rich content such as images and reviews. The Places API also facilitates management of places and categories, allowing users to save and remove them.</db:para>
+</db:section>
+<db:section xml:id="place-definition">
+<db:title>Place Definition</db:title>
+<db:para>A place is a point of interest, it could be a favorite restaurant, a park or someone's home. A <db:link xlink:href="qplace.xml">QPlace</db:link> object represents a place by acting as a container for various information about that place.</db:para>
+<db:para>This information can be divided into 2 broad classifications</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Details</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Rich content</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The place details consist of properties of the place, such as the name, location, contact information and so on. When a place is returned during a search, these details are filled in. Sometimes in order to save bandwidth, there are further details about the place that can be retrieved on an individual place by place basis, if the user is interested. The <db:link xlink:href="qplace.xml#detailsFetched">QPlace::detailsFetched</db:link>() function can be queried to see if all available details have been fetched, and if not, <db:link xlink:href="qplacemanager.xml#getPlaceDetails">QPlaceManager::getPlaceDetails</db:link>() can be used to retrieve them. Precisely which details are populated during a search and which need to be fetched individually may vary from provider to provider. See <db:link xlink:href="qtlocation-index.xml#plugin-references-and-parameters">plugin documentation</db:link> for more details.</db:para>
+<db:para>The rich content of a place consists of items such as images, reviews and editorials. Potentially there may be many rich content items, so they are treated separately from the place details. They can be retrieved in a paged fashion via <db:link xlink:href="qplacemanager.xml#getPlaceContent">QPlaceManager::getPlaceContent</db:link>(). If necessary, the content may be assigned to a place so it can act as a convenient container.</db:para>
+</db:section>
+<db:section xml:id="common-operations">
+<db:title>Common Operations</db:title>
+<db:section xml:id="initializing-a-manager">
+<db:title>Initializing a Manager</db:title>
+<db:para>All places functionality is facilitated by a <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> instance. One must specify a <db:link xlink:href="qgeoserviceprovider.xml">QGeoServiceProvider</db:link> in order to create the <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link></db:para>
+<db:programlisting language="cpp">//The &quot;provider name&quot; is used to select a particular provider
+QGeoServiceProvider *provider = new QGeoServiceProvider(&quot;provider name&quot;);
+QPlaceManager *manager = provider-&gt;placeManager();
+</db:programlisting>
+</db:section>
+<db:section xml:id="discovery-search">
+<db:title>Discovery/Search</db:title>
+<db:para>In order to perform a search operation we simply create a <db:link xlink:href="qplacesearchrequest.xml">QPlaceSearchRequest</db:link> and set the desired search parameters, such as a search term and search center.</db:para>
+<db:programlisting language="cpp">//instantiate request and set parameters
+QPlaceSearchRequest searchRequest;
+searchRequest.setSearchTerm(&quot;ice cream&quot;);
+searchRequest.setSearchArea(QGeoCircle(QGeoCoordinate(12.34, 56.78)));
+
+//send off a search request
+/*QPlaceSearchReply * */ searchReply = manager-&gt;search(searchRequest);
+
+//connect a slot to handle the reply
+connect(searchReply, SIGNAL(finished()), this, SLOT(handleSearchReply()));
+
+</db:programlisting>
+<db:para>The request is an asynchronous operation so we need a slot to handle the completion of the request. In the handler we check that there are no errors and that our search result type is a place. If so we can then retrieve some of the core details of the place. At the end of the slot, we delete the reply since they are for single use only.</db:para>
+<db:programlisting language="cpp">void handleSearchReply() {
+    if (searchReply-&gt;error() == QPlaceReply::NoError) {
+        foreach (const QPlaceSearchResult &amp;result, searchReply-&gt;results()) {
+            if (result.type() == QPlaceSearchResult::PlaceResult) {
+                QPlaceResult placeResult = result;
+                qDebug() &lt;&lt; &quot;Name: &quot; &lt;&lt; placeResult.place().name();
+                qDebug() &lt;&lt; &quot;Coordinate &quot; &lt;&lt; placeResult.place().location().coordinate().toString();
+                qDebug() &lt;&lt; &quot;Street: &quot; &lt;&lt; placeResult.place().location().address().street();
+                qDebug() &lt;&lt; &quot;Distance: &quot; &lt;&lt; placeResult.distance();
+            }
+        }
+    }
+    searchReply-&gt;deleteLater();  //discard reply
+    searchReply = 0;
+}
+</db:programlisting>
+<db:para><db:emphasis role="bold">Note:</db:emphasis> Depending upon the plugin backend that was chosen, the search results may contain places which have further details that can be fetched on a place by place basis. To fetch these other details see <db:link xlink:href="location-places-cpp.xml#fetching-place-details">Fetching Place Details</db:link>.</db:para>
+<db:section xml:id="recommendations">
+<db:title>Recommendations</db:title>
+<db:para>Recommendations can be retrieved by supplying a place id via <db:link xlink:href="qplacesearchrequest.xml#setRecommendationId">QPlaceSearchRequest::setRecommendationId</db:link>(). Any places similar to the given place are retrieved.</db:para>
+</db:section>
+<db:section xml:id="paging">
+<db:title>Paging</db:title>
+<db:para>If the plugin supports paging, the limit parameter may be provided to the search request.</db:para>
+<db:programlisting language="cpp">QPlaceSearchRequest searchRequest;
+searchRequest.setLimit(15); //specify how many results are to be retrieved.
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="fetching-place-details">
+<db:title>Fetching Place Details</db:title>
+<db:para>A place that has been returned from a search request may have more details that can be fetched. The following demonstrates how to check if there are further details and if so how to request them.</db:para>
+<db:programlisting language="cpp">if (!place.detailsFetched()) {
+    /*QPlaceDetailsReply * */ detailsReply = manager-&gt;getPlaceDetails(place.placeId());
+    connect(detailsReply, SIGNAL(finished()), this, SLOT(handleDetailsReply()));
+}
+    ...
+    ...
+void handleDetailsReply() {
+    QPlace place;
+    if (detailsReply-&gt;error() == QPlaceReply::NoError)
+        place = detailsReply-&gt;place();
+
+    detailsReply-&gt;deleteLater(); //discard reply
+    detailsReply = 0;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="fetching-rich-content">
+<db:title>Fetching Rich Content</db:title>
+<db:para>Rich content such as images and reviews is retrieved through the manager and then if required assigned to a place.</db:para>
+<db:programlisting language="cpp">QPlaceContentRequest request;
+request.setContentType(QPlaceContent::ImageType);
+request.setPlaceId(place.placeId());
+request.setLimit(5);
+/*QPlaceContentReply * */ contentReply = manager-&gt;getPlaceContent(request);
+connect(contentReply, SIGNAL(finished()), this, SLOT(handleImagesReply()));
+</db:programlisting>
+<db:para>We can handle the content request as shown below.</db:para>
+<db:programlisting language="cpp">void handleImagesReply() {
+    if (contentReply-&gt;error() == QPlaceReply::NoError) {
+        QMapIterator&lt;int, QPlaceContent&gt; iter(contentReply-&gt;content());
+        while (iter.hasNext()) {
+            qDebug() &lt;&lt; &quot;Index: &quot; &lt;&lt; iter.key();
+            QPlaceImage image = iter.value();
+            qDebug() &lt;&lt; image.url();
+            qDebug() &lt;&lt; image.mimeType();
+        }
+
+        //alternatively if indexes are irrelevant
+        foreach (const QPlaceImage &amp;image, contentReply-&gt;content()) {
+            qDebug() &lt;&lt; image.url();
+            qDebug() &lt;&lt; image.mimeType();
+        }
+
+        //we can assign content to the place that it belongs to.
+        //the place object serves as a container where we can retrieve
+        //content that has already been fetched
+        place.insertContent(contentReply-&gt;request().contentType(), contentReply-&gt;content());
+        place.setTotalContentCount(contentReply-&gt;request().contentType(), contentReply-&gt;totalCount());
+    }
+
+    contentReply-&gt;deleteLater();
+    contentReply = 0;
+}
+</db:programlisting>
+<db:para>It is important to note that the results in the <db:link xlink:href="qplacecontentreply.xml">QPlaceContentReply</db:link>, is a <db:link xlink:href="qplacecontent.xml#Collection-typedef">QPlaceContent::Collection</db:link> which is essentially a <db:link xlink:href="qmap.xml">QMap</db:link>&lt;int, <db:link xlink:href="qplacecontent.xml">QPlaceContent</db:link>&gt;. The key <db:code>int</db:code> in this case is the index of the content, and the value is the content itself. Due to the way Content is implemented it is possible to convert a content type as follows</db:para>
+<db:programlisting language="cpp">QPlaceImage image = content; //provided that 'content' has a type QPlace::ImageType
+</db:programlisting>
+<db:para>The usage of the <db:link xlink:href="qplacecontent.xml#Collection-typedef">QPlaceContent::Collection</db:link> and the conversion between content and its subtypes means that code for handling the mechanics of paging reviews, images and editorials can be easily shared.</db:para>
+</db:section>
+<db:section xml:id="search-suggestions">
+<db:title>Search Suggestions</db:title>
+<db:para>The retrieval of search term suggestions is very similar to performing a place search. A <db:link xlink:href="qplacesearchrequest.xml">QPlaceSearchRequest</db:link> is used just like a place search, the only difference being that the search term is set to a partially completed string.</db:para>
+<db:programlisting language="cpp">QPlaceSearchRequest request;
+request.setSearchTerm(&quot;piz&quot;);
+request.setSearchArea(QGeoCircle(QGeoCoordinate(12.34, 56.78)));
+/* QPlaceSearchSuggestion * */suggestionReply = manager-&gt;searchSuggestions(request);
+connect(suggestionReply, SIGNAL(finished()), this, SLOT(handleSuggestionReply()));
+</db:programlisting>
+<db:para>And when the request is done, we can use the reply to show the suggestions.</db:para>
+<db:programlisting language="cpp">void handleSuggestionReply() {
+    if (suggestionReply-&gt;error() == QPlaceReply::NoError) {
+        foreach (const QString &amp;suggestion, suggestionReply-&gt;suggestions())
+            qDebug() &lt;&lt; suggestion;
+    }
+
+    suggestionReply-&gt;deleteLater(); //discard reply
+    suggestionReply = 0;
+}
+
+</db:programlisting>
+<db:anchor xml:id="saving-a-place-cpp"/>
+</db:section>
+<db:section xml:id="saving-a-place">
+<db:title>Saving a Place</db:title>
+<db:para>The saving of a new place is performed as follows, we create a <db:link xlink:href="qplace.xml">QPlace</db:link> instance and populate it with information such as a name, address and coordinate. Once done we can invoke <db:link xlink:href="qplacemanager.xml#savePlace">QPlaceManager::savePlace</db:link>() to begin a save operation.</db:para>
+<db:programlisting language="cpp">QPlace  place;
+place.setName( &quot;Fred's Ice Cream Parlor&quot; );
+
+QGeoLocation location;
+location.setCoordinate(QGeoCoordinate(12.34, 56.78));
+
+QGeoAddress address;
+address.setStreet(&quot;111 Nother Street&quot;);
+    ...
+location.setAddress(address);
+place.setLocation(location);
+
+/* QPlaceIdReply * */savePlaceReply = manager-&gt;savePlace(place);
+connect(savePlaceReply, SIGNAL(finished()), this, SLOT(handleSavePlaceReply()));
+</db:programlisting>
+<db:para>Once a place is saved the reply contains the new identifier for that place.</db:para>
+<db:programlisting language="cpp">void handleSavePlaceReply() {
+    if (savePlaceReply-&gt;error() == QPlaceReply::NoError)
+        qDebug() &lt;&lt; savePlaceReply-&gt;id();
+
+    savePlaceReply-&gt;deleteLater(); //discard reply
+    savePlaceReply = 0;
+}
+</db:programlisting>
+<db:para>Note that to save an already <db:emphasis>existing</db:emphasis> place, the <db:link xlink:href="qplace.xml#placeId">QPlace::placeId</db:link>() must be filled in with the correct identifier. Otherwise a new place will be created if empty or the wrong place overwritten if the identifier is incorrect.</db:para>
+<db:para>When a place is saved, the <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> may emit QPlaceManager::placedAdded() or <db:link xlink:href="qplacemanager.xml#placeUpdated">QPlaceManager::placeUpdated</db:link>() signals. However whether a manager does so or not is provider specific, managers accessing places from a web service will typically not emit these signals while managers accessing places locally stored generally will.</db:para>
+<db:section xml:id="caveats">
+<db:title>Caveats</db:title>
+<db:para>The Places API is currently designed for only saving <db:code role="parameter">core</db:code> details. Saving rich content like images and reviews or details like supplier and rating is not a supported use case. Typically a manager will generally ignore these fields upon save and may produce a warning message if they are populated.</db:para>
+<db:para>The Places API only supports saving of the following <db:emphasis>core details</db:emphasis>:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>name</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>place id</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>location</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>contact details</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>icon</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>categories (tag-like names to describe a place)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>visibility scope</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>It is possible that providers may only support a subset of these. See the <db:link xlink:href="qtlocation-index.xml#plugin-references-and-parameters">plugin documentation</db:link> for more details.</db:para>
+<db:para>Saving of properties such as the rating, extended attributes, images, reviews, editorials and supplier is explicitly not supported by the Places API.</db:para>
+</db:section>
+<db:section xml:id="saving-between-managers">
+<db:title>Saving Between Managers</db:title>
+<db:para>When saving places between managers, there are a few things to be aware of. Some fields of a place such as the id, categories and icons are manager specific entities for example the categories in one manager may not be recognized in another. Therefore trying to save a place directly from one manager to another is not possible.</db:para>
+<db:para>The typical approach is to use the <db:link xlink:href="qplacemanager.xml#compatiblePlace">QPlaceManager::compatiblePlace</db:link>() function, it creates a copy of a place, but only copies data that the manager supports. Manager specific data such as the place identifier is not copied over. The new copy is now suitable for saving into the manager. If the manager supports matching by alternative identifiers, an alternative identifier attribute is assigned to the copy (see <db:link xlink:href="location-places-cpp.xml#matching-places-between-managers">Matching places between managers</db:link>)</db:para>
+<db:programlisting language="cpp">//result retrieved from a different manager)
+QPlace place = manager-&gt;compatiblePlace(result.place());
+saveReply = manager-&gt;savePlace(place);
+</db:programlisting>
+<db:anchor xml:id="removing-a-place-cpp"/>
+</db:section>
+</db:section>
+<db:section xml:id="removing-a-place">
+<db:title>Removing a Place</db:title>
+<db:para>The removal of a place is performed as follows:</db:para>
+<db:programlisting language="cpp">/* QPlaceIdReply * */removePlaceReply = manager-&gt;removePlace(place.placeId());
+connect(removePlaceReply, SIGNAL(finished()), this, SLOT(handleRemovePlaceReply()));
+    ...
+    ...
+void handleRemovePlaceReply() {
+    if (removePlaceReply-&gt;error() == QPlaceReply::NoError)
+        qDebug() &lt;&lt; &quot;Removal of place identified by&quot;
+                 &lt;&lt; removePlaceReply-&gt;id() &lt;&lt; &quot;was successful&quot;;
+
+    removePlaceReply-&gt;deleteLater(); //discard reply
+    removePlaceReply = 0;
+}
+</db:programlisting>
+<db:para>When a place is removed, the <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> may emit the <db:link xlink:href="qplacemanager.xml#placeRemoved">QPlaceManager::placeRemoved</db:link>() signal. Whether a manager does so is provider specific. Managers accessing places from a web service will typically not emit these signals, while managers accessing places stored locally generally will.</db:para>
+</db:section>
+<db:section xml:id="using-categories">
+<db:title>Using Categories</db:title>
+<db:para>Categories are keywords that can describe a place. For example, 'park', 'theater', 'restaurant'. A place could be described by many categories, it could be a park and a music venue and a ferry or bus stop.</db:para>
+<db:para>To use categories they must first be initialized.</db:para>
+<db:programlisting language="cpp">/* QPlaceReply * */initCatReply = manager-&gt;initializeCategories();
+connect(initCatReply, SIGNAL(finished()), this, SLOT(handleInitCatReply()));
+    ...
+    ...
+void handleInitCatReply() {
+    if (initCatReply-&gt;error() == QPlaceReply::NoError)
+        qDebug() &lt;&lt; &quot;Categories initialized&quot;;
+    else
+        qDebug() &lt;&lt; &quot;Failed to initialize categories&quot;;
+
+    initCatReply-&gt;deleteLater();
+    initCatReply = 0;
+}
+</db:programlisting>
+<db:para>After the categories have been initialized we can then use these category functions.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qplacemanager.xml#childCategories">QPlaceManager::childCategories</db:link>()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qplacemanager.xml#category">QPlaceManager::category</db:link>()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qplacemanager.xml#parentCategoryId">QPlaceManager::parentCategoryId</db:link>()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qplacemanager.xml#childCategoryIds">QPlaceManager::childCategoryIds</db:link>();</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>To retrieve the top level categories we use the <db:link xlink:href="qplacemanager.xml#childCategories">QPlaceManager::childCategories</db:link>() function but do not provide a category identifier.</db:para>
+<db:programlisting language="cpp">QList&lt;QPlaceCategory&gt; topLevelCategories = manager-&gt;childCategories();
+foreach (const QPlaceCategory &amp;category, topLevelCategories)
+    qDebug() &lt;&lt; category.name();
+</db:programlisting>
+<db:para>If we did provide an identifier then we could retrieve a category's children.</db:para>
+<db:programlisting language="cpp">QList&lt;QPlaceCategory&gt; childCategories = manager-&gt;childCategories(pizza.categoryId());
+</db:programlisting>
+</db:section>
+<db:section xml:id="saving-a-category">
+<db:title>Saving a Category</db:title>
+<db:para>The following shows how to save a category</db:para>
+<db:programlisting language="cpp">QPlaceCategory fastFood;
+
+QPlaceCategory category;
+category.setName(&quot;pizza&quot;);
+/*QPlaceIdReply */ saveCategoryReply = manager-&gt;saveCategory(category);
+connect(saveCategoryReply, SIGNAL(finished()), this, SLOT(handleSaveCategoryReply()));
+
+//we could have saved a category as a child by supplying a parent identifier.
+saveCategoryReply = manager-&gt;saveCategory(category, fastFood.categoryId());
+    ...
+    ...
+void handleSaveCategoryReply() {
+    if (saveCategoryReply-&gt;error() == QPlaceReply::NoError) {
+        qDebug() &lt;&lt; &quot;Saved category id =&quot; &lt;&lt; saveCategoryReply-&gt;id();
+    }
+
+    saveCategoryReply-&gt;deleteLater();
+    saveCategoryReply = 0;
+}
+</db:programlisting>
+<db:para>When a category is saved, the <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> may emit <db:link xlink:href="qplacemanager.xml#categoryAdded">QPlaceManager::categoryAdded</db:link>() or <db:link xlink:href="qplacemanager.xml#categoryUpdated">QPlaceManager::categoryUpdated</db:link>() signals. However whether a manager does so or not is provider specific, managers accessing places from a web service will typically not emit these signals while managers accessing places locally stored generally will.</db:para>
+</db:section>
+<db:section xml:id="removing-a-category">
+<db:title>Removing a Category</db:title>
+<db:para>Category removal is very similar to removing a place</db:para>
+<db:programlisting language="cpp">/* QPlaceIdReply * */removeCategoryReply = manager-&gt;removeCategory(place.placeId());
+connect(removeCategoryReply, SIGNAL(finished()), this, SLOT(handleRemoveCategoryReply()));
+    ...
+    ...
+void handleRemoveCategoryReply() {
+    if (removeCategoryReply-&gt;error() == QPlaceReply::NoError)
+        qDebug() &lt;&lt; &quot;Removal of category identified by&quot;
+                 &lt;&lt; removeCategoryReply-&gt;id() &lt;&lt; &quot;was successful&quot;;
+
+    removeCategoryReply-&gt;deleteLater(); //discard reply
+    removeCategoryReply = 0;
+}
+</db:programlisting>
+<db:para>When a category is removed, the <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> may emit the <db:link xlink:href="qplacemanager.xml#categoryRemoved">QPlaceManager::categoryRemoved</db:link>() signal. Whether a manager does so is provider specific. Managers accessing places from a web service will typically not emit these signals, while managers accessing places stored locally generally will.</db:para>
+</db:section>
+<db:section xml:id="matching-places-between-managers">
+<db:title>Matching Places Between Managers</db:title>
+<db:para>Sometimes you may want to cross reference whether places from one manager match those from another manager. Such a situation may arise where one manager provides read-only access to places (origin manager) while another second r/w manager (destination manager) is used to save selected favorites from the first. During a search of the origin manager we may want to know which ones have been 'favorited' into the destination manager and perhaps display a customized favorite name rather than the original name.</db:para>
+<db:para>The matching mechanism can vary between managers, but is typically accomplished through an alternative identifier. As part of the save process, the place identifier from the origin manager is saved as an alternative identifier attribute in the destination manager (which can have its own place identifier scheme). In the following example, the origin manager is from the 'here' QGeoServiceProider, therefore as part of the saving process an alternative identifier attribute, x_id_here, is set for the place saved into the destination manager (when <db:link xlink:href="qplacemanager.xml#compatiblePlace">QPlaceManager::compatiblePlace</db:link>() is called)</db:para>
+<db:programlisting language="cpp">origin R/O manager(here)       destination R/W manager (places_jsondb)
+                        Save
+Place id: ae246         ---&gt;    Place id: 0001
+Attribute type: x_provider      Attribute type: x_id_here
+Attribute value: here           Attribute text value: ae246
+</db:programlisting>
+<db:para>In order to perform the matching, we create a <db:link xlink:href="qplacematchrequest.xml">QPlaceMatchRequest</db:link> and assign it the search results from the origin manager. The <db:link xlink:href="qplacematchrequest.xml">QPlaceMatchRequest</db:link> will be used on the destination manager to return corresponding places. We also specify matching parameters which are key value pairs. As mentioned previously, this can vary depending on the manager but typically the key is <db:link xlink:href="qplacematchrequest.xml#AlternativeId-var">QPlaceMatchRequest::AlternativeId</db:link> to indicate we are matching by alternative id, the value in this case would be x_id_here which specifies which alternative identifier attribute we are using to do the matching.</db:para>
+<db:programlisting language="cpp">QPlaceMatchRequest request;
+request.setResults(results);
+QVariantMap parameters;
+parameters.insert(QPlaceMatchRequest::AlternativeId, &quot;x_id_here&quot;);
+request.setParameters(parameters);
+matchReply = manager-&gt;matchingPlaces(request);
+    ...
+    ...
+void matchHandler() {
+    if (matchReply-&gt;error() == QPlaceReply::NoError) {
+        foreach (const QPlace place, matchReply-&gt;places()) {
+            if (place != QPlace())
+                qDebug() &lt;&lt; &quot;Place is a favorite with name&quot; &lt;&lt; place.name();
+            else
+                qDebug() &lt;&lt; &quot;Place is not a favorite&quot;;
+        }
+    }
+
+    matchReply-&gt;deleteLater();
+    matchReply = 0;
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="classes-in-places">
+<db:title>Classes in Places</db:title>
+<db:section xml:id="data-classes">
+<db:title>Data Classes</db:title>
+<db:variablelist role="QtLocation-places-data">
+<db:varlistentry>
+<db:term><db:link xlink:href="qplace.xml" xlink:role="class">QPlace</db:link></db:term>
+<db:listitem>
+<db:para>The QPlace class represents a set of data about a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceattribute.xml" xlink:role="class">QPlaceAttribute</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceAttribute class represents generic attribute information about a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacecategory.xml" xlink:role="class">QPlaceCategory</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceCategory class represents a category that a QPlace can be associated with.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacecontactdetail.xml" xlink:role="class">QPlaceContactDetail</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceContactDetail class represents a contact detail such as a phone number or website url.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacecontent.xml" xlink:role="class">QPlaceContent</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceContent class serves as the base class for rich content types.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceeditorial.xml" xlink:role="class">QPlaceEditorial</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceEditorial class represents a publisher's article describing a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceicon.xml" xlink:role="class">QPlaceIcon</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceIcon class represents an icon.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceimage.xml" xlink:role="class">QPlaceImage</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceImage class represents a reference to an image.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceproposedsearchresult.xml" xlink:role="class">QPlaceProposedSearchResult</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceProposedSearchResult class represents a search result containing a proposed search.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceratings.xml" xlink:role="class">QPlaceRatings</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceRatings class holds rating information about a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceresult.xml" xlink:role="class">QPlaceResult</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceResult class represents a search result containing a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacereview.xml" xlink:role="class">QPlaceReview</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceReview class represents a review of a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacesearchresult.xml" xlink:role="class">QPlaceSearchResult</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceSearchResult class is the base class for search results.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacesupplier.xml" xlink:role="class">QPlaceSupplier</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceSupplier class represents a supplier of a place or content associated with a place.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceuser.xml" xlink:role="class">QPlaceUser</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceUser class represents an individual user.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:section>
+<db:section xml:id="request-classes">
+<db:title>Request Classes</db:title>
+<db:variablelist role="QtLocation-places-requests">
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacecontentrequest.xml" xlink:role="class">QPlaceContentRequest</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceContentRequest class represents the parameters of a content request.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacematchrequest.xml" xlink:role="class">QPlaceMatchRequest</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceMatchRequest class is used to find places from one manager that match those from another. It represents a set of request parameters.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacesearchrequest.xml" xlink:role="class">QPlaceSearchRequest</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceSearchRequest class represents the set of parameters for a search request.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:anchor xml:id="places-reply-classes"/>
+</db:section>
+<db:section xml:id="reply-classes">
+<db:title>Reply classes</db:title>
+<db:variablelist role="QtLocation-places-replies">
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacecontentreply.xml" xlink:role="class">QPlaceContentReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceContentReply class manages a content retrieval operation started by an instance of QPlaceManager.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacedetailsreply.xml" xlink:role="class">QPlaceDetailsReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceDetailsReply class manages a place details fetch operation started by an instance of QPlaceManager.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplaceidreply.xml" xlink:role="class">QPlaceIdReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceIdReply class manages operations which return an identifier such as saving and removal operations of places and categories.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacematchreply.xml" xlink:role="class">QPlaceMatchReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceMatchReply class manages a place matching operation started by an instance of QPlaceManager.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacereply.xml" xlink:role="class">QPlaceReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceReply class manages an operation started by an instance of QPlaceManager and serves as a base class for more specialized replies.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacesearchreply.xml" xlink:role="class">QPlaceSearchReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceSearchReply class manages a place search operation started by an instance of QPlaceManager.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacesearchsuggestionreply.xml" xlink:role="class">QPlaceSearchSuggestionReply</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceSearchSuggestionReply class manages a search suggestion operation started by an instance of QPlaceManager.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:section>
+<db:section xml:id="manager-classes">
+<db:title>Manager Classes</db:title>
+<db:variablelist role="QtLocation-places-manager">
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacemanager.xml" xlink:role="class">QPlaceManager</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceManager class provides the interface which allows clients to access places stored in a particular backend.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qplacemanagerengine.xml" xlink:role="class">QPlaceManagerEngine</db:link></db:term>
+<db:listitem>
+<db:para>The QPlaceManagerEngine class provides an interface for implementers of QGeoServiceProvider plugins who want to provide access to place functionality.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:section>
+</db:section>
+</db:article>
