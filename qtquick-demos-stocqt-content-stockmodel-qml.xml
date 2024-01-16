@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick Demo - StocQt</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A configurable stock chart for the NASDAQ-100.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+import QtQuick 2.0
+
+ListModel {
+    id: model
+    property string stockId: &quot;&quot;
+    property string stockName: &quot;&quot;
+    property string stockDataCycle: &quot;d&quot;
+    property bool ready: false
+    property real stockPrice: 0.0
+    property real stockPriceChanged: 0.0
+
+    signal dataReady
+
+    function indexOf(date) {
+        var newest = new Date(model.get(0).date);
+        var oldest = new Date(model.get(model.count - 1).date);
+        if (newest &lt;= date)
+            return -1;
+
+        if (oldest &gt;= date)
+            return model.count - 1;
+
+        var currDiff = 0;
+        var bestDiff = Math.abs(date.getTime() - newest.getTime());
+        var retval = 0;
+        for (var i = 0; i &lt; model.count; i++) {
+            var d = new Date(model.get(i).date);
+            currDiff = Math.abs(d.getTime() - date.getTime());
+            if (currDiff &lt; bestDiff) {
+                bestDiff = currDiff;
+                retval = i;
+            }
+            if (currDiff &gt; bestDiff)
+                return retval;
+        }
+
+        return -1;
+    }
+
+    function requestUrl() {
+        if (stockId === &quot;&quot;)
+            return;
+
+        var startDate = new Date(2011, 4, 25);
+
+        var endDate = new Date(); //today
+
+        if (stockDataCycle !== &quot;d&quot; &amp;&amp; stockDataCycle !== &quot;w&quot; &amp;&amp; stockDataCycle !== &quot;m&quot;)
+            stockDataCycle = &quot;d&quot;;
+
+        /*
+            Fetch stock data from yahoo finance:
+             url: http://ichart.finance.yahoo.com/table.csv?s=NOK&amp;a=5&amp;b=11&amp;c=2010&amp;d=7&amp;e=23&amp;f=2010&amp;g=d&amp;ignore=.csv
+                s:stock name/id, a:start day, b:start month, c:start year  default: 25 April 1995, oldest c= 1962
+                d:end day, e:end month, f:end year, default:today  (data only available 3 days before today)
+                g:data cycle(d daily,  w weekly, m monthly, v Dividend)
+          */
+        var request = &quot;http://ichart.finance.yahoo.com/table.csv?&quot;;
+        request += &quot;s=&quot; + stockId;
+        request += &quot;&amp;a=&quot; + startDate.getMonth();
+        request += &quot;&amp;b=&quot; + startDate.getDate();
+        request += &quot;&amp;c=&quot; + startDate.getFullYear();
+        request += &quot;&amp;d=&quot; + endDate.getMonth();
+        request += &quot;&amp;e=&quot; + endDate.getDate();
+        request += &quot;&amp;f=&quot; + endDate.getFullYear();
+        request += &quot;&amp;g=&quot; + stockDataCycle;
+        request += &quot;&amp;ignore=.csv&quot;;
+        return request;
+    }
+
+    function createStockPrice(r) {
+        return {
+                &quot;date&quot;: r[0],
+                &quot;open&quot;:r[1],
+                &quot;high&quot;:r[2],
+                &quot;low&quot;:r[3],
+                &quot;close&quot;:r[4],
+                &quot;volume&quot;:r[5],
+                &quot;adjusted&quot;:r[6]
+               };
+    }
+
+    function updateStock() {
+        var req = requestUrl();
+
+        if (!req)
+            return;
+
+        var xhr = new XMLHttpRequest;
+
+        xhr.open(&quot;GET&quot;, req, true);
+
+        model.ready = false;
+        model.clear();
+        var i = 1; //skip the first line
+        xhr.onreadystatechange = function() {
+            if (xhr.readyState === XMLHttpRequest.LOADING || xhr.readyState === XMLHttpRequest.DONE) {
+                var records = xhr.responseText.split('\n');
+
+                for (;i &lt; records.length; i++ ) {
+                    var r = records[i].split(',');
+                    if (r.length === 7)
+                        model.append(createStockPrice(r));
+                }
+
+                if (xhr.readyState === XMLHttpRequest.DONE) {
+                    if (model.count &gt; 0) {
+                        model.ready = true;
+                        model.stockPrice = model.get(0).adjusted;
+                        model.stockPriceChanged = model.count &gt; 1 ? (Math.round((model.stockPrice - model.get(1).close) * 100) / 100) : 0;
+                        model.dataReady(); //emit signal
+                    }
+                }
+            }
+        }
+        xhr.send()
+    }
+}
+
+</db:programlisting>
+</db:article>

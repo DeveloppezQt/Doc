@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Blocking Fortune Client Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create a client for a network service.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+#include &lt;QtNetwork&gt;
+
+#include &quot;blockingclient.h&quot;
+
+BlockingClient::BlockingClient(QWidget *parent)
+    : QWidget(parent)
+{
+    hostLabel = new QLabel(tr(&quot;&amp;Server name:&quot;));
+    portLabel = new QLabel(tr(&quot;S&amp;erver port:&quot;));
+
+    // find out which IP to connect to
+    QString ipAddress;
+    QList&lt;QHostAddress&gt; ipAddressesList = QNetworkInterface::allAddresses();
+    // use the first non-localhost IPv4 address
+    for (int i = 0; i &lt; ipAddressesList.size(); ++i) {
+        if (ipAddressesList.at(i) != QHostAddress::LocalHost &amp;&amp;
+            ipAddressesList.at(i).toIPv4Address()) {
+            ipAddress = ipAddressesList.at(i).toString();
+            break;
+        }
+    }
+    // if we did not find one, use IPv4 localhost
+    if (ipAddress.isEmpty())
+        ipAddress = QHostAddress(QHostAddress::LocalHost).toString();
+
+    hostLineEdit = new QLineEdit(ipAddress);
+    portLineEdit = new QLineEdit;
+    portLineEdit-&gt;setValidator(new QIntValidator(1, 65535, this));
+
+    hostLabel-&gt;setBuddy(hostLineEdit);
+    portLabel-&gt;setBuddy(portLineEdit);
+
+    statusLabel = new QLabel(tr(&quot;This examples requires that you run the &quot;
+                                &quot;Fortune Server example as well.&quot;));
+    statusLabel-&gt;setWordWrap(true);
+
+    getFortuneButton = new QPushButton(tr(&quot;Get Fortune&quot;));
+    getFortuneButton-&gt;setDefault(true);
+    getFortuneButton-&gt;setEnabled(false);
+
+    quitButton = new QPushButton(tr(&quot;Quit&quot;));
+
+    buttonBox = new QDialogButtonBox;
+    buttonBox-&gt;addButton(getFortuneButton, QDialogButtonBox::ActionRole);
+    buttonBox-&gt;addButton(quitButton, QDialogButtonBox::RejectRole);
+
+    connect(getFortuneButton, SIGNAL(clicked()), this, SLOT(requestNewFortune()));
+    connect(quitButton, SIGNAL(clicked()), this, SLOT(close()));
+
+    connect(hostLineEdit, SIGNAL(textChanged(QString)),
+            this, SLOT(enableGetFortuneButton()));
+    connect(portLineEdit, SIGNAL(textChanged(QString)),
+            this, SLOT(enableGetFortuneButton()));
+    connect(&amp;thread, SIGNAL(newFortune(QString)),
+            this, SLOT(showFortune(QString)));
+    connect(&amp;thread, SIGNAL(error(int,QString)),
+            this, SLOT(displayError(int,QString)));
+
+    QGridLayout *mainLayout = new QGridLayout;
+    mainLayout-&gt;addWidget(hostLabel, 0, 0);
+    mainLayout-&gt;addWidget(hostLineEdit, 0, 1);
+    mainLayout-&gt;addWidget(portLabel, 1, 0);
+    mainLayout-&gt;addWidget(portLineEdit, 1, 1);
+    mainLayout-&gt;addWidget(statusLabel, 2, 0, 1, 2);
+    mainLayout-&gt;addWidget(buttonBox, 3, 0, 1, 2);
+    setLayout(mainLayout);
+
+    setWindowTitle(tr(&quot;Blocking Fortune Client&quot;));
+    portLineEdit-&gt;setFocus();
+}
+
+void BlockingClient::requestNewFortune()
+{
+    getFortuneButton-&gt;setEnabled(false);
+    thread.requestNewFortune(hostLineEdit-&gt;text(),
+                             portLineEdit-&gt;text().toInt());
+}
+
+void BlockingClient::showFortune(const QString &amp;nextFortune)
+{
+    if (nextFortune == currentFortune) {
+        requestNewFortune();
+        return;
+    }
+
+    currentFortune = nextFortune;
+    statusLabel-&gt;setText(currentFortune);
+    getFortuneButton-&gt;setEnabled(true);
+}
+
+void BlockingClient::displayError(int socketError, const QString &amp;message)
+{
+    switch (socketError) {
+    case QAbstractSocket::HostNotFoundError:
+        QMessageBox::information(this, tr(&quot;Blocking Fortune Client&quot;),
+                                 tr(&quot;The host was not found. Please check the &quot;
+                                    &quot;host and port settings.&quot;));
+        break;
+    case QAbstractSocket::ConnectionRefusedError:
+        QMessageBox::information(this, tr(&quot;Blocking Fortune Client&quot;),
+                                 tr(&quot;The connection was refused by the peer. &quot;
+                                    &quot;Make sure the fortune server is running, &quot;
+                                    &quot;and check that the host name and port &quot;
+                                    &quot;settings are correct.&quot;));
+        break;
+    default:
+        QMessageBox::information(this, tr(&quot;Blocking Fortune Client&quot;),
+                                 tr(&quot;The following error occurred: %1.&quot;)
+                                 .arg(message));
+    }
+
+    getFortuneButton-&gt;setEnabled(true);
+}
+
+void BlockingClient::enableGetFortuneButton()
+{
+    bool enable(!hostLineEdit-&gt;text().isEmpty() &amp;&amp; !portLineEdit-&gt;text().isEmpty());
+    getFortuneButton-&gt;setEnabled(enable);
+}
+
+</db:programlisting>
+</db:article>

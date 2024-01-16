@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Google Suggest Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Obtains the list of search recommendations by the Google search engine.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;googlesuggest.h&quot;
+
+#define GSUGGEST_URL &quot;http://google.com/complete/search?output=toolbar&amp;q=%1&quot;
+
+GSuggestCompletion::GSuggestCompletion(QLineEdit *parent): QObject(parent), editor(parent)
+{
+    popup = new QTreeWidget;
+    popup-&gt;setWindowFlags(Qt::Popup);
+    popup-&gt;setFocusPolicy(Qt::NoFocus);
+    popup-&gt;setFocusProxy(parent);
+    popup-&gt;setMouseTracking(true);
+
+    popup-&gt;setColumnCount(1);
+    popup-&gt;setUniformRowHeights(true);
+    popup-&gt;setRootIsDecorated(false);
+    popup-&gt;setEditTriggers(QTreeWidget::NoEditTriggers);
+    popup-&gt;setSelectionBehavior(QTreeWidget::SelectRows);
+    popup-&gt;setFrameStyle(QFrame::Box | QFrame::Plain);
+    popup-&gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    popup-&gt;header()-&gt;hide();
+
+    popup-&gt;installEventFilter(this);
+
+    connect(popup, SIGNAL(itemClicked(QTreeWidgetItem*,int)),
+            SLOT(doneCompletion()));
+
+    timer = new QTimer(this);
+    timer-&gt;setSingleShot(true);
+    timer-&gt;setInterval(500);
+    connect(timer, SIGNAL(timeout()), SLOT(autoSuggest()));
+    connect(editor, SIGNAL(textEdited(QString)), timer, SLOT(start()));
+
+    connect(&amp;networkManager, SIGNAL(finished(QNetworkReply*)),
+            this, SLOT(handleNetworkData(QNetworkReply*)));
+
+}
+
+GSuggestCompletion::~GSuggestCompletion()
+{
+    delete popup;
+}
+
+bool GSuggestCompletion::eventFilter(QObject *obj, QEvent *ev)
+{
+    if (obj != popup)
+        return false;
+
+    if (ev-&gt;type() == QEvent::MouseButtonPress) {
+        popup-&gt;hide();
+        editor-&gt;setFocus();
+        return true;
+    }
+
+    if (ev-&gt;type() == QEvent::KeyPress) {
+
+        bool consumed = false;
+        int key = static_cast&lt;QKeyEvent*&gt;(ev)-&gt;key();
+        switch (key) {
+        case Qt::Key_Enter:
+        case Qt::Key_Return:
+            doneCompletion();
+            consumed = true;
+
+        case Qt::Key_Escape:
+            editor-&gt;setFocus();
+            popup-&gt;hide();
+            consumed = true;
+
+        case Qt::Key_Up:
+        case Qt::Key_Down:
+        case Qt::Key_Home:
+        case Qt::Key_End:
+        case Qt::Key_PageUp:
+        case Qt::Key_PageDown:
+            break;
+
+        default:
+            editor-&gt;setFocus();
+            editor-&gt;event(ev);
+            popup-&gt;hide();
+            break;
+        }
+
+        return consumed;
+    }
+
+    return false;
+}
+
+void GSuggestCompletion::showCompletion(const QStringList &amp;choices)
+{
+
+    if (choices.isEmpty())
+        return;
+
+    const QPalette &amp;pal = editor-&gt;palette();
+    QColor color = pal.color(QPalette::Disabled, QPalette::WindowText);
+
+    popup-&gt;setUpdatesEnabled(false);
+    popup-&gt;clear();
+    for (int i = 0; i &lt; choices.count(); ++i) {
+        QTreeWidgetItem * item;
+        item = new QTreeWidgetItem(popup);
+        item-&gt;setText(0, choices[i]);
+        item-&gt;setTextColor(0, color);
+    }
+    popup-&gt;setCurrentItem(popup-&gt;topLevelItem(0));
+    popup-&gt;resizeColumnToContents(0);
+    popup-&gt;setUpdatesEnabled(true);
+
+    popup-&gt;move(editor-&gt;mapToGlobal(QPoint(0, editor-&gt;height())));
+    popup-&gt;setFocus();
+    popup-&gt;show();
+}
+
+void GSuggestCompletion::doneCompletion()
+{
+    timer-&gt;stop();
+    popup-&gt;hide();
+    editor-&gt;setFocus();
+    QTreeWidgetItem *item = popup-&gt;currentItem();
+    if (item) {
+        editor-&gt;setText(item-&gt;text(0));
+        QMetaObject::invokeMethod(editor, &quot;returnPressed&quot;);
+    }
+}
+
+void GSuggestCompletion::autoSuggest()
+{
+    QString str = editor-&gt;text();
+    QString url = QString(GSUGGEST_URL).arg(str);
+    networkManager.get(QNetworkRequest(QString(url)));
+}
+
+void GSuggestCompletion::preventSuggest()
+{
+    timer-&gt;stop();
+}
+
+void GSuggestCompletion::handleNetworkData(QNetworkReply *networkReply)
+{
+    QUrl url = networkReply-&gt;url();
+    if (!networkReply-&gt;error()) {
+        QStringList choices;
+
+        QByteArray response(networkReply-&gt;readAll());
+        QXmlStreamReader xml(response);
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.tokenType() == QXmlStreamReader::StartElement)
+                if (xml.name() == &quot;suggestion&quot;) {
+                    QStringRef str = xml.attributes().value(&quot;data&quot;);
+                    choices &lt;&lt; str.toString();
+                }
+        }
+
+        showCompletion(choices);
+    }
+
+    networkReply-&gt;deleteLater();
+}
+
+</db:programlisting>
+</db:article>

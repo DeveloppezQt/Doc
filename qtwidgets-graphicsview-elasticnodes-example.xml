@@ -1,0 +1,611 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Elastic Nodes Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to interact with graphical items in a scene.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Elastic Nodes example shows how to implement edges between nodes in a graph, with basic interaction. You can click to drag a node around, and zoom in and out using the mouse wheel or the keyboard. Hitting the space bar will randomize the nodes. The example is also resolution independent; as you zoom in, the graphics remain crisp.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/elasticnodes-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Graphics View provides the QGraphicsScene class for managing and interacting with a large number of custom-made 2D graphical items derived from the QGraphicsItem class, and a QGraphicsView widget for visualizing the items, with support for zooming and rotation.</db:para>
+<db:para>This example consists of a <db:code>Node</db:code> class, an <db:code>Edge</db:code> class, a <db:code>GraphWidget</db:code> test, and a <db:code>main</db:code> function: the <db:code>Node</db:code> class represents draggable yellow nodes in a grid, the <db:code>Edge</db:code> class represents the lines between the nodes, the <db:code>GraphWidget</db:code> class represents the application window, and the <db:code>main()</db:code> function creates and shows this window, and runs the event loop.</db:para>
+<db:section xml:id="node-class-definition">
+<db:title>Node Class Definition</db:title>
+<db:para>The <db:code>Node</db:code> class serves three purposes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Painting a yellow gradient &quot;ball&quot; in two states: sunken and raised.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Managing connections to other nodes.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Calculating forces pulling and pushing the nodes in the grid.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Let's start by looking at the <db:code>Node</db:code> class declaration.</db:para>
+<db:programlisting language="cpp">class Node : public QGraphicsItem
+{
+public:
+    Node(GraphWidget *graphWidget);
+
+    void addEdge(Edge *edge);
+    QList&lt;Edge *&gt; edges() const;
+
+    enum { Type = UserType + 1 };
+    int type() const Q_DECL_OVERRIDE { return Type; }
+
+    void calculateForces();
+    bool advance();
+
+    QRectF boundingRect() const Q_DECL_OVERRIDE;
+    QPainterPath shape() const Q_DECL_OVERRIDE;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) Q_DECL_OVERRIDE;
+
+protected:
+    QVariant itemChange(GraphicsItemChange change, const QVariant &amp;value) Q_DECL_OVERRIDE;
+
+    void mousePressEvent(QGraphicsSceneMouseEvent *event) Q_DECL_OVERRIDE;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) Q_DECL_OVERRIDE;
+
+private:
+    QList&lt;Edge *&gt; edgeList;
+    QPointF newPos;
+    GraphWidget *graph;
+};
+</db:programlisting>
+<db:para>The <db:code>Node</db:code> class inherits QGraphicsItem, and reimplements the two mandatory functions <db:link xlink:href="">boundingRect()</db:link> and <db:link xlink:href="">paint()</db:link> to provide its visual appearance. It also reimplements <db:link xlink:href="">shape()</db:link> to ensure its hit area has an elliptic shape (as opposed to the default bounding rectangle).</db:para>
+<db:para>For edge management purposes, the node provides a simple API for adding edges to a node, and for listing all connected edges.</db:para>
+<db:para>The <db:link xlink:href="">advance()</db:link> reimplementation is called whenever the scene's state advances by one step. The calculateForces() function is called to calculate the forces that push and pull on this node and its neighbors.</db:para>
+<db:para>The <db:code>Node</db:code> class also reimplements <db:link xlink:href="">itemChange()</db:link> to react to state changes (in this case, position changes), and <db:link xlink:href="">mousePressEvent()</db:link> and <db:link xlink:href="">mouseReleaseEvent()</db:link> to update the item's visual appearance.</db:para>
+<db:para>We will start reviewing the <db:code>Node</db:code> implementation by looking at its constructor:</db:para>
+<db:programlisting language="cpp">Node::Node(GraphWidget *graphWidget)
+    : graph(graphWidget)
+{
+    setFlag(ItemIsMovable);
+    setFlag(ItemSendsGeometryChanges);
+    setCacheMode(DeviceCoordinateCache);
+    setZValue(-1);
+}
+</db:programlisting>
+<db:para>In the constructor, we set the ItemIsMovable flag to allow the item to move in response to mouse dragging, and ItemSendsGeometryChanges to enable <db:link xlink:href="">itemChange()</db:link> notifications for position and transformation changes. We also enable DeviceCoordinateCache to speed up rendering performance. To ensure that the nodes are always stacked on top of edges, we finally set the item's Z value to -1.</db:para>
+<db:para><db:code>Node</db:code>'s constructor takes a <db:code>GraphWidget</db:code> pointer and stores this as a member variable. We will revisit this pointer later on.</db:para>
+<db:programlisting language="cpp">void Node::addEdge(Edge *edge)
+{
+    edgeList &lt;&lt; edge;
+    edge-&gt;adjust();
+}
+
+QList&lt;Edge *&gt; Node::edges() const
+{
+    return edgeList;
+}
+</db:programlisting>
+<db:para>The addEdge() function adds the input edge to a list of attached edges. The edge is then adjusted so that the end points for the edge match the positions of the source and destination nodes.</db:para>
+<db:para>The edges() function simply returns the list of attached edges.</db:para>
+<db:programlisting language="cpp">void Node::calculateForces()
+{
+    if (!scene() || scene()-&gt;mouseGrabberItem() == this) {
+        newPos = pos();
+        return;
+    }
+</db:programlisting>
+<db:para>There are two ways to move a node. The <db:code>calculateForces()</db:code> function implements the elastic effect that pulls and pushes on nodes in the grid. In addition, the user can directly move one node around with the mouse. Because we do not want the two approaches to operate at the same time on the same node, we start <db:code>calculateForces()</db:code> by checking if this <db:code>Node</db:code> is the current mouse grabber item (i.e., QGraphicsScene::mouseGrabberItem()). Because we need to find all neighboring (but not necessarily connected) nodes, we also make sure the item is part of a scene in the first place.</db:para>
+<db:programlisting language="cpp">    // Sum up all forces pushing this item away
+    qreal xvel = 0;
+    qreal yvel = 0;
+    foreach (QGraphicsItem *item, scene()-&gt;items()) {
+        Node *node = qgraphicsitem_cast&lt;Node *&gt;(item);
+        if (!node)
+            continue;
+
+        QPointF vec = mapToItem(node, 0, 0);
+        qreal dx = vec.x();
+        qreal dy = vec.y();
+        double l = 2.0 * (dx * dx + dy * dy);
+        if (l &gt; 0) {
+            xvel += (dx * 150.0) / l;
+            yvel += (dy * 150.0) / l;
+        }
+    }
+</db:programlisting>
+<db:para>The &quot;elastic&quot; effect comes from an algorithm that applies pushing and pulling forces. The effect is impressive, and surprisingly simple to implement.</db:para>
+<db:para>The algorithm has two steps: the first is to calculate the forces that push the nodes apart, and the second is to subtract the forces that pull the nodes together. First we need to find all the nodes in the graph. We call QGraphicsScene::items() to find all items in the scene, and then use qgraphicsitem_cast() to look for <db:code>Node</db:code> instances.</db:para>
+<db:para>We make use of <db:link xlink:href="">mapFromItem()</db:link> to create a temporary vector pointing from this node to each other node, in <db:link xlink:href="graphicsview.xml#the-graphics-view-coordinate-system">local coordinates</db:link>. We use the decomposed components of this vector to determine the direction and strength of force that should apply to the node. The forces accumulate for each node, and are then adjusted so that the closest nodes are given the strongest force, with rapid degradation when distance increases. The sum of all forces is stored in <db:code>xvel</db:code> (X-velocity) and <db:code>yvel</db:code> (Y-velocity).</db:para>
+<db:programlisting language="cpp">    // Now subtract all forces pulling items together
+    double weight = (edgeList.size() + 1) * 10;
+    foreach (Edge *edge, edgeList) {
+        QPointF vec;
+        if (edge-&gt;sourceNode() == this)
+            vec = mapToItem(edge-&gt;destNode(), 0, 0);
+        else
+            vec = mapToItem(edge-&gt;sourceNode(), 0, 0);
+        xvel -= vec.x() / weight;
+        yvel -= vec.y() / weight;
+    }
+</db:programlisting>
+<db:para>The edges between the nodes represent forces that pull the nodes together. By visiting each edge that is connected to this node, we can use a similar approach as above to find the direction and strength of all pulling forces. These forces are subtracted from <db:code>xvel</db:code> and <db:code>yvel</db:code>.</db:para>
+<db:programlisting language="cpp">    if (qAbs(xvel) &lt; 0.1 &amp;&amp; qAbs(yvel) &lt; 0.1)
+        xvel = yvel = 0;
+</db:programlisting>
+<db:para>In theory, the sum of pushing and pulling forces should stabilize to precisely 0. In practice, however, they never do. To circumvent errors in numerical precision, we simply force the sum of forces to be 0 when they are less than 0.1.</db:para>
+<db:programlisting language="cpp">    QRectF sceneRect = scene()-&gt;sceneRect();
+    newPos = pos() + QPointF(xvel, yvel);
+    newPos.setX(qMin(qMax(newPos.x(), sceneRect.left() + 10), sceneRect.right() - 10));
+    newPos.setY(qMin(qMax(newPos.y(), sceneRect.top() + 10), sceneRect.bottom() - 10));
+}
+</db:programlisting>
+<db:para>The final step of <db:code>calculateForces()</db:code> determines the node's new position. We add the force to the node's current position. We also make sure the new position stays inside of our defined boundaries. We don't actually move the item in this function; that's done in a separate step, from <db:code>advance()</db:code>.</db:para>
+<db:programlisting language="cpp">bool Node::advance()
+{
+    if (newPos == pos())
+        return false;
+
+    setPos(newPos);
+    return true;
+}
+</db:programlisting>
+<db:para>The <db:code>advance()</db:code> function updates the item's current position. It is called from <db:code>GraphWidget::timerEvent()</db:code>. If the node's position changed, the function returns true; otherwise false is returned.</db:para>
+<db:programlisting language="cpp">QRectF Node::boundingRect() const
+{
+    qreal adjust = 2;
+    return QRectF( -10 - adjust, -10 - adjust, 23 + adjust, 23 + adjust);
+}
+</db:programlisting>
+<db:para>The <db:code>Node</db:code>'s bounding rectangle is a 20x20 sized rectangle centered around its origin (0, 0), adjusted by 2 units in all directions to compensate for the node's outline stroke, and by 3 units down and to the right to make room for a simple drop shadow.</db:para>
+<db:programlisting language="cpp">QPainterPath Node::shape() const
+{
+    QPainterPath path;
+    path.addEllipse(-10, -10, 20, 20);
+    return path;
+}
+</db:programlisting>
+<db:para>The shape is a simple ellipse. This ensures that you must click inside the node's elliptic shape in order to drag it around. You can test this effect by running the example, and zooming far in so that the nodes are very large. Without reimplementing <db:link xlink:href="">shape()</db:link>, the item's hit area would be identical to its bounding rectangle (i.e., rectangular).</db:para>
+<db:programlisting language="cpp">void Node::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *)
+{
+    painter-&gt;setPen(Qt::NoPen);
+    painter-&gt;setBrush(Qt::darkGray);
+    painter-&gt;drawEllipse(-7, -7, 20, 20);
+
+    QRadialGradient gradient(-3, -3, 10);
+    if (option-&gt;state &amp; QStyle::State_Sunken) {
+        gradient.setCenter(3, 3);
+        gradient.setFocalPoint(3, 3);
+        gradient.setColorAt(1, QColor(Qt::yellow).light(120));
+        gradient.setColorAt(0, QColor(Qt::darkYellow).light(120));
+    } else {
+        gradient.setColorAt(0, Qt::yellow);
+        gradient.setColorAt(1, Qt::darkYellow);
+    }
+    painter-&gt;setBrush(gradient);
+
+    painter-&gt;setPen(QPen(Qt::black, 0));
+    painter-&gt;drawEllipse(-10, -10, 20, 20);
+}
+</db:programlisting>
+<db:para>This function implements the node's painting. We start by drawing a simple dark gray elliptic drop shadow at (-7, -7), that is, (3, 3) units down and to the right from the top-left corner (-10, -10) of the ellipse.</db:para>
+<db:para>We then draw an ellipse with a radial gradient fill. This fill is either <db:link xlink:href="qt.xml#GlobalColor-enum">Qt::yellow</db:link> to <db:link xlink:href="qt.xml#GlobalColor-enum">Qt::darkYellow</db:link> when raised, or the opposite when sunken. In sunken state we also shift the center and focal point by (3, 3) to emphasize the impression that something has been pushed down.</db:para>
+<db:para>Drawing filled ellipses with gradients can be quite slow, especially when using complex gradients such as QRadialGradient. This is why this example uses DeviceCoordinateCache, a simple yet effective measure that prevents unnecessary redrawing.</db:para>
+<db:programlisting language="cpp">QVariant Node::itemChange(GraphicsItemChange change, const QVariant &amp;value)
+{
+    switch (change) {
+    case ItemPositionHasChanged:
+        foreach (Edge *edge, edgeList)
+            edge-&gt;adjust();
+        graph-&gt;itemMoved();
+        break;
+    default:
+        break;
+    };
+
+    return QGraphicsItem::itemChange(change, value);
+}
+</db:programlisting>
+<db:para>We reimplement <db:link xlink:href="">itemChange()</db:link> to adjust the position of all connected edges, and to notify the scene that an item has moved (i.e., &quot;something has happened&quot;). This will trigger new force calculations.</db:para>
+<db:para>This notification is the only reason why the nodes need to keep a pointer back to the <db:code>GraphWidget</db:code>. Another approach could be to provide such notification using a signal; in such case, <db:code>Node</db:code> would need to inherit from QGraphicsObject.</db:para>
+<db:programlisting language="cpp">void Node::mousePressEvent(QGraphicsSceneMouseEvent *event)
+{
+    update();
+    QGraphicsItem::mousePressEvent(event);
+}
+
+void Node::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
+{
+    update();
+    QGraphicsItem::mouseReleaseEvent(event);
+}
+</db:programlisting>
+<db:para>Because we have set the ItemIsMovable flag, we don't need to implement the logic that moves the node according to mouse input; this is already provided for us. We still need to reimplement the mouse press and release handlers, though, to update the nodes' visual appearance (i.e., sunken or raised).</db:para>
+</db:section>
+<db:section xml:id="edge-class-definition">
+<db:title>Edge Class Definition</db:title>
+<db:para>The <db:code>Edge</db:code> class represents the arrow-lines between the nodes in this example. The class is very simple: it maintains a source- and destination node pointer, and provides an <db:code>adjust()</db:code> function that makes sure the line starts at the position of the source, and ends at the position of the destination. The edges are the only items that change continuously as forces pull and push on the nodes.</db:para>
+<db:para>Let's take a look at the class declaration:</db:para>
+<db:programlisting language="cpp">class Edge : public QGraphicsItem
+{
+public:
+    Edge(Node *sourceNode, Node *destNode);
+
+    Node *sourceNode() const;
+    Node *destNode() const;
+
+    void adjust();
+
+    enum { Type = UserType + 2 };
+    int type() const Q_DECL_OVERRIDE { return Type; }
+
+protected:
+    QRectF boundingRect() const Q_DECL_OVERRIDE;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) Q_DECL_OVERRIDE;
+
+private:
+    Node *source, *dest;
+
+    QPointF sourcePoint;
+    QPointF destPoint;
+    qreal arrowSize;
+};
+</db:programlisting>
+<db:para><db:code>Edge</db:code> inherits from QGraphicsItem, as it's a simple class that has no use for signals, slots, and properties (compare to QGraphicsObject).</db:para>
+<db:para>The constructor takes two node pointers as input. Both pointers are mandatory in this example. We also provide get-functions for each node.</db:para>
+<db:para>The <db:code>adjust()</db:code> function repositions the edge, and the item also implements <db:link xlink:href="">boundingRect()</db:link> and <db:link xlink:href="">paint()</db:link>.</db:para>
+<db:para>We will now review its implementation.</db:para>
+<db:programlisting language="cpp">Edge::Edge(Node *sourceNode, Node *destNode)
+    : arrowSize(10)
+{
+    setAcceptedMouseButtons(0);
+    source = sourceNode;
+    dest = destNode;
+    source-&gt;addEdge(this);
+    dest-&gt;addEdge(this);
+    adjust();
+}
+</db:programlisting>
+<db:para>The <db:code>Edge</db:code> constructor initializes its <db:code>arrowSize</db:code> data member to 10 units; this determines the size of the arrow which is drawn in <db:link xlink:href="">paint()</db:link>.</db:para>
+<db:para>In the constructor body, we call <db:link xlink:href="">setAcceptedMouseButtons(0)</db:link>. This ensures that the edge items are not considered for mouse input at all (i.e., you cannot click the edges). Then, the source and destination pointers are updated, this edge is registered with each node, and we call <db:code>adjust()</db:code> to update this edge's start end end position.</db:para>
+<db:programlisting language="cpp">Node *Edge::sourceNode() const
+{
+    return source;
+}
+
+Node *Edge::destNode() const
+{
+    return dest;
+}
+</db:programlisting>
+<db:para>The source and destination get-functions simply return the respective pointers.</db:para>
+<db:programlisting language="cpp">void Edge::adjust()
+{
+    if (!source || !dest)
+        return;
+
+    QLineF line(mapFromItem(source, 0, 0), mapFromItem(dest, 0, 0));
+    qreal length = line.length();
+
+    prepareGeometryChange();
+
+    if (length &gt; qreal(20.)) {
+        QPointF edgeOffset((line.dx() * 10) / length, (line.dy() * 10) / length);
+        sourcePoint = line.p1() + edgeOffset;
+        destPoint = line.p2() - edgeOffset;
+    } else {
+        sourcePoint = destPoint = line.p1();
+    }
+}
+</db:programlisting>
+<db:para>In <db:code>adjust()</db:code>, we define two points: <db:code>sourcePoint</db:code>, and <db:code>destPoint</db:code>, pointing at the source and destination nodes' origins respectively. Each point is calculated using <db:link xlink:href="graphicsview.xml#the-graphics-view-coordinate-system">local coordinates</db:link>.</db:para>
+<db:para>We want the tip of the edge's arrows to point to the exact outline of the nodes, as opposed to the center of the nodes. To find this point, we first decompose the vector pointing from the center of the source to the center of the destination node into X and Y, and then normalize the components by dividing by the length of the vector. This gives us an X and Y unit delta that, when multiplied by the radius of the node (which is 10), gives us the offset that must be added to one point of the edge, and subtracted from the other.</db:para>
+<db:para>If the length of the vector is less than 20 (i.e., if two nodes overlap), then we fix the source and destination pointer at the center of the source node. In practice this case is very hard to reproduce manually, as the forces between the two nodes is then at its maximum.</db:para>
+<db:para>It's important to notice that we call <db:link xlink:href="">prepareGeometryChange()</db:link> in this function. The reason is that the variables <db:code>sourcePoint</db:code> and <db:code>destPoint</db:code> are used directly when painting, and they are returned from the <db:link xlink:href="">boundingRect()</db:link> reimplementation. We must always call <db:link xlink:href="">prepareGeometryChange()</db:link> before changing what <db:link xlink:href="">boundingRect()</db:link> returns, and before these variables can be used by <db:link xlink:href="">paint()</db:link>, to keep Graphics View's internal bookkeeping clean. It's safest to call this function once, immediately before any such variable is modified.</db:para>
+<db:programlisting language="cpp">QRectF Edge::boundingRect() const
+{
+    if (!source || !dest)
+        return QRectF();
+
+    qreal penWidth = 1;
+    qreal extra = (penWidth + arrowSize) / 2.0;
+
+    return QRectF(sourcePoint, QSizeF(destPoint.x() - sourcePoint.x(),
+                                      destPoint.y() - sourcePoint.y()))
+        .normalized()
+        .adjusted(-extra, -extra, extra, extra);
+}
+</db:programlisting>
+<db:para>The edge's bounding rectangle is defined as the smallest rectangle that includes both the start and the end point of the edge. Because we draw an arrow on each edge, we also need to compensate by adjusting with half the arrow size and half the pen width in all directions. The pen is used to draw the outline of the arrow, and we can assume that half of the outline can be drawn outside of the arrow's area, and half will be drawn inside.</db:para>
+<db:programlisting language="cpp">void Edge::paint(QPainter *painter, const QStyleOptionGraphicsItem *, QWidget *)
+{
+    if (!source || !dest)
+        return;
+
+    QLineF line(sourcePoint, destPoint);
+    if (qFuzzyCompare(line.length(), qreal(0.)))
+        return;
+</db:programlisting>
+<db:para>We start the reimplementation of <db:link xlink:href="">paint()</db:link> by checking a few preconditions. Firstly, if either the source or destination node is not set, then we return immediately; there is nothing to draw.</db:para>
+<db:para>At the same time, we check if the length of the edge is approximately 0, and if it is, then we also return.</db:para>
+<db:programlisting language="cpp">    // Draw the line itself
+    painter-&gt;setPen(QPen(Qt::black, 1, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+    painter-&gt;drawLine(line);
+</db:programlisting>
+<db:para>We draw the line using a pen that has round joins and caps. If you run the example, zoom in and study the edge in detail, you will see that there are no sharp/square edges.</db:para>
+<db:programlisting language="cpp">    // Draw the arrows
+    double angle = ::acos(line.dx() / line.length());
+    if (line.dy() &gt;= 0)
+        angle = TwoPi - angle;
+
+    QPointF sourceArrowP1 = sourcePoint + QPointF(sin(angle + Pi / 3) * arrowSize,
+                                                  cos(angle + Pi / 3) * arrowSize);
+    QPointF sourceArrowP2 = sourcePoint + QPointF(sin(angle + Pi - Pi / 3) * arrowSize,
+                                                  cos(angle + Pi - Pi / 3) * arrowSize);
+    QPointF destArrowP1 = destPoint + QPointF(sin(angle - Pi / 3) * arrowSize,
+                                              cos(angle - Pi / 3) * arrowSize);
+    QPointF destArrowP2 = destPoint + QPointF(sin(angle - Pi + Pi / 3) * arrowSize,
+                                              cos(angle - Pi + Pi / 3) * arrowSize);
+
+    painter-&gt;setBrush(Qt::black);
+    painter-&gt;drawPolygon(QPolygonF() &lt;&lt; line.p1() &lt;&lt; sourceArrowP1 &lt;&lt; sourceArrowP2);
+    painter-&gt;drawPolygon(QPolygonF() &lt;&lt; line.p2() &lt;&lt; destArrowP1 &lt;&lt; destArrowP2);
+}
+</db:programlisting>
+<db:para>We proceed to drawing one arrow at each end of the edge. Each arrow is drawn as a polygon with a black fill. The coordinates for the arrow are determined using simple trigonometry.</db:para>
+</db:section>
+<db:section xml:id="graphwidget-class-definition">
+<db:title>GraphWidget Class Definition</db:title>
+<db:para><db:code>GraphWidget</db:code> is a subclass of QGraphicsView, which provides the main window with scrollbars.</db:para>
+<db:programlisting language="cpp">class GraphWidget : public QGraphicsView
+{
+    Q_OBJECT
+
+public:
+    GraphWidget(QWidget *parent = 0);
+
+    void itemMoved();
+
+public slots:
+    void shuffle();
+    void zoomIn();
+    void zoomOut();
+
+protected:
+    void keyPressEvent(QKeyEvent *event) Q_DECL_OVERRIDE;
+    void timerEvent(QTimerEvent *event) Q_DECL_OVERRIDE;
+#ifndef QT_NO_WHEELEVENT
+    void wheelEvent(QWheelEvent *event) Q_DECL_OVERRIDE;
+#endif
+    void drawBackground(QPainter *painter, const QRectF &amp;rect) Q_DECL_OVERRIDE;
+
+    void scaleView(qreal scaleFactor);
+
+private:
+    int timerId;
+    Node *centerNode;
+};
+</db:programlisting>
+<db:para>The class provides a basic constructor that initializes the scene, an <db:code>itemMoved()</db:code> function to notify changes in the scene's node graph, a few event handlers, a reimplementation of <db:link xlink:href="">drawBackground()</db:link>, and a helper function for scaling the view by using the mouse wheel or keyboard.</db:para>
+<db:programlisting language="cpp">GraphWidget::GraphWidget(QWidget *parent)
+    : QGraphicsView(parent), timerId(0)
+{
+    QGraphicsScene *scene = new QGraphicsScene(this);
+    scene-&gt;setItemIndexMethod(QGraphicsScene::NoIndex);
+    scene-&gt;setSceneRect(-200, -200, 400, 400);
+    setScene(scene);
+    setCacheMode(CacheBackground);
+    setViewportUpdateMode(BoundingRectViewportUpdate);
+    setRenderHint(QPainter::Antialiasing);
+    setTransformationAnchor(AnchorUnderMouse);
+    scale(qreal(0.8), qreal(0.8));
+    setMinimumSize(400, 400);
+    setWindowTitle(tr(&quot;Elastic Nodes&quot;));
+</db:programlisting>
+<db:para><db:code>GraphicsWidget</db:code>'s constructor creates the scene, and because most items move around most of the time, it sets QGraphicsScene::NoIndex. The scene then gets a fixed <db:link xlink:href="">scene rectangle</db:link>, and is assigned to the <db:code>GraphWidget</db:code> view.</db:para>
+<db:para>The view enables QGraphicsView::CacheBackground to cache rendering of its static, and somewhat complex, background. Because the graph renders a close collection of small items that all move around, it's unnecessary for Graphics View to waste time finding accurate update regions, so we set the QGraphicsView::BoundingRectViewportUpdate viewport update mode. The default would work fine, but this mode is noticably faster for this example.</db:para>
+<db:para>To improve rendering quality, we set QPainter::Antialiasing.</db:para>
+<db:para>The transformation anchor decides how the view should scroll when you transform the view, or in our case, when we zoom in or out. We have chosen QGraphicsView::AnchorUnderMouse, which centers the view on the point under the mouse cursor. This makes it easy to zoom towards a point in the scene by moving the mouse over it, and then rolling the mouse wheel.</db:para>
+<db:para>Finally we give the window a minimum size that matches the scene's default size, and set a suitable window title.</db:para>
+<db:programlisting language="cpp">    Node *node1 = new Node(this);
+    Node *node2 = new Node(this);
+    Node *node3 = new Node(this);
+    Node *node4 = new Node(this);
+    centerNode = new Node(this);
+    Node *node6 = new Node(this);
+    Node *node7 = new Node(this);
+    Node *node8 = new Node(this);
+    Node *node9 = new Node(this);
+    scene-&gt;addItem(node1);
+    scene-&gt;addItem(node2);
+    scene-&gt;addItem(node3);
+    scene-&gt;addItem(node4);
+    scene-&gt;addItem(centerNode);
+    scene-&gt;addItem(node6);
+    scene-&gt;addItem(node7);
+    scene-&gt;addItem(node8);
+    scene-&gt;addItem(node9);
+    scene-&gt;addItem(new Edge(node1, node2));
+    scene-&gt;addItem(new Edge(node2, node3));
+    scene-&gt;addItem(new Edge(node2, centerNode));
+    scene-&gt;addItem(new Edge(node3, node6));
+    scene-&gt;addItem(new Edge(node4, node1));
+    scene-&gt;addItem(new Edge(node4, centerNode));
+    scene-&gt;addItem(new Edge(centerNode, node6));
+    scene-&gt;addItem(new Edge(centerNode, node8));
+    scene-&gt;addItem(new Edge(node6, node9));
+    scene-&gt;addItem(new Edge(node7, node4));
+    scene-&gt;addItem(new Edge(node8, node7));
+    scene-&gt;addItem(new Edge(node9, node8));
+
+    node1-&gt;setPos(-50, -50);
+    node2-&gt;setPos(0, -50);
+    node3-&gt;setPos(50, -50);
+    node4-&gt;setPos(-50, 0);
+    centerNode-&gt;setPos(0, 0);
+    node6-&gt;setPos(50, 0);
+    node7-&gt;setPos(-50, 50);
+    node8-&gt;setPos(0, 50);
+    node9-&gt;setPos(50, 50);
+}
+</db:programlisting>
+<db:para>The last part of the constructor creates the grid of nodes and edges, and gives each node an initial position.</db:para>
+<db:programlisting language="cpp">void GraphWidget::itemMoved()
+{
+    if (!timerId)
+        timerId = startTimer(1000 / 25);
+}
+</db:programlisting>
+<db:para><db:code>GraphWidget</db:code> is notified of node movement through this <db:code>itemMoved()</db:code> function. Its job is simply to restart the main timer in case it's not running already. The timer is designed to stop when the graph stabilizes, and start once it's unstable again.</db:para>
+<db:programlisting language="cpp">void GraphWidget::keyPressEvent(QKeyEvent *event)
+{
+    switch (event-&gt;key()) {
+    case Qt::Key_Up:
+        centerNode-&gt;moveBy(0, -20);
+        break;
+    case Qt::Key_Down:
+        centerNode-&gt;moveBy(0, 20);
+        break;
+    case Qt::Key_Left:
+        centerNode-&gt;moveBy(-20, 0);
+        break;
+    case Qt::Key_Right:
+        centerNode-&gt;moveBy(20, 0);
+        break;
+    case Qt::Key_Plus:
+        zoomIn();
+        break;
+    case Qt::Key_Minus:
+        zoomOut();
+        break;
+    case Qt::Key_Space:
+    case Qt::Key_Enter:
+        shuffle();
+        break;
+    default:
+        QGraphicsView::keyPressEvent(event);
+    }
+}
+</db:programlisting>
+<db:para>This is <db:code>GraphWidget</db:code>'s key event handler. The arrow keys move the center node around, the '+' and '-' keys zoom in and out by calling <db:code>scaleView()</db:code>, and the enter and space keys randomize the positions of the nodes. All other key events (e.g., page up and page down) are handled by QGraphicsView's default implementation.</db:para>
+<db:programlisting language="cpp">void GraphWidget::timerEvent(QTimerEvent *event)
+{
+    Q_UNUSED(event);
+
+    QList&lt;Node *&gt; nodes;
+    foreach (QGraphicsItem *item, scene()-&gt;items()) {
+        if (Node *node = qgraphicsitem_cast&lt;Node *&gt;(item))
+            nodes &lt;&lt; node;
+    }
+
+    foreach (Node *node, nodes)
+        node-&gt;calculateForces();
+
+    bool itemsMoved = false;
+    foreach (Node *node, nodes) {
+        if (node-&gt;advance())
+            itemsMoved = true;
+    }
+
+    if (!itemsMoved) {
+        killTimer(timerId);
+        timerId = 0;
+    }
+}
+</db:programlisting>
+<db:para>The timer event handler's job is to run the whole force calculation machinery as a smooth animation. Each time the timer is triggered, the handler will find all nodes in the scene, and call <db:code>Node::calculateForces()</db:code> on each node, one at a time. Then, in a final step it will call <db:code>Node::advance()</db:code> to move all nodes to their new positions. By checking the return value of <db:code>advance()</db:code>, we can decide if the grid stabilized (i.e., no nodes moved). If so, we can stop the timer.</db:para>
+<db:programlisting language="cpp">void GraphWidget::wheelEvent(QWheelEvent *event)
+{
+    scaleView(pow((double)2, -event-&gt;delta() / 240.0));
+}
+</db:programlisting>
+<db:para>In the wheel event handler, we convert the mouse wheel delta to a scale factor, and pass this factor to <db:code>scaleView()</db:code>. This approach takes into account the speed that the wheel is rolled. The faster you roll the mouse wheel, the faster the view will zoom.</db:para>
+<db:programlisting language="cpp">void GraphWidget::drawBackground(QPainter *painter, const QRectF &amp;rect)
+{
+    Q_UNUSED(rect);
+
+    // Shadow
+    QRectF sceneRect = this-&gt;sceneRect();
+    QRectF rightShadow(sceneRect.right(), sceneRect.top() + 5, 5, sceneRect.height());
+    QRectF bottomShadow(sceneRect.left() + 5, sceneRect.bottom(), sceneRect.width(), 5);
+    if (rightShadow.intersects(rect) || rightShadow.contains(rect))
+        painter-&gt;fillRect(rightShadow, Qt::darkGray);
+    if (bottomShadow.intersects(rect) || bottomShadow.contains(rect))
+        painter-&gt;fillRect(bottomShadow, Qt::darkGray);
+
+    // Fill
+    QLinearGradient gradient(sceneRect.topLeft(), sceneRect.bottomRight());
+    gradient.setColorAt(0, Qt::white);
+    gradient.setColorAt(1, Qt::lightGray);
+    painter-&gt;fillRect(rect.intersected(sceneRect), gradient);
+    painter-&gt;setBrush(Qt::NoBrush);
+    painter-&gt;drawRect(sceneRect);
+
+    // Text
+    QRectF textRect(sceneRect.left() + 4, sceneRect.top() + 4,
+                    sceneRect.width() - 4, sceneRect.height() - 4);
+    QString message(tr(&quot;Click and drag the nodes around, and zoom with the mouse &quot;
+                       &quot;wheel or the '+' and '-' keys&quot;));
+
+    QFont font = painter-&gt;font();
+    font.setBold(true);
+    font.setPointSize(14);
+    painter-&gt;setFont(font);
+    painter-&gt;setPen(Qt::lightGray);
+    painter-&gt;drawText(textRect.translated(2, 2), message);
+    painter-&gt;setPen(Qt::black);
+    painter-&gt;drawText(textRect, message);
+}
+</db:programlisting>
+<db:para>The view's background is rendered in a reimplementation of QGraphicsView::drawBackground(). We draw a large rectangle filled with a linear gradient, add a drop shadow, and then render text on top. The text is rendered twice for a simple drop-shadow effect.</db:para>
+<db:para>This background rendering is quite expensive; this is why the view enables QGraphicsView::CacheBackground.</db:para>
+<db:programlisting language="cpp">void GraphWidget::scaleView(qreal scaleFactor)
+{
+    qreal factor = transform().scale(scaleFactor, scaleFactor).mapRect(QRectF(0, 0, 1, 1)).width();
+    if (factor &lt; 0.07 || factor &gt; 100)
+        return;
+
+    scale(scaleFactor, scaleFactor);
+}
+</db:programlisting>
+<db:para>The <db:code>scaleView()</db:code> helper function checks that the scale factor stays within certain limits (i.e., you cannot zoom too far in nor too far out), and then applies this scale to the view.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:para>In contrast to the complexity of the rest of this example, the <db:code>main()</db:code> function is very simple: We create a QApplication instance, seed the randomizer using <db:link xlink:href="qtglobal.xml#qsrand">qsrand</db:link>(), and then create and show an instance of <db:code>GraphWidget</db:code>. Because all nodes in the grid are moved initially, the <db:code>GraphWidget</db:code> timer will start immediately after control has returned to the event loop.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/edge.cpp">graphicsview/elasticnodes/edge.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/edge.h">graphicsview/elasticnodes/edge.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/elasticnodes.pro">graphicsview/elasticnodes/elasticnodes.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/graphwidget.cpp">graphicsview/elasticnodes/graphwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/graphwidget.h">graphicsview/elasticnodes/graphwidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/main.cpp">graphicsview/elasticnodes/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/node.cpp">graphicsview/elasticnodes/node.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/elasticnodes/node.h">graphicsview/elasticnodes/node.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

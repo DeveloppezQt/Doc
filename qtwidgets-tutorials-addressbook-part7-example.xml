@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Part 7 - Additional Features</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Widgets Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This part covers some additional features that make the address book more convenient for the frequent user.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-tutorial-part7-screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Although our address book is useful in isolation, it would be better if we could exchange contact data with other applications. The vCard format is a popular file format that can be used for this purpose. Here we extend our address book client to allow contacts to be exported to vCard <db:code>.vcf</db:code> files.</db:para>
+<db:section xml:id="defining-the-addressbook-class">
+<db:title>Defining the AddressBook Class</db:title>
+<db:para>We add a QPushButton object, <db:code>exportButton</db:code>, and a corresponding public slot, <db:code>exportAsVCard()</db:code> to our <db:code>AddressBook</db:code> class in the <db:code>addressbook.h</db:code> file.</db:para>
+<db:programlisting language="cpp">    void exportAsVCard();
+    ...
+    QPushButton *exportButton;
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-the-addressbook-class">
+<db:title>Implementing the AddressBook Class</db:title>
+<db:para>Within the <db:code>AddressBook</db:code> constructor, we connect <db:code>exportButton</db:code>'s <db:link xlink:href="">clicked()</db:link> signal to <db:code>exportAsVCard()</db:code>. We also add this button to our <db:code>buttonLayout1</db:code>, the layout responsible for our panel of buttons on the right.</db:para>
+<db:para>In our <db:code>exportAsVCard()</db:code> function, we start by extracting the contact's name into <db:code>name</db:code>. We declare <db:code>firstName</db:code>, <db:code>lastName</db:code> and <db:code>nameList</db:code>. Next, we look for the index of the first white space in <db:code>name</db:code>. If there is a white space, we split the contact's name into <db:code>firstName</db:code> and <db:code>lastName</db:code>. Then, we replace the space with an underscore (&quot;_&quot;). Alternately, if there is no white space, we assume that the contact only has a first name.</db:para>
+<db:programlisting language="cpp">void AddressBook::exportAsVCard()
+{
+    QString name = nameLine-&gt;text();
+    QString address = addressText-&gt;toPlainText();
+    QString firstName;
+    QString lastName;
+    QStringList nameList;
+
+    int index = name.indexOf(&quot; &quot;);
+
+    if (index != -1) {
+        nameList = name.split(QRegExp(&quot;\\s+&quot;), QString::SkipEmptyParts);
+        firstName = nameList.first();
+        lastName = nameList.last();
+    } else {
+        firstName = name;
+        lastName = &quot;&quot;;
+    }
+
+    QString fileName = QFileDialog::getSaveFileName(this,
+        tr(&quot;Export Contact&quot;), &quot;&quot;,
+        tr(&quot;vCard Files (*.vcf);;All Files (*)&quot;));
+
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+</db:programlisting>
+<db:para>As with the <db:code>saveToFile()</db:code> function, we open a file dialog to let the user choose a location for the file. Using the file name chosen, we create an instance of <db:link xlink:href="qfile.xml">QFile</db:link> to write to.</db:para>
+<db:para>We attempt to open the file in WriteOnly mode. If this process fails, we display a QMessageBox to inform the user about the problem and return. Otherwise, we pass the file as a parameter to a <db:link xlink:href="qtextstream.xml">QTextStream</db:link> object, <db:code>out</db:code>. Like <db:link xlink:href="qdatastream.xml">QDataStream</db:link>, the <db:link xlink:href="qtextstream.xml">QTextStream</db:link> class provides functionality to read and write plain text to files. As a result, the <db:code>.vcf</db:code> file generated can be opened for editing in a text editor.</db:para>
+<db:programlisting language="cpp">    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+            file.errorString());
+        return;
+    }
+
+    QTextStream out(&amp;file);
+</db:programlisting>
+<db:para>We then write out a vCard file with the <db:code>BEGIN:VCARD</db:code> tag, followed by the <db:code>VERSION:2.1</db:code> tag. The contact's name is written with the <db:code>N:</db:code> tag. For the <db:code>FN:</db:code> tag, which fills in the &quot;File as&quot; property of a vCard, we have to check whether the contact has a last name or not. If the contact does, we use the details in <db:code>nameList</db:code> to fill it. Otherwise, we write <db:code>firstName</db:code> only.</db:para>
+<db:programlisting language="cpp">    out &lt;&lt; &quot;BEGIN:VCARD&quot; &lt;&lt; &quot;\n&quot;;
+    out &lt;&lt; &quot;VERSION:2.1&quot; &lt;&lt; &quot;\n&quot;;
+    out &lt;&lt; &quot;N:&quot; &lt;&lt; lastName &lt;&lt; &quot;;&quot; &lt;&lt; firstName &lt;&lt; &quot;\n&quot;;
+
+    if (!nameList.isEmpty())
+       out &lt;&lt; &quot;FN:&quot; &lt;&lt; nameList.join(' ') &lt;&lt; &quot;\n&quot;;
+    else
+       out &lt;&lt; &quot;FN:&quot; &lt;&lt; firstName &lt;&lt; &quot;\n&quot;;
+</db:programlisting>
+<db:para>We proceed to write the contact's address. The semicolons in the address are escaped with &quot;\&quot;, the newlines are replaced with semicolons, and the commas are replaced with spaces. Lastly, we write the <db:code>ADR;HOME:;</db:code> tag, followed by <db:code>address</db:code> and then the <db:code>END:VCARD</db:code> tag.</db:para>
+<db:programlisting language="cpp">    address.replace(&quot;;&quot;, &quot;\\;&quot;, Qt::CaseInsensitive);
+    address.replace(&quot;\n&quot;, &quot;;&quot;, Qt::CaseInsensitive);
+    address.replace(&quot;,&quot;, &quot; &quot;, Qt::CaseInsensitive);
+
+    out &lt;&lt; &quot;ADR;HOME:;&quot; &lt;&lt; address &lt;&lt; &quot;\n&quot;;
+    out &lt;&lt; &quot;END:VCARD&quot; &lt;&lt; &quot;\n&quot;;
+
+    QMessageBox::information(this, tr(&quot;Export Successful&quot;),
+        tr(&quot;\&quot;%1\&quot; has been exported as a vCard.&quot;).arg(name));
+}
+</db:programlisting>
+<db:para>In the end, a QMessageBox is displayed to inform the user that the vCard has been successfully exported.</db:para>
+<db:para><db:emphasis>vCard is a trademark of the <db:link xlink:href="http://www.imc.org">Internet Mail Consortium</db:link></db:emphasis>.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/addressbook.cpp">tutorials/addressbook/part7/addressbook.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/addressbook.h">tutorials/addressbook/part7/addressbook.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/finddialog.cpp">tutorials/addressbook/part7/finddialog.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/finddialog.h">tutorials/addressbook/part7/finddialog.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/main.cpp">tutorials/addressbook/part7/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part7/part7.pro">tutorials/addressbook/part7/part7.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

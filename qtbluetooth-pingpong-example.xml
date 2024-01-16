@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth QML Ping Pong example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A QML example showing Bluetooth communication.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Bluetooth QML Ping Pong example presents the socket communication between two Bluetooth devices. The basic concept is the ping pong game where two players communicate via sockets.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/intro.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="">Building and Running an Example</db:link>.</db:para>
+<db:para>At the beginning, the user selects the role. One device acts as a server and the second one as a client. After selecting the role, adjustments to the screen size are done (two devices might have different screen sizes). The server side starts a service named &quot;PingPong server&quot;.</db:para>
+<db:programlisting language="cpp">m_serverInfo = new QBluetoothServer(QBluetoothServiceInfo::RfcommProtocol, this);
+connect(m_serverInfo, SIGNAL(newConnection()), this, SLOT(clientConnected()));
+connect(m_serverInfo, SIGNAL(error(QBluetoothServer::Error)),
+        this, SLOT(serverError(QBluetoothServer::Error)));
+const QBluetoothUuid uuid(serviceUuid);
+
+m_serverInfo-&gt;listen(uuid, QStringLiteral(&quot;PingPong server&quot;));
+</db:programlisting>
+<db:para>On the client side, the full service discovery on the nearby Bluetooth devices is done.</db:para>
+<db:programlisting language="cpp">discoveryAgent = new QBluetoothServiceDiscoveryAgent(QBluetoothAddress());
+
+connect(discoveryAgent, SIGNAL(serviceDiscovered(QBluetoothServiceInfo)),
+        this, SLOT(addService(QBluetoothServiceInfo)));
+connect(discoveryAgent, SIGNAL(finished()), this, SLOT(done()));
+connect(discoveryAgent, SIGNAL(error(QBluetoothServiceDiscoveryAgent::Error)),
+        this, SLOT(serviceScanError(QBluetoothServiceDiscoveryAgent::Error)));
+discoveryAgent-&gt;setUuidFilter(QBluetoothUuid(serviceUuid));
+discoveryAgent-&gt;start(QBluetoothServiceDiscoveryAgent::FullDiscovery);
+</db:programlisting>
+<db:para>When the ping pong service is discovered, the client connects to the server using the socket.</db:para>
+<db:programlisting language="cpp">socket = new QBluetoothSocket(QBluetoothServiceInfo::RfcommProtocol);
+socket-&gt;connectToService(service);
+
+connect(socket, SIGNAL(readyRead()), this, SLOT(readSocket()));
+connect(socket, SIGNAL(connected()), this, SLOT(serverConnected()));
+connect(socket, SIGNAL(disconnected()), this, SLOT(serverDisconnected()));
+</db:programlisting>
+<db:para>On the server side, the connected signal is emitted initiating that the client is connected. The necessary signals and slots on the server side are connected.</db:para>
+<db:programlisting language="cpp">if (!m_serverInfo-&gt;hasPendingConnections()) {
+    setMessage(&quot;FAIL: expected pending server connection&quot;);
+    return;
+}
+socket = m_serverInfo-&gt;nextPendingConnection();
+if (!socket)
+    return;
+socket-&gt;setParent(this);
+connect(socket, SIGNAL(readyRead()), this, SLOT(readSocket()));
+connect(socket, SIGNAL(disconnected()), this, SLOT(clientDisconnected()));
+connect(socket, SIGNAL(error(QBluetoothSocket::SocketError)),
+        this, SLOT(socketError(QBluetoothSocket::SocketError)));
+</db:programlisting>
+<db:para>The game starts after the devices are connected and the screen is adjusted.</db:para>
+<db:programlisting language="cpp">if (m_role == 1)
+    updateDirection();
+
+m_timer-&gt;start(50);
+</db:programlisting>
+<db:para>The server updates the ball direction and coordinates. The coordinates of pedals are sent to each other every 50ms.</db:para>
+<db:programlisting language="cpp">if (m_role == 1) {
+    checkBoundaries();
+    m_ballPreviousX = m_ballX;
+    m_ballPreviousY = m_ballY;
+    m_ballY = m_direction*(m_ballX+interval) - m_direction*m_ballX + m_ballY;
+    m_ballX = m_ballX + interval;
+
+    size.setNum(m_ballX);
+    size.append(' ');
+    QByteArray size1;
+    size1.setNum(m_ballY);
+    size.append(size1);
+    size.append(' ');
+    size1.setNum(m_leftBlockY);
+    size.append(size1);
+    size.append(&quot; \n&quot;);
+    socket-&gt;write(size.constData());
+    emit ballChanged();
+}
+else if (m_role == 2) {
+    size.setNum(m_rightBlockY);
+    size.append(&quot; \n&quot;);
+    socket-&gt;write(size.constData());
+}
+</db:programlisting>
+<db:para>The coordinates are updated and exchanged via sockets. As presented, the server sends its pedal's y coordinate and the ball coordinates whereas, the client sends only its pedal y coordinate.</db:para>
+<db:programlisting language="cpp">if (((m_ballX + ballWidth) &gt; (m_boardWidth - blockSize)) &amp;&amp; ((m_ballY + ballWidth) &lt; (m_rightBlockY + blockHeight))
+        &amp;&amp; (m_ballY &gt; m_rightBlockY)) {
+    m_targetY = 2 * m_ballY - m_ballPreviousY;
+    m_targetX = m_ballPreviousX;
+    interval = -5;
+    updateDirection();
+}
+else if ((m_ballX &lt; blockSize) &amp;&amp; ((m_ballY + ballWidth) &lt; (m_leftBlockY + blockHeight))
+         &amp;&amp; (m_ballY &gt; m_leftBlockY)) {
+    m_targetY = 2 * m_ballY - m_ballPreviousY;
+    m_targetX = m_ballPreviousX;
+    interval = 5;
+    updateDirection();
+}
+else if (m_ballY &lt; 0 || (m_ballY + ballWidth &gt; m_boardHeight)) {
+    m_targetY = m_ballPreviousY;
+    m_targetX = m_ballX + interval;
+    updateDirection();
+}
+</db:programlisting>
+<db:para>In the code above, it was shown how the server checks whether the ball has reached the boundaries of the board. In the case of the goal, the server updates the results via its socket.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/intro1.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/assets/Board.qml">pingpong/assets/Board.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/assets/Dialog.qml">pingpong/assets/Dialog.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/assets/Menu.qml">pingpong/assets/Menu.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/assets/main.qml">pingpong/assets/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/main.cpp">pingpong/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/pingpong.cpp">pingpong/pingpong.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/pingpong.h">pingpong/pingpong.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/pingpong.pro">pingpong/pingpong.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="pingpong/resource.qrc">pingpong/resource.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>
