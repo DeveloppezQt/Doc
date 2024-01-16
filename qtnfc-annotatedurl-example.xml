@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Annotated URL</db:title>
+<db:productname>QtNfc</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt NFC Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Reads formatted NFC Data Exchange Format (NDEF) messages.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Annotated URL example uses <db:link xlink:href="qtnfc-index.xml">Qt NFC</db:link> to display the contents of specifically formatted NFC Data Exchange Format (NDEF) messages read from an NFC Tag. The NDEF message should contain a URI record, an optional <db:code>image/*</db:code> MIME record, and one or more localized Text records.</db:para>
+<db:para>This is the initial state of the example:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/annotatedurl.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>If a tag is touched, its NDEF content will be shown. Here is the UI for a tag that contains a text record and URI record:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/annotatedurl2.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>When the screen is tapped, the URL will be opened in the browser.</db:para>
+<db:section xml:id="annotatedurl-class-definition">
+<db:title>AnnotatedUrl Class Definition</db:title>
+<db:para>The <db:code>AnnotatedUrl</db:code> class wraps <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link>, the class providing the NFC Tag detection functionality. NDEF messages are read by <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link> and forwarded to a handler contained in the <db:code>AnnotatedUrl</db:code> class. After parsing the NDEF message the class emits the <db:code>annotatedUrl()</db:code> signal. The UI reacts to the signal displaying the contents of the NDEF message.</db:para>
+<db:programlisting language="cpp">class AnnotatedUrl : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit AnnotatedUrl(QObject *parent = 0);
+    ~AnnotatedUrl();
+
+    void startDetection();
+
+signals:
+    void annotatedUrl(const QUrl &amp;url, const QString &amp;title, const QPixmap &amp;pixmap);
+    void nfcStateChanged(bool enabled);
+    void tagError(const QString &amp;error);
+
+public slots:
+    void targetDetected(QNearFieldTarget *target);
+    void targetLost(QNearFieldTarget *target);
+    void handleMessage(const QNdefMessage &amp;message, QNearFieldTarget *target);
+    void handlePolledNdefMessage(QNdefMessage message);
+    void handleAdapterStateChange(QNearFieldManager::AdapterState state);
+
+private:
+    QNearFieldManager *manager;
+    QNdefFilter messageFilter;
+};
+</db:programlisting>
+<db:note>
+<db:para>The <db:code>startDetection()</db:code> method is used to defer the actual tag detection until all the connections between the UI and NFC-related logic are established. This is important when the application is automatically started once an NFC tag is touched. Such usecase is currently supported on Android.</db:para>
+</db:note>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication a(argc, argv);
+    MainWindow mainWindow;
+    AnnotatedUrl annotatedUrl;
+
+    QObject::connect(&amp;annotatedUrl, &amp;AnnotatedUrl::annotatedUrl,
+                     &amp;mainWindow, &amp;MainWindow::displayAnnotatedUrl);
+    QObject::connect(&amp;annotatedUrl, &amp;AnnotatedUrl::nfcStateChanged,
+                     &amp;mainWindow, &amp;MainWindow::nfcStateChanged);
+    QObject::connect(&amp;annotatedUrl, &amp;AnnotatedUrl::tagError,
+                     &amp;mainWindow, &amp;MainWindow::showTagError);
+
+    annotatedUrl.startDetection();
+    mainWindow.show();
+
+    return a.exec();
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="message-filtering">
+<db:title>Message Filtering</db:title>
+<db:para>As it is mentioned above, the application supports the NDEF messages of a specific format. A correct message should contain the following fields:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:emphasis>At least one</db:emphasis> NDEF Text record, which will be used as a header.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>Exactly one</db:emphasis> NDEF URI record.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>An optional</db:emphasis> MIME record with an icon.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The order of the records is not strictly specified.</db:para>
+<db:para>An instance of <db:link xlink:href="qndeffilter.xml">QNdefFilter</db:link> is used to validate the NDEF message. The filter is populated as follows:</db:para>
+<db:programlisting language="cpp">    messageFilter.setOrderMatch(false);
+    messageFilter.appendRecord&lt;QNdefNfcTextRecord&gt;(1, 100);
+    messageFilter.appendRecord&lt;QNdefNfcUriRecord&gt;(1, 1);
+    messageFilter.appendRecord(QNdefRecord::Mime, &quot;&quot;, 0, 1);
+</db:programlisting>
+<db:para>If the incoming message does not match the filter, an error message is shown:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/annotatedurl3.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>The <db:link xlink:href="qtnfc-attribution-ndefeditor.xml#ndefeditor">NDEF Editor</db:link> example application can be used to create the tags with correct or incorrect message structure.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="annotatedurl-handler-implementation">
+<db:title>AnnotatedUrl Handler Implementation</db:title>
+<db:para>NFC messages read by the <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link> are forwarded to <db:code>AnnotatedUrl::handleMessage</db:code>.</db:para>
+<db:programlisting language="cpp">void AnnotatedUrl::handleMessage(const QNdefMessage &amp;message, QNearFieldTarget *target)
+{
+</db:programlisting>
+<db:para>At first the messages are validated using the <db:link xlink:href="qndeffilter.xml#match">QNdefFilter::match</db:link>() method:</db:para>
+<db:programlisting language="cpp">    if (!messageFilter.match(message)) {
+        emit tagError(&quot;Invalid message format&quot;);
+        return;
+    }
+</db:programlisting>
+<db:para>If the messages have the correct format, the parsing continues.</db:para>
+<db:para>Because NFC messages are composed of several NDEF records, looping through all of the records allows the extraction of the 3 parameters to be displayed in the UI: the Uri, the Title and the Pixmap:</db:para>
+<db:programlisting language="cpp">    for (const QNdefRecord &amp;record : message) {
+        if (record.isRecordType&lt;QNdefNfcTextRecord&gt;()) {
+            QNdefNfcTextRecord textRecord(record);
+
+            title = textRecord.text();
+            QLocale locale(textRecord.locale());
+        } else if (record.isRecordType&lt;QNdefNfcUriRecord&gt;()) {
+            QNdefNfcUriRecord uriRecord(record);
+
+            url = uriRecord.uri();
+        } else if (record.typeNameFormat() == QNdefRecord::Mime &amp;&amp;
+                   record.type().startsWith(&quot;image/&quot;)) {
+            pixmap = QPixmap::fromImage(QImage::fromData(record.payload()));
+        }
+</db:programlisting>
+<db:para>Finally after having extracted the parameters of the NFC message the corresponding signal is emitted so that the UI can handle it.</db:para>
+<db:programlisting language="cpp">    }
+
+    emit annotatedUrl(url, title, pixmap);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="adapter-state-handling">
+<db:title>Adapter State Handling</db:title>
+<db:para>On Android the adapter state changes can be detected by connecting to the <db:link xlink:href="qnearfieldmanager.xml#adapterStateChanged">QNearFieldManager::adapterStateChanged</db:link>() signal. This allows stopping the detection when the NFC adapter is disabled, and restarting it when the adapter is enabled again. This approach is implemented in the <db:code>AnnotatedUrl::handleAdapterStateChange</db:code> slot.</db:para>
+<db:programlisting language="cpp">void AnnotatedUrl::handleAdapterStateChange(QNearFieldManager::AdapterState state)
+{
+    if (state == QNearFieldManager::AdapterState::Online) {
+        startDetection();
+    } else if (state == QNearFieldManager::AdapterState::Offline) {
+        manager-&gt;stopTargetDetection();
+        emit nfcStateChanged(false);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="automatic-application-startup">
+<db:title>Automatic Application Startup</db:title>
+<db:para>Android supports automatic application startup when the NDEF tag is touched. See <db:link xlink:href="nfc-android.xml">Qt NFC on Android</db:link> for the required changes to the Android manifest file.</db:para>
+<db:para>Introduction of a custom AndroidManifest.xml requires special steps on the build system side.</db:para>
+<db:section xml:id="building-with-qmake">
+<db:title>Building with qmake</db:title>
+<db:para>When using qmake, the following needs to be added to the <db:code>.pro</db:code> file:</db:para>
+<db:programlisting language="cpp">android {
+    ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+
+    DISTFILES += \
+        android/AndroidManifest.xml
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="building-with-cmake">
+<db:title>Building with CMake</db:title>
+<db:para>When using CMake, the following needs to be added to the <db:code>CMakeLists.txt</db:code>:</db:para>
+<db:programlisting language="cpp">if(ANDROID)
+    set_property(TARGET annotatedurl
+        APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
+        ${CMAKE_CURRENT_SOURCE_DIR}/android
+    )
+endif()
+
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, see <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Qt Creator: Tutorial: Build and run</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtconnectivity.git/tree/examples/nfc/annotatedurl?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtnfc-index.xml">Qt NFC</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

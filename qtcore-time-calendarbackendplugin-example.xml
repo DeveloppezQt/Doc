@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Calendar Backend Plugin Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para><db:link xlink:href="qcalendar.xml">QCalendar</db:link> example illustrating user-supplied custom calendars.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/calendarwindow_transition.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="introduction">
+<db:title>Introduction</db:title>
+<db:para>There are numerous different calendar systems in use around the globe. Qt has built-in support for some of them (see <db:link xlink:href="qcalendar.xml#System-enum">System</db:link>), but can't provide general support due to their high number. Additional calendar systems can be provided by implementing a custom QCalendarBackend, which is a private API.</db:para>
+<db:para>This example demonstrates how to write a custom calendar backend and how to use the low-level plugin API to extend an application to user-selectable calendars. Many countries transitioned from the Julian to the Gregorian calendar at some point in their history, and this custom calendar backend will implement the respective calendar as an example. The custom backend is compiled into a plugin and loaded at runtime by the main application. The exact transition date, different for various regions, is provided as a string to the plugin and can be determined by the user.</db:para>
+</db:section>
+<db:section xml:id="calendar-backend">
+<db:title>Calendar backend</db:title>
+<db:para>The calendar backend class must inherit from QCalendarBackend and implement its pure virtual functions in a thread-safe way. It may also override some other virtual functions as needed.</db:para>
+<db:section xml:id="example-implementation">
+<db:title>Example implementation</db:title>
+<db:para>This example inherits from the already existing QRomanCalendar, which in turn inherits from the QCalendarBackend and implements some of its virtual functions. It's constructive to do this because the transition calendar shares, with both Julian and Gregorian calendars, parts provided by the Roman calendar.</db:para>
+<db:para>Here is the class declaration of JulianGregorianCalendar:</db:para>
+<db:programlisting language="cpp">class JulianGregorianCalendar : public QRomanCalendar
+{
+public:
+    JulianGregorianCalendar(QDate endJulian, QAnyStringView name);
+    QString name() const override;
+    int daysInMonth(int month, int year = QCalendar::Unspecified) const override;
+    bool isLeapYear(int year) const override;
+    bool dateToJulianDay(int year, int month, int day, qint64 *jd) const override;
+    QCalendar::YearMonthDay julianDayToDate(qint64 jd) const override;
+private:
+    static inline const QCalendar julian = QCalendar(QCalendar::System::Julian);
+    static inline const QCalendar gregorian = QCalendar(QCalendar::System::Gregorian);
+    QCalendar::YearMonthDay m_julianUntil;
+    QCalendar::YearMonthDay m_gregorianSince;
+    QString m_name;
+};
+</db:programlisting>
+<db:para>The QDate passed to the constructor - <db:code role="parameter">endJulian</db:code> - is the date of the last day of the Julian calendar. The calendar will automatically calculate the shift for a given year, e.g in 1582, 10 days were omitted, but in 1700, 12 days had to be omitted. The calendar backend is registered under <db:code role="parameter">name</db:code> and a calendar instance can be created using that name. The class only overrides functions where the two calendars it combines differ from the Roman base. It has instances of the Julian and Gregorian calendars to which these functions can delegate.</db:para>
+</db:section>
+<db:section xml:id="julian-day-conversions">
+<db:title>Julian Day conversions</db:title>
+<db:para>dateToJulianDay(int year, int month, int day, qint64 *jd) computes the Julian day number corresponding to the specified <db:code role="parameter">year</db:code>, <db:code role="parameter">month</db:code> and <db:code role="parameter">day</db:code>. Returns true and sets <db:code role="parameter">jd</db:code> if there is such a date in this calendar; otherwise, returns false.</db:para>
+<db:programlisting language="cpp">bool JulianGregorianCalendar::dateToJulianDay(int year, int month, int day, qint64 *jd) const
+{
+    if (year == m_julianUntil.year &amp;&amp; month == m_julianUntil.month) {
+        if (m_julianUntil.day &lt; day &amp;&amp; day &lt; m_gregorianSince.day) {
+            // Requested date is in the gap skipped over by the transition.
+            *jd = 0;
+            return false;
+        }
+    }
+    QDate givenDate = gregorian.dateFromParts(year, month, day);
+    QDate julianUntil = julian.dateFromParts(m_julianUntil);
+    if (givenDate &gt; julianUntil) {
+        *jd = givenDate.toJulianDay();
+        return true;
+    }
+    *jd = julian.dateFromParts(year, month, day).toJulianDay();
+    return true;
+}
+</db:programlisting>
+<db:para>julianDayToDate(qint64 jd) computes year, month and day in this calendar for the given Julian day number, <db:code role="parameter">jd</db:code>. If the given day falls outside this calendar's scope, the return value for isValid() is false. In this example, if the given date falls in the gap jumped over by the transition from Julian to Gregorian calendar, it is out of scope.</db:para>
+<db:programlisting language="cpp">QCalendar::YearMonthDay JulianGregorianCalendar::julianDayToDate(qint64 jd) const
+{
+    const qint64 jdForChange = julian.dateFromParts(m_julianUntil).toJulianDay();
+    if (jdForChange &lt; jd) {
+        QCalendar gregorian(QCalendar::System::Gregorian);
+        QDate date = QDate::fromJulianDay(jd);
+        return gregorian.partsFromDate(date);
+    } else if (jd &lt;= jdForChange) {
+        QCalendar julian(QCalendar::System::Julian);
+        QDate date = QDate::fromJulianDay(jd);
+        return julian.partsFromDate(date);
+    }
+    return QCalendar::YearMonthDay(QCalendar::Unspecified, QCalendar::Unspecified,
+                                   QCalendar::Unspecified);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="locale-support">
+<db:title>Locale support</db:title>
+<db:para>A calendar may, in general, have its own naming of months of the year and days of the week. These must be suitably localized to be intelligible to all users. By default the backend baseclass takes care of week day names for us, which is entirely sufficient for these Julian/Gregorian transition calendars.</db:para>
+<db:para>Although a backend can directly override the month naming methods, the baseclass version of these can be customized by implementing localeMonthData() and localeMonthIndexData() to provide tables of localized month names. Since the Julian and Gregorian calendars use the same month naming, they inherit that customization from a common base, QRomanCalendar. This also means the custom calendar can use the same names, again by inheriting from that base. This takes care of localization.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="plugin">
+<db:title>Plugin</db:title>
+<db:para>Qt applications can be extended through plugins. This requires the application to detect and load plugins using <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link>.</db:para>
+<db:section xml:id="writing-a-plugin">
+<db:title>Writing a plugin</db:title>
+<db:para>To write a plugin, the first thing that has to be done is to create a pure virtual class that defines the interface between plugin and application.</db:para>
+<db:para>In this example the following interface was used:</db:para>
+<db:programlisting language="cpp">class RequestedCalendarInterface
+{
+public:
+    RequestedCalendarInterface() = default;
+    virtual QCalendar::SystemId loadCalendar(QAnyStringView requested) = 0;
+    virtual ~RequestedCalendarInterface() = default;
+};
+</db:programlisting>
+<db:para>and register it in the Qt meta-object system:</db:para>
+<db:programlisting language="cpp">#define RequestedCalendarInterface_iid \
+&quot;org.qt-project.Qt.Examples.CalendarBackend.RequestedCalendarInterface/1.0&quot;
+Q_DECLARE_INTERFACE(RequestedCalendarInterface, RequestedCalendarInterface_iid)
+</db:programlisting>
+<db:para><db:link xlink:href="qtplugin.xml#Q_DECLARE_INTERFACE">Q_DECLARE_INTERFACE</db:link>() macro is used to associate the ClassName (here: RequestedCalendarInterface) with the defined Identifier (here: RequestedCalendarInterface_iid). The Identifier must be unique. This interface can be implemented by plugins that load other calendars, interpreting loadCalendar()'s string parameter in various ways. It isn't limited to this particular plugin that will be implemented using it, so it has a generic name, not one specific to this particular backend.</db:para>
+<db:para>Then a plugin class that inherits from <db:link xlink:href="qobject.xml">QObject</db:link> and from the interface is created.</db:para>
+<db:programlisting language="cpp">class JulianGregorianPlugin : public QObject, public RequestedCalendarInterface
+{
+    Q_OBJECT
+    Q_INTERFACES(RequestedCalendarInterface)
+    Q_PLUGIN_METADATA(IID &quot;org.qt-project.Qt.Examples.&quot;
+                          &quot;CalendarBackend.&quot;
+                          &quot;RequestedCalendarInterface/1.0&quot;)
+public:
+    JulianGregorianPlugin();
+    QCalendar::SystemId loadCalendar(QAnyStringView request) override;
+    ~JulianGregorianPlugin();
+};
+</db:programlisting>
+<db:para><db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() and <db:link xlink:href="qobject.xml#Q_INTERFACES">Q_INTERFACES</db:link>() are being used to declare meta data that was also declared in the interface class and to tell Qt which interface the class implements.</db:para>
+<db:para>This plugin instantiates and registers a custom calendar backend which can in turn be used to instantiate <db:link xlink:href="qcalendar.xml">QCalendar</db:link> by the application at any point.</db:para>
+<db:para>Qt Plugins are stored in a single shared library (a DLL) and <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link> is used for detecting and dynamically loading the plugin file (for more see <db:link xlink:href="">How to Create Qt Plugins</db:link>).</db:para>
+</db:section>
+<db:section xml:id="loading-the-plugin">
+<db:title>Loading the plugin</db:title>
+<db:para><db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link> checks if the plugin's version of Qt is the same as that of the application and provides direct access to a Qt plugin.</db:para>
+<db:para>Here is the use of <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link> in the example:</db:para>
+<db:programlisting language="cpp">    QPluginLoader loader;
+    loader.setFileName(&quot;../plugin/calendarPlugin&quot;);
+    loader.load();
+    if (!loader.isLoaded())
+        return 1;
+    auto *myplugin = qobject_cast&lt;RequestedCalendarInterface*&gt;(loader.instance());
+</db:programlisting>
+<db:para>First, an instance of a <db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link> object needs to be initialized. Next, it has to be specified which plugin to load by passing a DLL file name to <db:link xlink:href="qpluginloader.xml#fileName-prop">setFileName</db:link>(). Then, by using <db:link xlink:href="qpluginloader.xml#load">load</db:link>(), the plugin file is dynamically loaded. At the end, a call to <db:link xlink:href="qobject.xml#qobject_cast">qobject_cast</db:link>() tests whether a plugin implements a given interface. <db:link xlink:href="qobject.xml#qobject_cast">qobject_cast</db:link>() uses <db:link xlink:href="qpluginloader.xml#instance">instance</db:link>() to access the root component in the plugin. If the plugin has been loaded correctly, its functions should be available.</db:para>
+</db:section>
+<db:section xml:id="instantiating-the-backend">
+<db:title>Instantiating the backend</db:title>
+<db:para>In this example there is only one function in the plugin. loadCalendar() is responsible for registering the custom calendar backend in QCalendarRegistry with given date of the transition and names.</db:para>
+<db:programlisting language="cpp">QCalendar::SystemId JulianGregorianPlugin::loadCalendar(QAnyStringView request)
+{
+    Q_ASSERT(!request.isEmpty());
+    QStringList names = request.toString().split(u';');
+    if (names.size() &lt; 1)
+        return {};
+    QString dateString = names.takeFirst();
+    auto date = QDate::fromString(dateString, u&quot;yyyy-MM-dd&quot;,
+                                  QCalendar(QCalendar::System::Julian));
+    if (!date.isValid())
+        return {};
+    QString primary = names.isEmpty() ?
+            QString::fromStdU16String(u&quot;Julian until &quot;) + dateString : names[0];
+    auto backend = new JulianGregorianCalendar(date, primary);
+    names.emplaceFront(backend-&gt;name());
+    auto cid = backend-&gt;registerCustomBackend(names);
+    return cid;
+}
+
+JulianGregorianPlugin::~JulianGregorianPlugin()
+{
+}
+</db:programlisting>
+<db:para>String argument for loadCalendar() is supplied by the user via command line arguments. Then, the date of transition from the Julian calendar to the Gregorian is extracted by splitting the given string. After validation, a custom backend object is created. The backend must be registered before it can be used in <db:link xlink:href="qcalendar.xml">QCalendar</db:link>, using the registerCustomBackend() method. Once a backend is registered, a <db:link xlink:href="qcalendar.xml">QCalendar</db:link> can be instantiated with the respective <db:link xlink:href="qcalendar-systemid.xml">SystemId</db:link> or name.</db:para>
+<db:para>Here is the use of loadCalendar in the main:</db:para>
+<db:programlisting language="cpp">    const auto cid = myplugin-&gt;loadCalendar(args.at(0));
+    if (!cid.isValid()) {
+        qWarning() &lt;&lt; &quot;Invalid ID&quot;;
+        parser.showHelp(1);
+    }
+    const QCalendar calendar(cid);
+</db:programlisting>
+</db:section>
+<db:section xml:id="extending-qcalendarwidget">
+<db:title>Extending QCalendarWidget</db:title>
+<db:para>By creating a <db:link xlink:href="qcalendar.xml">QCalendar</db:link> instance with a specific calendar as a backend, it is possible to provide QCalendarWidget with that backend and visualize it.</db:para>
+<db:programlisting language="cpp">    QCalendarWidget widget;
+    widget.setCalendar(calendar);
+    widget.show();
+    QCalendar::YearMonthDay when = { 1582, 10, 4 };
+    QCalendar julian = QCalendar(QCalendar::System::Julian);
+    auto got = QDate::fromString(args.at(0).left(10), u&quot;yyyy-MM-dd&quot;, julian);
+    if (got.isValid())
+        when = julian.partsFromDate(got);
+    widget.setCurrentPage(when.year, when.month);
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/time/calendarbackendplugin?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member>QCalendarWidget</db:member>
+<db:member><db:link xlink:href="qcalendar.xml">QCalendar</db:link></db:member>
+<db:member><db:link xlink:href="qdate.xml">QDate</db:link></db:member>
+<db:member><db:link xlink:href="qlocale.xml">QLocale</db:link></db:member>
+<db:member>QtPlugin</db:member>
+<db:member><db:link xlink:href="qpluginloader.xml">QPluginLoader</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

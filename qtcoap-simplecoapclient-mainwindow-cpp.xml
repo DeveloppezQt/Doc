@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple CoAP Client</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Creating an application that communicates with a CoAP server.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;mainwindow.h&quot;
+#include &quot;optiondialog.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+
+#include &lt;QCoapClient&gt;
+#include &lt;QCoapResourceDiscoveryReply&gt;
+#include &lt;QCoapReply&gt;
+#include &lt;QDateTime&gt;
+#include &lt;QFileDialog&gt;
+#include &lt;QHostInfo&gt;
+#include &lt;QMessageBox&gt;
+#include &lt;QMetaEnum&gt;
+#include &lt;QNetworkInterface&gt;
+
+using namespace Qt::StringLiterals;
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    m_client = new QCoapClient(QtCoap::SecurityMode::NoSecurity, this);
+    connect(m_client, &amp;QCoapClient::finished, this, &amp;MainWindow::onFinished);
+    connect(m_client, &amp;QCoapClient::error, this, &amp;MainWindow::onError);
+
+    ui-&gt;setupUi(this);
+
+    ui-&gt;methodComboBox-&gt;addItem(tr(&quot;Get&quot;), QVariant::fromValue(QtCoap::Method::Get));
+    ui-&gt;methodComboBox-&gt;addItem(tr(&quot;Put&quot;), QVariant::fromValue(QtCoap::Method::Put));
+    ui-&gt;methodComboBox-&gt;addItem(tr(&quot;Post&quot;), QVariant::fromValue(QtCoap::Method::Post));
+    ui-&gt;methodComboBox-&gt;addItem(tr(&quot;Delete&quot;), QVariant::fromValue(QtCoap::Method::Delete));
+
+    fillHostSelector();
+    ui-&gt;hostComboBox-&gt;setFocus();
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+void MainWindow::fillHostSelector()
+{
+    const auto networkInterfaces = QNetworkInterface::allInterfaces();
+    for (const auto &amp;interface : networkInterfaces)
+        for (const auto &amp;address : interface.addressEntries())
+            ui-&gt;hostComboBox-&gt;addItem(address.ip().toString());
+}
+
+void MainWindow::addMessage(const QString &amp;message, bool isError)
+{
+    const QString content = &quot;--------------- %1 ---------------\n%2\n\n&quot;_L1
+                                .arg(QDateTime::currentDateTime().toString(), message);
+    ui-&gt;textEdit-&gt;setTextColor(isError ? Qt::red : Qt::black);
+    ui-&gt;textEdit-&gt;insertPlainText(content);
+    ui-&gt;textEdit-&gt;ensureCursorVisible();
+}
+
+void MainWindow::onFinished(QCoapReply *reply)
+{
+    if (reply-&gt;errorReceived() == QtCoap::Error::Ok)
+        addMessage(reply-&gt;message().payload());
+}
+
+static QString errorMessage(QtCoap::Error errorCode)
+{
+    const auto error = QMetaEnum::fromType&lt;QtCoap::Error&gt;().valueToKey(static_cast&lt;int&gt;(errorCode));
+    return MainWindow::tr(&quot;Request failed with error: %1\n&quot;).arg(error);
+}
+
+void MainWindow::onError(QCoapReply *reply, QtCoap::Error error)
+{
+    const auto errorCode = reply ? reply-&gt;errorReceived() : error;
+    addMessage(errorMessage(errorCode), true);
+}
+
+void MainWindow::onDiscovered(QCoapResourceDiscoveryReply *reply, QList&lt;QCoapResource&gt; resources)
+{
+    if (reply-&gt;errorReceived() != QtCoap::Error::Ok)
+        return;
+
+    QString message;
+    for (const auto &amp;resource : std::as_const(resources)) {
+        ui-&gt;resourceComboBox-&gt;addItem(resource.path());
+        message += tr(&quot;Discovered resource: \&quot;%1\&quot; on path %2\n&quot;)
+                        .arg(resource.title(), resource.path());
+    }
+    addMessage(message);
+}
+
+void MainWindow::onNotified(QCoapReply *reply, const QCoapMessage &amp;message)
+{
+    if (reply-&gt;errorReceived() == QtCoap::Error::Ok) {
+        addMessage(tr(&quot;Received observe notification with payload: %1&quot;)
+                        .arg(QString::fromUtf8(message.payload())));
+    }
+}
+
+static QString tryToResolveHostName(const QString hostName)
+{
+    const auto hostInfo = QHostInfo::fromName(hostName);
+    if (!hostInfo.addresses().empty())
+        return hostInfo.addresses().first().toString();
+
+    return hostName;
+}
+
+void MainWindow::on_runButton_clicked()
+{
+    const auto msgType = ui-&gt;msgTypeCheckBox-&gt;isChecked() ? QCoapMessage::Type::Confirmable
+                                                          : QCoapMessage::Type::NonConfirmable;
+    QUrl url;
+    url.setHost(tryToResolveHostName(ui-&gt;hostComboBox-&gt;currentText()));
+    url.setPort(ui-&gt;portSpinBox-&gt;value());
+    url.setPath(ui-&gt;resourceComboBox-&gt;currentText());
+
+    QCoapRequest request(url, msgType);
+    for (const auto &amp;option : std::as_const(m_options))
+        request.addOption(option);
+    m_options.clear();
+
+    const auto method = ui-&gt;methodComboBox-&gt;currentData(Qt::UserRole).value&lt;QtCoap::Method&gt;();
+    switch (method) {
+    case QtCoap::Method::Get:
+        m_client-&gt;get(request);
+        break;
+    case QtCoap::Method::Put:
+        m_client-&gt;put(request, m_currentData);
+        break;
+    case QtCoap::Method::Post:
+        m_client-&gt;post(request, m_currentData);
+        break;
+    case QtCoap::Method::Delete:
+        m_client-&gt;deleteResource(request);
+        break;
+    default:
+        break;
+    }
+    m_currentData.clear();
+}
+
+void MainWindow::on_discoverButton_clicked()
+{
+    QUrl url;
+    url.setHost(tryToResolveHostName(ui-&gt;hostComboBox-&gt;currentText()));
+    url.setPort(ui-&gt;portSpinBox-&gt;value());
+
+    QCoapResourceDiscoveryReply *discoverReply =
+            m_client-&gt;discover(url, ui-&gt;discoveryPathEdit-&gt;text());
+    if (discoverReply) {
+        connect(discoverReply, &amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;MainWindow::onDiscovered);
+    } else {
+        QMessageBox::critical(this, tr(&quot;Error&quot;),
+                              tr(&quot;Something went wrong, discovery request failed.&quot;));
+    }
+}
+
+void MainWindow::on_observeButton_clicked()
+{
+    QUrl url;
+    url.setHost(tryToResolveHostName(ui-&gt;hostComboBox-&gt;currentText()));
+    url.setPort(ui-&gt;portSpinBox-&gt;value());
+    url.setPath(ui-&gt;resourceComboBox-&gt;currentText());
+
+    QCoapReply *observeReply = m_client-&gt;observe(url);
+    if (!observeReply) {
+        QMessageBox::critical(this, tr(&quot;Error&quot;),
+                              tr(&quot;Something went wrong, observe request failed.&quot;));
+        return;
+    }
+
+    connect(observeReply, &amp;QCoapReply::notified, this, &amp;MainWindow::onNotified);
+
+    ui-&gt;cancelObserveButton-&gt;setEnabled(true);
+    connect(ui-&gt;cancelObserveButton, &amp;QPushButton::clicked, this, [this, url]() {
+        m_client-&gt;cancelObserve(url);
+        ui-&gt;cancelObserveButton-&gt;setEnabled(false);
+    });
+}
+
+void MainWindow::on_addOptionsButton_clicked()
+{
+    OptionDialog dialog(m_options);
+    if (dialog.exec() == QDialog::Accepted)
+        m_options = dialog.options();
+}
+
+void MainWindow::on_contentButton_clicked()
+{
+    QFileDialog dialog(this);
+    dialog.setFileMode(QFileDialog::AnyFile);
+    if (!dialog.exec())
+        return;
+
+    const auto fileName = dialog.selectedFiles().back();
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, tr(&quot;Error&quot;), tr(&quot;Failed to read from file %1&quot;).arg(fileName));
+        return;
+    }
+
+    m_currentData = file.readAll();
+}
+
+void MainWindow::on_resourceComboBox_editTextChanged(const QString &amp;text)
+{
+    ui-&gt;observeButton-&gt;setEnabled(!text.isEmpty());
+}
+
+void MainWindow::on_methodComboBox_currentIndexChanged(int index)
+{
+    Q_UNUSED(index);
+
+    const auto method = ui-&gt;methodComboBox-&gt;currentData(Qt::UserRole).value&lt;QtCoap::Method&gt;();
+    ui-&gt;contentButton-&gt;setEnabled(method == QtCoap::Method::Put || method == QtCoap::Method::Post);
+}
+
+</db:programlisting>
+</db:article>

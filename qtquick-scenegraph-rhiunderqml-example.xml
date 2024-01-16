@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - RHI Under QML</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render directly with <db:link xlink:href="qrhi.xml">QRhi</db:link> under a Qt Quick scene.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/rhiunderqml-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="introduction">
+<db:title>Introduction</db:title>
+<db:para>The RHI Under QML example shows how an application can make use of the <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>() signals to draw custom <db:link xlink:href="qrhi.xml">QRhi</db:link>-based content under a Qt Quick scene.</db:para>
+<db:para>For applications that wish to render <db:link xlink:href="qrhi.xml">QRhi</db:link> content on top of the Qt Quick scene, use <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() to upload data to buffers and connect to the <db:link xlink:href="qquickwindow.xml#afterRenderPassRecording">QQuickWindow::afterRenderPassRecording</db:link>() signal.</db:para>
+<db:para>In this example, we will also see how it is possible to have values that are exposed to QML which affect the <db:link xlink:href="qrhi.xml">QRhi</db:link>-based rendering. We animate the threshold value using a <db:link xlink:href="qml-qtquick-numberanimation.xml">NumberAnimation</db:link> in the QML file and this float value is then passed on in a uniform buffer to the fragment shader.</db:para>
+<db:para>The example is equivalent in most ways to the <db:link xlink:href="qtquick-scenegraph-openglunderqml-example.xml">OpenGL Under QML</db:link>, <db:link xlink:href="qtquick-scenegraph-d3d11underqml-example.xml">Direct3D 11 Under QML</db:link>, <db:link xlink:href="qtquick-scenegraph-metalunderqml-example.xml">Metal Under QML</db:link>, and <db:link xlink:href="qtquick-scenegraph-vulkanunderqml-example.xml">Vulkan Under QML</db:link> examples. Those examples render the same content by directly using a 3D API. This example on the other hand is fully cross-platform and portable, as it inherently supports operating with all the 3D APIs supported by <db:link xlink:href="qrhi.xml">QRhi</db:link> (such as, OpenGL, Vulkan, Metal, Direct 3D 11 and 12).</db:para>
+<db:note>
+<db:para>This example demonstrates advanced, low-level functionality performing portable, cross-platform 3D rendering, while relying on APIs with limited compatibility guarantee from the Qt Gui module. To be able to use the <db:link xlink:href="qrhi.xml">QRhi</db:link> APIs, the application links to <db:code>Qt::GuiPrivate</db:code> and includes <db:code>&lt;rhi/qrhi.h&gt;</db:code>.</db:para>
+</db:note>
+<db:para>Adding custom rendering as an underlay/overlay is one of the three ways to integrate custom 2D/3D rendering into a Qt Quick scene. The other two options are to perform the rendering &quot;inline&quot; with the Qt Quick scene's own rendering using <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link>, or to generate a whole separate render pass targeting a dedicated render target (a texture) and then have an item in the scene display the texture. Refer to the <db:link xlink:href="qtquick-scenegraph-rhitextureitem-example.xml">Scene Graph - RHI Texture Item</db:link> and the <db:link xlink:href="qtquick-scenegraph-customrendernode-example.xml">Scene Graph - Custom QSGRenderNode</db:link> examples regarding those approaches.</db:para>
+</db:section>
+<db:section xml:id="core-concepts">
+<db:title>Core Concepts</db:title>
+<db:para>The beforeRendering() signal is emitted at the start of every frame, before the scene graph starts its rendering, thus any <db:link xlink:href="qrhi.xml">QRhi</db:link> draw calls that are made as a response to this signal, will stack under the Qt Quick items. However, there are two signals that are relevant here: the application's own <db:link xlink:href="qrhi.xml">QRhi</db:link> commands should be recorded onto the same command buffer that is used by the scene graph, and what's more, the commands should belong to the same render pass. beforeRendering() on its own is not sufficient for this because it gets emitted at the start of the frame, before starting to record a render pass via <db:link xlink:href="qrhicommandbuffer.xml#beginPass">QRhiCommandBuffer::beginPass</db:link>(). By also connecting to beforeRenderPassRecording(), the application's own commands and the scene graph's own rendering will end up in the right order:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The scene graph's render loop calls <db:link xlink:href="qrhi.xml#beginFrame">QRhi::beginFrame</db:link>()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() is emitted - the application prepares resources for its custom rendering</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The scene graph calls <db:link xlink:href="qrhicommandbuffer.xml#beginPass">QRhiCommandBuffer::beginPass</db:link>()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>() is emitted - the application records draw calls</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The scene graph records draw calls</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="walkthrough">
+<db:title>Walkthrough</db:title>
+<db:para>The custom rendering is encapsulated within a custom <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>. <db:code>RhiSquircle</db:code> derives from <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>, and is exposed to QML (note the <db:code>QML_ELEMENT</db:code>). The QML scene instantiates <db:code>RhiSquircle</db:code>. Note however that this is not a visual item: the <db:link xlink:href="qquickitem.xml#Flag-enum">QQuickItem::ItemHasContents</db:link> flag is not set. Thus the item's position and size has no relevance and it does not reimplement <db:link xlink:href="qquickitem.xml#updatePaintNode">updatePaintNode</db:link>().</db:para>
+<db:programlisting language="cpp">class RhiSquircle : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(qreal t READ t WRITE setT NOTIFY tChanged)
+    QML_ELEMENT
+
+public:
+    RhiSquircle();
+
+    qreal t() const { return m_t; }
+    void setT(qreal t);
+
+signals:
+    void tChanged();
+
+public slots:
+    void sync();
+    void cleanup();
+
+private slots:
+    void handleWindowChanged(QQuickWindow *win);
+
+private:
+    void releaseResources() override;
+
+    qreal m_t = 0;
+    SquircleRenderer *m_renderer = nullptr;
+};
+</db:programlisting>
+<db:para>Instead, when the item gets associated with a <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link>, it connects to the <db:link xlink:href="qquickwindow.xml#beforeSynchronizing">QQuickWindow::beforeSynchronizing</db:link>() signal. Using <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::DirectConnection</db:link> is important since this signal is emitted on the Qt Quick render thread, if there is one. We want the connected slot to be invoked on this same thread.</db:para>
+<db:programlisting language="cpp">RhiSquircle::RhiSquircle()
+{
+    connect(this, &amp;QQuickItem::windowChanged, this, &amp;RhiSquircle::handleWindowChanged);
+}
+
+void RhiSquircle::handleWindowChanged(QQuickWindow *win)
+{
+    if (win) {
+        connect(win, &amp;QQuickWindow::beforeSynchronizing, this, &amp;RhiSquircle::sync, Qt::DirectConnection);
+        connect(win, &amp;QQuickWindow::sceneGraphInvalidated, this, &amp;RhiSquircle::cleanup, Qt::DirectConnection);
+        // Ensure we start with cleared to black. The squircle's blend mode relies on this.
+        win-&gt;setColor(Qt::black);
+    }
+}
+</db:programlisting>
+<db:para>In the scene graph's synchronizing phase, the rendering infrastructure is created, if not yet done, and the data relevant for rendering is synchronized, i.e. copied from the <db:code>RhiSquircle</db:code> item, that lives on the main thread, to the <db:code>SquircleRenderer</db:code> object that lives on the render thread. (if there is no render thread, then both objects live on the main thread) Accessing data is safe because the main thread is blocked while the render thread is executing its synchronize phase. See <db:link xlink:href="qtquick-visualcanvas-scenegraph.xml">Qt Quick Scene Graph</db:link> for more information on the scene graph threading and rendering model.</db:para>
+<db:para>In addition to the value of <db:code>t</db:code>, the associated <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> pointer is copied as well. While the <db:code>SquircleRenderer</db:code> could query <db:link xlink:href="qquickitem.xml#window">window</db:link>() on the <db:code>RhiSquircle</db:code> item even when operating on the render thread, that is, in theory, not entirely safe. Hence making a copy.</db:para>
+<db:para>When setting up the <db:code>SquircleRenderer</db:code>, connections to the <db:link xlink:href="qquickwindow.xml#beforeRendering">beforeRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">beforeRenderPassRecording</db:link>() are made, which are the key to be able to act and inject the application's custom 3D rendering commands at the appropriate time.</db:para>
+<db:programlisting language="cpp">void RhiSquircle::sync()
+{
+    // This function is invoked on the render thread, if there is one.
+
+    if (!m_renderer) {
+        m_renderer = new SquircleRenderer;
+        // Initializing resources is done before starting to record the
+        // renderpass, regardless of wanting an underlay or overlay.
+        connect(window(), &amp;QQuickWindow::beforeRendering, m_renderer, &amp;SquircleRenderer::frameStart, Qt::DirectConnection);
+        // Here we want an underlay and therefore connect to
+        // beforeRenderPassRecording. Changing to afterRenderPassRecording
+        // would render the squircle on top (overlay).
+        connect(window(), &amp;QQuickWindow::beforeRenderPassRecording, m_renderer, &amp;SquircleRenderer::mainPassRecordingStart, Qt::DirectConnection);
+    }
+    m_renderer-&gt;setT(m_t);
+    m_renderer-&gt;setWindow(window());
+}
+</db:programlisting>
+<db:para>When <db:link xlink:href="qquickwindow.xml#beforeRendering">beforeRendering</db:link>() is emitted, the <db:link xlink:href="qrhi.xml">QRhi</db:link> resources needed for our custom rendering, such as <db:link xlink:href="qrhibuffer.xml">QRhiBuffer</db:link>, <db:link xlink:href="qrhigraphicspipeline.xml">QRhiGraphicsPipeline</db:link>, and related objects, are created if not yet done.</db:para>
+<db:para>The data in the buffers is updated (more precisely, the data update operations are enqueued) using <db:link xlink:href="qrhiresourceupdatebatch.xml">QRhiResourceUpdateBatch</db:link> and <db:link xlink:href="qrhicommandbuffer.xml#resourceUpdate">QRhiCommandBuffer::resourceUpdate</db:link>(). The vertex buffer does not change its contents once the initial set of vertices are uploaded to it. The uniform buffer however is a <db:link xlink:href="qrhibuffer.xml#Type-enum">dynamic</db:link> buffer, as is typical for such buffers. Its content, some regions at least, is updated for every frame. Hence the unconditional call to <db:link xlink:href="qrhiresourceupdatebatch.xml#updateDynamicBuffer">updateDynamicBuffer</db:link>() for offset 0 and a byte size of 4 (which is <db:code>sizeof(float)</db:code> since the C++ <db:code>float</db:code> type happens to match GLSL's 32-bit <db:code>float</db:code>). What is stored at that position is the value of <db:code>t</db:code>, and that is updated in every frame, meaning in every invocation of frameStart().</db:para>
+<db:para>There is an additional float value in the buffer, starting at offset 4. This is used to cater to the coordinate system differences of the 3D APIs: when <db:link xlink:href="qrhi.xml#isYUpInNDC">isYUpInNDC</db:link>() returns <db:code>false</db:code>, which is the case with Vulkan in particular, the value is set to -1.0 which leads to flipping the Y value in the 2 component vector that is passed on (with interpolation) to the fragment shader based on which the color is calculated. This way the output on the screen is identical (i.e. the top-left corner is green-ish, the bottom-left is red-ish), regardless of which 3D API is in use. This value is updated only once in the uniform buffer, similarly to the vertex buffer. This highlights an issue low-level rendering code that aims to be portable often needs to deal with: the coordinate system differences in normalized device coordinates (NDC) and in images and framebuffers. For example, the NDC uses a origin-at-bottom-left system everywhere except Vulkan. Whereas framebuffers use an origin-at-top-left system everywhere except OpenGL. Typical renderers that work with a perspective projection can often be oblivious to this problem by conveniently relying on <db:link xlink:href="qrhi.xml#clipSpaceCorrMatrix">QRhi::clipSpaceCorrMatrix</db:link>(), which is a matrix that can be multiplied in to the projection matrix, and applies both an Y flip when needed, and also caters to the fact that clip space depth runs <db:code>-1..1</db:code> with OpenGL but <db:code>0..1</db:code> everywhere else. However, in some cases, such as in this example, this is not applicable. Rather, the application and shader logic needs to perform the necessary adjustment of vertex and UV positions as appropriate based on querying <db:link xlink:href="qrhi.xml#isYUpInNDC">QRhi::isYUpInNDC</db:link>() and <db:link xlink:href="qrhi.xml#isYUpInFramebuffer">QRhi::isYUpInFramebuffer</db:link>().</db:para>
+<db:para>To gain access to the <db:link xlink:href="qrhi.xml">QRhi</db:link> and <db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link> objects Qt Quick uses, they can simply be queried from the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link>. Note that this assumes that the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> is a regular, on-screen window. If it used <db:link xlink:href="qquickrendercontrol.xml">QQuickRenderControl</db:link> instead, e.g. to perform off-screen rendering into a texture, querying the swapchain would be wrong since there is no swapchain then.</db:para>
+<db:para>Due to the signal being emitted after Qt Quick calls <db:link xlink:href="qrhi.xml#beginFrame">QRhi::beginFrame</db:link>(), it is already possible to query the command buffer and render target from the swapchain. This is what allows to conveniently issue a <db:link xlink:href="qrhicommandbuffer.xml#resourceUpdate">QRhiCommandBuffer::resourceUpdate</db:link>() on the object returned from <db:link xlink:href="">QRhiSwapChain::currentFrameCommandBuffer()</db:link>. When creating a graphics pipeline, a <db:link xlink:href="qrhirenderpassdescriptor.xml">QRhiRenderPassDescriptor</db:link> can be retrieved from the <db:link xlink:href="qrhirendertarget.xml">QRhiRenderTarget</db:link> returned from <db:link xlink:href="qrhiswapchain.xml#currentFrameRenderTarget">QRhiSwapChain::currentFrameRenderTarget</db:link>(). (note that this means the graphics pipeline built here is suitable only for rendering to the swapchain, or at best another render target that is compatible with it; it is likely that if we wanted to render to a texture, then a different <db:link xlink:href="qrhirenderpassdescriptor.xml">QRhiRenderPassDescriptor</db:link>, and so a different graphics pipeline, would be needed since the texture and swapchain formats may differ)</db:para>
+<db:programlisting language="cpp">void SquircleRenderer::frameStart()
+{
+    // This function is invoked on the render thread, if there is one.
+
+    QRhi *rhi = m_window-&gt;rhi();
+    if (!rhi) {
+        qWarning(&quot;QQuickWindow is not using QRhi for rendering&quot;);
+        return;
+    }
+    QRhiSwapChain *swapChain = m_window-&gt;swapChain();
+    if (!swapChain) {
+        qWarning(&quot;No QRhiSwapChain?&quot;);
+        return;
+    }
+    QRhiResourceUpdateBatch *resourceUpdates = rhi-&gt;nextResourceUpdateBatch();
+
+    if (!m_pipeline) {
+        m_vertexShader = getShader(QLatin1String(&quot;:/scenegraph/rhiunderqml/squircle_rhi.vert.qsb&quot;));
+        if (!m_vertexShader.isValid())
+            qWarning(&quot;Failed to load vertex shader; rendering will be incorrect&quot;);
+
+        m_fragmentShader = getShader(QLatin1String(&quot;:/scenegraph/rhiunderqml/squircle_rhi.frag.qsb&quot;));
+        if (!m_fragmentShader.isValid())
+            qWarning(&quot;Failed to load fragment shader; rendering will be incorrect&quot;);
+
+        m_vertexBuffer.reset(rhi-&gt;newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertices)));
+        m_vertexBuffer-&gt;create();
+        resourceUpdates-&gt;uploadStaticBuffer(m_vertexBuffer.get(), vertices);
+
+        const quint32 UBUF_SIZE = 4 + 4; // 2 floats
+        m_uniformBuffer.reset(rhi-&gt;newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, UBUF_SIZE));
+        m_uniformBuffer-&gt;create();
+
+        float yDir = rhi-&gt;isYUpInNDC() ? 1.0f : -1.0f;
+        resourceUpdates-&gt;updateDynamicBuffer(m_uniformBuffer.get(), 4, 4, &amp;yDir);
+
+        m_srb.reset(rhi-&gt;newShaderResourceBindings());
+        const auto visibleToAll = QRhiShaderResourceBinding::VertexStage | QRhiShaderResourceBinding::FragmentStage;
+        m_srb-&gt;setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, visibleToAll, m_uniformBuffer.get())
+        });
+        m_srb-&gt;create();
+
+        QRhiVertexInputLayout inputLayout;
+        inputLayout.setBindings({
+            { 2 * sizeof(float) }
+        });
+        inputLayout.setAttributes({
+            { 0, 0, QRhiVertexInputAttribute::Float2, 0 }
+        });
+
+        m_pipeline.reset(rhi-&gt;newGraphicsPipeline());
+        m_pipeline-&gt;setTopology(QRhiGraphicsPipeline::TriangleStrip);
+        QRhiGraphicsPipeline::TargetBlend blend;
+        blend.enable = true;
+        blend.srcColor = QRhiGraphicsPipeline::SrcAlpha;
+        blend.srcAlpha = QRhiGraphicsPipeline::SrcAlpha;
+        blend.dstColor = QRhiGraphicsPipeline::One;
+        blend.dstAlpha = QRhiGraphicsPipeline::One;
+        m_pipeline-&gt;setTargetBlends({ blend });
+        m_pipeline-&gt;setShaderStages({
+            { QRhiShaderStage::Vertex, m_vertexShader },
+            { QRhiShaderStage::Fragment, m_fragmentShader }
+        });
+        m_pipeline-&gt;setVertexInputLayout(inputLayout);
+        m_pipeline-&gt;setShaderResourceBindings(m_srb.get());
+        m_pipeline-&gt;setRenderPassDescriptor(swapChain-&gt;currentFrameRenderTarget()-&gt;renderPassDescriptor());
+        m_pipeline-&gt;create();
+    }
+
+    float t = m_t;
+    resourceUpdates-&gt;updateDynamicBuffer(m_uniformBuffer.get(), 0, 4, &amp;t);
+
+    swapChain-&gt;currentFrameCommandBuffer()-&gt;resourceUpdate(resourceUpdates);
+}
+</db:programlisting>
+<db:para>Finally, upon <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>(), a draw call for a triangle strip with 4 vertices is recorded. This example simply draws a quad in practice, and calculates the pixel colors using the logic in the fragment shaders, but applications are free to do more complicated drawing: creating multiple graphics pipelines and recording multiple draw calls is perfectly fine as well. The important thing to keep in mind is that whatever is recorded on the <db:link xlink:href="qrhicommandbuffer.xml">QRhiCommandBuffer</db:link> retrieved from the window's <db:link xlink:href="qrhiswapchain.xml">swapchain</db:link>, it is effectively prepended before the Qt Quick scene graph's own rendering within the main render pass.</db:para>
+<db:note>
+<db:para>This means that if depth buffer usage with depth testing and writing out depth values is involved, then the Qt Quick content may be affected by the values written to the depth buffer. See <db:link xlink:href="qtquick-visualcanvas-scenegraph-renderer.xml">Qt Quick Scene Graph Default Renderer</db:link> for details on the scene graph's renderer, in particular the sections about the handling of <db:emphasis>opaque</db:emphasis> and <db:emphasis>alpha blended</db:emphasis> primitives.</db:para>
+</db:note>
+<db:para>To get the window size in pixels, <db:link xlink:href="">QRhiRenderTarget::pixelSize()</db:link> is used. This is convenient because this way the example does not need to calculate the viewport size by other means and does not have to worry about applying the <db:link xlink:href="qwindow.xml#devicePixelRatio">high DPI scale factor</db:link>, if there is any.</db:para>
+<db:programlisting language="cpp">void SquircleRenderer::mainPassRecordingStart()
+{
+    // This function is invoked on the render thread, if there is one.
+
+    QRhi *rhi = m_window-&gt;rhi();
+    QRhiSwapChain *swapChain = m_window-&gt;swapChain();
+    if (!rhi || !swapChain)
+        return;
+
+    const QSize outputPixelSize = swapChain-&gt;currentFrameRenderTarget()-&gt;pixelSize();
+    QRhiCommandBuffer *cb = m_window-&gt;swapChain()-&gt;currentFrameCommandBuffer();
+    cb-&gt;setViewport({ 0.0f, 0.0f, float(outputPixelSize.width()), float(outputPixelSize.height()) });
+    cb-&gt;setGraphicsPipeline(m_pipeline.get());
+    cb-&gt;setShaderResources();
+    const QRhiCommandBuffer::VertexInput vbufBinding(m_vertexBuffer.get(), 0);
+    cb-&gt;setVertexInput(0, 1, &amp;vbufBinding);
+    cb-&gt;draw(4);
+}
+</db:programlisting>
+<db:para>The vertex and fragment shaders go through the standard <db:link xlink:href="qrhi.xml">QRhi</db:link> shader conditioning pipeline. Initially written as Vulkan-compatible GLSL, they get compiled to SPIR-V and then transpiled to other shading languages by Qt's tools. When using CMake, the example relies on the <db:code>qt_add_shaders</db:code> command that makes it simple and convenient to bundle the shaders with the application and perform the necessary processing at build time. See <db:link xlink:href="">Qt Shader Tools Build System Integration</db:link> for details.</db:para>
+<db:para>Specifying <db:code>BASE</db:code> helps removing the <db:code>../shared</db:code> prefix, while <db:code>PREFIX</db:code> adds the intended <db:code>/scenegraph/rhiunderqml</db:code> prefix. Thus the final path is <db:code>:/scenegraph/rhiunderqml/squircle_rhi.vert.qsb</db:code>.</db:para>
+<db:programlisting language="cpp" role="bad">qt_add_shaders(rhiunderqml &quot;rhiunderqml_shaders&quot;
+    PRECOMPILE
+    OPTIMIZED
+    PREFIX
+        /scenegraph/rhiunderqml
+    BASE
+        ../shared
+    FILES
+        ../shared/squircle_rhi.vert
+        ../shared/squircle_rhi.frag
+)
+</db:programlisting>
+<db:para>To support qmake, the example still ships the <db:code>.qsb</db:code> files that would normally be generated at build time, and lists them in the qrc file. This approach is however not recommended for new applications that use CMake as the build system.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/scenegraph/rhiunderqml?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtquick-scenegraph-rhitextureitem-example.xml">Scene Graph - RHI Texture Item</db:link></db:member>
+<db:member><db:link xlink:href="qtquick-scenegraph-customrendernode-example.xml">Scene Graph - Custom QSGRenderNode</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,321 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Interacting with QML Objects from C++</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Qml Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how to load and access QML objects from C++ code.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>All QML object types are <db:link xlink:href="qobject.xml">QObject</db:link>-derived types, whether they are internally implemented by the engine or <db:link xlink:href="qtqml-cppintegration-definetypes.xml">defined by third-party sources</db:link>. This means the QML engine can use the Qt <db:link xlink:href="metaobjects.xml">Meta Object System</db:link> to dynamically instantiate any QML object type and inspect the created objects.</db:para>
+<db:para>This is useful for creating QML objects from C++ code, whether to display a QML object that can be visually rendered, or to integrate non-visual QML object data into a C++ application. Once a QML object is created, it can be inspected from C++ in order to read and write to properties, invoke methods and receive signal notifications.</db:para>
+<db:para>For more information about C++ and the different QML integration methods, see the <db:link xlink:href="qtqml-cppintegration-overview.xml">C++ and QML integration overview</db:link> page.</db:para>
+<db:section xml:id="loading-qml-objects-from-c">
+<db:title>Loading QML Objects from C++</db:title>
+<db:para>A QML document can be loaded with <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> or QQuickView. <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> loads a QML document as a C++ object that can then be modified from C++ code. QQuickView also does this, but as QQuickView is a <db:link xlink:href="qwindow.xml">QWindow</db:link>-derived class, the loaded object will also be rendered into a visual display; QQuickView is generally used to integrate a displayable QML object into an application's user interface.</db:para>
+<db:para>For example, suppose there is a MyItem.qml file that looks like this:</db:para>
+<db:programlisting language="qml">import QtQuick
+
+Item {
+    width: 100; height: 100
+}
+</db:programlisting>
+<db:para>This QML document can be loaded with <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> or QQuickView with the following C++ code. Using a <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> requires calling <db:link xlink:href="qqmlcomponent.xml#create">QQmlComponent::create</db:link>() to create a new instance of the component, while a QQuickView automatically creates an instance of the component, which is accessible via QQuickView::rootObject():</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:programlisting language="cpp">// Using QQmlComponent
+QQmlEngine engine;
+QQmlComponent component(&amp;engine,
+        QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+QObject *object = component.create();
+...
+delete object;
+</db:programlisting>
+</db:td>
+<db:td>
+<db:programlisting language="cpp">// Using QQuickView
+QQuickView view;
+view.setSource(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+view.show();
+QObject *object = view.rootObject();
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>This object is the instance of the MyItem.qml component that has been created. You can now modify the item's properties using <db:link xlink:href="qobject.xml#setProperty">QObject::setProperty</db:link>() or <db:link xlink:href="qqmlproperty.xml#write">QQmlProperty::write</db:link>():</db:para>
+<db:programlisting language="cpp">object-&gt;setProperty(&quot;width&quot;, 500);
+QQmlProperty(object, &quot;width&quot;).write(500);
+</db:programlisting>
+<db:para>The difference between QObject::setProperty() and QQmlProperty::write() is that the latter will also remove the binding in addition to setting the property value. For example, suppose the width assignment above had been a binding to height:</db:para>
+<db:programlisting language="cpp">width: height
+</db:programlisting>
+<db:para>If the height of the Item changed after the object-&gt;setProperty(&quot;width&quot;, 500) call, the width would be updated again, as the binding remains active. However, if the height changes after the QQmlProperty(object, &quot;width&quot;).write(500) call, the width will not be changed, as the binding does not exist anymore.</db:para>
+<db:para>Alternatively, you can cast the object to its actual type and call methods with compile-time safety. In this case the base object of MyItem.qml is an Item, which is defined by the QQuickItem class:</db:para>
+<db:programlisting language="cpp">QQuickItem *item = qobject_cast&lt;QQuickItem*&gt;(object);
+item-&gt;setWidth(500);
+</db:programlisting>
+<db:para>You can also connect to any signals or call methods defined in the component using <db:link xlink:href="qmetaobject.xml#invokeMethod">QMetaObject::invokeMethod</db:link>() and <db:link xlink:href="qobject.xml#connect">QObject::connect</db:link>(). See <db:link xlink:href="qtqml-cppintegration-interactqmlfromcpp.xml#invoking-qml-methods">Invoking QML Methods</db:link> and <db:link xlink:href="qtqml-cppintegration-interactqmlfromcpp.xml#connecting-to-qml-signals">Connecting to QML Signals</db:link> below for further details.</db:para>
+</db:section>
+<db:section xml:id="accessing-qml-objects-via-well-defined-c-interfaces">
+<db:title>Accessing QML Objects via well-defined C++ Interfaces</db:title>
+<db:para>The best way of interacting with QML from C++ is to define an interface for doing so in C++ and accessing it in QML itself. With other methods, refactoring your QML code can easily lead to your QML / C++ interaction breaking. It also helps to reason about the interaction of QML and C++ code, as having it driven via QML can be more easily reasoned about by both users and tooling such as qmllint. Accessing QML from C++ will lead to QML code that cannot be understood without manually verifying that no outside C++ code is modifying a given QML component, and even then the extent of the access might change over time, making continued use of this strategy a maintenance burden.</db:para>
+<db:para>To let QML drive the interaction, first you need to define a C++ interface:</db:para>
+<db:programlisting language="cpp">class CppInterface : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    // ...
+};
+</db:programlisting>
+<db:para>Using a QML-driven approach, this interface can be interacted with in two ways:</db:para>
+<db:section xml:id="singletons">
+<db:title>Singletons</db:title>
+<db:para>One option is to register the interface as a singleton by adding the <db:link xlink:href="qqmlintegration-h.xml#QML_SINGLETON">QML_SINGLETON</db:link> macro to the interface, exposing it to all components. Following that, the interface becomes available via a simple import statement:</db:para>
+<db:programlisting language="cpp">import my.company.module
+
+Item {
+    Component.onCompleted: {
+        CppInterface.foo();
+    }
+}
+</db:programlisting>
+<db:para>Use this approach if you need your interface in more places than the root component, as simply passing down an object would require explicitly passing it on to other components via a property or utilizing the slow and not recommended method of using <db:link xlink:href="qmllint-warnings-and-errors-unqualified.xml#unqualified-access">unqualified access</db:link>.</db:para>
+</db:section>
+<db:section xml:id="initial-properties">
+<db:title>Initial properties</db:title>
+<db:para>Another option is to mark the interface as uncreatable via <db:link xlink:href="qqmlintegration-h.xml#QML_UNCREATABLE">QML_UNCREATABLE</db:link> and supplying it to the root QML Component by using <db:link xlink:href="qqmlcomponent.xml#createWithInitialProperties">QQmlComponent::createWithInitialProperties</db:link>() and a <db:link xlink:href="qtqml-syntax-objectattributes.xml#required-properties">required property</db:link> on the QML end.</db:para>
+<db:para>Your root component may look something like this:</db:para>
+<db:programlisting language="cpp">import QtQuick
+
+Item {
+    required property CppInterface interface
+    Component.onCompleted: {
+        interface.foo();
+    }
+}
+</db:programlisting>
+<db:para>Marking the property as required here protects the component against being created without the interface property being set.</db:para>
+<db:para>You can then initialize your component in the same way as outlined in <db:link xlink:href="qtqml-cppintegration-interactqmlfromcpp.xml#loading-qml-objects-from-c">Loading QML Objects from C++</db:link> except using createWithInitialProperties():</db:para>
+<db:programlisting language="cpp">component.createWithInitialProperties(QVariantMap{{u&quot;interface&quot;_s, QVariant::fromValue&lt;CppInterface *&gt;(new CppInterface)}});
+</db:programlisting>
+<db:para>This method is to be preferred if you know that your interface only needs to be available to the root component. It also allows for connecting to signals and slots of the interface more easily on the C++ side.</db:para>
+<db:para>If neither of these methods suit your needs you may want to investigate the usage of <db:link xlink:href="">C++ models</db:link> instead.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="accessing-loaded-qml-objects-by-object-name">
+<db:title>Accessing Loaded QML Objects by Object Name</db:title>
+<db:para>QML components are essentially object trees with children that have siblings and their own children. Child objects of QML components can be located using the <db:link xlink:href="qobject.xml#objectName-prop">QObject::objectName</db:link> property with <db:link xlink:href="qobject.xml#findChild">QObject::findChild</db:link>(). For example, if the root item in MyItem.qml had a child Rectangle item:</db:para>
+<db:programlisting language="qml">import QtQuick
+
+Item {
+    width: 100; height: 100
+
+    Rectangle {
+        anchors.fill: parent
+        objectName: &quot;rect&quot;
+    }
+}
+</db:programlisting>
+<db:para>The child could be located like this:</db:para>
+<db:programlisting language="cpp">QObject *rect = object-&gt;findChild&lt;QObject*&gt;(&quot;rect&quot;);
+if (rect)
+    rect-&gt;setProperty(&quot;color&quot;, &quot;red&quot;);
+</db:programlisting>
+<db:para>Note that an object may have multiple children with the same objectName. For example, ListView creates multiple instances of its delegate, so if its delegate is declared with a particular objectName, the ListView will have multiple children with the same objectName. In this case, <db:link xlink:href="qobject.xml#findChildren">QObject::findChildren</db:link>() can be used to find all children with a matching objectName.</db:para>
+<db:warning>
+<db:para>Although it is possible to access QML objects from C++ and manipulate them, it is not the recommended approach, except for testing and prototyping purposes. One of the strengths of QML and C++ integration is the ability to implement UIs in QML separate from the C++ logic and dataset backend, and this fails if the C++ side starts manipulating QML directly. Such an approach also makes changing the QML UI difficult without affecting its C++ counterpart.</db:para>
+</db:warning>
+</db:section>
+<db:section xml:id="accessing-members-of-a-qml-object-type-from-c">
+<db:title>Accessing Members of a QML Object Type from C++</db:title>
+<db:section xml:id="properties">
+<db:title>Properties</db:title>
+<db:para>Any properties declared in a QML object are automatically accessible from C++. Given a QML item like this:</db:para>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick
+
+Item {
+    property int someNumber: 100
+}
+</db:programlisting>
+<db:para>The value of the someNumber property can be set and read using <db:link xlink:href="qqmlproperty.xml">QQmlProperty</db:link>, or <db:link xlink:href="qobject.xml#setProperty">QObject::setProperty</db:link>() and <db:link xlink:href="qobject.xml#property">QObject::property</db:link>():</db:para>
+<db:programlisting language="cpp">QQmlEngine engine;
+QQmlComponent component(&amp;engine, &quot;MyItem.qml&quot;);
+QObject *object = component.create();
+
+qDebug() &lt;&lt; &quot;Property value:&quot; &lt;&lt; QQmlProperty::read(object, &quot;someNumber&quot;).toInt();
+QQmlProperty::write(object, &quot;someNumber&quot;, 5000);
+
+qDebug() &lt;&lt; &quot;Property value:&quot; &lt;&lt; object-&gt;property(&quot;someNumber&quot;).toInt();
+object-&gt;setProperty(&quot;someNumber&quot;, 100);
+</db:programlisting>
+<db:para>You should always use <db:link xlink:href="qobject.xml#setProperty">QObject::setProperty</db:link>(), <db:link xlink:href="qqmlproperty.xml">QQmlProperty</db:link> or <db:link xlink:href="qmetaproperty.xml#write">QMetaProperty::write</db:link>() to change a QML property value, to ensure the QML engine is made aware of the property change. For example, say you have a custom type PushButton with a buttonText property that internally reflects the value of a m_buttonText member variable. Modifying the member variable directly like this is not a good idea:</db:para>
+<db:programlisting language="cpp">//bad code
+QQmlComponent component(engine, &quot;MyButton.qml&quot;);
+PushButton *button = qobject_cast&lt;PushButton*&gt;(component.create());
+button-&gt;m_buttonText = &quot;Click me&quot;;
+</db:programlisting>
+<db:para>Since the value is changed directly, this bypasses Qt's <db:link xlink:href="metaobjects.xml">meta-object system</db:link> and the QML engine is not made aware of the property change. This means property bindings to buttonText would not be updated, and any onButtonTextChanged handlers would not be called.</db:para>
+</db:section>
+<db:section xml:id="invoking-qml-methods">
+<db:title>Invoking QML Methods</db:title>
+<db:para>All QML methods are exposed to the meta-object system and can be called from C++ using <db:link xlink:href="qmetaobject.xml#invokeMethod">QMetaObject::invokeMethod</db:link>(). You can specify types for the parameters and the return value after the colon character, as shown in the code snippet below. This can be useful, for example, when you want to connect a signal in C++ with a certain signature to a QML-defined method. If you omit the types, the C++ signature will use <db:link xlink:href="qvariant.xml">QVariant</db:link>.</db:para>
+<db:para>Here is a C++ application that calls a QML method using <db:link xlink:href="qmetaobject.xml#invokeMethod">QMetaObject::invokeMethod</db:link>():</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>QML</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick
+
+Item {
+    function myQmlFunction(msg: string) : string {
+        console.log(&quot;Got message:&quot;, msg)
+        return &quot;some return value&quot;
+    }
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>C++</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="cpp">// main.cpp
+QQmlEngine engine;
+QQmlComponent component(&amp;engine, &quot;MyItem.qml&quot;);
+QObject *object = component.create();
+
+QString returnedValue;
+QString msg = &quot;Hello from C++&quot;;
+QMetaObject::invokeMethod(object, &quot;myQmlFunction&quot;,
+        Q_RETURN_ARG(QString, returnedValue),
+        Q_ARG(QString, msg));
+
+qDebug() &lt;&lt; &quot;QML function returned:&quot; &lt;&lt; returnedValue;
+delete object;
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>Notice the parameter and return type specified after the colon. You can use <db:link xlink:href="qtqml-typesystem-valuetypes.xml">value types</db:link> and <db:link xlink:href="qtqml-typesystem-objecttypes.xml">object types</db:link> as type names.</db:para>
+<db:para>If the type is omitted or specified as var in QML, then you must pass <db:link xlink:href="qvariant.xml">QVariant</db:link> as type with <db:link xlink:href="qmetaobject.xml#Q_RETURN_ARG">Q_RETURN_ARG</db:link>() and <db:link xlink:href="qmetaobject.xml#Q_ARG">Q_ARG</db:link>() when calling <db:link xlink:href="qmetaobject.xml#invokeMethod">QMetaObject::invokeMethod</db:link>.</db:para>
+</db:section>
+<db:section xml:id="connecting-to-qml-signals">
+<db:title>Connecting to QML Signals</db:title>
+<db:para>All QML signals are automatically available to C++, and can be connected to using <db:link xlink:href="qobject.xml#connect">QObject::connect</db:link>() like any ordinary Qt C++ signal. In return, any C++ signal can be received by a QML object using <db:link xlink:href="qtqml-syntax-signals.xml">signal handlers</db:link>.</db:para>
+<db:para>Here is a QML component with a signal named qmlSignal that is emitted with a string-type parameter. This signal is connected to a C++ object's slot using <db:link xlink:href="qobject.xml#connect">QObject::connect</db:link>(), so that the cppSlot() method is called whenever the qmlSignal is emitted:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick
+
+Item {
+    id: item
+    width: 100; height: 100
+
+    signal qmlSignal(msg: string)
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: item.qmlSignal(&quot;Hello from QML&quot;)
+    }
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:programlisting language="cpp">class MyClass : public QObject
+{
+    Q_OBJECT
+public slots:
+    void cppSlot(const QString &amp;msg) {
+        qDebug() &lt;&lt; &quot;Called the C++ slot with message:&quot; &lt;&lt; msg;
+    }
+};
+
+int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+
+    QQuickView view(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+    QObject *item = view.rootObject();
+
+    MyClass myClass;
+    QObject::connect(item, SIGNAL(qmlSignal(QString)),
+                     &amp;myClass, SLOT(cppSlot(QString)));
+
+    view.show();
+    return app.exec();
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>A QML object type in a signal parameter is translated to a pointer to the class in C++:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick 2.0
+
+Item {
+    id: item
+    width: 100; height: 100
+
+    signal qmlSignal(anObject: Item)
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: item.qmlSignal(item)
+    }
+}
+</db:programlisting>
+</db:td>
+<db:td>
+<db:programlisting language="cpp">class MyClass : public QObject
+{
+    Q_OBJECT
+public slots:
+    void cppSlot(QQuickItem *item) {
+       qDebug() &lt;&lt; &quot;Called the C++ slot with item:&quot; &lt;&lt; item;
+
+       qDebug() &lt;&lt; &quot;Item dimensions:&quot; &lt;&lt; item-&gt;width()
+                &lt;&lt; item-&gt;height();
+    }
+};
+
+int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+
+    QQuickView view(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+    QObject *item = view.rootObject();
+
+    MyClass myClass;
+    QObject::connect(item, SIGNAL(qmlSignal(QVariant)),
+                     &amp;myClass, SLOT(cppSlot(QVariant)));
+
+    view.show();
+    return app.exec();
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+</db:section>
+</db:article>

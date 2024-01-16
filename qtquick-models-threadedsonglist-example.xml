@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Models and Views: List Model using a worker thread for data fetching</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to implement a list model with a responsive UI using a worker thread to fetch data.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>{Screenshot of the application</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qml-threadedsonglist-example.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>where a songlist with album arts, song names, artist names and album names are visible}</db:para>
+<db:para>This example introduces a custom item model, inheriting <db:link xlink:href="qabstractlistmodel.xml">QAbstractListModel</db:link>. The model gets its data from a worker object that is in separate <db:link xlink:href="qthread.xml">QThread</db:link>, fetching data from a slow data source.</db:para>
+<db:section xml:id="overview-of-the-threaded-song-list-example">
+<db:title>Overview of the Threaded Song List example</db:title>
+<db:para>The data source simulates a slow data source by adding a delay of 100 milliseconds per song fetched from it. This means that loading of the entire list of 3600 songs would take 6 minutes, making the opening of the application impractical. This delay is mitigated by fetching the data only for the visible area of the view, using a <db:link xlink:href="qobject.xml">QObject</db:link> placed into a worker thread.</db:para>
+<db:para>The worker object has a limit for the number of fetch requests it holds in queue. This ensures that only the elements of the currently visible part of the song list are fetched, removing the need to wait for the non-visible part of the list to load, when user has already scrolled past some part of the list.</db:para>
+<db:para>Focus of this example is in the source model of the view. The view itself is an unmodified QML <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> with a simple delegate. The use of thread is hidden behind the implementation of model data handling and the <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> does not need to have any customization to be able to adapt to the thread-based model.</db:para>
+<db:para>Also since the focus is in the model, the Qt Quick Controls is set to use Universal style on all platforms to ensure identical UI behavior.</db:para>
+<db:programlisting language="qml">import QtQuick
+import QtQuick.Controls.Universal
+</db:programlisting>
+</db:section>
+<db:section xml:id="how-it-works">
+<db:title>How it works</db:title>
+<db:para>The business logic of providing the song list data is separated into <db:code>DataStorage</db:code> class that provides a simple ID-based interface for the model.</db:para>
+<db:programlisting language="cpp">QList&lt;int&gt; idList();
+MediaElement item(int id) const;
+std::optional&lt;int&gt; currentlyFetchedId() const;
+</db:programlisting>
+<db:para>When model requests data from the DataStorage, the storage will first check if it has the data already available. If it does, data is returned instantly, as would be the case in a non-threaded model. In case the data is not found, DataStorage will emit a <db:code>dataFetchNeeded()</db:code> signal to the worker object and add an empty item to the list of already existing data. Adding the empty item ensures that no further signals are sent to the worker for the same list item.</db:para>
+<db:programlisting language="cpp">if (!m_items.contains(id)) {
+    m_items.insert(id, MediaElement{});
+    emit dataFetchNeeded(m_idList.indexOf(id));
+}
+return m_items.value(id);
+</db:programlisting>
+<db:para><db:code>QueueWorker</db:code> - the worker thread object - processes the dataFetchNeeded() signals it has received by sending a signal to itself, which makes it possible to receive all signals already in QEventQueue before starting the slow data read operation.</db:para>
+</db:section>
+<db:section xml:id="applying-the-approach-to-dynamic-models">
+<db:title>Applying the approach to dynamic models</db:title>
+<db:para>If one wishes to expand the solution towards a case where items may be added, moved or removed from the data source (in this case RemoteMedia), DataStorage needs to be updated with signals to match <db:link xlink:href="qabstractitemmodel.xml#rowsMoved">QAbstractItemModel::rowsMoved</db:link>(), <db:link xlink:href="qabstractitemmodel.xml#rowsInserted">QAbstractItemModel::rowsInserted</db:link>() and two signals to trigger the <db:link xlink:href="qabstractitemmodel.xml#beginRemoveRows">QAbstractItemModel::beginRemoveRows</db:link>() and <db:link xlink:href="qabstractitemmodel.xml#endRemoveRows">QAbstractItemModel::endRemoveRows</db:link>() inside ThreadedListModel.</db:para>
+<db:para>For the insertion and move the ThreadedListModel can just call <db:link xlink:href="qabstractitemmodel.xml#beginInsertRows">QAbstractItemModel::beginInsertRows</db:link>(), then add new IDs to its ID list and call <db:link xlink:href="qabstractitemmodel.xml#endInsertRows">QAbstractItemModel::endInsertRows</db:link>(). As ThreadedListModel holds a copy of the ID list and accesses storage by ID, there is no need to signal the begin and end from storage. Equally ThreadedListModel can call <db:link xlink:href="qabstractitemmodel.xml#beginMoveRows">QAbstractItemModel::beginMoveRows</db:link>(), move IDs in its ID list and then call <db:link xlink:href="qabstractitemmodel.xml#endMoveRows">QAbstractItemModel::endMoveRows</db:link>().</db:para>
+<db:para>Removal is a slightly more complex case. The view needs to have a possibility to request the data that is going to be removed before it is actually removed. So DataStorage needs to signal a warning of the removal, causing the Model to call <db:link xlink:href="qabstractitemmodel.xml#beginRemoveRows">QAbstractItemModel::beginRemoveRows</db:link>(). At this stage ThreadedListModel may get one or more <db:code>data()</db:code> calls. Once the call to direct connected signal returns at DataStorage, it is OK for DataStorage to remove the item and then signal the model again with another signal that triggers the model to call <db:link xlink:href="qabstractitemmodel.xml#endRemoveRows">QAbstractItemModel::endRemoveRows</db:link>().</db:para>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, see <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Qt Creator: Tutorial: Build and run</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/models/threadedsonglist?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

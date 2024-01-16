@@ -1,0 +1,339 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Saving and Loading a Game</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>How to save and load a game using Qt's JSON or CBOR classes.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Many games provide save functionality, so that the player's progress through the game can be saved and loaded at a later time. The process of saving a game generally involves serializing each game object's member variables to a file. Many formats can be used for this purpose, one of which is JSON. With <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link>, you also have the ability to serialize a document in a <db:link xlink:href="https://datatracker.ietf.org/doc/html/rfc7049">CBOR</db:link> format, which is great if you don't want the save file to be easy to read (but see <db:link xlink:href="qtcore-serialization-cbordump-example.xml">Parsing and displaying CBOR data</db:link> for how it <db:emphasis>can</db:emphasis> be read), or if you need to keep the file size down.</db:para>
+<db:para>In this example, we'll demonstrate how to save and load a simple game to and from JSON and binary formats.</db:para>
+<db:section xml:id="the-character-class">
+<db:title>The Character Class</db:title>
+<db:para>The Character class represents a non-player character (NPC) in our game, and stores the player's name, level, and class type.</db:para>
+<db:para>It provides static fromJson() and non-static toJson() functions to serialise itself.</db:para>
+<db:note>
+<db:para>This pattern (fromJson()/toJson()) works because QJsonObjects can be constructed independent of an owning <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link>, and because the data types being (de)serialized here are value types, so can be copied. When serializing to another format — for example XML or <db:link xlink:href="qdatastream.xml">QDataStream</db:link>, which require passing a document-like object — or when the object identity is important (<db:link xlink:href="qobject.xml">QObject</db:link> subclasses, for example), other patterns may be more suitable. See the dombookmarks example for XML, and the implementation of <db:link xlink:href="">QListWidgetItem::read()</db:link> and <db:link xlink:href="">QListWidgetItem::write()</db:link> for idiomatic <db:link xlink:href="qdatastream.xml">QDataStream</db:link> serialization. The print() functions in this example are good examples of <db:link xlink:href="qtextstream.xml">QTextStream</db:link> serialization, even though they, of course, lack the deserialization side.</db:para>
+</db:note>
+<db:programlisting language="cpp">class Character
+{
+    Q_GADGET
+
+public:
+    enum ClassType { Warrior, Mage, Archer };
+    Q_ENUM(ClassType)
+
+    Character();
+    Character(const QString &amp;name, int level, ClassType classType);
+
+    QString name() const;
+    void setName(const QString &amp;name);
+
+    int level() const;
+    void setLevel(int level);
+
+    ClassType classType() const;
+    void setClassType(ClassType classType);
+
+    static Character fromJson(const QJsonObject &amp;json);
+    QJsonObject toJson() const;
+
+    void print(QTextStream &amp;s, int indentation = 0) const;
+
+private:
+    QString mName;
+    int mLevel = 0;
+    ClassType mClassType = Warrior;
+};
+</db:programlisting>
+<db:para>Of particular interest to us are the fromJson() and toJson() function implementations:</db:para>
+<db:programlisting language="cpp">Character Character::fromJson(const QJsonObject &amp;json)
+{
+    Character result;
+
+    if (const QJsonValue v = json[&quot;name&quot;]; v.isString())
+        result.mName = v.toString();
+
+    if (const QJsonValue v = json[&quot;level&quot;]; v.isDouble())
+        result.mLevel = v.toInt();
+
+    if (const QJsonValue v = json[&quot;classType&quot;]; v.isDouble())
+        result.mClassType = ClassType(v.toInt());
+
+    return result;
+}
+</db:programlisting>
+<db:para>In the fromJson() function, we construct a local result Character object and assign result's members values from the <db:link xlink:href="qjsonobject.xml">QJsonObject</db:link> argument. You can use either <db:link xlink:href="qjsonobject.xml#operator-5b-5d">QJsonObject::operator[]</db:link>() or <db:link xlink:href="qjsonobject.xml#value">QJsonObject::value</db:link>() to access values within the JSON object; both are const functions and return <db:link xlink:href="qjsonvalue.xml#Type-enum">QJsonValue::Undefined</db:link> if the key is invalid. In particular, the is... functions (for example <db:link xlink:href="qjsonvalue.xml#isString">QJsonValue::isString</db:link>(), <db:link xlink:href="qjsonvalue.xml#isDouble">QJsonValue::isDouble</db:link>()) return false for <db:link xlink:href="qjsonvalue.xml#Type-enum">QJsonValue::Undefined</db:link>, so we can check for existence as well as the correct type in a single lookup.</db:para>
+<db:para>If a value does not exist in the JSON object, or has the wrong type, we don't write to the corresponding result member, either, thereby preserving any values the default constructor may have set. This means default values are centrally defined in one location (the default constructor) and need not be repeated in serialisation code (<db:link xlink:href="https://en.wikipedia.org/wiki/Don%27t_repeat_yourself">DRY</db:link>).</db:para>
+<db:para>Observe the use of <db:link xlink:href="https://en.cppreference.com/w/cpp/language/if#If_statements_with_initializer">C++17 if-with-initializer</db:link> to separate scoping and checking of the variable v. This means we can keep the variable name short, because its scope is limited.</db:para>
+<db:para>Compare that to the naïve approach using QJsonObject::contains():</db:para>
+<db:programlisting language="cpp" role="bad">if (json.contains(&quot;name&quot;) &amp;&amp; json[&quot;name&quot;].isString())
+    result.mName = json[&quot;name&quot;].toString();
+</db:programlisting>
+<db:para>which, beside being less readable, requires a total of three lookups (no, the compiler will <db:emphasis>not</db:emphasis> optimize these into one), so is three times slower and repeats &quot;name&quot; three times (violating the DRY principle).</db:para>
+<db:programlisting language="cpp">QJsonObject Character::toJson() const
+{
+    QJsonObject json;
+    json[&quot;name&quot;] = mName;
+    json[&quot;level&quot;] = mLevel;
+    json[&quot;classType&quot;] = mClassType;
+    return json;
+}
+</db:programlisting>
+<db:para>In the toJson() function, we do the reverse of the fromJson() function; assign values from the Character object to a new JSON object we then return. As with accessing values, there are two ways to set values on a <db:link xlink:href="qjsonobject.xml">QJsonObject</db:link>: <db:link xlink:href="qjsonobject.xml#operator-5b-5d">QJsonObject::operator[]</db:link>() and <db:link xlink:href="qjsonobject.xml#insert">QJsonObject::insert</db:link>(). Both will override any existing value at the given key.</db:para>
+</db:section>
+<db:section xml:id="the-level-class">
+<db:title>The Level Class</db:title>
+<db:programlisting language="cpp">class Level
+{
+public:
+    Level() = default;
+    explicit Level(const QString &amp;name);
+
+    QString name() const;
+
+    QList&lt;Character&gt; npcs() const;
+    void setNpcs(const QList&lt;Character&gt; &amp;npcs);
+
+    static Level fromJson(const QJsonObject &amp;json);
+    QJsonObject toJson() const;
+
+    void print(QTextStream &amp;s, int indentation = 0) const;
+
+private:
+    QString mName;
+    QList&lt;Character&gt; mNpcs;
+};
+</db:programlisting>
+<db:para>We want the levels in our game to each each have several NPCs, so we keep a <db:link xlink:href="qlist.xml">QList</db:link> of Character objects. We also provide the familiar fromJson() and toJson() functions.</db:para>
+<db:programlisting language="cpp">Level Level::fromJson(const QJsonObject &amp;json)
+{
+    Level result;
+
+    if (const QJsonValue v = json[&quot;name&quot;]; v.isString())
+        result.mName = v.toString();
+
+    if (const QJsonValue v = json[&quot;npcs&quot;]; v.isArray()) {
+        const QJsonArray npcs = v.toArray();
+        result.mNpcs.reserve(npcs.size());
+        for (const QJsonValue &amp;npc : npcs)
+            result.mNpcs.append(Character::fromJson(npc.toObject()));
+    }
+
+    return result;
+}
+</db:programlisting>
+<db:para>Containers can be written to and read from JSON using <db:link xlink:href="qjsonarray.xml">QJsonArray</db:link>. In our case, we construct a <db:link xlink:href="qjsonarray.xml">QJsonArray</db:link> from the value associated with the key &quot;npcs&quot;. Then, for each <db:link xlink:href="qjsonvalue.xml">QJsonValue</db:link> element in the array, we call toObject() to get the Character's JSON object. Character::fromJson() can then turn that QJSonObject into a Character object to append to our NPC array.</db:para>
+<db:note>
+<db:para><db:link xlink:href="containers.xml">Associate containers</db:link> can be written by storing the key in each value object (if it's not already). With this approach, the container is stored as a regular array of objects, but the index of each element is used as the key to construct the container when reading it back in.</db:para>
+</db:note>
+<db:programlisting language="cpp">QJsonObject Level::toJson() const
+{
+    QJsonObject json;
+    json[&quot;name&quot;] = mName;
+    QJsonArray npcArray;
+    for (const Character &amp;npc : mNpcs)
+        npcArray.append(npc.toJson());
+    json[&quot;npcs&quot;] = npcArray;
+    return json;
+}
+</db:programlisting>
+<db:para>Again, the toJson() function is similar to the fromJson() function, except reversed.</db:para>
+</db:section>
+<db:section xml:id="the-game-class">
+<db:title>The Game Class</db:title>
+<db:para>Having established the Character and Level classes, we can move on to the Game class:</db:para>
+<db:programlisting language="cpp">class Game
+{
+public:
+    enum SaveFormat { Json, Binary };
+
+    Character player() const;
+    QList&lt;Level&gt; levels() const;
+
+    void newGame();
+    bool loadGame(SaveFormat saveFormat);
+    bool saveGame(SaveFormat saveFormat) const;
+
+    void read(const QJsonObject &amp;json);
+    QJsonObject toJson() const;
+
+    void print(QTextStream &amp;s, int indentation = 0) const;
+
+private:
+    Character mPlayer;
+    QList&lt;Level&gt; mLevels;
+};
+</db:programlisting>
+<db:para>First of all, we define the SaveFormat enum. This will allow us to specify the format in which the game should be saved: Json or Binary.</db:para>
+<db:para>Next, we provide accessors for the player and levels. We then expose three functions: newGame(), saveGame() and loadGame().</db:para>
+<db:para>The read() and toJson() functions are used by saveGame() and loadGame().</db:para>
+<db:para><db:emphasis role="bold">Note:</db:emphasis> Despite Game being a value class, we assume that the author wants a game to have identity, much like your main window would have. We therefore don't use a static fromJson() function, which would create a new object, but a read() function we can call on existing objects. There's a 1:1 correspondence between read() and fromJson(), in that one can be implemented in terms of the other:</db:para>
+<db:programlisting language="cpp">void read(const QJsonObject &amp;json) { *this = fromJson(json); }
+static Game fromObject(const QJsonObject &amp;json) { Game g; g.read(json); return g; }
+</db:programlisting>
+<db:para>We just use what's more convenient for callers of the functions.</db:para>
+<db:programlisting language="cpp">void Game::newGame()
+{
+    mPlayer = Character();
+    mPlayer.setName(&quot;Hero&quot;_L1);
+    mPlayer.setClassType(Character::Archer);
+    mPlayer.setLevel(QRandomGenerator::global()-&gt;bounded(15, 21));
+
+    mLevels.clear();
+    mLevels.reserve(2);
+
+    Level village(&quot;Village&quot;_L1);
+    QList&lt;Character&gt; villageNpcs;
+    villageNpcs.reserve(2);
+    villageNpcs.append(Character(&quot;Barry the Blacksmith&quot;_L1,
+                                 QRandomGenerator::global()-&gt;bounded(8, 11), Character::Warrior));
+    villageNpcs.append(Character(&quot;Terry the Trader&quot;_L1,
+                                 QRandomGenerator::global()-&gt;bounded(6, 8), Character::Warrior));
+    village.setNpcs(villageNpcs);
+    mLevels.append(village);
+
+    Level dungeon(&quot;Dungeon&quot;_L1);
+    QList&lt;Character&gt; dungeonNpcs;
+    dungeonNpcs.reserve(3);
+    dungeonNpcs.append(Character(&quot;Eric the Evil&quot;_L1,
+                                 QRandomGenerator::global()-&gt;bounded(18, 26), Character::Mage));
+    dungeonNpcs.append(Character(&quot;Eric's Left Minion&quot;_L1,
+                                 QRandomGenerator::global()-&gt;bounded(5, 7), Character::Warrior));
+    dungeonNpcs.append(Character(&quot;Eric's Right Minion&quot;_L1,
+                                 QRandomGenerator::global()-&gt;bounded(4, 9), Character::Warrior));
+    dungeon.setNpcs(dungeonNpcs);
+    mLevels.append(dungeon);
+}
+</db:programlisting>
+<db:para>To setup a new game, we create the player and populate the levels and their NPCs.</db:para>
+<db:programlisting language="cpp">void Game::read(const QJsonObject &amp;json)
+{
+    if (const QJsonValue v = json[&quot;player&quot;]; v.isObject())
+        mPlayer = Character::fromJson(v.toObject());
+
+    if (const QJsonValue v = json[&quot;levels&quot;]; v.isArray()) {
+        const QJsonArray levels = v.toArray();
+        mLevels.clear();
+        mLevels.reserve(levels.size());
+        for (const QJsonValue &amp;level : levels)
+            mLevels.append(Level::fromJson(level.toObject()));
+    }
+}
+</db:programlisting>
+<db:para>The read() function starts by replacing the player with the one read from JSON. We then clear() the level array so that calling loadGame() on the same Game object twice doesn't result in old levels hanging around.</db:para>
+<db:para>We then populate the level array by reading each Level from a <db:link xlink:href="qjsonarray.xml">QJsonArray</db:link>.</db:para>
+<db:programlisting language="cpp">QJsonObject Game::toJson() const
+{
+    QJsonObject json;
+    json[&quot;player&quot;] = mPlayer.toJson();
+
+    QJsonArray levels;
+    for (const Level &amp;level : mLevels)
+        levels.append(level.toJson());
+    json[&quot;levels&quot;] = levels;
+    return json;
+}
+</db:programlisting>
+<db:para>Writing the game to JSON is similar to writing a level.</db:para>
+<db:programlisting language="cpp">bool Game::loadGame(Game::SaveFormat saveFormat)
+{
+    QFile loadFile(saveFormat == Json ? &quot;save.json&quot;_L1 : &quot;save.dat&quot;_L1);
+
+    if (!loadFile.open(QIODevice::ReadOnly)) {
+        qWarning(&quot;Couldn't open save file.&quot;);
+        return false;
+    }
+
+    QByteArray saveData = loadFile.readAll();
+
+    QJsonDocument loadDoc(saveFormat == Json
+                          ? QJsonDocument::fromJson(saveData)
+                          : QJsonDocument(QCborValue::fromCbor(saveData).toMap().toJsonObject()));
+
+    read(loadDoc.object());
+
+    QTextStream(stdout) &lt;&lt; &quot;Loaded save for &quot; &lt;&lt; loadDoc[&quot;player&quot;][&quot;name&quot;].toString()
+                        &lt;&lt; &quot; using &quot; &lt;&lt; (saveFormat != Json ? &quot;CBOR&quot; : &quot;JSON&quot;) &lt;&lt; &quot;...\n&quot;;
+    return true;
+}
+</db:programlisting>
+<db:para>When loading a saved game in loadGame(), the first thing we do is open the save file based on which format it was saved to; &quot;save.json&quot; for JSON, and &quot;save.dat&quot; for CBOR. We print a warning and return false if the file couldn't be opened.</db:para>
+<db:para>Since <db:link xlink:href="qjsondocument.xml#fromJson">QJsonDocument::fromJson</db:link>() and <db:link xlink:href="qcborvalue.xml#fromCbor">QCborValue::fromCbor</db:link>() both take a <db:link xlink:href="qbytearray.xml">QByteArray</db:link>, we can read the entire contents of the save file into one, regardless of the save format.</db:para>
+<db:para>After constructing the <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link>, we instruct the Game object to read itself and then return true to indicate success.</db:para>
+<db:programlisting language="cpp">bool Game::saveGame(Game::SaveFormat saveFormat) const
+{
+    QFile saveFile(saveFormat == Json ? &quot;save.json&quot;_L1 : &quot;save.dat&quot;_L1);
+
+    if (!saveFile.open(QIODevice::WriteOnly)) {
+        qWarning(&quot;Couldn't open save file.&quot;);
+        return false;
+    }
+
+    QJsonObject gameObject = toJson();
+    saveFile.write(saveFormat == Json ? QJsonDocument(gameObject).toJson()
+                                      : QCborValue::fromJsonValue(gameObject).toCbor());
+
+    return true;
+}
+</db:programlisting>
+<db:para>Not surprisingly, saveGame() looks very much like loadGame(). We determine the file extension based on the format, print a warning and return false if the opening of the file fails. We then write the Game object to a <db:link xlink:href="qjsonobject.xml">QJsonObject</db:link>. To save the game in the format that was specified, we convert the JSON object into either a <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link> for a subsequent <db:link xlink:href="qjsondocument.xml#toJson">QJsonDocument::toJson</db:link>() call, or a <db:link xlink:href="qcborvalue.xml">QCborValue</db:link> for <db:link xlink:href="qcborvalue.xml#toCbor">QCborValue::toCbor</db:link>().</db:para>
+</db:section>
+<db:section xml:id="tying-it-all-together">
+<db:title>Tying It All Together</db:title>
+<db:para>We are now ready to enter main():</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+
+    const QStringList args = QCoreApplication::arguments();
+    const bool newGame
+            = args.size() &lt;= 1 || QString::compare(args[1], &quot;load&quot;_L1, Qt::CaseInsensitive) != 0;
+    const bool json
+            = args.size() &lt;= 2 || QString::compare(args[2], &quot;binary&quot;_L1, Qt::CaseInsensitive) != 0;
+
+    Game game;
+    if (newGame)
+        game.newGame();
+    else if (!game.loadGame(json ? Game::Json : Game::Binary))
+        return 1;
+    // Game is played; changes are made...
+</db:programlisting>
+<db:para>Since we're only interested in demonstrating <db:emphasis>serialization</db:emphasis> of a game with JSON, our game is not actually playable. Therefore, we only need <db:link xlink:href="qcoreapplication.xml">QCoreApplication</db:link> and have no event loop. On application start-up we parse the command-line arguments to decide how to start the game. For the first argument the options &quot;new&quot; (default) and &quot;load&quot; are available. When &quot;new&quot; is specified a new game will be generated, and when &quot;load&quot; is specified a previously saved game will be loaded in. For the second argument &quot;json&quot; (default) and &quot;binary&quot; are available as options. This argument will decide which file is saved to and/or loaded from. We then move ahead and assume that the player had a great time and made lots of progress, altering the internal state of our Character, Level and Game objects.</db:para>
+<db:programlisting language="cpp">    QTextStream s(stdout);
+    s &lt;&lt; &quot;Game ended in the following state:\n&quot;;
+    game.print(s);
+    if (!game.saveGame(json ? Game::Json : Game::Binary))
+        return 1;
+
+    return 0;
+}
+</db:programlisting>
+<db:para>When the player has finished, we save their game. For demonstration purposes, we can serialize to either JSON or CBOR. You can examine the contents of the files in the same directory as the executable (or re-run the example, making sure to also specify the &quot;load&quot; option), although the binary save file will contain some garbage characters (which is normal).</db:para>
+<db:para>That concludes our example. As you can see, serialization with Qt's JSON classes is very simple and convenient. The advantages of using <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link> and friends over <db:link xlink:href="qdatastream.xml">QDataStream</db:link>, for example, is that you not only get human-readable JSON files, but you also have the option to use a binary format if it's required, <db:emphasis>without</db:emphasis> rewriting any code.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/serialization/savegame?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="json.xml">JSON Support in Qt</db:link></db:member>
+<db:member><db:link xlink:href="cbor.xml">CBOR Support in Qt</db:link></db:member>
+<db:member><db:link xlink:href="">Data Input Output</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

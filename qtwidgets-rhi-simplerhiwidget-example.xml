@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple RHI Widget Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render a triangle using <db:link xlink:href="qrhi.xml">QRhi</db:link>, Qt's 3D API and shading language abstraction layer.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:figure>
+<db:title>Screenshot of the Simple RHI Widget example</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simplerhiwidget-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+</db:figure>
+<db:para>This example is, in many ways, the counterpart of the <db:link xlink:href="qtgui-rhiwindow-example.xml">RHI Window Example</db:link> in the <db:link xlink:href="qwidget.xml">QWidget</db:link> world. The <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link> subclass in this applications renders a single triangle, using a simple graphics pipeline with basic vertex and fragment shaders. Unlike the plain <db:link xlink:href="qwindow.xml">QWindow</db:link>-based application, this example does not need to worry about lower level details, such as setting up the window and the <db:link xlink:href="qrhi.xml">QRhi</db:link>, or dealing with swapchain and window events, as that is taken care of by the <db:link xlink:href="qwidget.xml">QWidget</db:link> framework here. The instance of the <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link> subclass is added to a <db:link xlink:href="qvboxlayout.xml">QVBoxLayout</db:link>. To keep the example minimal and compact, there are no further widgets or 3D content introduced.</db:para>
+<db:para>Once an instance of ExampleRhiWidget, a <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link> subclass, is added to a top-level widget's child hierarchy, the corresponding window automatically becomes a Direct 3D, Vulkan, Metal, or OpenGL-rendered window. The <db:link xlink:href="qpainter.xml">QPainter</db:link>-rendered widget content, i.e. everything that is not a <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link>, <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link>, or QQuickWidget, is then uploaded to a texture, whereas the mentioned special widgets each render to a texture. The resulting set of <db:link xlink:href="qrhitexture.xml">textures</db:link> is composited together by the top-level widget's backingstore.</db:para>
+<db:section xml:id="structure-and-main">
+<db:title>Structure and main()</db:title>
+<db:para>The main() function is quite simple. The top-level widget defaults to a size of 720p (this size is in logical units, the actual pixel size may be different, depending on the <db:link xlink:href="qpaintdevice.xml#devicePixelRatio">scale factor</db:link>. The window is resizable. <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link> makes it simple to implement subclasses that correctly deal with the resizing of the widget due to window size or layout changes.</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+
+    ExampleRhiWidget *rhiWidget = new ExampleRhiWidget;
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout-&gt;addWidget(rhiWidget);
+
+    QWidget w;
+    w.setLayout(layout);
+    w.resize(1280, 720);
+    w.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link> subclass reimplements the two virtuals: <db:link xlink:href="qrhiwidget.xml#initialize">initialize</db:link>() and <db:link xlink:href="qrhiwidget.xml#render">render</db:link>(). initialize() is called at least once before render(), but is also invoked upon a number of important changes, such as when the widget's backing texture is recreated due to a changing widget size, when render target parameters change, or when the widget changes to a new <db:link xlink:href="qrhi.xml">QRhi</db:link> due to moving to a new top-level window.</db:para>
+<db:note>
+<db:para>Unlike <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link>'s legacy initializeGL - resizeGL - paintGL model, there are only two virtuals in <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link>. This is because there are more special events that possible need taking care of than just resizing, e.g. when reparenting to a different top-level window. (robust <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link> implementations had to deal with this by performing additional bookkeeping, e.g. by tracking the associated <db:link xlink:href="qopenglcontext.xml">QOpenGLContext</db:link> lifetime, meaning the three virtuals were not actually sufficient) A simpler pair of initialize - render, where initialize is re-invoked upon important changes is better suited for this.</db:para>
+</db:note>
+<db:para>The <db:link xlink:href="qrhi.xml">QRhi</db:link> instance is not owned by the widget. It is going to be queried in initialize() <db:link xlink:href="qrhiwidget.xml#rhi">from the base class</db:link>. Storing it as a member allows recognizing changes when initialize() is invoked again. Graphics resources, such as the vertex and uniform buffers, or the graphics pipeline are however under the control of ExampleRhiWidget.</db:para>
+<db:programlisting language="cpp">#include &lt;QRhiWidget&gt;
+#include &lt;rhi/qrhi.h&gt;
+
+class ExampleRhiWidget : public QRhiWidget
+{
+public:
+    ExampleRhiWidget(QWidget *parent = nullptr) : QRhiWidget(parent) { }
+
+    void initialize(QRhiCommandBuffer *cb) override;
+    void render(QRhiCommandBuffer *cb) override;
+
+private:
+    QRhi *m_rhi = nullptr;
+    std::unique_ptr&lt;QRhiBuffer&gt; m_vbuf;
+    std::unique_ptr&lt;QRhiBuffer&gt; m_ubuf;
+    std::unique_ptr&lt;QRhiShaderResourceBindings&gt; m_srb;
+    std::unique_ptr&lt;QRhiGraphicsPipeline&gt; m_pipeline;
+    QMatrix4x4 m_viewProjection;
+    float m_rotation = 0.0f;
+};
+</db:programlisting>
+<db:para>For the #include &lt;rhi/qrhi.h&gt; statement to work, the application must link to GuiPrivate (or gui-private with qmake). See <db:link xlink:href="qrhi.xml">QRhi</db:link> for more details about the compatibility promise of the <db:link xlink:href="qrhi.xml">QRhi</db:link> family of APIs.</db:para>
+<db:para>CMakeLists.txt</db:para>
+<db:programlisting language="cpp" role="bad">target_link_libraries(simplerhiwidget PRIVATE
+    Qt6::Core
+    Qt6::Gui
+    Qt6::GuiPrivate
+    Qt6::Widgets
+)
+</db:programlisting>
+</db:section>
+<db:section xml:id="rendering-setup">
+<db:title>Rendering Setup</db:title>
+<db:para>In examplewidget.cpp the widget implementation uses a helper function to load up a <db:link xlink:href="qshader.xml">QShader</db:link> object from a .qsb file. This application ships pre-conditioned .qsb files embedded in to the executable via the Qt Resource System. Due to module dependencies (and due to still supporting qmake), this example does not use the convenient CMake function qt_add_shaders(), but rather comes with the .qsb files as part of the source tree. Real world applications are encouraged to avoid this and rather use the Qt Shader Tools module's CMake integration features (qt_add_shaders). Regardless of the approach, in the C++ code the loading of the bundled/generated .qsb files is the same.</db:para>
+<db:programlisting language="cpp">static QShader getShader(const QString &amp;name)
+{
+    QFile f(name);
+    return f.open(QIODevice::ReadOnly) ? QShader::fromSerialized(f.readAll()) : QShader();
+}
+</db:programlisting>
+<db:para>Let's look at the initialize() implementation. First, the <db:link xlink:href="qrhi.xml">QRhi</db:link> object is queried and stored for later use, and also to allow comparison in future invocations of the function. When there is a mismatch (e.g. when the widget is moved between windows), recreation of graphics resources need to be recreated is triggered by destroying and nulling out a suitable object, in this case the m_pipeline. The example does not actively demonstrate reparenting between windows, but it is prepared to handle it. It is also prepared to handle a changing widget size that can happen when resizing the window. That needs no special handling since initialize() is invoked every time that happens, and so querying renderTarget()-&gt;pixelSize() or colorTexture()-&gt;pixelSize() always gives the latest, up-to-date size in pixels. What this example is not prepared for is changing <db:link xlink:href="">texture formats</db:link> and <db:link xlink:href="qrhiwidget.xml#sampleCount-prop">multisample settings</db:link> since it only ever uses the defaults (RGBA8 and no multisample antialiasing).</db:para>
+<db:programlisting language="cpp">void ExampleRhiWidget::initialize(QRhiCommandBuffer *cb)
+{
+    if (m_rhi != rhi()) {
+        m_pipeline.reset();
+        m_rhi = rhi();
+    }
+</db:programlisting>
+<db:para>When the graphics resources need to be (re)created, initialize() does this using quite typical <db:link xlink:href="qrhi.xml">QRhi</db:link>-based code. A single vertex buffer with the interleaved position - color vertex data is sufficient, whereas the modelview-projection matrix is exposed via a uniform buffer of 64 bytes (16 floats). The uniform buffer is the only shader visible resource, and it is only used in the vertex shader. The graphics pipeline relies on a lot of defaults (for example, depth test off, blending disabled, color write enabled, face culling disabled, the default topology of triangles, etc.) The vertex data layout is x, y, r, g, b, hence the stride is 5 floats, whereas the second vertex input attribute (the color) has an offset of 2 floats (skipping x and y). Each graphics pipeline has to be associated with a <db:link xlink:href="qrhirenderpassdescriptor.xml">QRhiRenderPassDescriptor</db:link>. This can be retrieved from the <db:link xlink:href="qrhirendertarget.xml">QRhiRenderTarget</db:link> managed by the base class.</db:para>
+<db:note>
+<db:para>This example relies on the <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link>'s default of <db:link xlink:href="qrhiwidget.xml#autoRenderTarget-prop">autoRenderTarget</db:link> set to true. That is why it does not need to manage the render target, but can just query the existing one by calling <db:link xlink:href="qrhiwidget.xml#renderTarget">renderTarget</db:link>().</db:para>
+</db:note>
+<db:programlisting language="cpp">    if (!m_pipeline) {
+        m_vbuf.reset(m_rhi-&gt;newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(vertexData)));
+        m_vbuf-&gt;create();
+
+        m_ubuf.reset(m_rhi-&gt;newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 64));
+        m_ubuf-&gt;create();
+
+        m_srb.reset(m_rhi-&gt;newShaderResourceBindings());
+        m_srb-&gt;setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_ubuf.get()),
+        });
+        m_srb-&gt;create();
+
+        m_pipeline.reset(m_rhi-&gt;newGraphicsPipeline());
+        m_pipeline-&gt;setShaderStages({
+            { QRhiShaderStage::Vertex, getShader(QLatin1String(&quot;:/shader_assets/color.vert.qsb&quot;)) },
+            { QRhiShaderStage::Fragment, getShader(QLatin1String(&quot;:/shader_assets/color.frag.qsb&quot;)) }
+        });
+        QRhiVertexInputLayout inputLayout;
+        inputLayout.setBindings({
+            { 5 * sizeof(float) }
+        });
+        inputLayout.setAttributes({
+            { 0, 0, QRhiVertexInputAttribute::Float2, 0 },
+            { 0, 1, QRhiVertexInputAttribute::Float3, 2 * sizeof(float) }
+        });
+        m_pipeline-&gt;setVertexInputLayout(inputLayout);
+        m_pipeline-&gt;setShaderResourceBindings(m_srb.get());
+        m_pipeline-&gt;setRenderPassDescriptor(renderTarget()-&gt;renderPassDescriptor());
+        m_pipeline-&gt;create();
+
+        QRhiResourceUpdateBatch *resourceUpdates = m_rhi-&gt;nextResourceUpdateBatch();
+        resourceUpdates-&gt;uploadStaticBuffer(m_vbuf.get(), vertexData);
+        cb-&gt;resourceUpdate(resourceUpdates);
+    }
+</db:programlisting>
+<db:para>Finally, the projection matrix is calculated. This depends on the widget size and is thus done unconditionally in every invocation of the functions.</db:para>
+<db:note>
+<db:para>Any size and viewport calculations should only ever rely on the pixel size queried from the resource serving as the color buffer since that is the actual render target. Avoid manually calculating sizes, viewports, scissors, etc. based on the <db:link xlink:href="qwidget.xml">QWidget</db:link>-reported size or device pixel ratio.</db:para>
+</db:note>
+<db:note>
+<db:para>The projection matrix includes the <db:link xlink:href="qrhi.xml#clipSpaceCorrMatrix">correction matrix</db:link> from <db:link xlink:href="qrhi.xml">QRhi</db:link> in order to cater for 3D API differences in normalized device coordinates. (for example, Y down vs. Y up)</db:para>
+</db:note>
+<db:para>A translation of -4 is applied just to make sure the triangle with z values of 0 will be visible.</db:para>
+<db:programlisting language="cpp">    const QSize outputSize = renderTarget()-&gt;pixelSize();
+    m_viewProjection = m_rhi-&gt;clipSpaceCorrMatrix();
+    m_viewProjection.perspective(45.0f, outputSize.width() / (float) outputSize.height(), 0.01f, 1000.0f);
+    m_viewProjection.translate(0, 0, -4);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="rendering">
+<db:title>Rendering</db:title>
+<db:para>The widget records a single render pass, which contains a single draw call.</db:para>
+<db:para>The view-projection matrix calculated in the initialize step gets combined with the model matrix, which in this case happens to be a simple rotation. The resulting matrix is then written to the uniform buffer. Note how resourceUpdates is passed to <db:link xlink:href="qrhicommandbuffer.xml#beginPass">beginPass</db:link>(), which is a shortcut to not having to invoke <db:link xlink:href="qrhicommandbuffer.xml#resourceUpdate">resourceUpdate</db:link>() manually.</db:para>
+<db:programlisting language="cpp">void ExampleRhiWidget::render(QRhiCommandBuffer *cb)
+{
+    QRhiResourceUpdateBatch *resourceUpdates = m_rhi-&gt;nextResourceUpdateBatch();
+    m_rotation += 1.0f;
+    QMatrix4x4 modelViewProjection = m_viewProjection;
+    modelViewProjection.rotate(m_rotation, 0, 1, 0);
+    resourceUpdates-&gt;updateDynamicBuffer(m_ubuf.get(), 0, 64, modelViewProjection.constData());
+</db:programlisting>
+<db:para>In the render pass, a single draw call with 3 vertices is recorded. The graphics pipeline created in the initialize step is bound on the command buffer, and the viewport is set to cover the entire widget. To make the uniform buffer visible to the (vertex) shader, <db:link xlink:href="qrhicommandbuffer.xml#setShaderResources">setShaderResources</db:link>() is called with no argument, which means using the m_srb since that was associated with the pipeline at pipeline creation time. In more complex renderers it is not unusual to pass in a different <db:link xlink:href="qrhishaderresourcebindings.xml">QRhiShaderResourceBindings</db:link> object, as long as that is <db:link xlink:href="qrhishaderresourcebindings.xml#isLayoutCompatible">layout-compatible</db:link> with the one given at pipeline creation time. There is no index buffer, and there is a single vertex buffer binding (the single element in vbufBinding refers to the single entry in the binding list of the <db:link xlink:href="qrhivertexinputlayout.xml">QRhiVertexInputLayout</db:link> that was specified when creating pipeline).</db:para>
+<db:programlisting language="cpp">    const QColor clearColor = QColor::fromRgbF(0.4f, 0.7f, 0.0f, 1.0f);
+    cb-&gt;beginPass(renderTarget(), clearColor, { 1.0f, 0 }, resourceUpdates);
+
+    cb-&gt;setGraphicsPipeline(m_pipeline.get());
+    const QSize outputSize = renderTarget()-&gt;pixelSize();
+    cb-&gt;setViewport(QRhiViewport(0, 0, outputSize.width(), outputSize.height()));
+    cb-&gt;setShaderResources();
+    const QRhiCommandBuffer::VertexInput vbufBinding(m_vbuf.get(), 0);
+    cb-&gt;setVertexInput(0, 1, &amp;vbufBinding);
+    cb-&gt;draw(3);
+
+    cb-&gt;endPass();
+</db:programlisting>
+<db:para>Once the render pass is recorded, <db:link xlink:href="qwidget.xml#update">update</db:link>() is called. This requests a new frame, and is used to ensure the widget continuously updates, and the triangle appears rotating. The rendering thread (the main thread in this case) is throttled by the presentation rate by default. There is no proper animation system in this example, and so the rotation will increase in every frame, meaning the triangle will rotate at different speeds on displays with different refresh rates.</db:para>
+<db:programlisting language="cpp">    update();
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/rhi/simplerhiwidget?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qrhi.xml">QRhi</db:link></db:member>
+<db:member><db:link xlink:href="qtwidgets-rhi-cuberhiwidget-example.xml">Cube RHI Widget Example</db:link></db:member>
+<db:member><db:link xlink:href="qtgui-rhiwindow-example.xml">RHI Window Example</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>
