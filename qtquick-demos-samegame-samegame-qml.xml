@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Qt Quick Demo - Same Game</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A QML implementation of the popular puzzle game by Kuniaki Moribe.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+import QtQuick 2.0
+import QtQuick.Particles 2.0
+import &quot;content/samegame.js&quot; as Logic
+import &quot;content&quot;
+
+Rectangle {
+    id: root
+    width: Settings.screenWidth; height: Settings.screenHeight
+    property int acc: 0
+
+    function loadPuzzle() {
+        if (gameCanvas.mode != &quot;&quot;)
+            Logic.cleanUp();
+        Logic.startNewGame(gameCanvas,&quot;puzzle&quot;,&quot;levels/level&quot;+acc+&quot;.qml&quot;)
+    }
+    function nextPuzzle() {
+        acc = (acc + 1) % 10;
+        loadPuzzle();
+    }
+    Timer {
+        id: gameOverTimer
+        interval: 1500
+        running : gameCanvas.gameOver &amp;&amp; gameCanvas.mode == &quot;puzzle&quot; //mode will be reset by cleanUp();
+        repeat  : false
+        onTriggered: {
+            Logic.cleanUp();
+            nextPuzzle();
+        }
+    }
+
+    Image {
+        source: &quot;content/gfx/background.png&quot;
+        anchors.fill: parent
+    }
+
+    GameArea {
+        id: gameCanvas
+        z: 1
+        y: Settings.headerHeight
+
+        width: parent.width
+        height: parent.height - Settings.headerHeight - Settings.footerHeight
+
+        backgroundVisible: root.state == &quot;in-game&quot;
+        onModeChanged: if (gameCanvas.mode != &quot;puzzle&quot;) puzzleWon = false; //UI has stricter constraints on this variable than the game does
+        Age {
+            groups: [&quot;redspots&quot;, &quot;greenspots&quot;, &quot;bluespots&quot;, &quot;yellowspots&quot;]
+            enabled: root.state == &quot;&quot;
+            system: gameCanvas.ps
+        }
+
+        onPuzzleLost: acc--;//So that nextPuzzle() reloads the current one
+
+    }
+
+    Item {
+        id: menu
+        z: 2
+        width: parent.width;
+        anchors.top: parent.top
+        anchors.bottom: bottomBar.top
+
+        LogoAnimation {
+            x: 64
+            y: Settings.headerHeight
+            particleSystem: gameCanvas.ps
+            running: root.state == &quot;&quot;
+        }
+        Row {
+            x: 112
+            y: 20
+            Image { source: &quot;content/gfx/logo-a.png&quot; }
+            Image { source: &quot;content/gfx/logo-m.png&quot; }
+            Image { source: &quot;content/gfx/logo-e.png&quot; }
+        }
+
+        Column {
+            y: 100 + 40
+            spacing: Settings.menuButtonSpacing
+            width: parent.width
+            height: parent.height - (140 + Settings.footerHeight)
+
+            Button {
+                width: root.width
+                rotatedButton: true
+                imgSrc: &quot;content/gfx/but-game-1.png&quot;
+                onClicked: {
+                    if (root.state == &quot;in-game&quot;)
+                        return //Prevent double clicking
+                    root.state = &quot;in-game&quot;
+                    gameCanvas.blockFile = &quot;Block.qml&quot;
+                    gameCanvas.background = &quot;gfx/background.png&quot;
+                    arcadeTimer.start();
+                }
+                //Emitted particles don't fade out, because ImageParticle is on the GameArea
+                system: gameCanvas.ps
+                group: &quot;green&quot;
+                Timer {
+                    id: arcadeTimer
+                    interval: Settings.menuDelay
+                    running : false
+                    repeat  : false
+                    onTriggered: Logic.startNewGame(gameCanvas)
+                }
+            }
+
+            Button {
+                width: root.width
+                rotatedButton: true
+                imgSrc: &quot;content/gfx/but-game-2.png&quot;
+                onClicked: {
+                    if (root.state == &quot;in-game&quot;)
+                        return
+                    root.state = &quot;in-game&quot;
+                    gameCanvas.blockFile = &quot;Block.qml&quot;
+                    gameCanvas.background = &quot;gfx/background.png&quot;
+                    twopTimer.start();
+                }
+                system: gameCanvas.ps
+                group: &quot;green&quot;
+                Timer {
+                    id: twopTimer
+                    interval: Settings.menuDelay
+                    running : false
+                    repeat  : false
+                    onTriggered: Logic.startNewGame(gameCanvas, &quot;multiplayer&quot;)
+                }
+            }
+
+            Button {
+                width: root.width
+                rotatedButton: true
+                imgSrc: &quot;content/gfx/but-game-3.png&quot;
+                onClicked: {
+                    if (root.state == &quot;in-game&quot;)
+                        return
+                    root.state = &quot;in-game&quot;
+                    gameCanvas.blockFile = &quot;SimpleBlock.qml&quot;
+                    gameCanvas.background = &quot;gfx/background.png&quot;
+                    endlessTimer.start();
+                }
+                system: gameCanvas.ps
+                group: &quot;blue&quot;
+                Timer {
+                    id: endlessTimer
+                    interval: Settings.menuDelay
+                    running : false
+                    repeat  : false
+                    onTriggered: Logic.startNewGame(gameCanvas, &quot;endless&quot;)
+                }
+            }
+
+            Button {
+                width: root.width
+                rotatedButton: true
+                imgSrc: &quot;content/gfx/but-game-4.png&quot;
+                group: &quot;yellow&quot;
+                onClicked: {
+                    if (root.state == &quot;in-game&quot;)
+                        return
+                    root.state = &quot;in-game&quot;
+                    gameCanvas.blockFile = &quot;PuzzleBlock.qml&quot;
+                    gameCanvas.background = &quot;gfx/background.png&quot;
+                    puzzleTimer.start();
+                }
+                Timer {
+                    id: puzzleTimer
+                    interval: Settings.menuDelay
+                    running : false
+                    repeat  : false
+                    onTriggered: loadPuzzle();
+                }
+                system: gameCanvas.ps
+            }
+        }
+    }
+
+    Image {
+        id: scoreBar
+        source: &quot;content/gfx/bar.png&quot;
+        width: parent.width
+        z: 6
+        y: -Settings.headerHeight
+        height: Settings.headerHeight
+        Behavior on opacity { NumberAnimation {} }
+        SamegameText {
+            id: arcadeScore
+            anchors { right: parent.right; topMargin: 3; rightMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;P1:&lt;/font&gt; ' + gameCanvas.score
+            font.pixelSize: Settings.fontPixelSize
+            textFormat: Text.StyledText
+            color: &quot;white&quot;
+            opacity: gameCanvas.mode == &quot;arcade&quot; ? 1 : 0
+            Behavior on opacity { NumberAnimation {} }
+        }
+        SamegameText {
+            id: arcadeHighScore
+            anchors { left: parent.left; topMargin: 3; leftMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;Highscore:&lt;/font&gt; ' + gameCanvas.highScore
+            opacity: gameCanvas.mode == &quot;arcade&quot; ? 1 : 0
+        }
+        SamegameText {
+            id: p1Score
+            anchors { right: parent.right; topMargin: 3; rightMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;P1:&lt;/font&gt; ' + gameCanvas.score
+            opacity: gameCanvas.mode == &quot;multiplayer&quot; ? 1 : 0
+        }
+        SamegameText {
+            id: p2Score
+            anchors { left: parent.left; topMargin: 3; leftMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;P2:&lt;/font&gt; ' + gameCanvas.score2
+            opacity: gameCanvas.mode == &quot;multiplayer&quot; ? 1 : 0
+            rotation: 180
+        }
+        SamegameText {
+            id: puzzleMoves
+            anchors { left: parent.left; topMargin: 3; leftMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;Moves:&lt;/font&gt; ' + gameCanvas.moves
+            opacity: gameCanvas.mode == &quot;puzzle&quot; ? 1 : 0
+        }
+        SamegameText {
+            Image {
+                source: &quot;content/gfx/icon-time.png&quot;
+                x: -20
+            }
+            id: puzzleTime
+            anchors { topMargin: 3; top: parent.top; horizontalCenter: parent.horizontalCenter; horizontalCenterOffset: 20}
+            text: &quot;00:00&quot;
+            opacity: gameCanvas.mode == &quot;puzzle&quot; ? 1 : 0
+            Timer {
+                interval: 1000
+                repeat: true
+                running: gameCanvas.mode == &quot;puzzle&quot; &amp;&amp; !gameCanvas.gameOver
+                onTriggered: {
+                    var elapsed = Math.floor((new Date() - Logic.gameDuration)/ 1000.0);
+                    var mins = Math.floor(elapsed/60.0);
+                    var secs = (elapsed % 60);
+                    puzzleTime.text =  (mins &lt; 10 ? &quot;0&quot; : &quot;&quot;) + mins + &quot;:&quot; + (secs &lt; 10 ? &quot;0&quot; : &quot;&quot;) + secs;
+                }
+            }
+        }
+        SamegameText {
+            id: puzzleScore
+            anchors { right: parent.right; topMargin: 3; rightMargin: 11; top: parent.top}
+            text: '&lt;font color=&quot;#f7d303&quot;&gt;Score:&lt;/font&gt; ' + gameCanvas.score
+            opacity: gameCanvas.mode == &quot;puzzle&quot; ? 1 : 0
+        }
+    }
+
+    Image {
+        id: bottomBar
+        width: parent.width
+        height: Settings.footerHeight
+        source: &quot;content/gfx/bar.png&quot;
+        y: parent.height - Settings.footerHeight;
+        z: 2
+        Button {
+            id: quitButton
+            height: Settings.toolButtonHeight
+            imgSrc: &quot;content/gfx/but-quit.png&quot;
+            onClicked: {Qt.quit(); }
+            anchors { left: parent.left; verticalCenter: parent.verticalCenter; leftMargin: 11 }
+        }
+        Button {
+            id: menuButton
+            height: Settings.toolButtonHeight
+            imgSrc: &quot;content/gfx/but-menu.png&quot;
+            visible: (root.state == &quot;in-game&quot;);
+            onClicked: {root.state = &quot;&quot;; Logic.cleanUp(); gameCanvas.mode = &quot;&quot;}
+            anchors { left: quitButton.right; verticalCenter: parent.verticalCenter; leftMargin: 0 }
+        }
+        Button {
+            id: againButton
+            height: Settings.toolButtonHeight
+            imgSrc: &quot;content/gfx/but-game-new.png&quot;
+            visible: (root.state == &quot;in-game&quot;);
+            opacity: gameCanvas.gameOver &amp;&amp; (gameCanvas.mode == &quot;arcade&quot; || gameCanvas.mode == &quot;multiplayer&quot;)
+            Behavior on opacity{ NumberAnimation {} }
+            onClicked: {if (gameCanvas.gameOver) { Logic.startNewGame(gameCanvas, gameCanvas.mode);}}
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 11 }
+        }
+        Button {
+            id: nextButton
+            height: Settings.toolButtonHeight
+            imgSrc: &quot;content/gfx/but-puzzle-next.png&quot;
+            visible: (root.state == &quot;in-game&quot;) &amp;&amp; gameCanvas.mode == &quot;puzzle&quot; &amp;&amp; gameCanvas.puzzleWon
+            opacity: gameCanvas.puzzleWon ? 1 : 0
+            Behavior on opacity{ NumberAnimation {} }
+            onClicked: {if (gameCanvas.puzzleWon) nextPuzzle();}
+            anchors { right: parent.right; verticalCenter: parent.verticalCenter; rightMargin: 11 }
+        }
+    }
+
+    Connections {
+        target: root
+        onStateChanged: stateChangeAnim.running = true
+    }
+    SequentialAnimation {
+        id: stateChangeAnim
+        ParallelAnimation {
+            NumberAnimation { target: bottomBar; property: &quot;y&quot;; to: root.height; duration: Settings.menuDelay/2; easing.type: Easing.OutQuad }
+            NumberAnimation { target: scoreBar; property: &quot;y&quot;; to: -Settings.headerHeight; duration: Settings.menuDelay/2; easing.type: Easing.OutQuad }
+        }
+        ParallelAnimation {
+            NumberAnimation { target: bottomBar; property: &quot;y&quot;; to: root.height - Settings.footerHeight; duration: Settings.menuDelay/2; easing.type: Easing.OutBounce}
+            NumberAnimation { target: scoreBar; property: &quot;y&quot;; to: root.state == &quot;&quot; ? -Settings.headerHeight : 0; duration: Settings.menuDelay/2; easing.type: Easing.OutBounce}
+        }
+    }
+
+    states: [
+        State {
+            name: &quot;in-game&quot;
+            PropertyChanges {
+                target: menu
+                opacity: 0
+                visible: false
+            }
+        }
+    ]
+
+    transitions: [
+        Transition {
+            NumberAnimation {properties: &quot;x,y,opacity&quot;}
+        }
+    ]
+
+    //&quot;Debug mode&quot;
+    focus: true
+    Keys.onAsteriskPressed: Logic.nuke();
+    Keys.onSpacePressed: gameCanvas.puzzleWon = true;
+}
+
+</db:programlisting>
+</db:article>

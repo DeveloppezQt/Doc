@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Draggable Text Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Draggable Text example shows how to drag and drop textual data between widgets in the same application, and between different applications.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;draglabel.h&quot;
+#include &quot;dragwidget.h&quot;
+
+DragWidget::DragWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    QFile dictionaryFile(&quot;:/dictionary/words.txt&quot;);
+    dictionaryFile.open(QIODevice::ReadOnly);
+    QTextStream inputStream(&amp;dictionaryFile);
+
+    int x = 5;
+    int y = 5;
+
+    while (!inputStream.atEnd()) {
+        QString word;
+        inputStream &gt;&gt; word;
+        if (!word.isEmpty()) {
+            DragLabel *wordLabel = new DragLabel(word, this);
+            wordLabel-&gt;move(x, y);
+            wordLabel-&gt;show();
+            wordLabel-&gt;setAttribute(Qt::WA_DeleteOnClose);
+            x += wordLabel-&gt;width() + 2;
+            if (x &gt;= 245) {
+                x = 5;
+                y += wordLabel-&gt;height() + 2;
+            }
+        }
+    }
+
+    /*
+    QPalette newPalette = palette();
+    newPalette.setColor(QPalette::Window, Qt::white);
+    setPalette(newPalette);
+    */
+
+    setAcceptDrops(true);
+    setMinimumSize(400, qMax(200, y));
+    setWindowTitle(tr(&quot;Draggable Text&quot;));
+}
+
+void DragWidget::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event-&gt;mimeData()-&gt;hasText()) {
+        if (event-&gt;source() == this) {
+            event-&gt;setDropAction(Qt::MoveAction);
+            event-&gt;accept();
+        } else {
+            event-&gt;acceptProposedAction();
+        }
+    } else {
+        event-&gt;ignore();
+    }
+}
+
+void DragWidget::dropEvent(QDropEvent *event)
+{
+    if (event-&gt;mimeData()-&gt;hasText()) {
+        const QMimeData *mime = event-&gt;mimeData();
+        QStringList pieces = mime-&gt;text().split(QRegExp(&quot;\\s+&quot;),
+                             QString::SkipEmptyParts);
+        QPoint position = event-&gt;pos();
+        QPoint hotSpot;
+
+        QList&lt;QByteArray&gt; hotSpotPos = mime-&gt;data(&quot;application/x-hotspot&quot;).split(' ');
+        if (hotSpotPos.size() == 2) {
+            hotSpot.setX(hotSpotPos.first().toInt());
+            hotSpot.setY(hotSpotPos.last().toInt());
+        }
+
+        foreach (QString piece, pieces) {
+            DragLabel *newLabel = new DragLabel(piece, this);
+            newLabel-&gt;move(position - hotSpot);
+            newLabel-&gt;show();
+            newLabel-&gt;setAttribute(Qt::WA_DeleteOnClose);
+
+            position += QPoint(newLabel-&gt;width(), 0);
+        }
+
+        if (event-&gt;source() == this) {
+            event-&gt;setDropAction(Qt::MoveAction);
+            event-&gt;accept();
+        } else {
+            event-&gt;acceptProposedAction();
+        }
+    } else {
+        event-&gt;ignore();
+    }
+    foreach (QObject *child, children()) {
+        if (child-&gt;inherits(&quot;QWidget&quot;)) {
+            QWidget *widget = static_cast&lt;QWidget *&gt;(child);
+            if (!widget-&gt;isVisible())
+                widget-&gt;deleteLater();
+        }
+    }
+}
+
+void DragWidget::mousePressEvent(QMouseEvent *event)
+{
+    QLabel *child = static_cast&lt;QLabel*&gt;(childAt(event-&gt;pos()));
+    if (!child)
+        return;
+
+    QPoint hotSpot = event-&gt;pos() - child-&gt;pos();
+
+    QMimeData *mimeData = new QMimeData;
+    mimeData-&gt;setText(child-&gt;text());
+    mimeData-&gt;setData(&quot;application/x-hotspot&quot;,
+                      QByteArray::number(hotSpot.x()) + &quot; &quot; + QByteArray::number(hotSpot.y()));
+
+    QPixmap pixmap(child-&gt;size());
+    child-&gt;render(&amp;pixmap);
+
+    QDrag *drag = new QDrag(this);
+    drag-&gt;setMimeData(mimeData);
+    drag-&gt;setPixmap(pixmap);
+    drag-&gt;setHotSpot(hotSpot);
+
+    Qt::DropAction dropAction = drag-&gt;exec(Qt::CopyAction | Qt::MoveAction, Qt::CopyAction);
+
+    if (dropAction == Qt::MoveAction)
+        child-&gt;close();
+}
+
+</db:programlisting>
+</db:article>

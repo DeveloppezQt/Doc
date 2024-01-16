@@ -1,0 +1,294 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Image Gestures Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Widgets Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;imagewidget.h&quot;
+
+#include &lt;QtWidgets&gt;
+
+Q_LOGGING_CATEGORY(lcExample, &quot;qt.examples.imagegestures&quot;)
+
+ImageWidget::ImageWidget(QWidget *parent)
+    : QWidget(parent),
+    position(0),
+    horizontalOffset(0),
+    verticalOffset(0),
+    rotationAngle(0),
+    scaleFactor(1),
+    currentStepScaleFactor(1)
+
+{
+    setMinimumSize(QSize(100,100));
+}
+
+void ImageWidget::grabGestures(const QList&lt;Qt::GestureType&gt; &amp;gestures)
+{
+    foreach (Qt::GestureType gesture, gestures)
+        grabGesture(gesture);
+}
+
+bool ImageWidget::event(QEvent *event)
+{
+    if (event-&gt;type() == QEvent::Gesture)
+        return gestureEvent(static_cast&lt;QGestureEvent*&gt;(event));
+    return QWidget::event(event);
+}
+
+void ImageWidget::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+
+    const qreal iw = currentImage.width();
+    const qreal ih = currentImage.height();
+    const qreal wh = height();
+    const qreal ww = width();
+
+    p.translate(ww/2, wh/2);
+    p.translate(horizontalOffset, verticalOffset);
+    p.rotate(rotationAngle);
+    p.scale(currentStepScaleFactor * scaleFactor, currentStepScaleFactor * scaleFactor);
+    p.translate(-iw/2, -ih/2);
+    p.drawImage(0, 0, currentImage);
+}
+
+void ImageWidget::mouseDoubleClickEvent(QMouseEvent *)
+{
+    rotationAngle = 0;
+    scaleFactor = 1;
+    currentStepScaleFactor = 1;
+    verticalOffset = 0;
+    horizontalOffset = 0;
+    update();
+    qCDebug(lcExample) &lt;&lt; &quot;reset on mouse double click&quot;;
+}
+
+bool ImageWidget::gestureEvent(QGestureEvent *event)
+{
+    qCDebug(lcExample) &lt;&lt; &quot;gestureEvent():&quot; &lt;&lt; event-&gt;gestures().size();
+    if (QGesture *swipe = event-&gt;gesture(Qt::SwipeGesture))
+        swipeTriggered(static_cast&lt;QSwipeGesture *&gt;(swipe));
+    else if (QGesture *pan = event-&gt;gesture(Qt::PanGesture))
+        panTriggered(static_cast&lt;QPanGesture *&gt;(pan));
+    if (QGesture *pinch = event-&gt;gesture(Qt::PinchGesture))
+        pinchTriggered(static_cast&lt;QPinchGesture *&gt;(pinch));
+    return true;
+}
+
+void ImageWidget::panTriggered(QPanGesture *gesture)
+{
+#ifndef QT_NO_CURSOR
+    switch (gesture-&gt;state()) {
+        case Qt::GestureStarted:
+        case Qt::GestureUpdated:
+            setCursor(Qt::SizeAllCursor);
+            break;
+        default:
+            setCursor(Qt::ArrowCursor);
+    }
+#endif
+    QPointF delta = gesture-&gt;delta();
+    qCDebug(lcExample) &lt;&lt; &quot;panTriggered():&quot; &lt;&lt; delta;
+    horizontalOffset += delta.x();
+    verticalOffset += delta.y();
+    update();
+}
+
+void ImageWidget::pinchTriggered(QPinchGesture *gesture)
+{
+    QPinchGesture::ChangeFlags changeFlags = gesture-&gt;changeFlags();
+    if (changeFlags &amp; QPinchGesture::RotationAngleChanged) {
+        const qreal value = gesture-&gt;property(&quot;rotationAngle&quot;).toReal();
+        const qreal lastValue = gesture-&gt;property(&quot;lastRotationAngle&quot;).toReal();
+        const qreal rotationAngleDelta = value - lastValue;
+        rotationAngle += rotationAngleDelta;
+        qCDebug(lcExample) &lt;&lt; &quot;pinchTriggered(): rotation by&quot; &lt;&lt; rotationAngleDelta &lt;&lt; rotationAngle;
+    }
+    if (changeFlags &amp; QPinchGesture::ScaleFactorChanged) {
+        qreal value = gesture-&gt;property(&quot;scaleFactor&quot;).toReal();
+        currentStepScaleFactor = value;
+        qCDebug(lcExample) &lt;&lt; &quot;pinchTriggered(): &quot; &lt;&lt; currentStepScaleFactor;
+    }
+    if (gesture-&gt;state() == Qt::GestureFinished) {
+        scaleFactor *= currentStepScaleFactor;
+        currentStepScaleFactor = 1;
+    }
+    update();
+}
+
+void ImageWidget::swipeTriggered(QSwipeGesture *gesture)
+{
+    if (gesture-&gt;state() == Qt::GestureFinished) {
+        if (gesture-&gt;horizontalDirection() == QSwipeGesture::Left
+            || gesture-&gt;verticalDirection() == QSwipeGesture::Up) {
+            qCDebug(lcExample) &lt;&lt; &quot;swipeTriggered(): swipe to previous&quot;;
+            goPrevImage();
+        } else {
+            qCDebug(lcExample) &lt;&lt; &quot;swipeTriggered(): swipe to next&quot;;
+            goNextImage();
+        }
+        update();
+    }
+}
+
+void ImageWidget::resizeEvent(QResizeEvent*)
+{
+    update();
+}
+
+void ImageWidget::openDirectory(const QString &amp;path)
+{
+    this-&gt;path = path;
+    QDir dir(path);
+    QStringList nameFilters;
+    nameFilters &lt;&lt; &quot;*.jpg&quot; &lt;&lt; &quot;*.png&quot;;
+    files = dir.entryList(nameFilters, QDir::Files|QDir::Readable, QDir::Name);
+
+    position = 0;
+    goToImage(0);
+    update();
+}
+
+QImage ImageWidget::loadImage(const QString &amp;fileName)
+{
+    qDebug() &lt;&lt; position &lt;&lt; files &lt;&lt; fileName;
+    QImageReader reader(fileName);
+    qCDebug(lcExample) &lt;&lt; &quot;loading&quot; &lt;&lt; QDir::toNativeSeparators(fileName) &lt;&lt; position &lt;&lt; '/' &lt;&lt; files.size();
+    if (!reader.canRead()) {
+        qCWarning(lcExample) &lt;&lt; QDir::toNativeSeparators(fileName) &lt;&lt; &quot;: can't load image&quot;;
+        return QImage();
+    }
+
+    QImage image;
+    if (!reader.read(&amp;image)) {
+        qCWarning(lcExample) &lt;&lt; QDir::toNativeSeparators(fileName) &lt;&lt; &quot;: corrupted image: &quot; &lt;&lt; reader.errorString();
+        return QImage();
+    }
+    const QSize maximumSize(2000, 2000); // Reduce in case someone has large photo images.
+    if (image.size().width() &gt; maximumSize.width() || image.height() &gt; maximumSize.height())
+        image = image.scaled(maximumSize, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+    return image;
+}
+
+void ImageWidget::goNextImage()
+{
+    if (files.isEmpty())
+        return;
+
+    if (position &lt; files.size()-1) {
+        ++position;
+        prevImage = currentImage;
+        currentImage = nextImage;
+        if (position+1 &lt; files.size())
+            nextImage = loadImage(path+QLatin1String(&quot;/&quot;)+files.at(position+1));
+        else
+            nextImage = QImage();
+    }
+    update();
+}
+
+void ImageWidget::goPrevImage()
+{
+    if (files.isEmpty())
+        return;
+
+    if (position &gt; 0) {
+        --position;
+        nextImage = currentImage;
+        currentImage = prevImage;
+        if (position &gt; 0)
+            prevImage = loadImage(path+QLatin1String(&quot;/&quot;)+files.at(position-1));
+        else
+            prevImage = QImage();
+    }
+    update();
+}
+
+void ImageWidget::goToImage(int index)
+{
+    if (files.isEmpty())
+        return;
+
+    if (index &lt; 0 || index &gt;= files.size()) {
+        qCWarning(lcExample) &lt;&lt; &quot;goToImage: invalid index: &quot; &lt;&lt; index;
+        return;
+    }
+
+    if (index == position+1) {
+        goNextImage();
+        return;
+    }
+
+    if (position &gt; 0 &amp;&amp; index == position-1) {
+        goPrevImage();
+        return;
+    }
+
+    position = index;
+
+    if (index &gt; 0)
+        prevImage = loadImage(path+QLatin1String(&quot;/&quot;)+files.at(position-1));
+    else
+        prevImage = QImage();
+    currentImage = loadImage(path+QLatin1String(&quot;/&quot;)+files.at(position));
+    if (position+1 &lt; files.size())
+        nextImage = loadImage(path+QLatin1String(&quot;/&quot;)+files.at(position+1));
+    else
+        nextImage = QImage();
+    update();
+}
+
+</db:programlisting>
+</db:article>

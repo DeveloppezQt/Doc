@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Drill Down Example</db:title>
+<db:productname>QtSql</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SQL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Drill Down example shows how to read data from a database as well as submit changes, using the <db:link xlink:href="qsqlrelationaltablemodel.xml">QSqlRelationalTableModel</db:link> and QDataWidgetMapper classes.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;informationwindow.h&quot;
+#include &quot;imageitem.h&quot;
+#include &quot;view.h&quot;
+
+View::View(const QString &amp;items, const QString &amp;images, QWidget *parent)
+    : QGraphicsView(parent)
+{
+    itemTable = new QSqlRelationalTableModel(this);
+    itemTable-&gt;setTable(items);
+    itemTable-&gt;setRelation(1, QSqlRelation(images, &quot;itemid&quot;, &quot;file&quot;));
+    itemTable-&gt;select();
+
+    scene = new QGraphicsScene(this);
+    scene-&gt;setSceneRect(0, 0, 465, 365);
+    setScene(scene);
+
+    addItems();
+
+    setMinimumSize(470, 370);
+    setMaximumSize(470, 370);
+
+    QLinearGradient gradient(QPointF(0, 0), QPointF(0, 370));
+    gradient.setColorAt(0, QColor(&quot;#868482&quot;));
+    gradient.setColorAt(1, QColor(&quot;#5d5b59&quot;));
+    setBackgroundBrush(gradient);
+}
+
+void View::addItems()
+{
+    int itemCount = itemTable-&gt;rowCount();
+
+    int imageOffset = 150;
+    int leftMargin = 70;
+    int topMargin = 40;
+
+    for (int i = 0; i &lt; itemCount; i++) {
+        ImageItem *image;
+        QGraphicsTextItem *label;
+        QSqlRecord record = itemTable-&gt;record(i);
+
+        int id = record.value(&quot;id&quot;).toInt();
+        QString file = record.value(&quot;file&quot;).toString();
+        QString item = record.value(&quot;itemtype&quot;).toString();
+
+        int columnOffset = ((i % 2) * 37);
+        int x = ((i % 2) * imageOffset) + leftMargin + columnOffset;
+        int y = ((i / 2) * imageOffset) + topMargin;
+
+        image = new ImageItem(id, QPixmap(&quot;:/&quot; + file));
+        image-&gt;setData(0, i);
+        image-&gt;setPos(x, y);
+        scene-&gt;addItem(image);
+
+        label = scene-&gt;addText(item);
+        label-&gt;setDefaultTextColor(QColor(&quot;#d7d6d5&quot;));
+        QPointF labelOffset((120 - label-&gt;boundingRect().width()) / 2, 120.0);
+        label-&gt;setPos(QPointF(x, y) + labelOffset);
+    }
+}
+
+void View::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (QGraphicsItem *item = itemAt(event-&gt;pos())) {
+        if (ImageItem *image = qgraphicsitem_cast&lt;ImageItem *&gt;(item))
+            showInformation(image);
+    }
+    QGraphicsView::mouseReleaseEvent(event);
+}
+
+void View::showInformation(ImageItem *image)
+{
+    int id = image-&gt;id();
+    if (id &lt; 0 || id &gt;= itemTable-&gt;rowCount())
+        return;
+
+    InformationWindow *window = findWindow(id);
+    if (window &amp;&amp; window-&gt;isVisible()) {
+        window-&gt;raise();
+        window-&gt;activateWindow();
+    } else if (window &amp;&amp; !window-&gt;isVisible()) {
+        window-&gt;show();
+    } else {
+        InformationWindow *window;
+        window = new InformationWindow(id, itemTable, this);
+
+        connect(window, SIGNAL(imageChanged(int,QString)),
+                this, SLOT(updateImage(int,QString)));
+
+        window-&gt;move(pos() + QPoint(20, 40));
+        window-&gt;show();
+        informationWindows.append(window);
+    }
+}
+
+void View::updateImage(int id, const QString &amp;fileName)
+{
+    QList&lt;QGraphicsItem *&gt; items = scene-&gt;items();
+
+    while(!items.empty()) {
+        QGraphicsItem *item = items.takeFirst();
+
+        if (ImageItem *image = qgraphicsitem_cast&lt;ImageItem *&gt;(item)) {
+            if (image-&gt;id() == id){
+                image-&gt;setPixmap(QPixmap(&quot;:/&quot; +fileName));
+                image-&gt;adjust();
+                break;
+            }
+        }
+    }
+}
+
+InformationWindow* View::findWindow(int id)
+{
+    QList&lt;InformationWindow*&gt;::iterator i, beginning, end;
+
+    beginning = informationWindows.begin();
+    end = informationWindows.end();
+
+    for (i = beginning; i != end; ++i) {
+        InformationWindow *window = (*i);
+        if (window &amp;&amp; (window-&gt;id() == id))
+            return window;
+    }
+    return 0;
+}
+
+</db:programlisting>
+</db:article>

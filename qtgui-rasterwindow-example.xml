@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Raster Window Example</db:title>
+<db:productname>QtGui</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GUI Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to create a minimal <db:link xlink:href="qwindow.xml">QWindow</db:link> based application using <db:link xlink:href="qpainter.xml">QPainter</db:link> for rendering.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="application-entry-point">
+<db:title>Application Entry Point</db:title>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+
+    RasterWindow window;
+    window.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The entry point for a <db:link xlink:href="qwindow.xml">QWindow</db:link> based application is the <db:link xlink:href="qguiapplication.xml">QGuiApplication</db:link> class. It manages the GUI application's control flow and main settings. We pass the command line arguments which can be used to pick up certain system wide options.</db:para>
+<db:para>From there, we go on to create our window instance and then call the <db:link xlink:href="qwindow.xml#show">QWindow::show</db:link>() function to tell the windowing system that this window should now be made visible on screen.</db:para>
+<db:para>Once this is done, we enter the application's event loop so the application can run.</db:para>
+</db:section>
+<db:section xml:id="rasterwindow-declaration">
+<db:title>RasterWindow Declaration</db:title>
+<db:programlisting language="cpp">#include &lt;QtGui&gt;
+
+class RasterWindow : public QWindow
+{
+    Q_OBJECT
+public:
+    explicit RasterWindow(QWindow *parent = 0);
+
+    virtual void render(QPainter *painter);
+
+public slots:
+    void renderLater();
+    void renderNow();
+
+protected:
+    bool event(QEvent *event);
+
+    void resizeEvent(QResizeEvent *event);
+    void exposeEvent(QExposeEvent *event);
+
+private:
+    QBackingStore *m_backingStore;
+    bool m_update_pending;
+};
+</db:programlisting>
+<db:para>We first start by including the <db:code>&lt;QtGui&gt;</db:code> header. This means we can use all classes in the Qt GUI module. Classes can also be included individually if that is preferred.</db:para>
+<db:para>The RasterWindow class subclasses <db:link xlink:href="qwindow.xml">QWindow</db:link> directly and provides a constructor which allows the window to be a sub-window of another <db:link xlink:href="qwindow.xml">QWindow</db:link>. Parent-less QWindows show up in the windowing system as top-level windows.</db:para>
+<db:para>The class declares a <db:link xlink:href="qbackingstore.xml">QBackingStore</db:link> which is what we use to manage the window's back buffer for <db:link xlink:href="qpainter.xml">QPainter</db:link> based graphics.</db:para>
+<db:para><db:emphasis>The raster window is also reused in a few other examples and adds a few helper functions, like renderLater().</db:emphasis></db:para>
+</db:section>
+<db:section xml:id="rasterwindow-implementation">
+<db:title>RasterWindow Implementation</db:title>
+<db:programlisting language="cpp">RasterWindow::RasterWindow(QWindow *parent)
+    : QWindow(parent)
+    , m_update_pending(false)
+{
+    m_backingStore = new QBackingStore(this);
+    create();
+
+    setGeometry(100, 100, 300, 200);
+
+}
+</db:programlisting>
+<db:para>The constructor first of all calls <db:link xlink:href="qwindow.xml#create">QWindow::create</db:link>(). This will create the window in the windowing system. Without calling create, the window will not get events and will not be visible in the windowing system. The call to create does not show the window. We then set the geometry to be something reasonable.</db:para>
+<db:para>Then we create the backingstore and pass it the window instance it is supposed to manage.</db:para>
+<db:programlisting language="cpp">void RasterWindow::exposeEvent(QExposeEvent *)
+{
+    if (isExposed()) {
+        renderNow();
+    }
+}
+</db:programlisting>
+<db:para>Shortly after calling <db:link xlink:href="qwindow.xml#show">QWindow::show</db:link>() on a created window, the virtual function <db:link xlink:href="qwindow.xml#exposeEvent">QWindow::exposeEvent</db:link>() will be called to notify us that the window's exposure in the windowing system has changed. The event contains the exposed sub-region, but since we will anyway draw the entire window every time, we do not make use of that.</db:para>
+<db:para>The function <db:link xlink:href="qwindow.xml#isExposed">QWindow::isExposed</db:link>() will tell us if the window is showing or not. We need this as the exposeEvent is called also when the window becomes obscured in the windowing system. If the window is showing, we call renderNow() to draw the window immediately. We want to draw right away so we can present the system with some visual content.</db:para>
+<db:programlisting language="cpp">void RasterWindow::resizeEvent(QResizeEvent *resizeEvent)
+{
+    m_backingStore-&gt;resize(resizeEvent-&gt;size());
+    if (isExposed())
+        renderNow();
+}
+</db:programlisting>
+<db:para>The resize event is guaranteed to be called prior to the window being shown on screen and will also be called whenever the window is resized while on screen. We use this to resize the back buffer and call renderNow() if we are visible to immediately update the visual representation of the window on screen.</db:para>
+<db:programlisting language="cpp">void RasterWindow::renderNow()
+{
+    if (!isExposed())
+        return;
+
+    QRect rect(0, 0, width(), height());
+    m_backingStore-&gt;beginPaint(rect);
+
+    QPaintDevice *device = m_backingStore-&gt;paintDevice();
+    QPainter painter(device);
+
+    painter.fillRect(0, 0, width(), height(), Qt::white);
+    render(&amp;painter);
+
+    m_backingStore-&gt;endPaint();
+    m_backingStore-&gt;flush(rect);
+}
+</db:programlisting>
+<db:para>The renderNow function sets up what is needed for a <db:link xlink:href="qwindow.xml">QWindow</db:link> to render its content using <db:link xlink:href="qpainter.xml">QPainter</db:link>. As obscured windows have will not be visible, we abort if the window is not exposed in the windowing system. This can for instance happen when another window fully obscures this window.</db:para>
+<db:para>We start the drawing by calling <db:link xlink:href="qbackingstore.xml#beginPaint">QBackingStore::beginPaint</db:link>() on the region we want to draw. Then we get the <db:link xlink:href="qpaintdevice.xml">QPaintDevice</db:link> of the back buffer and create a <db:link xlink:href="qpainter.xml">QPainter</db:link> to render to that paint device.</db:para>
+<db:para>To void leaving traces from the previous rendering and start with a clean buffer, we fill the entire buffer with the color white. Then we call the virtual render() function which does the actual drawing of this window.</db:para>
+<db:para>After drawing is complete, we call endPaint() to signal that we are done rendering and present the contents in the back buffer using <db:link xlink:href="qbackingstore.xml#flush">QBackingStore::flush</db:link>().</db:para>
+<db:programlisting language="cpp">void RasterWindow::render(QPainter *painter)
+{
+    painter-&gt;drawText(QRectF(0, 0, width(), height()), Qt::AlignCenter, QStringLiteral(&quot;QWindow&quot;));
+}
+</db:programlisting>
+<db:para>The render function contains the drawing code for the window. In this minial example, we only draw the string &quot;<db:link xlink:href="qwindow.xml">QWindow</db:link>&quot; in the center.</db:para>
+</db:section>
+<db:section xml:id="rendering-asynchronously">
+<db:title>Rendering Asynchronously</db:title>
+<db:programlisting language="cpp">void RasterWindow::renderLater()
+{
+    if (!m_update_pending) {
+        m_update_pending = true;
+        QCoreApplication::postEvent(this, new QEvent(QEvent::UpdateRequest));
+    }
+}
+</db:programlisting>
+<db:para>We went through a few places where the window needed to repainted immediately. There are some cases where this is not desierable, but rather let the application return to the event loop and later. We acheive this by posting an even to ourself which will then be delivered when the application returns to the <db:link xlink:href="qguiapplication.xml">QGuiApplication</db:link> event loop. To avoid posting new requests when one is already pending, we store this state in the <db:code>m_update_pending</db:code> variable.</db:para>
+<db:programlisting language="cpp">bool RasterWindow::event(QEvent *event)
+{
+    if (event-&gt;type() == QEvent::UpdateRequest) {
+        m_update_pending = false;
+        renderNow();
+        return true;
+    }
+    return QWindow::event(event);
+}
+</db:programlisting>
+<db:para>We reimplement the virtual <db:link xlink:href="qobject.xml#event">QObject::event</db:link>() function to handle the update event we posted to ourselves. When the event comes in we reset the pending update flag and call renderNow() to render the window right away.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="rasterwindow/main.cpp">rasterwindow/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="rasterwindow/rasterwindow.cpp">rasterwindow/rasterwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="rasterwindow/rasterwindow.h">rasterwindow/rasterwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="rasterwindow/rasterwindow.pro">rasterwindow/rasterwindow.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

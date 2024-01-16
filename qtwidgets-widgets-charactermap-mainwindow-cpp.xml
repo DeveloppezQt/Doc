@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Character Map Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Character Map example shows how to create a custom widget that can both display its own content and respond to user input.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;characterwidget.h&quot;
+#include &quot;mainwindow.h&quot;
+
+MainWindow::MainWindow()
+{
+    QWidget *centralWidget = new QWidget;
+
+    QLabel *fontLabel = new QLabel(tr(&quot;Font:&quot;));
+    fontCombo = new QFontComboBox;
+    QLabel *sizeLabel = new QLabel(tr(&quot;Size:&quot;));
+    sizeCombo = new QComboBox;
+    QLabel *styleLabel = new QLabel(tr(&quot;Style:&quot;));
+    styleCombo = new QComboBox;
+    QLabel *fontMergingLabel = new QLabel(tr(&quot;Automatic Font Merging:&quot;));
+    fontMerging = new QCheckBox;
+    fontMerging-&gt;setChecked(true);
+
+    scrollArea = new QScrollArea;
+    characterWidget = new CharacterWidget;
+    scrollArea-&gt;setWidget(characterWidget);
+
+    findStyles(fontCombo-&gt;currentFont());
+    findSizes(fontCombo-&gt;currentFont());
+
+    lineEdit = new QLineEdit;
+#ifndef QT_NO_CLIPBOARD
+    QPushButton *clipboardButton = new QPushButton(tr(&quot;&amp;To clipboard&quot;));
+
+    clipboard = QApplication::clipboard();
+#endif
+
+    connect(fontCombo, SIGNAL(currentFontChanged(QFont)),
+            this, SLOT(findStyles(QFont)));
+    connect(fontCombo, SIGNAL(currentFontChanged(QFont)),
+            this, SLOT(findSizes(QFont)));
+    connect(fontCombo, SIGNAL(currentFontChanged(QFont)),
+            characterWidget, SLOT(updateFont(QFont)));
+    connect(sizeCombo, SIGNAL(currentIndexChanged(QString)),
+            characterWidget, SLOT(updateSize(QString)));
+    connect(styleCombo, SIGNAL(currentIndexChanged(QString)),
+            characterWidget, SLOT(updateStyle(QString)));
+    connect(characterWidget, SIGNAL(characterSelected(QString)),
+            this, SLOT(insertCharacter(QString)));
+
+#ifndef QT_NO_CLIPBOARD
+    connect(clipboardButton, SIGNAL(clicked()), this, SLOT(updateClipboard()));
+#endif
+    connect(fontMerging, SIGNAL(toggled(bool)), characterWidget, SLOT(updateFontMerging(bool)));
+
+    QHBoxLayout *controlsLayout = new QHBoxLayout;
+    controlsLayout-&gt;addWidget(fontLabel);
+    controlsLayout-&gt;addWidget(fontCombo, 1);
+    controlsLayout-&gt;addWidget(sizeLabel);
+    controlsLayout-&gt;addWidget(sizeCombo, 1);
+    controlsLayout-&gt;addWidget(styleLabel);
+    controlsLayout-&gt;addWidget(styleCombo, 1);
+    controlsLayout-&gt;addWidget(fontMergingLabel);
+    controlsLayout-&gt;addWidget(fontMerging, 1);
+    controlsLayout-&gt;addStretch(1);
+
+    QHBoxLayout *lineLayout = new QHBoxLayout;
+    lineLayout-&gt;addWidget(lineEdit, 1);
+    lineLayout-&gt;addSpacing(12);
+#ifndef QT_NO_CLIPBOARD
+    lineLayout-&gt;addWidget(clipboardButton);
+#endif
+
+    QVBoxLayout *centralLayout = new QVBoxLayout;
+    centralLayout-&gt;addLayout(controlsLayout);
+    centralLayout-&gt;addWidget(scrollArea, 1);
+    centralLayout-&gt;addSpacing(4);
+    centralLayout-&gt;addLayout(lineLayout);
+    centralWidget-&gt;setLayout(centralLayout);
+
+    setCentralWidget(centralWidget);
+    setWindowTitle(tr(&quot;Character Map&quot;));
+}
+
+void MainWindow::findStyles(const QFont &amp;font)
+{
+    QFontDatabase fontDatabase;
+    QString currentItem = styleCombo-&gt;currentText();
+    styleCombo-&gt;clear();
+
+    QString style;
+    foreach (style, fontDatabase.styles(font.family()))
+        styleCombo-&gt;addItem(style);
+
+    int styleIndex = styleCombo-&gt;findText(currentItem);
+
+    if (styleIndex == -1)
+        styleCombo-&gt;setCurrentIndex(0);
+    else
+        styleCombo-&gt;setCurrentIndex(styleIndex);
+}
+
+void MainWindow::findSizes(const QFont &amp;font)
+{
+    QFontDatabase fontDatabase;
+    QString currentSize = sizeCombo-&gt;currentText();
+    sizeCombo-&gt;blockSignals(true);
+    sizeCombo-&gt;clear();
+
+    int size;
+    if(fontDatabase.isSmoothlyScalable(font.family(), fontDatabase.styleString(font))) {
+        foreach(size, QFontDatabase::standardSizes()) {
+            sizeCombo-&gt;addItem(QVariant(size).toString());
+            sizeCombo-&gt;setEditable(true);
+        }
+
+    } else {
+        foreach(size, fontDatabase.smoothSizes(font.family(), fontDatabase.styleString(font))) {
+            sizeCombo-&gt;addItem(QVariant(size).toString());
+            sizeCombo-&gt;setEditable(false);
+        }
+    }
+
+    sizeCombo-&gt;blockSignals(false);
+
+    int sizeIndex = sizeCombo-&gt;findText(currentSize);
+
+    if(sizeIndex == -1)
+        sizeCombo-&gt;setCurrentIndex(qMax(0, sizeCombo-&gt;count() / 3));
+    else
+        sizeCombo-&gt;setCurrentIndex(sizeIndex);
+}
+
+void MainWindow::insertCharacter(const QString &amp;character)
+{
+    lineEdit-&gt;insert(character);
+}
+
+#ifndef QT_NO_CLIPBOARD
+void MainWindow::updateClipboard()
+{
+    clipboard-&gt;setText(lineEdit-&gt;text(), QClipboard::Clipboard);
+    clipboard-&gt;setText(lineEdit-&gt;text(), QClipboard::Selection);
+}
+#endif
+
+</db:programlisting>
+</db:article>
