@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Elided Label Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example creates a widget similar to QLabel, that elides the last visible line, if the text is too long to fit the widget's geometry.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Elided Label example on XPressMusic 5800</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/elidedlabel-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>When text of varying length has to be displayed in a uniformly sized area, for instance within a list or grid view where all list items have the same size, it can be useful to give the user a visual clue when not all text is visible. QLabel can elide text that doesn't fit within it, but only in one line. The <db:code>ElidedLabel</db:code> widget shown in this example word wraps its text by its width, and elides the last visible line if some text is left out. <db:code>TestWidget</db:code> gives control to the features of <db:code>ElidedWidget</db:code> and forms the example application.</db:para>
+<db:section xml:id="elidedlabel-class-definition">
+<db:title>ElidedLabel Class Definition</db:title>
+<db:para>Like QLabel, <db:code>ElidedLabel</db:code> inherits from QFrame. Here's the definition of the <db:code>ElidedLabel</db:code> class:</db:para>
+<db:programlisting language="cpp">class ElidedLabel : public QFrame
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text READ text WRITE setText)
+    Q_PROPERTY(bool isElided READ isElided)
+
+public:
+    explicit ElidedLabel(const QString &amp;text, QWidget *parent = 0);
+
+    void setText(const QString &amp;text);
+    const QString &amp; text() const { return content; }
+    bool isElided() const { return elided; }
+
+protected:
+    void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE;
+
+signals:
+    void elisionChanged(bool elided);
+
+private:
+    bool elided;
+    QString content;
+};
+</db:programlisting>
+<db:para>The <db:code>isElided</db:code> property depends the font, text content and geometry of the widget. Whenever any of these change, the <db:code>elisionChanged()</db:code> signal might trigger. We cache the current elision value in <db:code>elided</db:code>, so that it doesn't have to be recomputed every time it's asked for.</db:para>
+</db:section>
+<db:section xml:id="elidedlabel-class-implementation">
+<db:title>ElidedLabel Class Implementation</db:title>
+<db:para>Except for initializing the member variables, the constructor sets the size policy to be horizontally expanding, since it's meant to fill the width of its container and grow vertically.</db:para>
+<db:programlisting language="cpp">ElidedLabel::ElidedLabel(const QString &amp;text, QWidget *parent)
+    : QFrame(parent)
+    , elided(false)
+    , content(text)
+{
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+}
+</db:programlisting>
+<db:para>Changing the <db:code>content</db:code> require a repaint of the widget.</db:para>
+<db:programlisting language="cpp">void ElidedLabel::setText(const QString &amp;newText)
+{
+    content = newText;
+    update();
+}
+</db:programlisting>
+<db:para>QTextLayout is used in the <db:code>paintEvent()</db:code> to divide the <db:code>content</db:code> into lines, that wrap on word boundaries. Each line, except the last visible one, is drawn <db:code>lineSpacing</db:code> pixels below the previous one. The <db:code>draw()</db:code> method of QTextLine will draw the line using the coordinate point as the top left corner.</db:para>
+<db:programlisting language="cpp">void ElidedLabel::paintEvent(QPaintEvent *event)
+{
+    QFrame::paintEvent(event);
+
+    QPainter painter(this);
+    QFontMetrics fontMetrics = painter.fontMetrics();
+
+    bool didElide = false;
+    int lineSpacing = fontMetrics.lineSpacing();
+    int y = 0;
+
+    QTextLayout textLayout(content, painter.font());
+    textLayout.beginLayout();
+    forever {
+        QTextLine line = textLayout.createLine();
+
+        if (!line.isValid())
+            break;
+
+        line.setLineWidth(width());
+        int nextLineY = y + lineSpacing;
+
+        if (height() &gt;= nextLineY + lineSpacing) {
+            line.draw(&amp;painter, QPoint(0, y));
+            y = nextLineY;
+</db:programlisting>
+<db:para>Unfortunately, QTextLayout does not elide text, so the last visible line has to be treated differently. This last line is elided if it is too wide. The <db:code>drawText()</db:code> method of QPainter draws the text starting from the base line, which is <db:code>ascecnt()</db:code> pixels below the last drawn line.</db:para>
+<db:para>Finally, one more line is created to see if everything fit on this line.</db:para>
+<db:programlisting language="cpp">} else {
+QString lastLine = content.mid(line.textStart());
+QString elidedLastLine = fontMetrics.elidedText(lastLine, Qt::ElideRight, width());
+painter.drawText(QPoint(0, y + fontMetrics.ascent()), elidedLastLine);
+line = textLayout.createLine();
+didElide = line.isValid();
+break;
+}
+}
+textLayout.endLayout();
+</db:programlisting>
+<db:para>If the text was elided and wasn't before or vice versa, cache it in <db:code>elided</db:code> and emit the change.</db:para>
+<db:programlisting language="cpp">if (didElide != elided) {
+    elided = didElide;
+    emit elisionChanged(didElide);
+}
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="testwidget-class-definition">
+<db:title>TestWidget Class Definition</db:title>
+<db:para><db:code>TestWidget</db:code> is a QWidget and is the main window of the example. It contains an <db:code>ElidedLabel</db:code> which can be resized with two QSlider widgets.</db:para>
+<db:programlisting language="cpp">class TestWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    TestWidget(QWidget *parent = 0);
+
+protected:
+    void resizeEvent(QResizeEvent *event) Q_DECL_OVERRIDE;
+
+private slots:
+    void switchText();
+    void onWidthChanged(int width);
+    void onHeightChanged(int height);
+
+private:
+    int sampleIndex;
+    QStringList textSamples;
+    ElidedLabel *elidedText;
+    QSlider *heightSlider;
+    QSlider *widthSlider;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="testwidget-class-implementation">
+<db:title>TestWidget Class Implementation</db:title>
+<db:para>The constructor initializes the whole widget. Strings of different length are stored in <db:code>textSamples</db:code>. The user is able to switch between these.</db:para>
+<db:programlisting language="cpp">TestWidget::TestWidget(QWidget *parent):
+    QWidget(parent)
+{
+    const QString romeo = tr(
+        &quot;But soft, what light through yonder window breaks? / &quot;
+        &quot;It is the east, and Juliet is the sun. / &quot;
+        &quot;Arise, fair sun, and kill the envious moon, / &quot;
+        &quot;Who is already sick and pale with grief / &quot;
+        &quot;That thou, her maid, art far more fair than she.&quot;
+    );
+
+    const QString macbeth = tr(
+        &quot;To-morrow, and to-morrow, and to-morrow, / &quot;
+        &quot;Creeps in this petty pace from day to day, / &quot;
+        &quot;To the last syllable of recorded time; / &quot;
+        &quot;And all our yesterdays have lighted fools / &quot;
+        &quot;The way to dusty death. Out, out, brief candle! / &quot;
+        &quot;Life's but a walking shadow, a poor player, / &quot;
+        &quot;That struts and frets his hour upon the stage, / &quot;
+        &quot;And then is heard no more. It is a tale / &quot;
+        &quot;Told by an idiot, full of sound and fury, / &quot;
+        &quot;Signifying nothing.&quot;
+    );
+
+    const QString harry = tr(&quot;Feeling lucky, punk?&quot;);
+
+    textSamples &lt;&lt; romeo &lt;&lt; macbeth &lt;&lt; harry;
+</db:programlisting>
+<db:para>An <db:code>ElidedLabel</db:code> is created to contain the first of the sample strings. The frame is made visible to make it easier to see the actual size of the widget.</db:para>
+<db:programlisting language="cpp">sampleIndex = 0;
+elidedText = new ElidedLabel(textSamples[sampleIndex], this);
+elidedText-&gt;setFrameStyle(QFrame::Box);
+</db:programlisting>
+<db:para>The buttons and the elision label are created. By connecting the <db:code>elisionChanged()</db:code> signal to the <db:code>setVisible()</db:code> slot of the <db:code>label</db:code>, it will act as an indicator to when the text is elided or not. This signal could, for instance, be used to make a &quot;More&quot; button visible, or similar.</db:para>
+<db:programlisting language="cpp">QPushButton *switchButton = new QPushButton(tr(&quot;Switch text&quot;));
+connect(switchButton, SIGNAL(clicked(bool)), this, SLOT(switchText()));
+
+QPushButton *exitButton = new QPushButton(tr(&quot;Exit&quot;));
+connect(exitButton, SIGNAL(clicked(bool)), this, SLOT(close()));
+
+QLabel *label = new QLabel(tr(&quot;Elided&quot;));
+label-&gt;setVisible(elidedText-&gt;isElided());
+connect(elidedText, SIGNAL(elisionChanged(bool)), label, SLOT(setVisible(bool)));
+</db:programlisting>
+<db:para>The <db:code>widthSlider</db:code> and <db:code>heightSlider</db:code> specify the size of the <db:code>elidedText</db:code>. Since the y-axis is inverted, the <db:code>heightSlider</db:code> has to be inverted to act appropriately.</db:para>
+<db:programlisting language="cpp">widthSlider = new QSlider(Qt::Horizontal);
+widthSlider-&gt;setMinimum(0);
+connect(widthSlider, SIGNAL(valueChanged(int)), this, SLOT(onWidthChanged(int)));
+
+heightSlider = new QSlider(Qt::Vertical);
+heightSlider-&gt;setInvertedAppearance(true);
+heightSlider-&gt;setMinimum(0);
+connect(heightSlider, SIGNAL(valueChanged(int)), this, SLOT(onHeightChanged(int)));
+</db:programlisting>
+<db:para>The components are all stored in a QGridLayout, which is made the layout of the <db:code>TestWidget</db:code>.</db:para>
+<db:programlisting language="cpp">QGridLayout *layout = new QGridLayout();
+layout-&gt;addWidget(label, 0, 1, Qt::AlignCenter);
+layout-&gt;addWidget(switchButton, 0, 2);
+layout-&gt;addWidget(exitButton, 0, 3);
+layout-&gt;addWidget(widthSlider, 1, 1, 1, 3);
+layout-&gt;addWidget(heightSlider, 2, 0);
+layout-&gt;addWidget(elidedText, 2, 1, 1, 3, Qt::AlignTop | Qt::AlignLeft);
+
+setLayout(layout);
+</db:programlisting>
+<db:para>On the Maemo platform, windows are stuck in landscape mode by default. With this attribute set, the window manager is aware that this window can be rotated.</db:para>
+<db:programlisting language="cpp">}
+</db:programlisting>
+<db:para>The <db:code>widthSlider</db:code> and <db:code>heightSlider</db:code> have the exact same length as the dimensions of the <db:code>elidedText</db:code>. The maximum value for both of them is thus their lengths, and each tick indicates one pixel.</db:para>
+<db:programlisting language="cpp">void TestWidget::resizeEvent(QResizeEvent *event)
+{
+    Q_UNUSED(event)
+
+    int maxWidth = widthSlider-&gt;width();
+    widthSlider-&gt;setMaximum(maxWidth);
+    widthSlider-&gt;setValue(maxWidth / 2);
+
+    int maxHeight = heightSlider-&gt;height();
+    heightSlider-&gt;setMaximum(maxHeight);
+    heightSlider-&gt;setValue(maxHeight / 2);
+
+    elidedText-&gt;setFixedSize(widthSlider-&gt;value(), heightSlider-&gt;value());
+}
+</db:programlisting>
+<db:para>The <db:code>switchText()</db:code> slot simply cycles through all the available sample texts.</db:para>
+<db:programlisting language="cpp">void TestWidget::switchText()
+{
+    sampleIndex = (sampleIndex + 1) % textSamples.size();
+    elidedText-&gt;setText(textSamples.at(sampleIndex));
+}
+</db:programlisting>
+<db:para>These slots set the width and height of the <db:code>elided</db:code> text, in response to changes in the sliders.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The <db:code>main()</db:code> Function</db:title>
+<db:para>The <db:code>main()</db:code> function creates an instance of <db:code>TestWidget</db:code> fullscreen and enters the message loop.</db:para>
+<db:programlisting language="cpp">int main( int argc, char *argv[] )
+{
+    QApplication application( argc, argv );
+    TestWidget w;
+    w.showFullScreen();
+    return application.exec();
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/elidedlabel.cpp">widgets/elidedlabel/elidedlabel.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/elidedlabel.h">widgets/elidedlabel/elidedlabel.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/elidedlabel.pro">widgets/elidedlabel/elidedlabel.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/main.cpp">widgets/elidedlabel/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/testwidget.cpp">widgets/elidedlabel/testwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="widgets/elidedlabel/testwidget.h">widgets/elidedlabel/testwidget.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

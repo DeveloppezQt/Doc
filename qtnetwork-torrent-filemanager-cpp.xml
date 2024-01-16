@@ -1,0 +1,471 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Torrent Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates complex TCP/IP operations.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;filemanager.h&quot;
+#include &quot;metainfo.h&quot;
+
+#include &lt;QByteArray&gt;
+#include &lt;QDir&gt;
+#include &lt;QFile&gt;
+#include &lt;QTimer&gt;
+#include &lt;QTimerEvent&gt;
+#include &lt;QCryptographicHash&gt;
+
+FileManager::FileManager(QObject *parent)
+    : QThread(parent)
+{
+    quit = false;
+    totalLength = 0;
+    readId = 0;
+    startVerification = false;
+    wokeUp = false;
+    newFile = false;
+    numPieces = 0;
+    verifiedPieces.fill(false);
+}
+
+FileManager::~FileManager()
+{
+    quit = true;
+    cond.wakeOne();
+    wait();
+
+    foreach (QFile *file, files) {
+        file-&gt;close();
+        delete file;
+    }
+}
+
+int FileManager::read(int pieceIndex, int offset, int length)
+{
+    ReadRequest request;
+    request.pieceIndex = pieceIndex;
+    request.offset = offset;
+    request.length = length;
+
+    QMutexLocker locker(&amp;mutex);
+    request.id = readId++;
+    readRequests &lt;&lt; request;
+
+    if (!wokeUp) {
+        wokeUp = true;
+        QMetaObject::invokeMethod(this, &quot;wakeUp&quot;, Qt::QueuedConnection);
+    }
+
+    return request.id;
+}
+
+void FileManager::write(int pieceIndex, int offset, const QByteArray &amp;data)
+{
+    WriteRequest request;
+    request.pieceIndex = pieceIndex;
+    request.offset = offset;
+    request.data = data;
+
+    QMutexLocker locker(&amp;mutex);
+    writeRequests &lt;&lt; request;
+
+    if (!wokeUp) {
+        wokeUp = true;
+        QMetaObject::invokeMethod(this, &quot;wakeUp&quot;, Qt::QueuedConnection);
+    }
+}
+
+void FileManager::verifyPiece(int pieceIndex)
+{
+    QMutexLocker locker(&amp;mutex);
+    pendingVerificationRequests &lt;&lt; pieceIndex;
+    startVerification = true;
+
+    if (!wokeUp) {
+        wokeUp = true;
+        QMetaObject::invokeMethod(this, &quot;wakeUp&quot;, Qt::QueuedConnection);
+    }
+}
+
+int FileManager::pieceLengthAt(int pieceIndex) const
+{
+    QMutexLocker locker(&amp;mutex);
+    return (sha1s.size() == pieceIndex + 1)
+        ? (totalLength % pieceLength) : pieceLength;
+}
+
+QBitArray FileManager::completedPieces() const
+{
+    QMutexLocker locker(&amp;mutex);
+    return verifiedPieces;
+}
+
+void FileManager::setCompletedPieces(const QBitArray &amp;pieces)
+{
+    QMutexLocker locker(&amp;mutex);
+    verifiedPieces = pieces;
+}
+
+QString FileManager::errorString() const
+{
+    return errString;
+}
+
+void FileManager::run()
+{
+    if (!generateFiles())
+        return;
+
+    do {
+        {
+            // Go to sleep if there's nothing to do.
+            QMutexLocker locker(&amp;mutex);
+            if (!quit &amp;&amp; readRequests.isEmpty() &amp;&amp; writeRequests.isEmpty() &amp;&amp; !startVerification)
+                cond.wait(&amp;mutex);
+        }
+
+        // Read pending read requests
+        mutex.lock();
+        QList&lt;ReadRequest&gt; newReadRequests = readRequests;
+        readRequests.clear();
+        mutex.unlock();
+        while (!newReadRequests.isEmpty()) {
+            ReadRequest request = newReadRequests.takeFirst();
+            QByteArray block = readBlock(request.pieceIndex, request.offset, request.length);
+            emit dataRead(request.id, request.pieceIndex, request.offset, block);
+        }
+
+        // Write pending write requests
+        mutex.lock();
+        QList&lt;WriteRequest&gt; newWriteRequests = writeRequests;
+        writeRequests.clear();
+        while (!quit &amp;&amp; !newWriteRequests.isEmpty()) {
+            WriteRequest request = newWriteRequests.takeFirst();
+            writeBlock(request.pieceIndex, request.offset, request.data);
+        }
+
+        // Process pending verification requests
+        if (startVerification) {
+            newPendingVerificationRequests = pendingVerificationRequests;
+            pendingVerificationRequests.clear();
+            verifyFileContents();
+            startVerification = false;
+        }
+        mutex.unlock();
+        newPendingVerificationRequests.clear();
+
+    } while (!quit);
+
+    // Write pending write requests
+    mutex.lock();
+    QList&lt;WriteRequest&gt; newWriteRequests = writeRequests;
+    writeRequests.clear();
+    mutex.unlock();
+    while (!newWriteRequests.isEmpty()) {
+        WriteRequest request = newWriteRequests.takeFirst();
+        writeBlock(request.pieceIndex, request.offset, request.data);
+    }
+}
+
+void FileManager::startDataVerification()
+{
+    QMutexLocker locker(&amp;mutex);
+    startVerification = true;
+    cond.wakeOne();
+}
+
+bool FileManager::generateFiles()
+{
+    numPieces = -1;
+
+    // Set up the thread local data
+    if (metaInfo.fileForm() == MetaInfo::SingleFileForm) {
+        QMutexLocker locker(&amp;mutex);
+        MetaInfoSingleFile singleFile = metaInfo.singleFile();
+
+        QString prefix;
+        if (!destinationPath.isEmpty()) {
+            prefix = destinationPath;
+            if (!prefix.endsWith(&quot;/&quot;))
+                prefix += &quot;/&quot;;
+            QDir dir;
+            if (!dir.mkpath(prefix)) {
+                errString = tr(&quot;Failed to create directory %1&quot;).arg(prefix);
+                emit error();
+                return false;
+            }
+        }
+        QFile *file = new QFile(prefix + singleFile.name);
+        if (!file-&gt;open(QFile::ReadWrite)) {
+            errString = tr(&quot;Failed to open/create file %1: %2&quot;)
+                        .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+            emit error();
+            delete file;
+            return false;
+        }
+
+        if (file-&gt;size() != singleFile.length) {
+            newFile = true;
+            if (!file-&gt;resize(singleFile.length)) {
+                errString = tr(&quot;Failed to resize file %1: %2&quot;)
+                            .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                delete file;
+                emit error();
+                return false;
+            }
+        }
+        fileSizes &lt;&lt; file-&gt;size();
+        files &lt;&lt; file;
+        file-&gt;close();
+
+        pieceLength = singleFile.pieceLength;
+        totalLength = singleFile.length;
+        sha1s = singleFile.sha1Sums;
+    } else {
+        QMutexLocker locker(&amp;mutex);
+        QDir dir;
+        QString prefix;
+
+        if (!destinationPath.isEmpty()) {
+            prefix = destinationPath;
+            if (!prefix.endsWith(&quot;/&quot;))
+                prefix += &quot;/&quot;;
+        }
+        if (!metaInfo.name().isEmpty()) {
+            prefix += metaInfo.name();
+            if (!prefix.endsWith(&quot;/&quot;))
+                prefix += &quot;/&quot;;
+        }
+        if (!dir.mkpath(prefix)) {
+            errString = tr(&quot;Failed to create directory %1&quot;).arg(prefix);
+            emit error();
+            return false;
+        }
+
+        foreach (const MetaInfoMultiFile &amp;entry, metaInfo.multiFiles()) {
+            QString filePath = QFileInfo(prefix + entry.path).path();
+            if (!QFile::exists(filePath)) {
+                if (!dir.mkpath(filePath)) {
+                    errString = tr(&quot;Failed to create directory %1&quot;).arg(filePath);
+                    emit error();
+                    return false;
+                }
+            }
+
+            QFile *file = new QFile(prefix + entry.path);
+            if (!file-&gt;open(QFile::ReadWrite)) {
+                errString = tr(&quot;Failed to open/create file %1: %2&quot;)
+                            .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                emit error();
+                delete file;
+                return false;
+            }
+
+            if (file-&gt;size() != entry.length) {
+                newFile = true;
+                if (!file-&gt;resize(entry.length)) {
+                    errString = tr(&quot;Failed to resize file %1: %2&quot;)
+                                .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                    emit error();
+                    delete file;
+                    return false;
+                }
+            }
+            fileSizes &lt;&lt; file-&gt;size();
+            files &lt;&lt; file;
+            file-&gt;close();
+
+            totalLength += entry.length;
+        }
+
+        sha1s = metaInfo.sha1Sums();
+        pieceLength = metaInfo.pieceLength();
+    }
+    numPieces = sha1s.size();
+    return true;
+}
+
+QByteArray FileManager::readBlock(int pieceIndex, int offset, int length)
+{
+    QByteArray block;
+    qint64 startReadIndex = (quint64(pieceIndex) * pieceLength) + offset;
+    qint64 currentIndex = 0;
+
+    for (int i = 0; !quit &amp;&amp; i &lt; files.size() &amp;&amp; length &gt; 0; ++i) {
+        QFile *file = files[i];
+        qint64 currentFileSize = fileSizes.at(i);
+        if ((currentIndex + currentFileSize) &gt; startReadIndex) {
+            if (!file-&gt;isOpen()) {
+                if (!file-&gt;open(QFile::ReadWrite)) {
+                    errString = tr(&quot;Failed to read from file %1: %2&quot;)
+                        .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                    emit error();
+                    break;
+                }
+            }
+
+            file-&gt;seek(startReadIndex - currentIndex);
+            QByteArray chunk = file-&gt;read(qMin&lt;qint64&gt;(length, currentFileSize - file-&gt;pos()));
+            file-&gt;close();
+
+            block += chunk;
+            length -= chunk.size();
+            startReadIndex += chunk.size();
+            if (length &lt; 0) {
+                errString = tr(&quot;Failed to read from file %1 (read %3 bytes): %2&quot;)
+                            .arg(file-&gt;fileName()).arg(file-&gt;errorString()).arg(length);
+                emit error();
+                break;
+            }
+        }
+        currentIndex += currentFileSize;
+    }
+    return block;
+}
+
+bool FileManager::writeBlock(int pieceIndex, int offset, const QByteArray &amp;data)
+{
+    qint64 startWriteIndex = (qint64(pieceIndex) * pieceLength) + offset;
+    qint64 currentIndex = 0;
+    int bytesToWrite = data.size();
+    int written = 0;
+
+    for (int i = 0; !quit &amp;&amp; i &lt; files.size(); ++i) {
+        QFile *file = files[i];
+        qint64 currentFileSize = fileSizes.at(i);
+
+        if ((currentIndex + currentFileSize) &gt; startWriteIndex) {
+            if (!file-&gt;isOpen()) {
+                if (!file-&gt;open(QFile::ReadWrite)) {
+                    errString = tr(&quot;Failed to write to file %1: %2&quot;)
+                        .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                    emit error();
+                    break;
+                }
+            }
+
+            file-&gt;seek(startWriteIndex - currentIndex);
+            qint64 bytesWritten = file-&gt;write(data.constData() + written,
+                                              qMin&lt;qint64&gt;(bytesToWrite, currentFileSize - file-&gt;pos()));
+            file-&gt;close();
+
+            if (bytesWritten &lt;= 0) {
+                errString = tr(&quot;Failed to write to file %1: %2&quot;)
+                            .arg(file-&gt;fileName()).arg(file-&gt;errorString());
+                emit error();
+                return false;
+            }
+
+            written += bytesWritten;
+            startWriteIndex += bytesWritten;
+            bytesToWrite -= bytesWritten;
+            if (bytesToWrite == 0)
+                break;
+        }
+        currentIndex += currentFileSize;
+    }
+    return true;
+}
+
+void FileManager::verifyFileContents()
+{
+    // Verify all pieces the first time
+    if (newPendingVerificationRequests.isEmpty()) {
+        if (verifiedPieces.count(true) == 0) {
+            verifiedPieces.resize(sha1s.size());
+
+            int oldPercent = 0;
+            if (!newFile) {
+                int numPieces = sha1s.size();
+
+                for (int index = 0; index &lt; numPieces; ++index) {
+                    verifySinglePiece(index);
+
+                    int percent = ((index + 1) * 100) / numPieces;
+                    if (oldPercent != percent) {
+                        emit verificationProgress(percent);
+                        oldPercent = percent;
+                    }
+                }
+            }
+        }
+        emit verificationDone();
+        return;
+    }
+
+    // Verify all pending pieces
+    foreach (int index, newPendingVerificationRequests)
+        emit pieceVerified(index, verifySinglePiece(index));
+}
+
+bool FileManager::verifySinglePiece(int pieceIndex)
+{
+    QByteArray block = readBlock(pieceIndex, 0, pieceLength);
+    QByteArray sha1Sum = QCryptographicHash::hash(block, QCryptographicHash::Sha1);
+
+    if (sha1Sum != sha1s.at(pieceIndex))
+        return false;
+    verifiedPieces.setBit(pieceIndex);
+    return true;
+}
+
+void FileManager::wakeUp()
+{
+    QMutexLocker locker(&amp;mutex);
+    wokeUp = false;
+    cond.wakeOne();
+}
+
+</db:programlisting>
+</db:article>

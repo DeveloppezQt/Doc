@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QQuickRenderControl Example</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render a Qt Quick scene into a texture that is then used by a non-Quick based OpenGL renderer.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2014 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;window.h&quot;
+#include &lt;QOpenGLContext&gt;
+#include &lt;QOpenGLFunctions&gt;
+#include &lt;QOpenGLFramebufferObject&gt;
+#include &lt;QOpenGLShaderProgram&gt;
+#include &lt;QOpenGLVertexArrayObject&gt;
+#include &lt;QOpenGLBuffer&gt;
+#include &lt;QOpenGLVertexArrayObject&gt;
+#include &lt;QOffscreenSurface&gt;
+#include &lt;QQmlEngine&gt;
+#include &lt;QQmlComponent&gt;
+#include &lt;QQuickItem&gt;
+#include &lt;QQuickWindow&gt;
+#include &lt;QQuickRenderControl&gt;
+#include &lt;QCoreApplication&gt;
+
+Window::Window()
+    : m_rootItem(0),
+      m_fbo(0),
+      m_program(0),
+      m_vbo(0),
+      m_quickInitialized(false),
+      m_quickReady(false)
+{
+    setSurfaceType(QSurface::OpenGLSurface);
+
+    QSurfaceFormat format;
+    // Qt Quick may need a depth and stencil buffer. Always make sure these are available.
+    format.setDepthBufferSize(16);
+    format.setStencilBufferSize(8);
+    setFormat(format);
+
+    m_context = new QOpenGLContext;
+    m_context-&gt;setFormat(format);
+    m_context-&gt;create();
+
+    m_offscreenSurface = new QOffscreenSurface;
+    // Pass m_context-&gt;format(), not format. Format does not specify and color buffer
+    // sizes, while the context, that has just been created, reports a format that has
+    // these values filled in. Pass this to the offscreen surface to make sure it will be
+    // compatible with the context's configuration.
+    m_offscreenSurface-&gt;setFormat(m_context-&gt;format());
+    m_offscreenSurface-&gt;create();
+
+    m_renderControl = new QQuickRenderControl(this);
+
+    // Create a QQuickWindow that is associated with out render control. Note that this
+    // window never gets created or shown, meaning that it will never get an underlying
+    // native (platform) window.
+    m_quickWindow = new QQuickWindow(m_renderControl);
+
+    // Create a QML engine.
+    m_qmlEngine = new QQmlEngine;
+    if (!m_qmlEngine-&gt;incubationController())
+        m_qmlEngine-&gt;setIncubationController(m_quickWindow-&gt;incubationController());
+
+    // When Quick says there is a need to render, we will not render immediately. Instead,
+    // a timer with a small interval is used to get better performance.
+    m_updateTimer.setSingleShot(true);
+    m_updateTimer.setInterval(5);
+    connect(&amp;m_updateTimer, &amp;QTimer::timeout, this, &amp;Window::updateQuick);
+
+    // Now hook up the signals. For simplicy we don't differentiate between
+    // renderRequested (only render is needed, no sync) and sceneChanged (polish and sync
+    // is needed too).
+    connect(m_quickWindow, &amp;QQuickWindow::sceneGraphInitialized, this, &amp;Window::createFbo);
+    connect(m_quickWindow, &amp;QQuickWindow::sceneGraphInvalidated, this, &amp;Window::destroyFbo);
+    connect(m_renderControl, &amp;QQuickRenderControl::renderRequested, this, &amp;Window::requestUpdate);
+    connect(m_renderControl, &amp;QQuickRenderControl::sceneChanged, this, &amp;Window::requestUpdate);
+}
+
+Window::~Window()
+{
+    // Make sure the context is current while doing cleanup. Note that we use the
+    // offscreen surface here because passing 'this' at this point is not safe: the
+    // underlying platform window may already be destroyed. To avoid all the trouble, use
+    // another surface that is valid for sure.
+    m_context-&gt;makeCurrent(m_offscreenSurface);
+
+    // Delete the render control first since it will free the scenegraph resources.
+    // Destroy the QQuickWindow only afterwards.
+    delete m_renderControl;
+
+    delete m_qmlComponent;
+    delete m_quickWindow;
+    delete m_qmlEngine;
+    delete m_fbo;
+    delete m_program;
+    delete m_vbo;
+    delete m_vao;
+
+    m_context-&gt;doneCurrent();
+
+    delete m_offscreenSurface;
+    delete m_context;
+}
+
+void Window::createFbo()
+{
+    // The scene graph has been initialized. It is now time to create an FBO and associate
+    // it with the QQuickWindow.
+    m_fbo = new QOpenGLFramebufferObject(size() * devicePixelRatio(), QOpenGLFramebufferObject::CombinedDepthStencil);
+    m_quickWindow-&gt;setRenderTarget(m_fbo);
+}
+
+void Window::destroyFbo()
+{
+    delete m_fbo;
+    m_fbo = 0;
+}
+
+void Window::requestUpdate()
+{
+    if (!m_updateTimer.isActive())
+        m_updateTimer.start();
+}
+
+void Window::run()
+{
+    disconnect(m_qmlComponent, SIGNAL(statusChanged(QQmlComponent::Status)), this, SLOT(run()));
+
+    if (m_qmlComponent-&gt;isError()) {
+        QList&lt;QQmlError&gt; errorList = m_qmlComponent-&gt;errors();
+        foreach (const QQmlError &amp;error, errorList)
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        return;
+    }
+
+    QObject *rootObject = m_qmlComponent-&gt;create();
+    if (m_qmlComponent-&gt;isError()) {
+        QList&lt;QQmlError&gt; errorList = m_qmlComponent-&gt;errors();
+        foreach (const QQmlError &amp;error, errorList)
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        return;
+    }
+
+    m_rootItem = qobject_cast&lt;QQuickItem *&gt;(rootObject);
+    if (!m_rootItem) {
+        qWarning(&quot;run: Not a QQuickItem&quot;);
+        delete rootObject;
+        return;
+    }
+
+    // The root item is ready. Associate it with the window.
+    m_rootItem-&gt;setParentItem(m_quickWindow-&gt;contentItem());
+
+    // Update item and rendering related geometries.
+    updateSizes();
+
+    // Initialize the render control and our OpenGL resources.
+    m_context-&gt;makeCurrent(m_offscreenSurface);
+    m_renderControl-&gt;initialize(m_context);
+
+    static const char *vertexShaderSource =
+        &quot;attribute highp vec4 vertex;\n&quot;
+        &quot;attribute lowp vec2 coord;\n&quot;
+        &quot;varying lowp vec2 v_coord;\n&quot;
+        &quot;uniform highp mat4 matrix;\n&quot;
+        &quot;void main() {\n&quot;
+        &quot;   v_coord = coord;\n&quot;
+        &quot;   gl_Position = matrix * vertex;\n&quot;
+        &quot;}\n&quot;;
+    static const char *fragmentShaderSource =
+        &quot;varying lowp vec2 v_coord;\n&quot;
+        &quot;uniform sampler2D sampler;\n&quot;
+        &quot;void main() {\n&quot;
+        &quot;   gl_FragColor = vec4(texture2D(sampler, v_coord).rgb, 1.0);\n&quot;
+        &quot;}\n&quot;;
+    m_program = new QOpenGLShaderProgram;
+    m_program-&gt;addShaderFromSourceCode(QOpenGLShader::Vertex, vertexShaderSource);
+    m_program-&gt;addShaderFromSourceCode(QOpenGLShader::Fragment, fragmentShaderSource);
+    m_program-&gt;bindAttributeLocation(&quot;vertex&quot;, 0);
+    m_program-&gt;bindAttributeLocation(&quot;coord&quot;, 1);
+    m_program-&gt;link();
+    m_matrixLoc = m_program-&gt;uniformLocation(&quot;matrix&quot;);
+
+    m_vao = new QOpenGLVertexArrayObject;
+    m_vao-&gt;create();
+    m_vao-&gt;bind();
+
+    m_vbo = new QOpenGLBuffer;
+    m_vbo-&gt;create();
+    m_vbo-&gt;bind();
+
+    GLfloat v[] = {
+        -0.5, 0.5, 0.5, 0.5,-0.5,0.5,-0.5,-0.5,0.5,
+        0.5, -0.5, 0.5, -0.5,0.5,0.5,0.5,0.5,0.5,
+        -0.5, -0.5, -0.5, 0.5,-0.5,-0.5,-0.5,0.5,-0.5,
+        0.5, 0.5, -0.5, -0.5,0.5,-0.5,0.5,-0.5,-0.5,
+
+        0.5, -0.5, -0.5, 0.5,-0.5,0.5,0.5,0.5,-0.5,
+        0.5, 0.5, 0.5, 0.5,0.5,-0.5,0.5,-0.5,0.5,
+        -0.5, 0.5, -0.5, -0.5,-0.5,0.5,-0.5,-0.5,-0.5,
+        -0.5, -0.5, 0.5, -0.5,0.5,-0.5,-0.5,0.5,0.5,
+
+        0.5, 0.5,  -0.5, -0.5, 0.5,  0.5,  -0.5,  0.5,  -0.5,
+        -0.5,  0.5,  0.5,  0.5,  0.5,  -0.5, 0.5, 0.5,  0.5,
+        -0.5,  -0.5, -0.5, -0.5, -0.5, 0.5,  0.5, -0.5, -0.5,
+        0.5, -0.5, 0.5,  0.5,  -0.5, -0.5, -0.5,  -0.5, 0.5
+    };
+    GLfloat texCoords[] = {
+        0.0f,0.0f, 1.0f,1.0f, 1.0f,0.0f,
+        1.0f,1.0f, 0.0f,0.0f, 0.0f,1.0f,
+        1.0f,1.0f, 1.0f,0.0f, 0.0f,1.0f,
+        0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f,
+
+        1.0f,1.0f, 1.0f,0.0f, 0.0f,1.0f,
+        0.0f,0.0f, 0.0f,1.0f, 1.0f,0.0f,
+        0.0f,0.0f, 1.0f,1.0f, 1.0f,0.0f,
+        1.0f,1.0f, 0.0f,0.0f, 0.0f,1.0f,
+
+        0.0f,1.0f, 1.0f,0.0f, 1.0f,1.0f,
+        1.0f,0.0f, 0.0f,1.0f, 0.0f,0.0f,
+        1.0f,0.0f, 1.0f,1.0f, 0.0f,0.0f,
+        0.0f,1.0f, 0.0f,0.0f, 1.0f,1.0f
+    };
+
+    const int vertexCount = 36;
+    m_vbo-&gt;allocate(sizeof(GLfloat) * vertexCount * 5);
+    m_vbo-&gt;write(0, v, sizeof(GLfloat) * vertexCount * 3);
+    m_vbo-&gt;write(sizeof(GLfloat) * vertexCount * 3, texCoords, sizeof(GLfloat) * vertexCount * 2);
+    m_vbo-&gt;release();
+
+    if (m_vao-&gt;isCreated())
+        setupVertexAttribs();
+
+    // Must unbind before changing the current context. Hence the absence of
+    // QOpenGLVertexArrayObject::Binder here.
+    m_vao-&gt;release();
+
+    m_context-&gt;doneCurrent();
+    m_quickInitialized = true;
+}
+
+void Window::updateSizes()
+{
+    // Behave like SizeRootObjectToView.
+    m_rootItem-&gt;setWidth(width());
+    m_rootItem-&gt;setHeight(height());
+
+    m_quickWindow-&gt;setGeometry(0, 0, width(), height());
+
+    m_proj.setToIdentity();
+    m_proj.perspective(45, width() / float(height()), 0.01f, 100.0f);
+}
+
+void Window::setupVertexAttribs()
+{
+    m_vbo-&gt;bind();
+    m_program-&gt;enableAttributeArray(0);
+    m_program-&gt;enableAttributeArray(1);
+    m_context-&gt;functions()-&gt;glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+    m_context-&gt;functions()-&gt;glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0,
+                                                  (const void *)(36 * 3 * sizeof(GLfloat)));
+    m_vbo-&gt;release();
+}
+
+void Window::startQuick(const QString &amp;filename)
+{
+    m_qmlComponent = new QQmlComponent(m_qmlEngine, QUrl(filename));
+    if (m_qmlComponent-&gt;isLoading())
+        connect(m_qmlComponent, &amp;QQmlComponent::statusChanged, this, &amp;Window::run);
+    else
+        run();
+}
+
+void Window::exposeEvent(QExposeEvent *)
+{
+    if (isExposed()) {
+        render();
+        if (!m_quickInitialized)
+            startQuick(QStringLiteral(&quot;qrc:/rendercontrol/demo.qml&quot;));
+    }
+}
+
+void Window::resizeEvent(QResizeEvent *)
+{
+    // If this is a resize after the scene is up and running, recreate the fbo and the
+    // Quick item and scene.
+    if (m_rootItem &amp;&amp; m_context-&gt;makeCurrent(m_offscreenSurface)) {
+        delete m_fbo;
+        createFbo();
+        m_context-&gt;doneCurrent();
+        updateSizes();
+    }
+}
+
+void Window::updateQuick()
+{
+    if (!m_context-&gt;makeCurrent(m_offscreenSurface))
+        return;
+
+    // Polish, synchronize and render the next frame (into our fbo).  In this example
+    // everything happens on the same thread and therefore all three steps are performed
+    // in succession from here. In a threaded setup the render() call would happen on a
+    // separate thread.
+    m_renderControl-&gt;polishItems();
+    m_renderControl-&gt;sync();
+    m_renderControl-&gt;render();
+
+    m_quickWindow-&gt;resetOpenGLState();
+    QOpenGLFramebufferObject::bindDefault();
+
+    m_quickReady = true;
+
+    // Get something onto the screen.
+    render();
+}
+
+void Window::render()
+{
+    if (!m_context-&gt;makeCurrent(this))
+        return;
+
+    QOpenGLFunctions *f = m_context-&gt;functions();
+    f-&gt;glClearColor(0.0f, 0.1f, 0.25f, 1.0f);
+    f-&gt;glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (m_quickReady) {
+        f-&gt;glFrontFace(GL_CW); // because our cube's vertex data is such
+        f-&gt;glEnable(GL_CULL_FACE);
+        f-&gt;glEnable(GL_DEPTH_TEST);
+
+        f-&gt;glBindTexture(GL_TEXTURE_2D, m_fbo-&gt;texture());
+
+        m_program-&gt;bind();
+        QOpenGLVertexArrayObject::Binder vaoBinder(m_vao);
+        // If VAOs are not supported, set the vertex attributes every time.
+        if (!m_vao-&gt;isCreated())
+            setupVertexAttribs();
+
+        static GLfloat angle = 0;
+        QMatrix4x4 m;
+        m.translate(0, 0, -2);
+        m.rotate(90, 0, 0, 1);
+        m.rotate(angle, 0.5, 1, 0);
+        angle += 0.5f;
+
+        m_program-&gt;setUniformValue(m_matrixLoc, m_proj * m);
+
+        // Draw the cube.
+        f-&gt;glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        m_program-&gt;release();
+        f-&gt;glDisable(GL_DEPTH_TEST);
+        f-&gt;glDisable(GL_CULL_FACE);
+    }
+
+    m_context-&gt;swapBuffers(this);
+}
+
+void Window::mousePressEvent(QMouseEvent *e)
+{
+    // Use the constructor taking localPos and screenPos. That puts localPos into the
+    // event's localPos and windowPos, and screenPos into the event's screenPos. This way
+    // the windowPos in e is ignored and is replaced by localPos. This is necessary
+    // because QQuickWindow thinks of itself as a top-level window always.
+    QMouseEvent mappedEvent(e-&gt;type(), e-&gt;localPos(), e-&gt;screenPos(), e-&gt;button(), e-&gt;buttons(), e-&gt;modifiers());
+    QCoreApplication::sendEvent(m_quickWindow, &amp;mappedEvent);
+}
+
+void Window::mouseReleaseEvent(QMouseEvent *e)
+{
+    QMouseEvent mappedEvent(e-&gt;type(), e-&gt;localPos(), e-&gt;screenPos(), e-&gt;button(), e-&gt;buttons(), e-&gt;modifiers());
+    QCoreApplication::sendEvent(m_quickWindow, &amp;mappedEvent);
+}
+
+</db:programlisting>
+</db:article>

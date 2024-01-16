@@ -1,0 +1,354 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Plug &amp; Paint Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Plug &amp; Paint example demonstrates how to write Qt applications that can be extended through plugins.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the Plug &amp; Paint example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/plugandpaint.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>A plugin is a dynamic library that can be loaded at run-time to extend an application. Qt makes it possible to create custom plugins and to load them using QPluginLoader. To ensure that plugins don't get lost, it is also possible to link them statically to the executable. The Plug &amp; Paint example uses plugins to support custom brushes, shapes, and image filters. A single plugin can provide multiple brushes, shapes, and/or filters.</db:para>
+<db:para>If you want to learn how to make your own application extensible through plugins, we recommend that you start by reading this overview, which explains how to make an application use plugins. Afterwards, you can read the <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-basictools-example.xml">Basic Tools</db:link> and <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-extrafilters-example.xml">Extra Filters</db:link> overviews, which show how to implement static and dynamic plugins, respectively.</db:para>
+<db:para>Plug &amp; Paint consists of the following classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>MainWindow</db:code> is a QMainWindow subclass that provides the menu system and that contains a <db:code>PaintArea</db:code> as the central widget.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>PaintArea</db:code> is a QWidget that allows the user to draw using a brush and to insert shapes.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>PluginDialog</db:code> is a dialog that shows information about the plugins detected by the application.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>BrushInterface</db:code>, <db:code>ShapeInterface</db:code>, and <db:code>FilterInterface</db:code> are abstract base classes that can be implemented by plugins to provide custom brushes, shapes, and image filters.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="the-plugin-interfaces">
+<db:title>The Plugin Interfaces</db:title>
+<db:para>We will start by reviewing the interfaces defined in <db:code>interfaces.h</db:code>. These interfaces are used by the Plug &amp; Paint application to access extra functionality. They are implemented in the plugins.</db:para>
+<db:programlisting language="cpp">class BrushInterface
+{
+public:
+    virtual ~BrushInterface() {}
+
+    virtual QStringList brushes() const = 0;
+    virtual QRect mousePress(const QString &amp;brush, QPainter &amp;painter,
+                             const QPoint &amp;pos) = 0;
+    virtual QRect mouseMove(const QString &amp;brush, QPainter &amp;painter,
+                            const QPoint &amp;oldPos, const QPoint &amp;newPos) = 0;
+    virtual QRect mouseRelease(const QString &amp;brush, QPainter &amp;painter,
+                               const QPoint &amp;pos) = 0;
+};
+</db:programlisting>
+<db:para>The <db:code>BrushInterface</db:code> class declares four pure virtual functions. The first pure virtual function, <db:code>brushes()</db:code>, returns a list of strings that identify the brushes provided by the plugin. By returning a <db:link xlink:href="qstringlist.xml">QStringList</db:link> instead of a <db:link xlink:href="qstring.xml">QString</db:link>, we make it possible for a single plugin to provide multiple brushes. The other functions have a <db:code>brush</db:code> parameter to identify which brush (among those returned by <db:code>brushes()</db:code>) is used.</db:para>
+<db:para><db:code>mousePress()</db:code>, <db:code>mouseMove()</db:code>, and <db:code>mouseRelease()</db:code> take a QPainter and one or two <db:link xlink:href="qpoint.xml">QPoint</db:link>s, and return a <db:link xlink:href="qrect.xml">QRect</db:link> identifying which portion of the image was altered by the brush.</db:para>
+<db:para>The class also has a virtual destructor. Interface classes usually don't need such a destructor (because it would make little sense to <db:code>delete</db:code> the object that implements the interface through a pointer to the interface), but some compilers emit a warning for classes that declare virtual functions but no virtual destructor. We provide the destructor to keep these compilers happy.</db:para>
+<db:programlisting language="cpp">class ShapeInterface
+{
+public:
+    virtual ~ShapeInterface() {}
+
+    virtual QStringList shapes() const = 0;
+    virtual QPainterPath generateShape(const QString &amp;shape,
+                                       QWidget *parent) = 0;
+};
+</db:programlisting>
+<db:para>The <db:code>ShapeInterface</db:code> class declares a <db:code>shapes()</db:code> function that works the same as <db:code>BrushInterface</db:code>'s <db:code>brushes()</db:code> function, and a <db:code>generateShape()</db:code> function that has a <db:code>shape</db:code> parameter. Shapes are represented by a QPainterPath, a data type that can represent arbitrary 2D shapes or combinations of shapes. The <db:code>parent</db:code> parameter can be used by the plugin to pop up a dialog asking the user to specify more information.</db:para>
+<db:programlisting language="cpp">class FilterInterface
+{
+public:
+    virtual ~FilterInterface() {}
+
+    virtual QStringList filters() const = 0;
+    virtual QImage filterImage(const QString &amp;filter, const QImage &amp;image,
+                               QWidget *parent) = 0;
+};
+</db:programlisting>
+<db:para>The <db:code>FilterInterface</db:code> class declares a <db:code>filters()</db:code> function that returns a list of filter names, and a <db:code>filterImage()</db:code> function that applies a filter to an image.</db:para>
+<db:programlisting language="cpp">#define BrushInterface_iid &quot;org.qt-project.Qt.Examples.PlugAndPaint.BrushInterface&quot;
+
+Q_DECLARE_INTERFACE(BrushInterface, BrushInterface_iid)
+
+#define ShapeInterface_iid  &quot;org.qt-project.Qt.Examples.PlugAndPaint.ShapeInterface&quot;
+
+Q_DECLARE_INTERFACE(ShapeInterface, ShapeInterface_iid)
+#define FilterInterface_iid &quot;org.qt-project.Qt.Examples.PlugAndPaint.FilterInterface&quot;
+
+Q_DECLARE_INTERFACE(FilterInterface, FilterInterface_iid)
+</db:programlisting>
+<db:para>To make it possible to query at run-time whether a plugin implements a given interface, we must use the <db:code>Q_DECLARE_INTERFACE()</db:code> macro. The first argument is the name of the interface. The second argument is a string identifying the interface in a unique way. By convention, we use a &quot;Java package name&quot; syntax to identify interfaces. If we later change the interfaces, we must use a different string to identify the new interface; otherwise, the application might crash. It is therefore a good idea to include a version number in the string, as we did above.</db:para>
+<db:para>The <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-basictools-example.xml">Basic Tools</db:link> plugin and the <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-extrafilters-example.xml">Extra Filters</db:link> plugin shows how to derive from <db:code>BrushInterface</db:code>, <db:code>ShapeInterface</db:code>, and <db:code>FilterInterface</db:code>.</db:para>
+<db:para>A note on naming: It might have been tempting to give the <db:code>brushes()</db:code>, <db:code>shapes()</db:code>, and <db:code>filters()</db:code> functions a more generic name, such as <db:code>keys()</db:code> or <db:code>features()</db:code>. However, that would have made multiple inheritance impractical. When creating interfaces, we should always try to give unique names to the pure virtual functions.</db:para>
+</db:section>
+<db:section xml:id="the-mainwindow-class">
+<db:title>The MainWindow Class</db:title>
+<db:para>The <db:code>MainWindow</db:code> class is a standard QMainWindow subclass, as found in many of the other examples (e.g., <db:link xlink:href="qtwidgets-mainwindows-application-example.xml">Application</db:link>). Here, we'll concentrate on the parts of the code that are related to plugins.</db:para>
+<db:programlisting language="cpp">void MainWindow::loadPlugins()
+{
+    foreach (QObject *plugin, QPluginLoader::staticInstances())
+        populateMenus(plugin);
+</db:programlisting>
+<db:para>The <db:code>loadPlugins()</db:code> function is called from the <db:code>MainWindow</db:code> constructor to detect plugins and update the <db:guilabel>Brush</db:guilabel>, <db:guilabel>Shapes</db:guilabel>, and <db:guilabel>Filters</db:guilabel> menus. We start by handling static plugins (available through QPluginLoader::staticInstances())</db:para>
+<db:para>To the application that uses the plugin, a Qt plugin is simply a <db:link xlink:href="qobject.xml">QObject</db:link>. That <db:link xlink:href="qobject.xml">QObject</db:link> implements plugin interfaces using multiple inheritance.</db:para>
+<db:programlisting language="cpp">    pluginsDir = QDir(qApp-&gt;applicationDirPath());
+
+#if defined(Q_OS_WIN)
+    if (pluginsDir.dirName().toLower() == &quot;debug&quot; || pluginsDir.dirName().toLower() == &quot;release&quot;)
+        pluginsDir.cdUp();
+#elif defined(Q_OS_MAC)
+    if (pluginsDir.dirName() == &quot;MacOS&quot;) {
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+    }
+#endif
+    pluginsDir.cd(&quot;plugins&quot;);
+</db:programlisting>
+<db:para>The next step is to load dynamic plugins. We initialize the <db:code>pluginsDir</db:code> member variable to refer to the <db:code>plugins</db:code> subdirectory of the Plug &amp; Paint example. On Unix, this is just a matter of initializing the <db:link xlink:href="qdir.xml">QDir</db:link> variable with QApplication::applicationDirPath(), the path of the executable file, and to do a <db:link xlink:href="">cd()</db:link>. On Windows and Mac OS X, this file is usually located in a subdirectory, so we need to take this into account.</db:para>
+<db:programlisting language="cpp">    foreach (QString fileName, pluginsDir.entryList(QDir::Files)) {
+        QPluginLoader loader(pluginsDir.absoluteFilePath(fileName));
+        QObject *plugin = loader.instance();
+        if (plugin) {
+            populateMenus(plugin);
+            pluginFileNames += fileName;
+        }
+    }
+</db:programlisting>
+<db:para>We use QDir::entryList() to get a list of all files in that directory. Then we iterate over the result using <db:link xlink:href="containers.xml#the-foreach-keyword">foreach</db:link> and try to load the plugin using QPluginLoader.</db:para>
+<db:para>The <db:link xlink:href="qobject.xml">QObject</db:link> provided by the plugin is accessible through QPluginLoader::instance(). If the dynamic library isn't a Qt plugin, or if it was compiled against an incompatible version of the Qt library, QPluginLoader::instance() returns a null pointer.</db:para>
+<db:para>If QPluginLoader::instance() is non-null, we add it to the menus.</db:para>
+<db:programlisting language="cpp">    brushMenu-&gt;setEnabled(!brushActionGroup-&gt;actions().isEmpty());
+    shapesMenu-&gt;setEnabled(!shapesMenu-&gt;actions().isEmpty());
+    filterMenu-&gt;setEnabled(!filterMenu-&gt;actions().isEmpty());
+}
+</db:programlisting>
+<db:para>At the end, we enable or disable the <db:guilabel>Brush</db:guilabel>, <db:guilabel>Shapes</db:guilabel>, and <db:guilabel>Filters</db:guilabel> menus based on whether they contain any items.</db:para>
+<db:programlisting language="cpp">void MainWindow::populateMenus(QObject *plugin)
+{
+    BrushInterface *iBrush = qobject_cast&lt;BrushInterface *&gt;(plugin);
+    if (iBrush)
+        addToMenu(plugin, iBrush-&gt;brushes(), brushMenu, SLOT(changeBrush()),
+                  brushActionGroup);
+
+    ShapeInterface *iShape = qobject_cast&lt;ShapeInterface *&gt;(plugin);
+    if (iShape)
+        addToMenu(plugin, iShape-&gt;shapes(), shapesMenu, SLOT(insertShape()));
+
+    FilterInterface *iFilter = qobject_cast&lt;FilterInterface *&gt;(plugin);
+    if (iFilter)
+        addToMenu(plugin, iFilter-&gt;filters(), filterMenu, SLOT(applyFilter()));
+}
+</db:programlisting>
+<db:para>For each plugin (static or dynamic), we check which interfaces it implements using <db:link xlink:href="">qobject_cast()</db:link>. First, we try to cast the plugin instance to a <db:code>BrushInterface</db:code>; if it works, we call the private function <db:code>addToMenu()</db:code> with the list of brushes returned by <db:code>brushes()</db:code>. Then we do the same with the <db:code>ShapeInterface</db:code> and the <db:code>FilterInterface</db:code>.</db:para>
+<db:programlisting language="cpp">void MainWindow::aboutPlugins()
+{
+    PluginDialog dialog(pluginsDir.path(), pluginFileNames, this);
+    dialog.exec();
+}
+</db:programlisting>
+<db:para>The <db:code>aboutPlugins()</db:code> slot is called on startup and can be invoked at any time through the <db:guilabel>About Plugins</db:guilabel> action. It pops up a <db:code>PluginDialog</db:code>, providing information about the loaded plugins.</db:para>
+<db:mediaobject>
+<db:alt>Screenshot of the Plugin dialog</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/plugandpaint-plugindialog.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The <db:code>addToMenu()</db:code> function is called from <db:code>loadPlugin()</db:code> to create QActions for custom brushes, shapes, or filters and add them to the relevant menu. The QAction is created with the plugin from which it comes from as the parent; this makes it convenient to get access to the plugin later.</db:para>
+<db:programlisting language="cpp">void MainWindow::changeBrush()
+{
+    QAction *action = qobject_cast&lt;QAction *&gt;(sender());
+    BrushInterface *iBrush = qobject_cast&lt;BrushInterface *&gt;(action-&gt;parent());
+    const QString brush = action-&gt;text();
+
+    paintArea-&gt;setBrush(iBrush, brush);
+}
+</db:programlisting>
+<db:para>The <db:code>changeBrush()</db:code> slot is invoked when the user chooses one of the brushes from the <db:guilabel>Brush</db:guilabel> menu. We start by finding out which action invoked the slot using <db:link xlink:href="qobject.xml#sender">QObject::sender</db:link>(). Then we get the <db:code>BrushInterface</db:code> out of the plugin (which we conveniently passed as the QAction's parent) and we call <db:code>PaintArea::setBrush()</db:code> with the <db:code>BrushInterface</db:code> and the string identifying the brush. Next time the user draws on the paint area, <db:code>PaintArea</db:code> will use this brush.</db:para>
+<db:programlisting language="cpp">void MainWindow::insertShape()
+{
+    QAction *action = qobject_cast&lt;QAction *&gt;(sender());
+    ShapeInterface *iShape = qobject_cast&lt;ShapeInterface *&gt;(action-&gt;parent());
+
+    const QPainterPath path = iShape-&gt;generateShape(action-&gt;text(), this);
+    if (!path.isEmpty())
+        paintArea-&gt;insertShape(path);
+}
+</db:programlisting>
+<db:para>The <db:code>insertShape()</db:code> is invoked when the use chooses one of the shapes from the <db:guilabel>Shapes</db:guilabel> menu. We retrieve the QAction that invoked the slot, then the <db:code>ShapeInterface</db:code> associated with that QAction, and finally we call <db:code>ShapeInterface::generateShape()</db:code> to obtain a QPainterPath.</db:para>
+<db:programlisting language="cpp">void MainWindow::applyFilter()
+{
+    QAction *action = qobject_cast&lt;QAction *&gt;(sender());
+    FilterInterface *iFilter =
+            qobject_cast&lt;FilterInterface *&gt;(action-&gt;parent());
+
+    const QImage image = iFilter-&gt;filterImage(action-&gt;text(), paintArea-&gt;image(),
+                                              this);
+    paintArea-&gt;setImage(image);
+}
+</db:programlisting>
+<db:para>The <db:code>applyFilter()</db:code> slot is similar: We retrieve the QAction that invoked the slot, then the <db:code>FilterInterface</db:code> associated to that QAction, and finally we call <db:code>FilterInterface::filterImage()</db:code> to apply the filter onto the current image.</db:para>
+</db:section>
+<db:section xml:id="the-paintarea-class">
+<db:title>The PaintArea Class</db:title>
+<db:para>The <db:code>PaintArea</db:code> class contains some code that deals with <db:code>BrushInterface</db:code>, so we'll review it briefly.</db:para>
+<db:programlisting language="cpp">void PaintArea::setBrush(BrushInterface *brushInterface, const QString &amp;brush)
+{
+    this-&gt;brushInterface = brushInterface;
+    this-&gt;brush = brush;
+}
+</db:programlisting>
+<db:para>In <db:code>setBrush()</db:code>, we simply store the <db:code>BrushInterface</db:code> and the brush that are given to us by <db:code>MainWindow</db:code>.</db:para>
+<db:programlisting language="cpp">void PaintArea::mouseMoveEvent(QMouseEvent *event)
+{
+    if ((event-&gt;buttons() &amp; Qt::LeftButton) &amp;&amp; lastPos != QPoint(-1, -1)) {
+        if (brushInterface) {
+            QPainter painter(&amp;theImage);
+            setupPainter(painter);
+            const QRect rect = brushInterface-&gt;mouseMove(brush, painter, lastPos,
+                                                         event-&gt;pos());
+            update(rect);
+        }
+
+        lastPos = event-&gt;pos();
+    }
+}
+</db:programlisting>
+<db:para>In the <db:link xlink:href="">mouse move event handler</db:link>, we call the <db:code>BrushInterface::mouseMove()</db:code> function on the current <db:code>BrushInterface</db:code>, with the current brush. The mouse press and mouse release handlers are very similar.</db:para>
+</db:section>
+<db:section xml:id="the-plugindialog-class">
+<db:title>The PluginDialog Class</db:title>
+<db:para>The <db:code>PluginDialog</db:code> class provides information about the loaded plugins to the user. Its constructor takes a path to the plugins and a list of plugin file names. It calls <db:code>findPlugins()</db:code> to fill the QTreeWdiget with information about the plugins:</db:para>
+<db:programlisting language="cpp">void PluginDialog::findPlugins(const QString &amp;path,
+                               const QStringList &amp;fileNames)
+{
+    label-&gt;setText(tr(&quot;Plug &amp; Paint found the following plugins\n&quot;
+                      &quot;(looked in %1):&quot;)
+                   .arg(QDir::toNativeSeparators(path)));
+
+    const QDir dir(path);
+
+    foreach (QObject *plugin, QPluginLoader::staticInstances())
+        populateTreeWidget(plugin, tr(&quot;%1 (Static Plugin)&quot;)
+                                   .arg(plugin-&gt;metaObject()-&gt;className()));
+
+    foreach (QString fileName, fileNames) {
+        QPluginLoader loader(dir.absoluteFilePath(fileName));
+        QObject *plugin = loader.instance();
+        if (plugin)
+            populateTreeWidget(plugin, fileName);
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>findPlugins()</db:code> is very similar to <db:code>MainWindow::loadPlugins()</db:code>. It uses QPluginLoader to access the static and dynamic plugins. Its helper function <db:code>populateTreeWidget()</db:code> uses <db:link xlink:href="">qobject_cast()</db:link> to find out which interfaces are implemented by the plugins:</db:para>
+<db:programlisting language="cpp">void PluginDialog::populateTreeWidget(QObject *plugin, const QString &amp;text)
+{
+    QTreeWidgetItem *pluginItem = new QTreeWidgetItem(treeWidget);
+    pluginItem-&gt;setText(0, text);
+    treeWidget-&gt;setItemExpanded(pluginItem, true);
+
+    QFont boldFont = pluginItem-&gt;font(0);
+    boldFont.setBold(true);
+    pluginItem-&gt;setFont(0, boldFont);
+
+    if (plugin) {
+        BrushInterface *iBrush = qobject_cast&lt;BrushInterface *&gt;(plugin);
+        if (iBrush)
+            addItems(pluginItem, &quot;BrushInterface&quot;, iBrush-&gt;brushes());
+
+        ShapeInterface *iShape = qobject_cast&lt;ShapeInterface *&gt;(plugin);
+        if (iShape)
+            addItems(pluginItem, &quot;ShapeInterface&quot;, iShape-&gt;shapes());
+
+        FilterInterface *iFilter =
+                qobject_cast&lt;FilterInterface *&gt;(plugin);
+        if (iFilter)
+            addItems(pluginItem, &quot;FilterInterface&quot;, iFilter-&gt;filters());
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="importing-static-plugins">
+<db:title>Importing Static Plugins</db:title>
+<db:para>The <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-basictools-example.xml">Basic Tools</db:link> plugin is built as a static plugin, to ensure that it is always available to the application. This requires using the <db:link xlink:href="qtplugin.xml#Q_IMPORT_PLUGIN">Q_IMPORT_PLUGIN</db:link>() macro somewhere in the application (in a <db:code>.cpp</db:code> file) and specifying the plugin in the <db:code>.pro</db:code> file.</db:para>
+<db:para>For Plug &amp; Paint, we have chosen to put <db:link xlink:href="qtplugin.xml#Q_IMPORT_PLUGIN">Q_IMPORT_PLUGIN</db:link>() in <db:code>main.cpp</db:code>:</db:para>
+<db:programlisting language="cpp">#include &quot;mainwindow.h&quot;
+#include &lt;QtPlugin&gt;
+#include &lt;QApplication&gt;
+
+Q_IMPORT_PLUGIN(BasicToolsPlugin)
+
+int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    MainWindow window;
+    window.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The argument to <db:link xlink:href="qtplugin.xml#Q_IMPORT_PLUGIN">Q_IMPORT_PLUGIN</db:link>() is the plugin's name, as specified with <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() in the <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-basictools-example.xml#exporting-the-plugin">plugin</db:link>.</db:para>
+<db:para>In the <db:code>.pro</db:code> file, we need to specify the static library. Here's the project file for building Plug &amp; Paint:</db:para>
+<db:programlisting language="cpp">QT += widgets
+
+HEADERS        = interfaces.h \
+                 mainwindow.h \
+                 paintarea.h \
+                 plugindialog.h
+SOURCES        = main.cpp \
+                 mainwindow.cpp \
+                 paintarea.cpp \
+                 plugindialog.cpp
+
+LIBS           = -Lplugins -lpnp_basictools
+
+if(!debug_and_release|build_pass):CONFIG(debug, debug|release) {
+   mac:LIBS = $$member(LIBS, 0) $$member(LIBS, 1)_debug
+   win32:LIBS = $$member(LIBS, 0) $$member(LIBS, 1)d
+}
+</db:programlisting>
+<db:para>The <db:code>LIBS</db:code> line variable specifies the library <db:code>pnp_basictools</db:code> located in the <db:code>../plugandpaintplugins/basictools</db:code> directory. (Although the <db:code>LIBS</db:code> syntax has a distinct Unix flavor, <db:code>qmake</db:code> supports it on all platforms.)</db:para>
+<db:para>The <db:code>CONFIG()</db:code> code at the end is necessary for this example because the example is part of the Qt distribution and Qt can be configured to be built simultaneously in debug and in release modes. You don't need to for your own plugin applications.</db:para>
+<db:para>This completes our review of the Plug &amp; Paint application. At this point, you might want to take a look at the <db:link xlink:href="qtwidgets-tools-plugandpaintplugins-basictools-example.xml">Basic Tools</db:link> example plugin.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/interfaces.h">tools/plugandpaint/interfaces.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/main.cpp">tools/plugandpaint/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/mainwindow.cpp">tools/plugandpaint/mainwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/mainwindow.h">tools/plugandpaint/mainwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/paintarea.cpp">tools/plugandpaint/paintarea.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/paintarea.h">tools/plugandpaint/paintarea.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/plugandpaint.pro">tools/plugandpaint/plugandpaint.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/plugindialog.cpp">tools/plugandpaint/plugindialog.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/plugandpaint/plugindialog.h">tools/plugandpaint/plugindialog.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SAX Bookmarks Example</db:title>
+<db:productname>QtXml</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read XBEL files.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;xbelhandler.h&quot;
+
+XbelHandler::XbelHandler(QTreeWidget *treeWidget)
+    : treeWidget(treeWidget)
+{
+    item = 0;
+    metXbelTag = false;
+
+    QStyle *style = treeWidget-&gt;style();
+
+    folderIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_DirClosedIcon),
+                         QIcon::Normal, QIcon::Off);
+    folderIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_DirOpenIcon),
+                         QIcon::Normal, QIcon::On);
+    bookmarkIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_FileIcon));
+}
+
+bool XbelHandler::startElement(const QString &amp; /* namespaceURI */,
+                               const QString &amp; /* localName */,
+                               const QString &amp;qName,
+                               const QXmlAttributes &amp;attributes)
+{
+    if (!metXbelTag &amp;&amp; qName != &quot;xbel&quot;) {
+        errorStr = QObject::tr(&quot;The file is not an XBEL file.&quot;);
+        return false;
+    }
+
+    if (qName == &quot;xbel&quot;) {
+        QString version = attributes.value(&quot;version&quot;);
+        if (!version.isEmpty() &amp;&amp; version != &quot;1.0&quot;) {
+            errorStr = QObject::tr(&quot;The file is not an XBEL version 1.0 file.&quot;);
+            return false;
+        }
+        metXbelTag = true;
+    } else if (qName == &quot;folder&quot;) {
+        item = createChildItem(qName);
+        item-&gt;setFlags(item-&gt;flags() | Qt::ItemIsEditable);
+        item-&gt;setIcon(0, folderIcon);
+        item-&gt;setText(0, QObject::tr(&quot;Folder&quot;));
+        bool folded = (attributes.value(&quot;folded&quot;) != &quot;no&quot;);
+        treeWidget-&gt;setItemExpanded(item, !folded);
+    } else if (qName == &quot;bookmark&quot;) {
+        item = createChildItem(qName);
+        item-&gt;setFlags(item-&gt;flags() | Qt::ItemIsEditable);
+        item-&gt;setIcon(0, bookmarkIcon);
+        item-&gt;setText(0, QObject::tr(&quot;Unknown title&quot;));
+        item-&gt;setText(1, attributes.value(&quot;href&quot;));
+    } else if (qName == &quot;separator&quot;) {
+        item = createChildItem(qName);
+        item-&gt;setFlags(item-&gt;flags() &amp; ~Qt::ItemIsSelectable);
+        item-&gt;setText(0, QString(30, 0xB7));
+    }
+
+    currentText.clear();
+    return true;
+}
+
+bool XbelHandler::endElement(const QString &amp; /* namespaceURI */,
+                             const QString &amp; /* localName */,
+                             const QString &amp;qName)
+{
+    if (qName == &quot;title&quot;) {
+        if (item)
+            item-&gt;setText(0, currentText);
+    } else if (qName == &quot;folder&quot; || qName == &quot;bookmark&quot;
+               || qName == &quot;separator&quot;) {
+        item = item-&gt;parent();
+    }
+    return true;
+}
+
+bool XbelHandler::characters(const QString &amp;str)
+{
+    currentText += str;
+    return true;
+}
+
+bool XbelHandler::fatalError(const QXmlParseException &amp;exception)
+{
+    QMessageBox::information(treeWidget-&gt;window(), QObject::tr(&quot;SAX Bookmarks&quot;),
+                             QObject::tr(&quot;Parse error at line %1, column %2:\n&quot;
+                                         &quot;%3&quot;)
+                             .arg(exception.lineNumber())
+                             .arg(exception.columnNumber())
+                             .arg(exception.message()));
+    return false;
+}
+
+QString XbelHandler::errorString() const
+{
+    return errorStr;
+}
+
+QTreeWidgetItem *XbelHandler::createChildItem(const QString &amp;tagName)
+{
+    QTreeWidgetItem *childItem;
+    if (item) {
+        childItem = new QTreeWidgetItem(item);
+    } else {
+        childItem = new QTreeWidgetItem(treeWidget);
+    }
+    childItem-&gt;setData(0, Qt::UserRole, tagName);
+    return childItem;
+}
+
+</db:programlisting>
+</db:article>

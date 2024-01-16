@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - OpenGL Under QML</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.4.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render OpenGL under a Qt Quick scene.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/openglunderqml-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The OpenGL under QML example shows how an application can make use of the <db:link xlink:href="">QQuickWindow::beforeRendering()</db:link> signal to draw custom OpenGL content under a Qt Quick scene. This signal is emitted at the start of every frame, before the scene graph starts its rendering, thus any OpenGL draw calls that are made as a response to this signal, will stack under the Qt Quick items.</db:para>
+<db:para>As an alternative, applications that wish to render OpenGL content on top of the Qt Quick scene, can do so by connecting to the <db:link xlink:href="">QQuickWindow::afterRendering()</db:link> signal.</db:para>
+<db:para>In this example, we will also see how it is possible to have values that are exposed to QML which affect the OpenGL rendering. We animate the threshold value using a <db:link xlink:href="qml-qtquick-numberanimation.xml">NumberAnimation</db:link> in the QML file and this value is used by the OpenGL shader program that draws the squircles.</db:para>
+<db:programlisting language="cpp">class Squircle : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(qreal t READ t WRITE setT NOTIFY tChanged)
+
+public:
+    Squircle();
+
+    qreal t() const { return m_t; }
+    void setT(qreal t);
+
+signals:
+    void tChanged();
+
+public slots:
+    void sync();
+    void cleanup();
+
+private slots:
+    void handleWindowChanged(QQuickWindow *win);
+
+private:
+    qreal m_t;
+    SquircleRenderer *m_renderer;
+};
+</db:programlisting>
+<db:para>First of all, we need an object we can expose to QML. This is a subclass of QQuickItem so we can easily access <db:link xlink:href="">QQuickItem::window()</db:link>.</db:para>
+<db:programlisting language="cpp">class SquircleRenderer : public QObject, protected QOpenGLFunctions
+{
+    Q_OBJECT
+public:
+    SquircleRenderer() : m_t(0), m_program(0) { }
+    ~SquircleRenderer();
+
+    void setT(qreal t) { m_t = t; }
+    void setViewportSize(const QSize &amp;size) { m_viewportSize = size; }
+
+public slots:
+    void paint();
+
+private:
+    QSize m_viewportSize;
+    qreal m_t;
+    QOpenGLShaderProgram *m_program;
+};
+</db:programlisting>
+<db:para>Then we need an object to take care of the rendering. This instance needs to be separated from the QQuickItem because the item lives in the GUI thread and the rendering potentially happens on the render thread. Since we want to connect to <db:link xlink:href="">QQuickWindow::beforeRendering()</db:link>, we make the renderer a <db:link xlink:href="qobject.xml">QObject</db:link>. The renderer contains a copy of all the state it needs, independent of the GUI thread.</db:para>
+<db:note>
+<db:para>Don't be tempted to merge the two objects into one. QQuickItems may be deleted on the GUI thread while the render thread is rendering.</db:para>
+</db:note>
+<db:para>Lets move on to the implementation.</db:para>
+<db:programlisting language="cpp">Squircle::Squircle()
+    : m_t(0)
+    , m_renderer(0)
+{
+    connect(this, SIGNAL(windowChanged(QQuickWindow*)), this, SLOT(handleWindowChanged(QQuickWindow*)));
+}
+</db:programlisting>
+<db:para>The constructor of the <db:code>Squircle</db:code> class simply initializes the values and connects to the window changed signal which we will use to prepare our renderer.</db:para>
+<db:programlisting language="cpp">void Squircle::handleWindowChanged(QQuickWindow *win)
+{
+    if (win) {
+        connect(win, SIGNAL(beforeSynchronizing()), this, SLOT(sync()), Qt::DirectConnection);
+        connect(win, SIGNAL(sceneGraphInvalidated()), this, SLOT(cleanup()), Qt::DirectConnection);
+</db:programlisting>
+<db:para>Once we have a window, we attach to the <db:link xlink:href="">QQuickWindow::beforeSynchronizing()</db:link> signal which we will use to create the renderer and to copy state into it safely. We also connect to the <db:link xlink:href="">QQuickWindow::sceneGraphInvalidated()</db:link> signal to handle the cleanup of the renderer.</db:para>
+<db:note>
+<db:para>Since the Squircle object has affinity to the GUI thread and the signals are emitted from the rendering thread, it is crucial that the connections are made with <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::DirectConnection</db:link>. Failing to do so, will result in that the slots are invoked on the wrong thread with no OpenGL context present.</db:para>
+</db:note>
+<db:programlisting language="cpp">        win-&gt;setClearBeforeRendering(false);
+    }
+}
+</db:programlisting>
+<db:para>The default behavior of the scene graph is to clear the framebuffer before rendering. Since we render before the scene graph, we need to turn this clearing off. This means that we need to clear ourselves in the <db:code>paint()</db:code> function.</db:para>
+<db:programlisting language="cpp">void Squircle::sync()
+{
+    if (!m_renderer) {
+        m_renderer = new SquircleRenderer();
+        connect(window(), SIGNAL(beforeRendering()), m_renderer, SLOT(paint()), Qt::DirectConnection);
+    }
+    m_renderer-&gt;setViewportSize(window()-&gt;size() * window()-&gt;devicePixelRatio());
+    m_renderer-&gt;setT(m_t);
+}
+</db:programlisting>
+<db:para>We use the <db:code>sync()</db:code> function to initialize the renderer and to copy the state in our item into the renderer. When the renderer is created, we also connect the <db:link xlink:href="">QQuickWindow::beforeRendering()</db:link> to the renderer's <db:code>paint()</db:code> slot.</db:para>
+<db:note>
+<db:para>The <db:link xlink:href="">QQuickWindow::beforeSynchronizing()</db:link> signal is emitted on the rendering thread while the GUI thread is blocked, so it is safe to simply copy the value without any additional protection.</db:para>
+</db:note>
+<db:programlisting language="cpp">void Squircle::cleanup()
+{
+    if (m_renderer) {
+        delete m_renderer;
+        m_renderer = 0;
+    }
+}
+
+SquircleRenderer::~SquircleRenderer()
+{
+    delete m_program;
+}
+</db:programlisting>
+<db:para>In the <db:code>cleanup()</db:code> function we delete the renderer which in turn cleans up its own resources.</db:para>
+<db:programlisting language="cpp">void Squircle::setT(qreal t)
+{
+    if (t == m_t)
+        return;
+    m_t = t;
+    emit tChanged();
+    if (window())
+        window()-&gt;update();
+}
+</db:programlisting>
+<db:para>When the value of <db:code>t</db:code> changes, we call <db:link xlink:href="">QQuickWindow::update()</db:link> rather than <db:link xlink:href="">QQuickItem::update()</db:link> because the former will force the entire window to be redrawn, even when the scene graph has not changed since the last frame.</db:para>
+<db:programlisting language="cpp">void SquircleRenderer::paint()
+{
+    if (!m_program) {
+        initializeOpenGLFunctions();
+
+        m_program = new QOpenGLShaderProgram();
+        m_program-&gt;addShaderFromSourceCode(QOpenGLShader::Vertex,
+                                           &quot;attribute highp vec4 vertices;&quot;
+                                           &quot;varying highp vec2 coords;&quot;
+                                           &quot;void main() {&quot;
+                                           &quot;    gl_Position = vertices;&quot;
+                                           &quot;    coords = vertices.xy;&quot;
+                                           &quot;}&quot;);
+        m_program-&gt;addShaderFromSourceCode(QOpenGLShader::Fragment,
+                                           &quot;uniform lowp float t;&quot;
+                                           &quot;varying highp vec2 coords;&quot;
+                                           &quot;void main() {&quot;
+                                           &quot;    lowp float i = 1. - (pow(abs(coords.x), 4.) + pow(abs(coords.y), 4.));&quot;
+                                           &quot;    i = smoothstep(t - 0.8, t + 0.8, i);&quot;
+                                           &quot;    i = floor(i * 20.) / 20.;&quot;
+                                           &quot;    gl_FragColor = vec4(coords * .5 + .5, i, i);&quot;
+                                           &quot;}&quot;);
+
+        m_program-&gt;bindAttributeLocation(&quot;vertices&quot;, 0);
+        m_program-&gt;link();
+
+    }
+</db:programlisting>
+<db:para>In the SquircleRenderer's <db:code>paint()</db:code> function we start by initializing the shader program. By initializing the shader program here, we make sure that the OpenGL context is bound and that we are on the correct thread.</db:para>
+<db:programlisting language="cpp">    m_program-&gt;bind();
+
+    m_program-&gt;enableAttributeArray(0);
+
+    float values[] = {
+        -1, -1,
+        1, -1,
+        -1, 1,
+        1, 1
+    };
+    m_program-&gt;setAttributeArray(0, GL_FLOAT, values, 2);
+    m_program-&gt;setUniformValue(&quot;t&quot;, (float) m_t);
+
+    glViewport(0, 0, m_viewportSize.width(), m_viewportSize.height());
+
+    glDisable(GL_DEPTH_TEST);
+
+    glClearColor(0, 0, 0, 1);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+    m_program-&gt;disableAttributeArray(0);
+    m_program-&gt;release();
+}
+</db:programlisting>
+<db:para>We use the shader program to draw the squircle. At the end of the <db:code>paint</db:code> function we release the program and disable the attributes we used so that the OpenGL context is in a &quot;clean&quot; state for the scene graph to pick it up.</db:para>
+<db:note>
+<db:para>If tracking the changes in the OpenGL context's state is not feasible, one can use the function <db:link xlink:href="">QQuickWindow::resetOpenGLState()</db:link> which will reset all state that the scene graph relies on.</db:para>
+</db:note>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+
+    qmlRegisterType&lt;Squircle&gt;(&quot;OpenGLUnderQML&quot;, 1, 0, &quot;Squircle&quot;);
+
+    QQuickView view;
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setSource(QUrl(&quot;qrc:///scenegraph/openglunderqml/main.qml&quot;));
+    view.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The application's <db:code>main()</db:code> function instantiates a QQuickView and launches the <db:code>main.qml</db:code> file. The only thing worth noting is that we export the <db:code>Squircle</db:code> class to QML using the <db:link xlink:href="">qmlRegisterType()</db:link> macro.</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+import OpenGLUnderQML 1.0
+
+Item {
+
+    width: 320
+    height: 480
+
+    Squircle {
+        SequentialAnimation on t {
+            NumberAnimation { to: 1; duration: 2500; easing.type: Easing.InQuad }
+            NumberAnimation { to: 0; duration: 2500; easing.type: Easing.OutQuad }
+            loops: Animation.Infinite
+            running: true
+        }
+    }
+</db:programlisting>
+<db:para>We import the Squircle QML type with the name we registered in the <db:code>main()</db:code> function. We then instantiate it and create a running <db:link xlink:href="qml-qtquick-numberanimation.xml">NumberAnimation</db:link> on its <db:code>t</db:code> property.</db:para>
+<db:programlisting language="qml">    Rectangle {
+        color: Qt.rgba(1, 1, 1, 0.7)
+        radius: 10
+        border.width: 1
+        border.color: &quot;white&quot;
+        anchors.fill: label
+        anchors.margins: -10
+    }
+
+    Text {
+        id: label
+        color: &quot;black&quot;
+        wrapMode: Text.WordWrap
+        text: &quot;The background here is a squircle rendered with raw OpenGL using the 'beforeRender()' signal in QQuickWindow. This text label and its border is rendered using QML&quot;
+        anchors.right: parent.right
+        anchors.left: parent.left
+        anchors.bottom: parent.bottom
+        anchors.margins: 20
+    }
+}
+</db:programlisting>
+<db:para>Then we overlay a short descriptive text, so that it is clearly visible that we are in fact rendering OpenGL under our Qt Quick scene.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/main.cpp">scenegraph/openglunderqml/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/main.qml">scenegraph/openglunderqml/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/openglunderqml.pro">scenegraph/openglunderqml/openglunderqml.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/openglunderqml.qrc">scenegraph/openglunderqml/openglunderqml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/squircle.cpp">scenegraph/openglunderqml/squircle.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="scenegraph/openglunderqml/squircle.h">scenegraph/openglunderqml/squircle.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>
