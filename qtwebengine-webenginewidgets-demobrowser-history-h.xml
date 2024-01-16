@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#ifndef HISTORY_H
+#define HISTORY_H
+
+#include &quot;modelmenu.h&quot;
+
+#include &lt;QtCore/QDateTime&gt;
+#include &lt;QtCore/QHash&gt;
+#include &lt;QtCore/QObject&gt;
+#include &lt;QtCore/QTimer&gt;
+#include &lt;QtCore/QUrl&gt;
+
+#include &lt;QtCore/QSortFilterProxyModel&gt;
+
+class HistoryItem
+{
+public:
+    HistoryItem() {}
+    HistoryItem(const QString &amp;u,
+                const QDateTime &amp;d = QDateTime(), const QString &amp;t = QString())
+        : title(t), url(u), dateTime(d) {}
+
+    inline bool operator==(const HistoryItem &amp;other) const
+        { return other.title == title
+          &amp;&amp; other.url == url &amp;&amp; other.dateTime == dateTime; }
+
+    // history is sorted in reverse
+    inline bool operator &lt;(const HistoryItem &amp;other) const
+        { return dateTime &gt; other.dateTime; }
+
+    QString title;
+    QString url;
+    QDateTime dateTime;
+};
+
+class AutoSaver;
+class HistoryModel;
+class HistoryFilterModel;
+class HistoryTreeModel;
+
+class HistoryManager : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int historyLimit READ historyLimit WRITE setHistoryLimit)
+
+signals:
+    void historyReset();
+    void entryAdded(const HistoryItem &amp;item);
+    void entryRemoved(const HistoryItem &amp;item);
+    void entryUpdated(int offset);
+
+public:
+    HistoryManager(QObject *parent = 0);
+    ~HistoryManager();
+
+    bool historyContains(const QString &amp;url) const;
+
+    void addHistoryEntry(const QString &amp;url);
+    void removeHistoryEntry(const QString &amp;url);
+
+    void updateHistoryItem(const QUrl &amp;url, const QString &amp;title);
+
+    int historyLimit() const;
+    void setHistoryLimit(int limit);
+
+    QList&lt;HistoryItem&gt;&amp; history();
+    void setHistory(const QList&lt;HistoryItem&gt; &amp;history, bool loadedAndSorted = false);
+
+    // History manager keeps around these models for use by the completer and other classes
+    HistoryModel *historyModel() const;
+    HistoryFilterModel *historyFilterModel() const;
+    HistoryTreeModel *historyTreeModel() const;
+
+public slots:
+    void clear();
+    void loadSettings();
+
+private slots:
+    void save();
+    void checkForExpired(bool removeExpiredEntriesDirectly = false);
+
+protected:
+    void addHistoryItem(const HistoryItem &amp;item);
+    void removeHistoryItem(const HistoryItem &amp;item);
+
+private:
+    void load();
+
+    AutoSaver *m_saveTimer;
+    int m_historyLimit;
+    QTimer m_expiredTimer;
+    QList&lt;HistoryItem&gt; m_history;
+    QString m_lastSavedUrl;
+
+    HistoryModel *m_historyModel;
+    HistoryFilterModel *m_historyFilterModel;
+    HistoryTreeModel *m_historyTreeModel;
+};
+
+class HistoryModel : public QAbstractTableModel
+{
+    Q_OBJECT
+
+public slots:
+    void historyReset();
+    void entryAdded(const HistoryItem &amp;item);
+    void entryRemoved(const HistoryItem &amp;item);
+    void entryUpdated(int offset);
+
+public:
+    enum Roles {
+        DateRole = Qt::UserRole + 1,
+        DateTimeRole = Qt::UserRole + 2,
+        UrlRole = Qt::UserRole + 3,
+        UrlStringRole = Qt::UserRole + 4
+    };
+
+    HistoryModel(HistoryManager *history, QObject *parent = 0);
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
+    QVariant data(const QModelIndex &amp;index, int role = Qt::DisplayRole) const;
+    int columnCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    bool removeRows(int row, int count, const QModelIndex &amp;parent = QModelIndex());
+
+private:
+    HistoryManager *m_history;
+};
+
+/*!
+    Proxy model that will remove any duplicate entries.
+    Both m_sourceRow and m_historyHash store their offsets not from
+    the front of the list, but as offsets from the back.
+  */
+class HistoryFilterModel : public QAbstractProxyModel
+{
+    Q_OBJECT
+
+public:
+    HistoryFilterModel(QAbstractItemModel *sourceModel, QObject *parent = 0);
+
+    inline bool historyContains(const QString &amp;url) const
+        { load(); return m_historyHash.contains(url); }
+
+    QModelIndex mapFromSource(const QModelIndex &amp;sourceIndex) const;
+    QModelIndex mapToSource(const QModelIndex &amp;proxyIndex) const;
+    void setSourceModel(QAbstractItemModel *sourceModel);
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    int columnCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex index(int, int, const QModelIndex&amp; = QModelIndex()) const;
+    QModelIndex parent(const QModelIndex&amp; index= QModelIndex()) const;
+    bool removeRows(int row, int count, const QModelIndex &amp;parent = QModelIndex());
+
+private slots:
+    void sourceReset();
+    void sourceDataChanged(const QModelIndex &amp;topLeft, const QModelIndex &amp;bottomRight);
+    void sourceRowsInserted(const QModelIndex &amp;parent, int start, int end);
+    void sourceRowsRemoved(const QModelIndex &amp;, int, int);
+
+private:
+    void load() const;
+
+    mutable QList&lt;int&gt; m_sourceRow;
+    mutable QHash&lt;QString, int&gt; m_historyHash;
+    mutable bool m_loaded;
+};
+
+/*
+    The history menu
+    - Removes the first twenty entries and puts them as children of the top level.
+    - If there are less then twenty entries then the first folder is also removed.
+
+    The mapping is done by knowing that HistoryTreeModel is over a table
+    We store that row offset in our index's private data.
+*/
+class HistoryMenuModel : public QAbstractProxyModel
+{
+    Q_OBJECT
+
+public:
+    HistoryMenuModel(HistoryTreeModel *sourceModel, QObject *parent = 0);
+    int columnCount(const QModelIndex &amp;parent) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex mapFromSource(const QModelIndex &amp; sourceIndex) const;
+    QModelIndex mapToSource(const QModelIndex &amp; proxyIndex) const;
+    QModelIndex index(int, int, const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex parent(const QModelIndex &amp;index = QModelIndex()) const;
+
+    int bumpedRows() const;
+
+private:
+    HistoryTreeModel *m_treeModel;
+};
+
+// Menu that is dynamically populated from the history
+class HistoryMenu : public ModelMenu
+{
+    Q_OBJECT
+
+signals:
+    void openUrl(const QUrl &amp;url);
+
+public:
+     HistoryMenu(QWidget *parent = 0);
+     void setInitialActions(QList&lt;QAction*&gt; actions);
+
+protected:
+    bool prePopulated();
+    void postPopulated();
+
+private slots:
+    void activated(const QModelIndex &amp;index);
+    void showHistoryDialog();
+
+private:
+    HistoryManager *m_history;
+    HistoryMenuModel *m_historyMenuModel;
+    QList&lt;QAction*&gt; m_initialActions;
+};
+
+// proxy model for the history model that
+// exposes each url http://www.foo.com and it url starting at the host www.foo.com
+class HistoryCompletionModel : public QAbstractProxyModel
+{
+    Q_OBJECT
+
+public:
+    HistoryCompletionModel(QObject *parent = 0);
+    QVariant data(const QModelIndex &amp;index, int role = Qt::DisplayRole) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    int columnCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex mapFromSource(const QModelIndex &amp;sourceIndex) const;
+    QModelIndex mapToSource(const QModelIndex &amp;proxyIndex) const;
+    QModelIndex index(int, int, const QModelIndex&amp; = QModelIndex()) const;
+    QModelIndex parent(const QModelIndex&amp; index= QModelIndex()) const;
+    void setSourceModel(QAbstractItemModel *sourceModel);
+
+private slots:
+    void sourceReset();
+
+};
+
+// proxy model for the history model that converts the list
+// into a tree, one top level node per day.
+// Used in the HistoryDialog.
+class HistoryTreeModel : public QAbstractProxyModel
+{
+    Q_OBJECT
+
+public:
+    HistoryTreeModel(QAbstractItemModel *sourceModel, QObject *parent = 0);
+    QVariant data(const QModelIndex &amp;index, int role = Qt::DisplayRole) const;
+    int columnCount(const QModelIndex &amp;parent) const;
+    int rowCount(const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex mapFromSource(const QModelIndex &amp;sourceIndex) const;
+    QModelIndex mapToSource(const QModelIndex &amp;proxyIndex) const;
+    QModelIndex index(int row, int column, const QModelIndex &amp;parent = QModelIndex()) const;
+    QModelIndex parent(const QModelIndex &amp;index= QModelIndex()) const;
+    bool hasChildren(const QModelIndex &amp;parent = QModelIndex()) const;
+    Qt::ItemFlags flags(const QModelIndex &amp;index) const;
+    bool removeRows(int row, int count, const QModelIndex &amp;parent = QModelIndex());
+    QVariant headerData(int section, Qt::Orientation orientation, int role = Qt::DisplayRole) const;
+
+    void setSourceModel(QAbstractItemModel *sourceModel);
+
+private slots:
+    void sourceReset();
+    void sourceRowsInserted(const QModelIndex &amp;parent, int start, int end);
+    void sourceRowsRemoved(const QModelIndex &amp;parent, int start, int end);
+    void sourceDataChanged(const QModelIndex &amp;topLeft, const QModelIndex &amp;bottomRight,
+                           const QVector&lt;int&gt; roles);
+private:
+    int sourceDateRow(int row) const;
+    mutable QList&lt;int&gt; m_sourceRowCache;
+
+};
+
+// A modified QSortFilterProxyModel that always accepts the root nodes in the tree
+// so filtering is only done on the children.
+// Used in the HistoryDialog
+class TreeProxyModel : public QSortFilterProxyModel
+{
+    Q_OBJECT
+
+public:
+    TreeProxyModel(QObject *parent = 0);
+
+protected:
+    bool filterAcceptsRow(int source_row, const QModelIndex &amp;source_parent) const;
+};
+
+#include &quot;ui_history.h&quot;
+
+class HistoryDialog : public QDialog, public Ui_HistoryDialog
+{
+    Q_OBJECT
+
+signals:
+    void openUrl(const QUrl &amp;url);
+
+public:
+    HistoryDialog(QWidget *parent = 0, HistoryManager *history = 0);
+
+private slots:
+    void customContextMenuRequested(const QPoint &amp;pos);
+    void open();
+    void copy();
+
+};
+
+#endif // HISTORY_H
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt 3D: Simple C++ Example</db:title>
+<db:productname>Qt3D</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt 3D Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2014 Klaralvdalens Datakonsult AB (KDAB).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the Qt3D module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL3$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or later as published by the Free
+** Software Foundation and appearing in the file LICENSE.GPL included in
+** the packaging of this file. Please review the following information to
+** ensure the GNU General Public License version 2.0 requirements will be
+** met: http://www.gnu.org/licenses/gpl-2.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QGuiApplication&gt;
+
+#include &lt;Qt3DCore/QEntity&gt;
+#include &lt;Qt3DCore/QCamera&gt;
+#include &lt;Qt3DCore/QCameraLens&gt;
+#include &lt;Qt3DCore/QTransform&gt;
+#include &lt;Qt3DCore/QAspectEngine&gt;
+
+#include &lt;Qt3DInput/QInputAspect&gt;
+
+#include &lt;Qt3DRender/QRenderAspect&gt;
+#include &lt;Qt3DRender/QFrameGraph&gt;
+#include &lt;Qt3DRender/QForwardRenderer&gt;
+#include &lt;Qt3DRender/QPhongMaterial&gt;
+#include &lt;Qt3DRender/QCylinderMesh&gt;
+#include &lt;Qt3DRender/QSphereMesh&gt;
+#include &lt;Qt3DRender/QTorusMesh&gt;
+#include &lt;Qt3DRender/QWindow&gt;
+
+#include &lt;QPropertyAnimation&gt;
+
+class OrbitTransformController : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Qt3DCore::QTransform* target READ target WRITE setTarget NOTIFY targetChanged)
+    Q_PROPERTY(float radius READ radius WRITE setRadius NOTIFY radiusChanged)
+    Q_PROPERTY(float angle READ angle WRITE setAngle NOTIFY angleChanged)
+
+public:
+    OrbitTransformController(QObject *parent = 0)
+        : QObject(parent)
+        , m_target(Q_NULLPTR)
+        , m_matrix()
+        , m_radius(1.0f)
+        , m_angle(0.0f)
+    {
+    }
+
+    void setTarget(Qt3DCore::QTransform *target)
+    {
+        if (m_target != target) {
+            m_target = target;
+            emit targetChanged();
+        }
+    }
+
+    Qt3DCore::QTransform *target() const { return m_target; }
+
+    void setRadius(float radius)
+    {
+        if (!qFuzzyCompare(radius, m_radius)) {
+            m_radius = radius;
+            updateMatrix();
+            emit radiusChanged();
+        }
+    }
+
+    float radius() const { return m_radius; }
+
+    void setAngle(float angle)
+    {
+        if (!qFuzzyCompare(angle, m_angle)) {
+            m_angle = angle;
+            updateMatrix();
+            emit angleChanged();
+        }
+    }
+
+    float angle() const { return m_angle; }
+
+signals:
+    void targetChanged();
+    void radiusChanged();
+    void angleChanged();
+
+protected:
+    void updateMatrix()
+    {
+        m_matrix.setToIdentity();
+        m_matrix.rotate(m_angle, QVector3D(0.0f, 1.0f, 0.0f));
+        m_matrix.translate(m_radius, 0.0f, 0.0f);
+        m_target-&gt;setMatrix(m_matrix);
+    }
+
+private:
+    Qt3DCore::QTransform *m_target;
+    QMatrix4x4 m_matrix;
+    float m_radius;
+    float m_angle;
+};
+
+int main(int argc, char* argv[])
+{
+    QGuiApplication app(argc, argv);
+    Qt3DRender::QWindow view;
+    Qt3DInput::QInputAspect *input = new Qt3DInput::QInputAspect;
+    view.registerAspect(input);
+
+    // Root entity
+    Qt3DCore::QEntity *rootEntity = new Qt3DCore::QEntity();
+
+    // Camera
+    Qt3DCore::QCamera *cameraEntity = view.defaultCamera();
+
+    cameraEntity-&gt;lens()-&gt;setPerspectiveProjection(45.0f, 16.0f/9.0f, 0.1f, 1000.0f);
+    cameraEntity-&gt;setPosition(QVector3D(0, 0, -40.0f));
+    cameraEntity-&gt;setUpVector(QVector3D(0, 1, 0));
+    cameraEntity-&gt;setViewCenter(QVector3D(0, 0, 0));
+    input-&gt;setCamera(cameraEntity);
+
+    // Material
+    Qt3DRender::QMaterial *material = new Qt3DRender::QPhongMaterial(rootEntity);
+
+    // Torus
+    Qt3DCore::QEntity *torusEntity = new Qt3DCore::QEntity(rootEntity);
+    Qt3DRender::QTorusMesh *torusMesh = new Qt3DRender::QTorusMesh;
+    torusMesh-&gt;setRadius(5);
+    torusMesh-&gt;setMinorRadius(1);
+    torusMesh-&gt;setRings(100);
+    torusMesh-&gt;setSlices(20);
+
+    Qt3DCore::QTransform *torusTransform = new Qt3DCore::QTransform;
+    torusTransform-&gt;setScale3D(QVector3D(1.5, 1, 0.5));
+    torusTransform-&gt;setRotation(QQuaternion::fromAxisAndAngle(QVector3D(1, 0, 0), 45.0f));
+
+    torusEntity-&gt;addComponent(torusMesh);
+    torusEntity-&gt;addComponent(torusTransform);
+    torusEntity-&gt;addComponent(material);
+
+    // Sphere
+    Qt3DCore::QEntity *sphereEntity = new Qt3DCore::QEntity(rootEntity);
+    Qt3DRender::QSphereMesh *sphereMesh = new Qt3DRender::QSphereMesh;
+    sphereMesh-&gt;setRadius(3);
+
+    Qt3DCore::QTransform *sphereTransform = new Qt3DCore::QTransform;
+    OrbitTransformController *controller = new OrbitTransformController(sphereTransform);
+    controller-&gt;setTarget(sphereTransform);
+    controller-&gt;setRadius(20.0f);
+
+    QPropertyAnimation *sphereRotateTransformAnimation = new QPropertyAnimation(sphereTransform);
+    sphereRotateTransformAnimation-&gt;setTargetObject(controller);
+    sphereRotateTransformAnimation-&gt;setPropertyName(&quot;angle&quot;);
+    sphereRotateTransformAnimation-&gt;setStartValue(QVariant::fromValue(0));
+    sphereRotateTransformAnimation-&gt;setEndValue(QVariant::fromValue(360));
+    sphereRotateTransformAnimation-&gt;setDuration(10000);
+    sphereRotateTransformAnimation-&gt;setLoopCount(-1);
+    sphereRotateTransformAnimation-&gt;start();
+
+    sphereEntity-&gt;addComponent(sphereMesh);
+    sphereEntity-&gt;addComponent(sphereTransform);
+    sphereEntity-&gt;addComponent(material);
+
+    view.setRootEntity(rootEntity);
+    view.show();
+
+    return app.exec();
+}
+
+#include &quot;main.moc&quot;
+
+</db:programlisting>
+</db:article>

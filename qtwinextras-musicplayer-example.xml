@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Music Player</db:title>
+<db:productname>QtWinExtras</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Windows Extras Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates managing Windows DWM features, jump lists, taskbar button overlay, and thumbnail toolbar.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the Music Player example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qtwinextras-musicplayer-composited.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The Music Player example demonstrates how to use the various features provided by the <db:link xlink:href="qtwinextras-module.xml">QtWinExtras</db:link> module.</db:para>
+<db:note>
+<db:para>The example uses <db:link xlink:href="qmediaplayer.xml">QMediaPlayer</db:link> from the <db:link xlink:href="qtmultimedia-module.xml">QtMultimedia</db:link> module to play the music, but this article focuses on the parts where <db:link xlink:href="qtwinextras-module.xml">QtWinExtras</db:link> features are used.</db:para>
+</db:note>
+<db:section xml:id="dwm-features">
+<db:title>DWM Features</db:title>
+<db:para>The example uses Windows DWM (Desktop Window Manager) features to visually integrate the window content to the window frame and to make the main window and the volume popup translucent and blurred.</db:para>
+<db:para>The example applies a different look based on whether composition is enabled or not. When composition is enabled, the main window is made translucent and the window frame is extended to the client area to make the window content integrate seamlessly to the window frame as shown above. When composition is disabled, the colorization color is used as a background color. The following screenshot illustrates how the Music Player example looks when composition is disabled.</db:para>
+<db:mediaobject>
+<db:alt>Screenshot of the Music Player example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qtwinextras-musicplayer-non-composited.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The respective code is a combination of extending or resetting the system frame, adjusting the necessary <db:link xlink:href="qwidget.xml">QWidget</db:link> attributes, and setting an appropriate style sheet to achieve the desired look.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::stylize()
+{
+    if (QtWin::isCompositionEnabled()) {
+        QtWin::extendFrameIntoClientArea(this, -1, -1, -1, -1);
+        setAttribute(Qt::WA_TranslucentBackground, true);
+        setAttribute(Qt::WA_NoSystemBackground, false);
+        setStyleSheet(&quot;MusicPlayer { background: transparent; }&quot;);
+    } else {
+        QtWin::resetExtendedFrame(this);
+        setAttribute(Qt::WA_TranslucentBackground, false);
+        setStyleSheet(QString(&quot;MusicPlayer { background: %1; }&quot;).arg(QtWin::realColorizationColor().name()));
+    }
+    volumeButton-&gt;stylize();
+}
+</db:programlisting>
+<db:para>The volume popup does not have a window frame so it is enough to make the popup blurred when composition is enabled. Additionally, a style sheet is applied to get a border that follows the colorization color. Just like for the main window, when composition is disabled, the colorization color is used as a background color.</db:para>
+<db:programlisting language="cpp">void VolumeButton::stylize()
+{
+    if (QtWin::isCompositionEnabled()) {
+        QtWin::enableBlurBehindWindow(menu);
+        QString css(&quot;QMenu { border: 1px solid %1; border-radius: 2px; background: transparent; }&quot;);
+        menu-&gt;setStyleSheet(css.arg(QtWin::realColorizationColor().name()));
+    } else {
+        QtWin::disableBlurBehindWindow(menu);
+        QString css(&quot;QMenu { border: 1px solid black; background: %1; }&quot;);
+        menu-&gt;setStyleSheet(css.arg(QtWin::realColorizationColor().name()));
+    }
+}
+</db:programlisting>
+<db:para>The example application respects the user's composition settings, reacts to dynamic composition changes, and looks solid regardless of whether composition is enabled or not. It accomplishes this by catching QWinEvent::CompositionChange and QWinEvent::ColorizationChange events and adjusting its looks accordingly.</db:para>
+<db:programlisting language="cpp">bool MusicPlayer::event(QEvent *event)
+{
+    if (event-&gt;type() == QWinEvent::CompositionChange || event-&gt;type() == QWinEvent::ColorizationChange)
+        stylize();
+    return QWidget::event(event);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="jump-list">
+<db:title>Jump List</db:title>
+<db:para>The example creates a custom jump list to provide the user with fast access to recently played music files.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::createJumpList()
+{
+    QWinJumpList jumplist;
+    jumplist.recent()-&gt;setVisible(true);
+}
+</db:programlisting>
+<db:para>To enable the application jump list to show the desired recent files, the corresponding file types are registered using the following helper function.</db:para>
+<db:programlisting language="cpp">static void associateFileTypes(const QStringList &amp;fileTypes)
+{
+    QString displayName = QGuiApplication::applicationDisplayName();
+    QString filePath = QCoreApplication::applicationFilePath();
+    QString fileName = QFileInfo(filePath).fileName();
+
+    QSettings settings(&quot;HKEY_CURRENT_USER\\Software\\Classes\\Applications\\&quot; + fileName, QSettings::NativeFormat);
+    settings.setValue(&quot;FriendlyAppName&quot;, displayName);
+
+    settings.beginGroup(&quot;SupportedTypes&quot;);
+    foreach (const QString&amp; fileType, fileTypes)
+        settings.setValue(fileType, QString());
+    settings.endGroup();
+
+    settings.beginGroup(&quot;shell&quot;);
+    settings.beginGroup(&quot;open&quot;);
+    settings.setValue(&quot;FriendlyAppName&quot;, displayName);
+    settings.beginGroup(&quot;Command&quot;);
+    settings.setValue(&quot;.&quot;, QChar('&quot;') + QDir::toNativeSeparators(filePath) + QString(&quot;\&quot; \&quot;%1\&quot;&quot;));
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="taskbar-overlay-and-progress">
+<db:title>Taskbar Overlay and Progress</db:title>
+<db:para>The example uses Windows Taskbar for two things; it sets an overlay icon that represents the current music playback state, and it indicates the playback progress in the taskbar button.</db:para>
+<db:mediaobject>
+<db:alt>Screenshot of the Music Player taskbar</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qtwinextras-musicplayer-taskbar.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The following snippet shows how the taskbar button is prepared. The playback progress is wired directly to the taskbar progress indicator by using signals and slots.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::createTaskbar()
+{
+    taskbarButton = new QWinTaskbarButton(this);
+    taskbarButton-&gt;setWindow(windowHandle());
+
+    taskbarProgress = taskbarButton-&gt;progress();
+    connect(positionSlider, &amp;QAbstractSlider::valueChanged, taskbarProgress, &amp;QWinTaskbarProgress::setValue);
+    connect(positionSlider, &amp;QAbstractSlider::rangeChanged, taskbarProgress, &amp;QWinTaskbarProgress::setRange);
+
+    connect(&amp;mediaPlayer, &amp;QMediaPlayer::stateChanged, this, &amp;MusicPlayer::updateTaskbar);
+}
+</db:programlisting>
+<db:para>The overlay icon and the progress indicator are updated whenever the state of the music playback changes.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::updateTaskbar()
+{
+    switch (mediaPlayer.state()) {
+    case QMediaPlayer::PlayingState:
+        taskbarButton-&gt;setOverlayIcon(style()-&gt;standardIcon(QStyle::SP_MediaPlay));
+        taskbarProgress-&gt;show();
+        taskbarProgress-&gt;resume();
+        break;
+    case QMediaPlayer::PausedState:
+        taskbarButton-&gt;setOverlayIcon(style()-&gt;standardIcon(QStyle::SP_MediaPause));
+        taskbarProgress-&gt;show();
+        taskbarProgress-&gt;pause();
+        break;
+    case QMediaPlayer::StoppedState:
+        taskbarButton-&gt;setOverlayIcon(style()-&gt;standardIcon(QStyle::SP_MediaStop));
+        taskbarProgress-&gt;hide();
+        break;
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="thumbnail-toolbar">
+<db:title>Thumbnail Toolbar</db:title>
+<db:mediaobject>
+<db:alt>Screenshot of the Music Player thumbnail</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qtwinextras-musicplayer-thumbnail.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The Windows Thumbnail Toolbar is used for providing basic music playback controls. These controls can be used to control the application without having to activate the application.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::createThumbnailToolBar()
+{
+    thumbnailToolBar = new QWinThumbnailToolBar(this);
+    thumbnailToolBar-&gt;setWindow(windowHandle());
+
+    playToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    playToolButton-&gt;setEnabled(false);
+    playToolButton-&gt;setToolTip(tr(&quot;Play&quot;));
+    playToolButton-&gt;setIcon(style()-&gt;standardIcon(QStyle::SP_MediaPlay));
+    connect(playToolButton, &amp;QWinThumbnailToolButton::clicked, this, &amp;MusicPlayer::togglePlayback);
+
+    forwardToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    forwardToolButton-&gt;setEnabled(false);
+    forwardToolButton-&gt;setToolTip(tr(&quot;Fast forward&quot;));
+    forwardToolButton-&gt;setIcon(style()-&gt;standardIcon(QStyle::SP_MediaSeekForward));
+    connect(forwardToolButton, &amp;QWinThumbnailToolButton::clicked, this, &amp;MusicPlayer::seekForward);
+
+    backwardToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    backwardToolButton-&gt;setEnabled(false);
+    backwardToolButton-&gt;setToolTip(tr(&quot;Rewind&quot;));
+    backwardToolButton-&gt;setIcon(style()-&gt;standardIcon(QStyle::SP_MediaSeekBackward));
+    connect(backwardToolButton, &amp;QWinThumbnailToolButton::clicked, this, &amp;MusicPlayer::seekBackward);
+
+    thumbnailToolBar-&gt;addButton(backwardToolButton);
+    thumbnailToolBar-&gt;addButton(playToolButton);
+    thumbnailToolBar-&gt;addButton(forwardToolButton);
+
+    connect(&amp;mediaPlayer, &amp;QMediaPlayer::positionChanged, this, &amp;MusicPlayer::updateThumbnailToolBar);
+    connect(&amp;mediaPlayer, &amp;QMediaPlayer::durationChanged, this, &amp;MusicPlayer::updateThumbnailToolBar);
+    connect(&amp;mediaPlayer, &amp;QMediaPlayer::stateChanged, this, &amp;MusicPlayer::updateThumbnailToolBar);
+}
+</db:programlisting>
+<db:para>The buttons in the thumbnail toolbar are updated accordingly whenever the state of the music playback changes.</db:para>
+<db:programlisting language="cpp">void MusicPlayer::updateThumbnailToolBar()
+{
+    playToolButton-&gt;setEnabled(mediaPlayer.duration() &gt; 0);
+    backwardToolButton-&gt;setEnabled(mediaPlayer.position() &gt; 0);
+    forwardToolButton-&gt;setEnabled(mediaPlayer.position() &lt; mediaPlayer.duration());
+
+    if (mediaPlayer.state() == QMediaPlayer::PlayingState) {
+        playToolButton-&gt;setToolTip(tr(&quot;Pause&quot;));
+        playToolButton-&gt;setIcon(style()-&gt;standardIcon(QStyle::SP_MediaPause));
+    } else {
+        playToolButton-&gt;setToolTip(tr(&quot;Play&quot;));
+        playToolButton-&gt;setIcon(style()-&gt;standardIcon(QStyle::SP_MediaPlay));
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/main.cpp">musicplayer/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/musicplayer.cpp">musicplayer/musicplayer.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/musicplayer.h">musicplayer/musicplayer.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/musicplayer.pro">musicplayer/musicplayer.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/volumebutton.cpp">musicplayer/volumebutton.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="musicplayer/volumebutton.h">musicplayer/volumebutton.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Graph</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how one can combine custom materials and geometries under a single <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;noisynode.h&quot;
+
+#include &lt;QtQuick/QSGSimpleMaterialShader&gt;
+#include &lt;QtQuick/QSGTexture&gt;
+#include &lt;QtQuick/QQuickWindow&gt;
+
+#define NOISE_SIZE 64
+
+struct NoisyMaterial
+{
+    ~NoisyMaterial() {
+        delete texture;
+    }
+
+    QColor color;
+    QSGTexture *texture;
+};
+
+class NoisyShader : public QSGSimpleMaterialShader&lt;NoisyMaterial&gt;
+{
+    QSG_DECLARE_SIMPLE_SHADER(NoisyShader, NoisyMaterial)
+
+public:
+    NoisyShader() : id_color(-1), id_texture(-1), id_textureSize(-1) {
+        setShaderSourceFile(QOpenGLShader::Vertex, &quot;:/scenegraph/graph/shaders/noisy.vsh&quot;);
+        setShaderSourceFile(QOpenGLShader::Fragment, &quot;:/scenegraph/graph/shaders/noisy.fsh&quot;);
+    }
+
+    QList&lt;QByteArray&gt; attributes() const {  return QList&lt;QByteArray&gt;() &lt;&lt; &quot;aVertex&quot; &lt;&lt; &quot;aTexCoord&quot;; }
+
+    void updateState(const NoisyMaterial *m, const NoisyMaterial *) {
+
+        // Set the color
+        program()-&gt;setUniformValue(id_color, m-&gt;color);
+
+        // Bind the texture and set program to use texture unit 0 (the default)
+        m-&gt;texture-&gt;bind();
+
+        // Then set the texture size so we can adjust the texture coordinates accordingly in the
+        // vertex shader..
+        QSize s = m-&gt;texture-&gt;textureSize();
+        program()-&gt;setUniformValue(id_textureSize, QSizeF(1.0 / s.width(), 1.0 / s.height()));
+    }
+
+    void resolveUniforms() {
+        id_texture = program()-&gt;uniformLocation(&quot;texture&quot;);
+        id_textureSize = program()-&gt;uniformLocation(&quot;textureSize&quot;);
+        id_color = program()-&gt;uniformLocation(&quot;color&quot;);
+
+        // We will only use texture unit 0, so set it only once.
+        program()-&gt;setUniformValue(id_texture, 0);
+    }
+
+private:
+    int id_color;
+    int id_texture;
+    int id_textureSize;
+};
+
+NoisyNode::NoisyNode(QQuickWindow *window)
+{
+    // Make some noise...
+    QImage image(NOISE_SIZE, NOISE_SIZE, QImage::Format_RGB32);
+    uint *data = (uint *) image.bits();
+    for (int i=0; i&lt;NOISE_SIZE * NOISE_SIZE; ++i) {
+        uint g = rand() &amp; 0xff;
+        data[i] = 0xff000000 | (g &lt;&lt; 16) | (g &lt;&lt; 8) | g;
+    }
+
+    QSGTexture *t = window-&gt;createTextureFromImage(image);
+    t-&gt;setFiltering(QSGTexture::Nearest);
+    t-&gt;setHorizontalWrapMode(QSGTexture::Repeat);
+    t-&gt;setVerticalWrapMode(QSGTexture::Repeat);
+
+    QSGSimpleMaterial&lt;NoisyMaterial&gt; *m = NoisyShader::createMaterial();
+    m-&gt;state()-&gt;texture = t;
+    m-&gt;state()-&gt;color = QColor::fromRgbF(0.95, 0.95, 0.97);
+    m-&gt;setFlag(QSGMaterial::Blending);
+
+    setMaterial(m);
+    setFlag(OwnsMaterial, true);
+
+    QSGGeometry *g = new QSGGeometry(QSGGeometry::defaultAttributes_TexturedPoint2D(), 4);
+    QSGGeometry::updateTexturedRectGeometry(g, QRect(), QRect());
+    setGeometry(g);
+    setFlag(OwnsGeometry, true);
+}
+
+void NoisyNode::setRect(const QRectF &amp;bounds)
+{
+    QSGGeometry::updateTexturedRectGeometry(geometry(), bounds, QRectF(0, 0, 1, 1));
+    markDirty(QSGNode::DirtyGeometry);
+}
+
+</db:programlisting>
+</db:article>

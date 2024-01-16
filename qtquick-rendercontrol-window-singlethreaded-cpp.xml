@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QQuickRenderControl Example</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render a Qt Quick scene into a texture that is then used by a non-Quick based OpenGL renderer.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;window_singlethreaded.h&quot;
+#include &quot;cuberenderer.h&quot;
+#include &lt;QOpenGLContext&gt;
+#include &lt;QOpenGLFunctions&gt;
+#include &lt;QOpenGLFramebufferObject&gt;
+#include &lt;QOpenGLShaderProgram&gt;
+#include &lt;QOpenGLVertexArrayObject&gt;
+#include &lt;QOpenGLBuffer&gt;
+#include &lt;QOpenGLVertexArrayObject&gt;
+#include &lt;QOffscreenSurface&gt;
+#include &lt;QScreen&gt;
+#include &lt;QQmlEngine&gt;
+#include &lt;QQmlComponent&gt;
+#include &lt;QQuickItem&gt;
+#include &lt;QQuickWindow&gt;
+#include &lt;QQuickRenderControl&gt;
+#include &lt;QCoreApplication&gt;
+
+class RenderControl : public QQuickRenderControl
+{
+public:
+    RenderControl(QWindow *w) : m_window(w) { }
+    QWindow *renderWindow(QPoint *offset) Q_DECL_OVERRIDE;
+
+private:
+    QWindow *m_window;
+};
+
+QWindow *RenderControl::renderWindow(QPoint *offset)
+{
+    if (offset)
+        *offset = QPoint(0, 0);
+    return m_window;
+}
+
+WindowSingleThreaded::WindowSingleThreaded()
+    : m_rootItem(0),
+      m_fbo(0),
+      m_quickInitialized(false),
+      m_quickReady(false),
+      m_dpr(0)
+{
+    setSurfaceType(QSurface::OpenGLSurface);
+
+    QSurfaceFormat format;
+    // Qt Quick may need a depth and stencil buffer. Always make sure these are available.
+    format.setDepthBufferSize(16);
+    format.setStencilBufferSize(8);
+    setFormat(format);
+
+    m_context = new QOpenGLContext;
+    m_context-&gt;setFormat(format);
+    m_context-&gt;create();
+
+    m_offscreenSurface = new QOffscreenSurface;
+    // Pass m_context-&gt;format(), not format. Format does not specify and color buffer
+    // sizes, while the context, that has just been created, reports a format that has
+    // these values filled in. Pass this to the offscreen surface to make sure it will be
+    // compatible with the context's configuration.
+    m_offscreenSurface-&gt;setFormat(m_context-&gt;format());
+    m_offscreenSurface-&gt;create();
+
+    m_cubeRenderer = new CubeRenderer(m_offscreenSurface);
+
+    m_renderControl = new RenderControl(this);
+
+    // Create a QQuickWindow that is associated with out render control. Note that this
+    // window never gets created or shown, meaning that it will never get an underlying
+    // native (platform) window.
+    m_quickWindow = new QQuickWindow(m_renderControl);
+
+    // Create a QML engine.
+    m_qmlEngine = new QQmlEngine;
+    if (!m_qmlEngine-&gt;incubationController())
+        m_qmlEngine-&gt;setIncubationController(m_quickWindow-&gt;incubationController());
+
+    // When Quick says there is a need to render, we will not render immediately. Instead,
+    // a timer with a small interval is used to get better performance.
+    m_updateTimer.setSingleShot(true);
+    m_updateTimer.setInterval(5);
+    connect(&amp;m_updateTimer, &amp;QTimer::timeout, this, &amp;WindowSingleThreaded::render);
+
+    // Now hook up the signals. For simplicy we don't differentiate between
+    // renderRequested (only render is needed, no sync) and sceneChanged (polish and sync
+    // is needed too).
+    connect(m_quickWindow, &amp;QQuickWindow::sceneGraphInitialized, this, &amp;WindowSingleThreaded::createFbo);
+    connect(m_quickWindow, &amp;QQuickWindow::sceneGraphInvalidated, this, &amp;WindowSingleThreaded::destroyFbo);
+    connect(m_renderControl, &amp;QQuickRenderControl::renderRequested, this, &amp;WindowSingleThreaded::requestUpdate);
+    connect(m_renderControl, &amp;QQuickRenderControl::sceneChanged, this, &amp;WindowSingleThreaded::requestUpdate);
+
+    // Just recreating the FBO on resize is not sufficient, when moving between screens
+    // with different devicePixelRatio the QWindow size may remain the same but the FBO
+    // dimension is to change regardless.
+    connect(this, &amp;QWindow::screenChanged, this, &amp;WindowSingleThreaded::handleScreenChange);
+}
+
+WindowSingleThreaded::~WindowSingleThreaded()
+{
+    // Make sure the context is current while doing cleanup. Note that we use the
+    // offscreen surface here because passing 'this' at this point is not safe: the
+    // underlying platform window may already be destroyed. To avoid all the trouble, use
+    // another surface that is valid for sure.
+    m_context-&gt;makeCurrent(m_offscreenSurface);
+
+    // Delete the render control first since it will free the scenegraph resources.
+    // Destroy the QQuickWindow only afterwards.
+    delete m_renderControl;
+
+    delete m_qmlComponent;
+    delete m_quickWindow;
+    delete m_qmlEngine;
+    delete m_fbo;
+
+    m_context-&gt;doneCurrent();
+
+    delete m_cubeRenderer;
+
+    delete m_offscreenSurface;
+    delete m_context;
+}
+
+void WindowSingleThreaded::createFbo()
+{
+    // The scene graph has been initialized. It is now time to create an FBO and associate
+    // it with the QQuickWindow.
+    m_dpr = devicePixelRatio();
+    m_fbo = new QOpenGLFramebufferObject(size() * m_dpr, QOpenGLFramebufferObject::CombinedDepthStencil);
+    m_quickWindow-&gt;setRenderTarget(m_fbo);
+}
+
+void WindowSingleThreaded::destroyFbo()
+{
+    delete m_fbo;
+    m_fbo = 0;
+}
+
+void WindowSingleThreaded::render()
+{
+    if (!m_context-&gt;makeCurrent(m_offscreenSurface))
+        return;
+
+    // Polish, synchronize and render the next frame (into our fbo).  In this example
+    // everything happens on the same thread and therefore all three steps are performed
+    // in succession from here. In a threaded setup the render() call would happen on a
+    // separate thread.
+    m_renderControl-&gt;polishItems();
+    m_renderControl-&gt;sync();
+    m_renderControl-&gt;render();
+
+    m_quickWindow-&gt;resetOpenGLState();
+    QOpenGLFramebufferObject::bindDefault();
+
+    m_context-&gt;functions()-&gt;glFlush();
+
+    m_quickReady = true;
+
+    // Get something onto the screen.
+    m_cubeRenderer-&gt;render(this, m_context, m_quickReady ? m_fbo-&gt;texture() : 0);
+}
+
+void WindowSingleThreaded::requestUpdate()
+{
+    if (!m_updateTimer.isActive())
+        m_updateTimer.start();
+}
+
+void WindowSingleThreaded::run()
+{
+    disconnect(m_qmlComponent, &amp;QQmlComponent::statusChanged, this, &amp;WindowSingleThreaded::run);
+
+    if (m_qmlComponent-&gt;isError()) {
+        QList&lt;QQmlError&gt; errorList = m_qmlComponent-&gt;errors();
+        foreach (const QQmlError &amp;error, errorList)
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        return;
+    }
+
+    QObject *rootObject = m_qmlComponent-&gt;create();
+    if (m_qmlComponent-&gt;isError()) {
+        QList&lt;QQmlError&gt; errorList = m_qmlComponent-&gt;errors();
+        foreach (const QQmlError &amp;error, errorList)
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        return;
+    }
+
+    m_rootItem = qobject_cast&lt;QQuickItem *&gt;(rootObject);
+    if (!m_rootItem) {
+        qWarning(&quot;run: Not a QQuickItem&quot;);
+        delete rootObject;
+        return;
+    }
+
+    // The root item is ready. Associate it with the window.
+    m_rootItem-&gt;setParentItem(m_quickWindow-&gt;contentItem());
+
+    // Update item and rendering related geometries.
+    updateSizes();
+
+    // Initialize the render control and our OpenGL resources.
+    m_context-&gt;makeCurrent(m_offscreenSurface);
+    m_renderControl-&gt;initialize(m_context);
+    m_quickInitialized = true;
+}
+
+void WindowSingleThreaded::updateSizes()
+{
+    // Behave like SizeRootObjectToView.
+    m_rootItem-&gt;setWidth(width());
+    m_rootItem-&gt;setHeight(height());
+
+    m_quickWindow-&gt;setGeometry(0, 0, width(), height());
+
+    m_cubeRenderer-&gt;resize(width(), height());
+}
+
+void WindowSingleThreaded::startQuick(const QString &amp;filename)
+{
+    m_qmlComponent = new QQmlComponent(m_qmlEngine, QUrl(filename));
+    if (m_qmlComponent-&gt;isLoading())
+        connect(m_qmlComponent, &amp;QQmlComponent::statusChanged, this, &amp;WindowSingleThreaded::run);
+    else
+        run();
+}
+
+void WindowSingleThreaded::exposeEvent(QExposeEvent *)
+{
+    if (isExposed()) {
+        if (!m_quickInitialized) {
+            m_cubeRenderer-&gt;render(this, m_context, m_quickReady ? m_fbo-&gt;texture() : 0);
+            startQuick(QStringLiteral(&quot;qrc:/rendercontrol/demo.qml&quot;));
+        }
+    }
+}
+
+void WindowSingleThreaded::resizeFbo()
+{
+    if (m_rootItem &amp;&amp; m_context-&gt;makeCurrent(m_offscreenSurface)) {
+        delete m_fbo;
+        createFbo();
+        m_context-&gt;doneCurrent();
+        updateSizes();
+        render();
+    }
+}
+
+void WindowSingleThreaded::resizeEvent(QResizeEvent *)
+{
+    // If this is a resize after the scene is up and running, recreate the fbo and the
+    // Quick item and scene.
+    if (m_fbo &amp;&amp; m_fbo-&gt;size() != size() * devicePixelRatio())
+        resizeFbo();
+}
+
+void WindowSingleThreaded::handleScreenChange()
+{
+    if (m_dpr != devicePixelRatio())
+        resizeFbo();
+}
+
+void WindowSingleThreaded::mousePressEvent(QMouseEvent *e)
+{
+    // Use the constructor taking localPos and screenPos. That puts localPos into the
+    // event's localPos and windowPos, and screenPos into the event's screenPos. This way
+    // the windowPos in e is ignored and is replaced by localPos. This is necessary
+    // because QQuickWindow thinks of itself as a top-level window always.
+    QMouseEvent mappedEvent(e-&gt;type(), e-&gt;localPos(), e-&gt;screenPos(), e-&gt;button(), e-&gt;buttons(), e-&gt;modifiers());
+    QCoreApplication::sendEvent(m_quickWindow, &amp;mappedEvent);
+}
+
+void WindowSingleThreaded::mouseReleaseEvent(QMouseEvent *e)
+{
+    QMouseEvent mappedEvent(e-&gt;type(), e-&gt;localPos(), e-&gt;screenPos(), e-&gt;button(), e-&gt;buttons(), e-&gt;modifiers());
+    QCoreApplication::sendEvent(m_quickWindow, &amp;mappedEvent);
+}
+
+</db:programlisting>
+</db:article>

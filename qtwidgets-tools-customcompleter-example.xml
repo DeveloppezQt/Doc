@@ -1,0 +1,325 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Custom Completer Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Custom Completer example shows how to provide string-completion facilities for an input widget based on data provided by a model. The completer pops up suggestions for possible words based on the first three characters input by the user and the user's choice of word is inserted into the TextEdit using <db:link xlink:href="qtextcursor.xml">QTextCursor</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/customcompleter-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="setting-up-the-resource-file">
+<db:title>Setting Up The Resource File</db:title>
+<db:para>The Custom Completer example requires a resource file, <db:emphasis>wordlist.txt</db:emphasis>, that has a list of words to help <db:link xlink:href="qcompleter.xml">QCompleter</db:link> complete words. This file contains the following:</db:para>
+<db:programlisting language="cpp">&lt;!DOCTYPE RCC&gt;&lt;RCC version=&quot;1.0&quot;&gt;
+&lt;qresource prefix=&quot;/&quot;&gt;
+   &lt;file&gt;resources/wordlist.txt&lt;/file&gt;
+&lt;/qresource&gt;
+&lt;/RCC&gt;
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="textedit-class-definition">
+<db:title>TextEdit Class Definition</db:title>
+<db:para>The TextEdit class is a subclass of <db:link xlink:href="qtextedit.xml">QTextEdit</db:link> with a custom insertCompletion() slot and it reimplements the <db:link xlink:href="qabstractscrollarea.xml#keyPressEvent">keyPressEvent</db:link>() and the <db:link xlink:href="qwidget.xml#focusInEvent">focusInEvent</db:link>() functions. TextEdit also contains a private function textUnderCursor() and a private instance of <db:link xlink:href="qcompleter.xml">QCompleter</db:link>, c.</db:para>
+<db:programlisting language="cpp">class TextEdit : public QTextEdit
+{
+    Q_OBJECT
+
+public:
+    TextEdit(QWidget *parent = 0);
+    ~TextEdit();
+
+    void setCompleter(QCompleter *c);
+    QCompleter *completer() const;
+
+protected:
+    void keyPressEvent(QKeyEvent *e) Q_DECL_OVERRIDE;
+    void focusInEvent(QFocusEvent *e) Q_DECL_OVERRIDE;
+
+private slots:
+    void insertCompletion(const QString &amp;completion);
+
+private:
+    QString textUnderCursor() const;
+
+private:
+    QCompleter *c;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="textedit-class-implementation">
+<db:title>TextEdit Class Implementation</db:title>
+<db:para>The constructor for TextEdit constructs a TextEdit with a parent and initializes c. The instructions to use the completer is displayed on the TextEdit object, using the <db:link xlink:href="qtextedit.xml#setPlainText">setPlainText</db:link>() function.</db:para>
+<db:programlisting language="cpp">TextEdit::TextEdit(QWidget *parent)
+: QTextEdit(parent), c(0)
+{
+    setPlainText(tr(&quot;This TextEdit provides autocompletions for words that have more than&quot;
+                    &quot; 3 characters. You can trigger autocompletion using &quot;) +
+                    QKeySequence(&quot;Ctrl+E&quot;).toString(QKeySequence::NativeText));
+}
+</db:programlisting>
+<db:para>In addition, TextEdit also includes a default destructor:</db:para>
+<db:programlisting language="cpp">TextEdit::~TextEdit()
+{
+}
+</db:programlisting>
+<db:para>The setCompleter() function accepts a <db:code role="parameter">completer</db:code> and sets it up. We use if (c) to check if c has been initialized. If it has been initialized, the <db:link xlink:href="qobject.xml#disconnect">QObject::disconnect</db:link>() function is invoked to disconnect the signal from the slot. This is to ensure that no previous completer object is still connected to the slot.</db:para>
+<db:programlisting language="cpp">void TextEdit::setCompleter(QCompleter *completer)
+{
+    if (c)
+        QObject::disconnect(c, 0, this, 0);
+
+    c = completer;
+
+    if (!c)
+        return;
+
+    c-&gt;setWidget(this);
+    c-&gt;setCompletionMode(QCompleter::PopupCompletion);
+    c-&gt;setCaseSensitivity(Qt::CaseInsensitive);
+    QObject::connect(c, SIGNAL(activated(QString)),
+                     this, SLOT(insertCompletion(QString)));
+}
+</db:programlisting>
+<db:para>We then instantiate c with <db:code role="parameter">completer</db:code> and set it as TextEdit's widget. The completion mode and case sensitivity are also set and then we connect the <db:link xlink:href="qcompleter.xml#activated">activated</db:link>() signal to the insertCompletion() slot.</db:para>
+<db:para>The completer() function is a getter function that returns c.</db:para>
+<db:programlisting language="cpp">QCompleter *TextEdit::completer() const
+{
+    return c;
+}
+</db:programlisting>
+<db:para>The completer pops up the options available, based on the contents of <db:emphasis>wordlist.txt</db:emphasis>, but the text cursor is responsible for filling in the missing characters, according to the user's choice of word.</db:para>
+<db:para>Suppose the user inputs &quot;ACT&quot; and accepts the completer's suggestion of &quot;ACTUAL&quot;. The completion string is then sent to insertCompletion() by the completer's <db:link xlink:href="qcompleter.xml#activated">activated</db:link>() signal.</db:para>
+<db:para>The insertCompletion() function is responsible for completing the word using a <db:link xlink:href="qtextcursor.xml">QTextCursor</db:link> object, tc. It validates to ensure that the completer's widget is TextEdit before using tc to insert the extra characters to complete the word.</db:para>
+<db:programlisting language="cpp">void TextEdit::insertCompletion(const QString&amp; completion)
+{
+    if (c-&gt;widget() != this)
+        return;
+    QTextCursor tc = textCursor();
+    int extra = completion.length() - c-&gt;completionPrefix().length();
+    tc.movePosition(QTextCursor::Left);
+    tc.movePosition(QTextCursor::EndOfWord);
+    tc.insertText(completion.right(extra));
+    setTextCursor(tc);
+}
+</db:programlisting>
+<db:para>The figure below illustrates this process:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/customcompleter-insertcompletion.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>completion.length() = 6</db:para>
+<db:para>c-&gt;completionPrefix().length()=3</db:para>
+<db:para>The difference between these two values is extra, which is 3. This means that the last three characters from the right, &quot;U&quot;, &quot;A&quot;, and &quot;L&quot;, will be inserted by tc.</db:para>
+<db:para>The textUnderCursor() function uses a <db:link xlink:href="qtextcursor.xml">QTextCursor</db:link>, tc, to select a word under the cursor and return it.</db:para>
+<db:programlisting language="cpp">QString TextEdit::textUnderCursor() const
+{
+    QTextCursor tc = textCursor();
+    tc.select(QTextCursor::WordUnderCursor);
+    return tc.selectedText();
+}
+</db:programlisting>
+<db:para>The TextEdit class reimplements <db:link xlink:href="qwidget.xml#focusInEvent">focusInEvent</db:link>() function, which is an event handler used to receive keyboard focus events for the widget.</db:para>
+<db:programlisting language="cpp">void TextEdit::focusInEvent(QFocusEvent *e)
+{
+    if (c)
+        c-&gt;setWidget(this);
+    QTextEdit::focusInEvent(e);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qabstractscrollarea.xml#keyPressEvent">keyPressEvent</db:link>() is reimplemented to ignore key events like <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Enter</db:link>, <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Return</db:link>, <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Escape</db:link>, <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Tab</db:link>, and <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Backtab</db:link> so the completer can handle them.</db:para>
+<db:para>If there is an active completer, we cannot process the shortcut, Ctrl+E.</db:para>
+<db:programlisting language="cpp">void TextEdit::keyPressEvent(QKeyEvent *e)
+{
+    if (c &amp;&amp; c-&gt;popup()-&gt;isVisible()) {
+        // The following keys are forwarded by the completer to the widget
+       switch (e-&gt;key()) {
+       case Qt::Key_Enter:
+       case Qt::Key_Return:
+       case Qt::Key_Escape:
+       case Qt::Key_Tab:
+       case Qt::Key_Backtab:
+            e-&gt;ignore();
+            return; // let the completer do default behavior
+       default:
+           break;
+       }
+    }
+
+    bool isShortcut = ((e-&gt;modifiers() &amp; Qt::ControlModifier) &amp;&amp; e-&gt;key() == Qt::Key_E); // CTRL+E
+    if (!c || !isShortcut) // do not process the shortcut when we have a completer
+        QTextEdit::keyPressEvent(e);
+</db:programlisting>
+<db:para>We also handle other modifiers and shortcuts for which we do not want the completer to respond to.</db:para>
+<db:programlisting language="cpp">    const bool ctrlOrShift = e-&gt;modifiers() &amp; (Qt::ControlModifier | Qt::ShiftModifier);
+    if (!c || (ctrlOrShift &amp;&amp; e-&gt;text().isEmpty()))
+        return;
+
+    static QString eow(&quot;~!@#$%^&amp;*()_+{}|:\&quot;&lt;&gt;?,./;'[]\\-=&quot;); // end of word
+    bool hasModifier = (e-&gt;modifiers() != Qt::NoModifier) &amp;&amp; !ctrlOrShift;
+    QString completionPrefix = textUnderCursor();
+
+    if (!isShortcut &amp;&amp; (hasModifier || e-&gt;text().isEmpty()|| completionPrefix.length() &lt; 3
+                      || eow.contains(e-&gt;text().right(1)))) {
+        c-&gt;popup()-&gt;hide();
+        return;
+    }
+
+    if (completionPrefix != c-&gt;completionPrefix()) {
+        c-&gt;setCompletionPrefix(completionPrefix);
+        c-&gt;popup()-&gt;setCurrentIndex(c-&gt;completionModel()-&gt;index(0, 0));
+    }
+    QRect cr = cursorRect();
+    cr.setWidth(c-&gt;popup()-&gt;sizeHintForColumn(0)
+                + c-&gt;popup()-&gt;verticalScrollBar()-&gt;sizeHint().width());
+    c-&gt;complete(cr); // popup it up!
+}
+</db:programlisting>
+<db:para>Finally, we pop up the completer.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The MainWindow class is a subclass of <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> and implements a private slot, about(). This class also has two private functions, createMenu() and modelFromFile() as well as private instances of <db:link xlink:href="qcompleter.xml">QCompleter</db:link> and TextEdit.</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = 0);
+
+private slots:
+    void about();
+
+private:
+    void createMenu();
+    QAbstractItemModel *modelFromFile(const QString&amp; fileName);
+
+    QCompleter *completer;
+    TextEdit *completingTextEdit;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>The constructor constructs a MainWindow with a parent and initializes the completer. It also instantiates a TextEdit and sets its completer. A <db:link xlink:href="qstringlistmodel.xml">QStringListModel</db:link>, obtained from modelFromFile(), is used to populate the completer. The MainWindow's central widget is set to TextEdit and its size is set to 500 x 300.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent), completer(0)
+{
+    createMenu();
+
+    completingTextEdit = new TextEdit;
+    completer = new QCompleter(this);
+    completer-&gt;setModel(modelFromFile(&quot;:/resources/wordlist.txt&quot;));
+    completer-&gt;setModelSorting(QCompleter::CaseInsensitivelySortedModel);
+    completer-&gt;setCaseSensitivity(Qt::CaseInsensitive);
+    completer-&gt;setWrapAround(false);
+    completingTextEdit-&gt;setCompleter(completer);
+
+    setCentralWidget(completingTextEdit);
+    resize(500, 300);
+    setWindowTitle(tr(&quot;Completer&quot;));
+}
+</db:programlisting>
+<db:para>The createMenu() function creates the necessary <db:link xlink:href="qaction.xml">QAction</db:link> objects needed for the &quot;File&quot; and &quot;Help&quot; menu and their <db:link xlink:href="qaction.xml#triggered">triggered</db:link>() signals are connected to the quit(), about(), and aboutQt() slots respectively.</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenu()
+{
+    QAction *exitAction = new QAction(tr(&quot;Exit&quot;), this);
+    QAction *aboutAct = new QAction(tr(&quot;About&quot;), this);
+    QAction *aboutQtAct = new QAction(tr(&quot;About Qt&quot;), this);
+
+    connect(exitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+    connect(aboutAct, SIGNAL(triggered()), this, SLOT(about()));
+    connect(aboutQtAct, SIGNAL(triggered()), qApp, SLOT(aboutQt()));
+
+    QMenu* fileMenu = menuBar()-&gt;addMenu(tr(&quot;File&quot;));
+    fileMenu-&gt;addAction(exitAction);
+
+    QMenu* helpMenu = menuBar()-&gt;addMenu(tr(&quot;About&quot;));
+    helpMenu-&gt;addAction(aboutAct);
+    helpMenu-&gt;addAction(aboutQtAct);
+}
+</db:programlisting>
+<db:para>The modelFromFile() function accepts a <db:code role="parameter">fileName</db:code> and attempts to extract the contents of this file into a <db:link xlink:href="qstringlistmodel.xml">QStringListModel</db:link>. We display the <db:link xlink:href="qt.xml#CursorShape-enum">Qt::WaitCursor</db:link> when we are populating the <db:link xlink:href="qstringlist.xml">QStringList</db:link>, words, and restore the mouse cursor when we are done.</db:para>
+<db:programlisting language="cpp">QAbstractItemModel *MainWindow::modelFromFile(const QString&amp; fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly))
+        return new QStringListModel(completer);
+
+#ifndef QT_NO_CURSOR
+    QApplication::setOverrideCursor(QCursor(Qt::WaitCursor));
+#endif
+    QStringList words;
+
+    while (!file.atEnd()) {
+        QByteArray line = file.readLine();
+        if (!line.isEmpty())
+            words &lt;&lt; line.trimmed();
+    }
+
+#ifndef QT_NO_CURSOR
+    QApplication::restoreOverrideCursor();
+#endif
+    return new QStringListModel(words, completer);
+}
+</db:programlisting>
+<db:para>The about() function provides a brief description about the Custom Completer example.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About&quot;), tr(&quot;This example demonstrates the &quot;
+        &quot;different features of the QCompleter class.&quot;));
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="main-function">
+<db:title>main() Function</db:title>
+<db:para>The main() function instantiates MainWindow and invokes the <db:link xlink:href="qwidget.xml#show">show</db:link>() function.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    Q_INIT_RESOURCE(customcompleter);
+
+    QApplication app(argc, argv);
+    MainWindow window;
+    window.show();
+    return app.exec();
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/customcompleter.pro">tools/customcompleter/customcompleter.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/customcompleter.qrc">tools/customcompleter/customcompleter.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/main.cpp">tools/customcompleter/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/mainwindow.cpp">tools/customcompleter/mainwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/mainwindow.h">tools/customcompleter/mainwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/textedit.cpp">tools/customcompleter/textedit.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tools/customcompleter/textedit.h">tools/customcompleter/textedit.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

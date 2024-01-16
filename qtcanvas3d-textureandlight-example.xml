@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Lit and Textured Cube Example</db:title>
+<db:productname>QtCanvas3D</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Canvas 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple cube with texturing and lighting.</db:para>
+<db:para>This documentation was introduced in QtCanvas3D 1.0.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Lit and Textured Cube example goes through the basics of using Qt Canvas 3D.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/textureandlight-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="qt-quick-implementation">
+<db:title>Qt Quick Implementation</db:title>
+<db:section xml:id="creating-canvas3d">
+<db:title>Creating Canvas3D</db:title>
+<db:para>In <db:link xlink:href="">main.qml</db:link>, we add a <db:link xlink:href="qml-qtcanvas3d-canvas3d.xml">Canvas3D</db:link> under the root <db:code>Item</db:code>:</db:para>
+<db:programlisting language="qml">Canvas3D {
+    id: canvas3d
+    anchors.fill:parent
+    ...
+</db:programlisting>
+<db:para>Inside it, we catch the <db:code>initializeGL</db:code> and <db:code>paintGL</db:code> signals to forward the initialization and rendering calls to the js object:</db:para>
+<db:programlisting language="qml">// Emitted when one time initializations should happen
+onInitializeGL: {
+    GLCode.initializeGL(canvas3d);
+}
+
+// Emitted each time Canvas3D is ready for a new frame
+onPaintGL: {
+    GLCode.paintGL(canvas3d);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="importing-the-javascript-file">
+<db:title>Importing the JavaScript File</db:title>
+<db:para>We import the JavaScript file in the QML:</db:para>
+<db:programlisting language="qml">import &quot;textureandlight.js&quot; as GLCode
+</db:programlisting>
+<db:para>In the <db:code>initializeGL</db:code> function of the JavaScript, we initialize the OpenGL state. We also create the <db:link xlink:href="qml-qtcanvas3d-textureimage.xml">TextureImage</db:link> and register handlers for image load success and fail signals. If the load succeeds, the OpenGL texture is created and filled with pixel data from the loaded image.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="javascript-implementation">
+<db:title>JavaScript Implementation</db:title>
+<db:section xml:id="matrix-library">
+<db:title>Matrix Library</db:title>
+<db:para>In <db:link xlink:href="">textureandlight.js</db:link>, we first include a fast matrix library. Using this makes it a lot easier to handle 3D math operations such as matrix transformations:</db:para>
+<db:programlisting language="cpp">Qt.include(&quot;gl-matrix.js&quot;)
+</db:programlisting>
+</db:section>
+<db:section xml:id="initializegl-function">
+<db:title>initializeGL Function</db:title>
+<db:para>Let's take a closer look at the <db:code>initializeGL</db:code> function. It is called by <db:link xlink:href="qml-qtcanvas3d-canvas3d.xml">Canvas3D</db:link> once the render node is ready.</db:para>
+<db:para>First of all, we need to get a <db:link xlink:href="qml-qtcanvas3d-context3d.xml">Context3D</db:link> from our <db:link xlink:href="qml-qtcanvas3d-canvas3d.xml">Canvas3D</db:link>. We want a context that supports depth buffer and antialising:</db:para>
+<db:programlisting language="cpp">// Get the OpenGL context object that represents the API we call
+gl = canvas.getContext(&quot;canvas3d&quot;, {depth:true, antialias:true, alpha:false});
+</db:programlisting>
+<db:para>Then we initialize the OpenGL state for the context:</db:para>
+<db:programlisting language="cpp">// Setup the OpenGL state
+gl.enable(gl.DEPTH_TEST);
+gl.depthFunc(gl.LESS);
+gl.enable(gl.CULL_FACE);
+gl.cullFace(gl.BACK);
+gl.clearColor(0.98, 0.98, 0.98, 1.0);
+gl.clearDepth(1.0);
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+</db:programlisting>
+<db:para>Next, let's take a look into shader initialization in the <db:code>initShaders</db:code> function, which we call in <db:code>initializeGL</db:code>. First we define the vertex shader:</db:para>
+<db:programlisting language="cpp">var vertexShader = getShader(gl,
+                             &quot;attribute highp vec3 aVertexNormal;    \
+                              attribute highp vec3 aVertexPosition;  \
+                              attribute highp vec2 aTextureCoord;    \
+                                                                     \
+                              uniform highp mat4 uNormalMatrix;      \
+                              uniform mat4 uMVMatrix;                \
+                              uniform mat4 uPMatrix;                 \
+                                                                     \
+                              varying mediump vec4 vColor;           \
+                              varying highp vec2 vTextureCoord;      \
+                              varying highp vec3 vLighting;          \
+                                                                     \
+                              void main(void) {                      \
+                                  gl_Position = uPMatrix * uMVMatrix * vec4(aVertexPosition, 1.0); \
+                                  vTextureCoord = aTextureCoord;                                   \
+                                  highp vec3 ambientLight = vec3(0.5, 0.5, 0.5);                   \
+                                  highp vec3 directionalLightColor = vec3(0.75, 0.75, 0.75);       \
+                                  highp vec3 directionalVector = vec3(0.85, 0.8, 0.75);            \
+                                  highp vec4 transformedNormal = uNormalMatrix * vec4(aVertexNormal, 1.0); \
+                                  highp float directional = max(dot(transformedNormal.xyz, directionalVector), 0.0); \
+                                  vLighting = ambientLight + (directionalLightColor * directional); \
+                              }&quot;, gl.VERTEX_SHADER);
+</db:programlisting>
+<db:para>We follow that up by defining a fragment shader:</db:para>
+<db:programlisting language="cpp">var fragmentShader = getShader(gl,
+                               &quot;varying highp vec2 vTextureCoord;  \
+                                varying highp vec3 vLighting;      \
+                                                                   \
+                                uniform sampler2D uSampler;        \
+                                                                   \
+                                void main(void) {                  \
+                                    mediump vec3 texelColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t)).rgb; \
+                                    gl_FragColor = vec4(texelColor * vLighting, 1.0);                                      \
+                                }&quot;, gl.FRAGMENT_SHADER);
+</db:programlisting>
+<db:para>Then we need to create the shader program (<db:link xlink:href="qml-qtcanvas3d-canvas3dprogram.xml">Canvas3DProgram</db:link>), attach the shaders to it, and then link and use the program:</db:para>
+<db:programlisting language="cpp">// Create the Canvas3DProgram for shader
+var shaderProgram = gl.createProgram();
+
+// Attach the shader sources to the shader program
+gl.attachShader(shaderProgram, vertexShader);
+gl.attachShader(shaderProgram, fragmentShader);
+
+// Link the program
+gl.linkProgram(shaderProgram);
+
+// Check the linking status
+if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+    console.log(&quot;Could not initialise shaders&quot;);
+    console.log(gl.getProgramInfoLog(shaderProgram));
+}
+
+// Take the shader program into use
+gl.useProgram(shaderProgram);
+</db:programlisting>
+<db:para>And finally, look up and store the vertex attributes and uniform locations:</db:para>
+<db:programlisting language="cpp">// Look up where the vertex data needs to go
+vertexPositionAttribute = gl.getAttribLocation(shaderProgram, &quot;aVertexPosition&quot;);
+gl.enableVertexAttribArray(vertexPositionAttribute);
+textureCoordAttribute = gl.getAttribLocation(shaderProgram, &quot;aTextureCoord&quot;);
+gl.enableVertexAttribArray(textureCoordAttribute);
+vertexNormalAttribute = gl.getAttribLocation(shaderProgram, &quot;aVertexNormal&quot;);
+gl.enableVertexAttribArray(vertexNormalAttribute);
+
+// Get the uniform locations
+pMatrixUniform = gl.getUniformLocation(shaderProgram, &quot;uPMatrix&quot;);
+mvMatrixUniform = gl.getUniformLocation(shaderProgram, &quot;uMVMatrix&quot;);
+nUniform = gl.getUniformLocation(shaderProgram, &quot;uNormalMatrix&quot;);
+
+// Setup texture sampler uniform
+var textureSamplerUniform = gl.getUniformLocation(shaderProgram, &quot;uSampler&quot;)
+gl.activeTexture(gl.TEXTURE0);
+gl.uniform1i(textureSamplerUniform, 0);
+gl.bindTexture(gl.TEXTURE_2D, 0);
+</db:programlisting>
+<db:para>After initializing the shader program, we set up the vertex buffer in <db:code>initBuffers</db:code> function. Let's look at the vertex index buffer creation as an example:</db:para>
+<db:programlisting language="cpp">var cubeVertexIndexBuffer = gl.createBuffer();
+gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, cubeVertexIndexBuffer);
+gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,
+              new Uint16Array([
+                                        0,  1,  2,      0,  2,  3,    // front
+                                        4,  5,  6,      4,  6,  7,    // back
+                                        8,  9,  10,     8,  10, 11,   // top
+                                        12, 13, 14,     12, 14, 15,   // bottom
+                                        16, 17, 18,     16, 18, 19,   // right
+                                        20, 21, 22,     20, 22, 23    // left
+                                    ]),
+              gl.STATIC_DRAW);
+</db:programlisting>
+<db:para>Above, first we create the buffer, then bind it and finally insert the data into it. Other buffers are all handled in a similar fashion.</db:para>
+<db:para>As the final step in <db:code>initializeGL</db:code>, we create a texture image from <db:link xlink:href="qml-qtcanvas3d-textureimagefactory.xml">TextureImageFactory</db:link>, and register handlers for <db:code>imageLoaded</db:code> and <db:code>imageLoadingFailed</db:code> signals. Once the texture image is successfully loaded, we create the actual texture:</db:para>
+<db:programlisting language="cpp">qtLogoImage.imageLoaded.connect(function() {
+    console.log(&quot;Texture loaded, &quot;+qtLogoImage.src);
+    // Create the Canvas3DTexture object
+    cubeTexture = gl.createTexture();
+    // Bind it
+    gl.bindTexture(gl.TEXTURE_2D, cubeTexture);
+    // Set the properties
+    gl.texImage2D(gl.TEXTURE_2D,    // target
+                  0,                // level
+                  gl.RGBA,          // internalformat
+                  gl.RGBA,          // format
+                  gl.UNSIGNED_BYTE, // type
+                  qtLogoImage);     // pixels
+    // Set texture filtering parameters
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+    // Generate mipmap
+    gl.generateMipmap(gl.TEXTURE_2D);
+});
+</db:programlisting>
+</db:section>
+<db:section xml:id="paintgl-function">
+<db:title>paintGL Function</db:title>
+<db:para><db:code>paintGL</db:code> is called by <db:link xlink:href="qml-qtcanvas3d-canvas3d.xml">Canvas3D</db:link> whenever it is ready to receive a new frame. Let's go through the steps that are done in each render cycle.</db:para>
+<db:para>First we check if canvas has been resized or if pixel ratio has changed, and update the projection matrix if necessary:</db:para>
+<db:programlisting language="cpp">var pixelRatio = canvas.devicePixelRatio;
+var currentWidth = canvas.width * pixelRatio;
+var currentHeight = canvas.height * pixelRatio;
+if (currentWidth !== width || currentHeight !== height ) {
+    width = currentWidth;
+    height = currentHeight;
+    gl.viewport(0, 0, width, height);
+    mat4.perspective(pMatrix, degToRad(45), width / height, 0.1, 500.0);
+    gl.uniformMatrix4fv(pMatrixUniform, false, pMatrix);
+}
+</db:programlisting>
+<db:para>Then we clear the render area using the clear color set in <db:code>initializeGL</db:code>:</db:para>
+<db:programlisting language="cpp">gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+</db:programlisting>
+<db:para>Next we reset the model view matrix and apply translation and rotations:</db:para>
+<db:programlisting language="cpp">mat4.identity(mvMatrix);
+mat4.translate(mvMatrix, mvMatrix, [(canvas.yRotAnim - 120.0) / 120.0,
+                                    (canvas.xRotAnim -  60.0) / 50.0,
+                                    -10.0]);
+mat4.rotate(mvMatrix, mvMatrix, degToRad(canvas.xRotAnim), [0, 1, 0]);
+mat4.rotate(mvMatrix, mvMatrix, degToRad(canvas.yRotAnim), [1, 0, 0]);
+mat4.rotate(mvMatrix, mvMatrix, degToRad(canvas.zRotAnim), [0, 0, 1]);
+gl.uniformMatrix4fv(mvMatrixUniform, false, mvMatrix);
+</db:programlisting>
+<db:para>As we have a lit cube, we invert and transpose the model view matrix to be used for lighting calculations:</db:para>
+<db:programlisting language="cpp">mat4.invert(nMatrix, mvMatrix);
+mat4.transpose(nMatrix, nMatrix);
+gl.uniformMatrix4fv(nUniform, false, nMatrix);
+</db:programlisting>
+<db:para>And finally we draw the cube:</db:para>
+<db:programlisting language="cpp">gl.drawElements(gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0);
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="logging">
+<db:title>Logging</db:title>
+<db:para>Qt Canvas 3D uses Qt's categorized logging feature. This example enables all Qt Canvas 3D log output with the code shown below. For more on <db:link xlink:href="qml-qtcanvas3d-canvas3d.xml">Canvas3D</db:link>'s logging features refer to <db:link xlink:href="qtcanvas3d-logging.xml">Qt Canvas 3D Logging</db:link>.</db:para>
+<db:programlisting language="cpp">// Uncomment to turn on all the logging categories of Canvas3D
+//    QString loggingFilter = QString(&quot;qt.canvas3d.info.debug=true\n&quot;);
+//    loggingFilter += QStringLiteral(&quot;qt.canvas3d.rendering.debug=true\n&quot;)
+//            + QStringLiteral(&quot;qt.canvas3d.rendering.warning=true\n&quot;)
+//            + QStringLiteral(&quot;qt.canvas3d.glerrors.debug=true&quot;);
+//    QLoggingCategory::setFilterRules(loggingFilter);
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/main.cpp">textureandlight/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/qml/textureandlight/main.qml">textureandlight/qml/textureandlight/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/qml/textureandlight/textureandlight.js">textureandlight/qml/textureandlight/textureandlight.js</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/textureandlight.pro">textureandlight/textureandlight.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/textureandlight.qrc">textureandlight/textureandlight.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="textureandlight/qml/textureandlight/qtlogo.png">textureandlight/qml/textureandlight/qtlogo.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

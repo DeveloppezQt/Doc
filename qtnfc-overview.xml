@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt NFC Overview</db:title>
+<db:productname>QtNfc</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt NFC Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Provides access to NFC enabled devices.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>With the Qt NFC API typical use cases are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Detecting NFC tags.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Reading and writing NDEF messages.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Registering NDEF message handlers.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Sharing files and messages.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The following sections describe how to use Qt NFC C++ classes and QML types for the above use cases.</db:para>
+<db:section xml:id="c-overview">
+<db:title>C++ Overview</db:title>
+<db:para>The C++ API provides access to the full feature set of the Qt NFC API. This section introduces the major features available to developers.</db:para>
+<db:section xml:id="detecting-nfc-tags">
+<db:title>Detecting NFC Tags</db:title>
+<db:para>The <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link> class is responsible for the detection of new NFC tags coming into range of the device. The <db:link xlink:href="qnearfieldmanager.xml#targetDetected">QNearFieldManager::targetDetected</db:link>() and <db:link xlink:href="qnearfieldmanager.xml#targetLost">QNearFieldManager::targetLost</db:link>() signals are emitted when a tag comes into or leaves the range. The passed <db:link xlink:href="qnearfieldtarget.xml">QNearFieldTarget</db:link> parameter acts as primary interaction point for each detected tag. The detection does not actually start though until <db:link xlink:href="qnearfieldmanager.xml#startTargetDetection">QNearFieldManager::startTargetDetection</db:link>() has been called.</db:para>
+<db:programlisting language="cpp">m_manager = new QNearFieldManager(this);
+connect(m_manager, SIGNAL(targetDetected(QNearFieldTarget*)),
+        this, SLOT(targetDetected(QNearFieldTarget*)));
+connect(m_manager, SIGNAL(targetLost(QNearFieldTarget*)),
+        this, SLOT(targetLost(QNearFieldTarget*)));
+m_manager-&gt;startTargetDetection();
+</db:programlisting>
+<db:para>Finally the detection can be stopped:</db:para>
+<db:programlisting language="cpp">m_manager-&gt;stopTargetDetection();
+</db:programlisting>
+<db:para>Although each <db:link xlink:href="qnearfieldtarget.xml">QNearFieldTarget</db:link> instance is owned by its related <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link> instance it can be beneficial to manually delete each instance. Otherwise they would continue to exist until the <db:link xlink:href="qnearfieldmanager.xml">QNearFieldManager</db:link> instance is deleted. The best way to do that would be in response to the <db:link xlink:href="qnearfieldmanager.xml#targetLost">QNearFieldManager::targetLost</db:link>() signal:</db:para>
+<db:programlisting language="cpp">void MainWindow::targetLost(QNearFieldTarget *target)
+{
+    target-&gt;deleteLater();
+}
+</db:programlisting>
+<db:note>
+<db:para>The target object should only be deleted via deleteLater() if it is deleted inside the slot.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="reading-and-writing-ndef-messages">
+<db:title>Reading and Writing NDEF Messages</db:title>
+<db:para>The <db:link xlink:href="qnearfieldtarget.xml">QNearFieldTarget</db:link> instance returned by <db:link xlink:href="qnearfieldmanager.xml#targetDetected">QNearFieldManager::targetDetected</db:link>() signal is used to interact with the tag. Reading and writing a message is an asynchronous operation. The <db:link xlink:href="">QNearFieldTarget::RequestId</db:link> class associates individual operations and their results.</db:para>
+<db:programlisting language="cpp">void MainWindow::targetDetected(QNearFieldTarget *target)
+{
+    switch (m_touchAction) {
+    case NoAction:
+        break;
+    case ReadNdef:
+        connect(target, SIGNAL(ndefMessageRead(QNdefMessage)),
+                this, SLOT(ndefMessageRead(QNdefMessage)));
+        connect(target, SIGNAL(error(QNearFieldTarget::Error,QNearFieldTarget::RequestId)),
+                this, SLOT(targetError(QNearFieldTarget::Error,QNearFieldTarget::RequestId)));
+
+        m_request = target-&gt;readNdefMessages();
+        if (!m_request.isValid()) // cannot read messages
+            targetError(QNearFieldTarget::NdefReadError, m_request);
+        break;
+    case WriteNdef:
+        connect(target, SIGNAL(ndefMessagesWritten()), this, SLOT(ndefMessageWritten()));
+        connect(target, SIGNAL(error(QNearFieldTarget::Error,QNearFieldTarget::RequestId)),
+                this, SLOT(targetError(QNearFieldTarget::Error,QNearFieldTarget::RequestId)));
+
+        m_request = target-&gt;writeNdefMessages(QList&lt;QNdefMessage&gt;() &lt;&lt; ndefMessage());
+        if (!m_request.isValid()) // cannot write messages
+            targetError(QNearFieldTarget::NdefWriteError, m_request);
+        break;
+    }
+}
+</db:programlisting>
+<db:para>Once the <db:link xlink:href="qnearfieldtarget.xml#readNdefMessages">QNearFieldTarget::readNdefMessages</db:link>() request was successfully processed, the <db:link xlink:href="qnearfieldtarget.xml#ndefMessageRead">QNearFieldTarget::ndefMessageRead</db:link>() signal is emitted. Each returned <db:link xlink:href="qndefmessage.xml">QNdefMessage</db:link> may consist of zero or more <db:link xlink:href="qndefrecord.xml">QNdefRecord</db:link> entries, which can be identified by their type. For more information about processing of records, see the <db:link xlink:href="qndefrecord.xml">QNdefRecord</db:link> class documentation. As the above code demonstrates, writing of NDEF messages is triggered via <db:link xlink:href="qnearfieldtarget.xml#writeNdefMessages">QNearFieldTarget::writeNdefMessages</db:link>(). The successful completion of the write operation is indicated by the emission of the <db:link xlink:href="qnearfieldtarget.xml#ndefMessagesWritten">QNearFieldTarget::ndefMessagesWritten</db:link>() signal. Any type of error during read or write is indicated via <db:link xlink:href="qnearfieldtarget.xml#error">QNearFieldTarget::error</db:link>().</db:para>
+</db:section>
+<db:section xml:id="registering-ndef-message-handlers">
+<db:title>Registering NDEF Message Handlers</db:title>
+<db:para>The above described method (of reading NDEF messages) directly connects to the platform's NFC infrastructure. However on some platforms (in particular mobile platforms) this may not actually trigger the target slot if the application is currently running in the background. This is not desirable in cases where an application wants to be activated if the platform detects a tag of particular type. For this purpose the Qt NFC API provides the possibility to register an NDEF message handler. The handler is called by the operating system, when the detected NDEF message matches the given filter criteria. Depending on the platform it may even be possible to start the application that registered the handler.</db:para>
+<db:note>
+<db:para>This feature is not available on all platforms and, in addition to the code snippets below, may require further platform specific setup.</db:para>
+</db:note>
+<db:programlisting language="cpp">manager = new QNearFieldManager(this);
+if (!manager-&gt;isAvailable()) {
+    qWarning() &lt;&lt; &quot;NFC not available&quot;;
+    return;
+}
+
+QNdefFilter filter;
+filter.setOrderMatch(false);
+filter.appendRecord&lt;QNdefNfcTextRecord&gt;(1, UINT_MAX);
+filter.appendRecord&lt;QNdefNfcUriRecord&gt;();
+// type parameter cannot specify substring so filter for &quot;image/&quot; below
+filter.appendRecord(QNdefRecord::Mime, QByteArray(), 0, 1);
+
+int result = manager-&gt;registerNdefMessageHandler(filter, this,
+                                   SLOT(handleMessage(QNdefMessage,QNearFieldTarget*)));
+</db:programlisting>
+<db:para>For comparison an application that uses an empty NDEF filter (match all behavior) in combination with <db:link xlink:href="qnearfieldmanager.xml#registerNdefMessageHandler">QNearFieldManager::registerNdefMessageHandler</db:link>() would behave similarly to another application that uses <db:link xlink:href="qnearfieldtarget.xml#readNdefMessages">QNearFieldTarget::readNdefMessages</db:link>() while being in the forground. For more information about registration details of NDEF message handlers, see the <db:link xlink:href="qnearfieldmanager.xml#automatically-launching-ndef-message-handlers">QNearFieldManager</db:link> class description.</db:para>
+<db:para>The content of <db:code>handleMessage()</db:code> may look like the snippet below. Any incoming NDEF message of type <db:code>text</db:code> or <db:code>uri</db:code> will be processed:</db:para>
+<db:programlisting language="cpp">void AnnotatedUrl::handleMessage(const QNdefMessage &amp;message, QNearFieldTarget *target)
+{
+    foreach (const QNdefRecord &amp;record, message) {
+        if (record.isRecordType&lt;QNdefNfcTextRecord&gt;()) {
+            QNdefNfcTextRecord textRecord(record);
+
+            title = textRecord.text();
+            QLocale locale(textRecord.locale());
+        } else if (record.isRecordType&lt;QNdefNfcUriRecord&gt;()) {
+            QNdefNfcUriRecord uriRecord(record);
+
+            url = uriRecord.uri();
+        }
+    }
+
+    emit annotatedUrl(url, title, pixmap);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="sharing-files-and-messages">
+<db:title>Sharing Files and Messages</db:title>
+<db:para>Since Qt 5.3, Qt NFC provides a generic NFC share feature. If both devices support the same protocol, the feature can be used to share files or NDEF messages. The advantage is that the two involved partners can quickly establish a connection via NFC but transfer the data through, for example, Bluetooth or Wifi. Effectively, this combines the low configuration effort of NFC with high data rate communication bearers which usually require a much more complex setup.</db:para>
+<db:note>
+<db:para>The API does not make any guarantees about the actual communication bearer used during the transfer. The bearer is chosen based on the device's capabilities and the properties of the to-be-shared data.</db:para>
+</db:note>
+<db:para><db:link xlink:href="qnearfieldsharemanager.xml">QNearFieldShareManager</db:link> and <db:link xlink:href="qnearfieldsharetarget.xml">QNearFieldShareTarget</db:link> are responsible for accessing the NFC share feature.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="qml-overview">
+<db:title>QML Overview</db:title>
+<db:para>The QML API only supports a very small subset of the Qt NFC feature set. This section outlines the available QML features.</db:para>
+<db:section xml:id="reading-ndef-messages">
+<db:title>Reading NDEF Messages</db:title>
+<db:para>The user can specify NDEF filters and use those filters to register for the automatic reception of NDEF messages which match those filters. The <db:link xlink:href="qml-qtnfc-nearfield.xml#messageRecords-prop">NearField::messageRecords</db:link> property contains the list of NDEF records of the last NDEF message read matching the given filters.</db:para>
+<db:programlisting language="qml">    NearField {
+        filter: [ NdefFilter { type: &quot;U&quot;; typeNameFormat: NdefRecord.NfcRtd; minimum: 1; maximum: 1 } ]
+        orderMatch: false
+
+        onMessageRecordsChanged: displayMessage()
+    }
+</db:programlisting>
+<db:para>If no filter is set, the message handler will match all incoming NDEF messages.</db:para>
+</db:section>
+</db:section>
+</db:article>

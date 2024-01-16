@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Context2D Example</db:title>
+<db:productname>QtScript</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>QtScript Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>QtScript Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;window.h&quot;
+#include &quot;environment.h&quot;
+#include &quot;context2d.h&quot;
+#include &quot;qcontext2dcanvas.h&quot;
+#include &lt;QHBoxLayout&gt;
+#include &lt;QListWidget&gt;
+#include &lt;QDir&gt;
+#include &lt;QMessageBox&gt;
+
+#ifndef QT_NO_SCRIPTTOOLS
+#include &lt;QAction&gt;
+#include &lt;QApplication&gt;
+#include &lt;QMainWindow&gt;
+#include &lt;QPushButton&gt;
+#include &lt;QVBoxLayout&gt;
+#include &lt;QScriptEngineDebugger&gt;
+#endif
+
+static QString scriptsDir()
+{
+    if (QFile::exists(&quot;./scripts&quot;))
+        return &quot;./scripts&quot;;
+    return &quot;:/scripts&quot;;
+}
+
+Window::Window(QWidget *parent)
+    : QWidget(parent)
+#ifndef QT_NO_SCRIPTTOOLS
+      , m_debugger(0), m_debugWindow(0)
+#endif
+{
+    m_env = new Environment(this);
+    QObject::connect(m_env, SIGNAL(scriptError(QScriptValue)),
+                     this, SLOT(reportScriptError(QScriptValue)));
+
+    Context2D *context = new Context2D(this);
+    context-&gt;setSize(150, 150);
+    m_canvas = new QContext2DCanvas(context, m_env, this);
+    m_canvas-&gt;setFixedSize(context-&gt;size());
+    m_canvas-&gt;setObjectName(&quot;tutorial&quot;);
+    m_env-&gt;addCanvas(m_canvas);
+
+#ifndef QT_NO_SCRIPTTOOLS
+    QVBoxLayout *vbox = new QVBoxLayout();
+    vbox-&gt;addWidget(m_canvas);
+    m_debugButton = new QPushButton(tr(&quot;Run in Debugger&quot;));
+    connect(m_debugButton, SIGNAL(clicked()), this, SLOT(runInDebugger()));
+    vbox-&gt;addWidget(m_debugButton);
+#endif
+
+    QHBoxLayout *hbox = new QHBoxLayout(this);
+    m_view = new QListWidget(this);
+    m_view-&gt;setEditTriggers(QAbstractItemView::NoEditTriggers);
+    hbox-&gt;addWidget(m_view);
+#ifndef QT_NO_SCRIPTTOOLS
+    hbox-&gt;addLayout(vbox);
+#else
+    hbox-&gt;addWidget(m_canvas);
+#endif
+
+    QDir dir(scriptsDir());
+    QFileInfoList entries = dir.entryInfoList(QStringList() &lt;&lt; &quot;*.js&quot;);
+    for (int i = 0; i &lt; entries.size(); ++i)
+        m_view-&gt;addItem(entries.at(i).fileName());
+    connect(m_view, SIGNAL(currentItemChanged(QListWidgetItem*,QListWidgetItem*)),
+            this, SLOT(selectScript(QListWidgetItem*)));
+
+    setWindowTitle(tr(&quot;Context 2D&quot;));
+}
+
+void Window::selectScript(QListWidgetItem *item)
+{
+    QString fileName = item-&gt;text();
+    runScript(fileName, /*debug=*/false);
+}
+
+void Window::reportScriptError(const QScriptValue &amp;error)
+{
+    QMessageBox::warning(this, tr(&quot;Context 2D&quot;), tr(&quot;Line %0: %1&quot;)
+                         .arg(error.property(&quot;lineNumber&quot;).toInt32())
+                         .arg(error.toString()));
+}
+
+#ifndef QT_NO_SCRIPTTOOLS
+void Window::runInDebugger()
+{
+    QListWidgetItem *item = m_view-&gt;currentItem();
+    if (item) {
+        QString fileName = item-&gt;text();
+        runScript(fileName, /*debug=*/true);
+    }
+}
+#endif
+
+void Window::runScript(const QString &amp;fileName, bool debug)
+{
+    QFile file(scriptsDir() + &quot;/&quot; + fileName);
+    file.open(QIODevice::ReadOnly);
+    QString contents = file.readAll();
+    file.close();
+    m_env-&gt;reset();
+
+#ifndef QT_NO_SCRIPTTOOLS
+    if (debug) {
+        if (!m_debugger) {
+            m_debugger = new QScriptEngineDebugger(this);
+            m_debugWindow = m_debugger-&gt;standardWindow();
+            m_debugWindow-&gt;setWindowModality(Qt::ApplicationModal);
+            m_debugWindow-&gt;resize(1280, 704);
+        }
+        m_debugger-&gt;attachTo(m_env-&gt;engine());
+        m_debugger-&gt;action(QScriptEngineDebugger::InterruptAction)-&gt;trigger();
+    } else {
+        if (m_debugger)
+            m_debugger-&gt;detach();
+    }
+#else
+    Q_UNUSED(debug);
+#endif
+
+    QScriptValue ret = m_env-&gt;evaluate(contents, fileName);
+
+#ifndef QT_NO_SCRIPTTOOLS
+    if (m_debugWindow)
+        m_debugWindow-&gt;hide();
+#endif
+
+    if (ret.isError())
+        reportScriptError(ret);
+}
+
+</db:programlisting>
+</db:article>

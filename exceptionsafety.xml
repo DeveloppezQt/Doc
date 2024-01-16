@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Exception Safety</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A guide to exception safety in Qt.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis role="bold">Preliminary warning</db:emphasis>: Exception safety is not feature complete! Common cases should work, but classes might still leak or even crash.</db:para>
+<db:para>Qt itself will not throw exceptions. Instead, error codes are used. In addition, some classes have user visible error messages, for example <db:link xlink:href="qiodevice.xml#errorString">QIODevice::errorString</db:link>() or <db:link xlink:href="qsqlquery.xml#lastError">QSqlQuery::lastError</db:link>(). This has historical and practical reasons - turning on exceptions can increase the library size by over 20%.</db:para>
+<db:para>The following sections describe Qt's behavior if exception support is enabled at compile time.</db:para>
+<db:section xml:id="exception-safe-modules">
+<db:title>Exception Safe Modules</db:title>
+<db:section xml:id="containers">
+<db:title>Containers</db:title>
+<db:para>Qt's <db:link xlink:href="topics-core.xml#container-classes">container classes</db:link> are generally exception neutral. They pass any exception that happens within their contained type <db:code>T</db:code> to the user while keeping their internal state valid.</db:para>
+<db:para>Example:</db:para>
+<db:programlisting language="cpp">QList&lt;QString&gt; list;
+...
+try {
+    list.append(&quot;hello&quot;);
+} catch (...) {
+}
+// list is safe to use - the exception did not affect it.
+</db:programlisting>
+<db:para>Exceptions to that rule are containers for types that can throw during assignment or copy constructions. For those types, functions that modify the container as well as returning a value, are unsafe to use:</db:para>
+<db:programlisting language="cpp">MyType s = list.takeAt(2);
+</db:programlisting>
+<db:para>If an exception occurs during the assignment of <db:code>s</db:code>, the value at index 2 is already removed from the container, but hasn't been assigned to <db:code>s</db:code> yet. It is lost without chance of recovery.</db:para>
+<db:para>The correct way to write it:</db:para>
+<db:programlisting language="cpp">MyType s = list.at(2);
+list.removeAt(2);
+</db:programlisting>
+<db:para>If the assignment throws, the container will still contain the value; no data loss occurred.</db:para>
+<db:para>Note that implicitly shared Qt classes will not throw in their assignment operators or copy constructors, so the limitation above does not apply.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="out-of-memory-handling">
+<db:title>Out of Memory Handling</db:title>
+<db:para>Most desktop operating systems overcommit memory. This means that <db:code>malloc()</db:code> or <db:code>operator new</db:code> return a valid pointer, even though there is not enough memory available at allocation time. On such systems, no exception of type <db:code>std::bad_alloc</db:code> is thrown.</db:para>
+<db:para>On all other operating systems, Qt will throw an exception of type std::bad_alloc if any allocation fails. Allocations can fail if the system runs out of memory or doesn't have enough continuous memory to allocate the requested size.</db:para>
+<db:para>Exceptions to that rule are documented. As an example, <db:link xlink:href="qimage.xml">QImage</db:link> constructors will create a <db:link xlink:href="qimage.xml#isNull">null</db:link> image if not enough memory exists instead of throwing an exception.</db:para>
+</db:section>
+<db:section xml:id="recovering-from-exceptions">
+<db:title>Recovering from Exceptions</db:title>
+<db:para>Currently, the only supported use case for recovering from exceptions thrown within Qt (for example due to out of memory) is to exit the event loop and do some cleanup before exiting the application.</db:para>
+<db:para>Typical use case:</db:para>
+<db:programlisting language="cpp">QApplication app(argc, argv);
+...
+try {
+    app.exec();
+} catch (const std::bad_alloc &amp;) {
+    // clean up here, e.g. save the session
+    // and close all config files.
+
+    return 0; // exit the application
+}
+</db:programlisting>
+<db:para>After an exception is thrown, the connection to the windowing server might already be closed. It is not safe to call a GUI related function after catching an exception.</db:para>
+</db:section>
+<db:section xml:id="exceptions-in-client-code">
+<db:title>Exceptions in Client Code</db:title>
+<db:section xml:id="signals-and-slots">
+<db:title>Signals and Slots</db:title>
+<db:para>Throwing an exception from a slot invoked by Qt's <db:link xlink:href="signalsandslots.xml">signal-slot</db:link> connection mechanism is considered undefined behaviour, unless it is handled within the slot:</db:para>
+<db:programlisting language="cpp">State state;
+StateListener stateListener;
+
+// OK; the exception is handled before it leaves the slot.
+QObject::connect(&amp;state, SIGNAL(stateChanged()), &amp;stateListener, SLOT(throwHandledException()));
+// Undefined behaviour; upon invocation of the slot, the exception will be propagated to the
+// point of emission, unwinding the stack of the Qt code (which is not guaranteed to be exception safe).
+QObject::connect(&amp;state, SIGNAL(stateChanged()), &amp;stateListener, SLOT(throwUnhandledException()));
+</db:programlisting>
+<db:para>If the slot was invoked directly, like a regular function call, exceptions may be used. This is because the connection mechanism is bypassed when invoking slots directly:</db:para>
+<db:programlisting language="cpp">State state;
+StateListener stateListener;
+
+// ...
+
+try {
+    // OK; invoking slot directly.
+    stateListener.throwException();
+} catch (...) {
+    qDebug() &lt;&lt; &quot;Handling exception not caught in slot.&quot;;
+}
+</db:programlisting>
+</db:section>
+</db:section>
+</db:article>
