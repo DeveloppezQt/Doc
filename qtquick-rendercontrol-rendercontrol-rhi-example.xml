@@ -1,0 +1,329 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QQuickRenderControl RHI Example</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render a Qt Quick scene into a <db:link xlink:href="qrhitexture.xml">QRhiTexture</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/rendercontrol-rhi-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example demonstrates how to set up a Qt Quick scene that has its rendering redirected into a <db:link xlink:href="qrhitexture.xml">QRhiTexture</db:link>. The application is then free to do whatever it wants with the resulting texture from each frame. This example is a <db:link xlink:href="qwidget.xml">QWidget</db:link>-based application that performs a readback of the image data, and then displays the collected per-frame renders with CPU and GPU-based timing information for each.</db:para>
+<db:para>By using Qt's 3D graphics API abstraction, this example is not tied to any particular graphics API. At startup, a dialog is shown with the platforms' potentially supported 3D APIs.</db:para>
+<db:programlisting language="cpp">    QDialog apiSelect;
+    QVBoxLayout *selLayout = new QVBoxLayout;
+    selLayout-&gt;addWidget(new QLabel(QObject::tr(&quot;Select graphics API to use&quot;)));
+    QListWidget *apiList = new QListWidget;
+    QVarLengthArray&lt;QSGRendererInterface::GraphicsApi, 5&gt; apiValues;
+#ifdef Q_OS_WIN
+    apiList-&gt;addItem(&quot;Direct3D 11&quot;);
+    apiValues.append(QSGRendererInterface::Direct3D11);
+    apiList-&gt;addItem(&quot;Direct3D 12&quot;);
+    apiValues.append(QSGRendererInterface::Direct3D12);
+#endif
+#if QT_CONFIG(metal)
+    apiList-&gt;addItem(&quot;Metal&quot;);
+    apiValues.append(QSGRendererInterface::Metal);
+#endif
+#if QT_CONFIG(vulkan)
+    apiList-&gt;addItem(&quot;Vulkan&quot;);
+    apiValues.append(QSGRendererInterface::Vulkan);
+#endif
+#if QT_CONFIG(opengl)
+    apiList-&gt;addItem(&quot;OpenGL / OpenGL ES&quot;);
+    apiValues.append(QSGRendererInterface::OpenGL);
+#endif
+    if (apiValues.isEmpty()) {
+        QMessageBox::critical(nullptr, QObject::tr(&quot;No 3D graphics API&quot;), QObject::tr(&quot;No 3D graphics APIs are supported in this Qt build&quot;));
+        return 1;
+    }
+</db:programlisting>
+<db:note>
+<db:para>It is not guaranteed that all selections will be functional on a given platform.</db:para>
+</db:note>
+<db:para>Once a selection is made, a QML file is loaded. However, we will not simply create a <db:link xlink:href="qquickview.xml">QQuickView</db:link> instance and <db:link xlink:href="qwindow.xml#show">show</db:link>() it. Rather, the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> that manages the Qt Quick scene is never shown on-screen. Instead, the application takes control over when and to where render, via <db:link xlink:href="qquickrendercontrol.xml">QQuickRenderControl</db:link>.</db:para>
+<db:programlisting language="cpp">void MainWindow::load(const QString &amp;filename)
+{
+    reset();
+
+    m_renderControl.reset(new QQuickRenderControl);
+    m_scene.reset(new QQuickWindow(m_renderControl.get()));
+
+    // enable lastCompletedGpuTime() on QRhiCommandBuffer, if supported by the underlying 3D API
+    QQuickGraphicsConfiguration config;
+    config.setTimestamps(true);
+    m_scene-&gt;setGraphicsConfiguration(config);
+
+#if QT_CONFIG(vulkan)
+    if (m_scene-&gt;graphicsApi() == QSGRendererInterface::Vulkan)
+        m_scene-&gt;setVulkanInstance(m_vulkanInstance);
+#endif
+
+    m_qmlEngine.reset(new QQmlEngine);
+    m_qmlComponent.reset(new QQmlComponent(m_qmlEngine.get(), QUrl::fromLocalFile(filename)));
+    if (m_qmlComponent-&gt;isError()) {
+        for (const QQmlError &amp;error : m_qmlComponent-&gt;errors())
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        QMessageBox::critical(this, tr(&quot;Cannot load QML scene&quot;), tr(&quot;Failed to load %1&quot;).arg(filename));
+        reset();
+        return;
+    }
+</db:programlisting>
+<db:para>Once the object tree is instantiated, the root item (a <db:link xlink:href="qml-qtquick-rectangle.xml">Rectangle</db:link>) is queried, its size is ensured to be valid and then propagated.</db:para>
+<db:note>
+<db:para>Scenes that use the <db:link xlink:href="qml-qtquick-window.xml">Window</db:link> element within the object tree are not supported.</db:para>
+</db:note>
+<db:programlisting language="cpp">    QObject *rootObject = m_qmlComponent-&gt;create();
+    if (m_qmlComponent-&gt;isError()) {
+        for (const QQmlError &amp;error : m_qmlComponent-&gt;errors())
+            qWarning() &lt;&lt; error.url() &lt;&lt; error.line() &lt;&lt; error;
+        QMessageBox::critical(this, tr(&quot;Cannot load QML scene&quot;), tr(&quot;Failed to create component&quot;));
+        reset();
+        return;
+    }
+
+    QQuickItem *rootItem = qobject_cast&lt;QQuickItem *&gt;(rootObject);
+    if (!rootItem) {
+        // Get rid of the on-screen window, if the root object was a Window
+        if (QQuickWindow *w = qobject_cast&lt;QQuickWindow *&gt;(rootObject))
+            delete w;
+        QMessageBox::critical(this,
+                              tr(&quot;Invalid root item in QML scene&quot;),
+                              tr(&quot;Root object is not a QQuickItem. If this is a scene with Window in it, note that such scenes are not supported.&quot;));
+        reset();
+        return;
+    }
+
+    if (rootItem-&gt;size().width() &lt; 16)
+        rootItem-&gt;setSize(QSizeF(640, 360));
+
+    m_scene-&gt;contentItem()-&gt;setSize(rootItem-&gt;size());
+    m_scene-&gt;setGeometry(0, 0, rootItem-&gt;width(), rootItem-&gt;height());
+
+    rootItem-&gt;setParentItem(m_scene-&gt;contentItem());
+
+    m_statusMsg-&gt;setText(tr(&quot;QML scene loaded&quot;));
+</db:programlisting>
+<db:para>At this point there are no rendering resources initialized, i.e., nothing has been done with the native 3D graphics API yet. A <db:link xlink:href="qrhi.xml">QRhi</db:link> is instantiated only in the next step, and that is what triggers setting up the Vulkan, Metal, Direct 3D, etc. rendering system under the hood.</db:para>
+<db:programlisting language="cpp">    const bool initSuccess = m_renderControl-&gt;initialize();
+    if (!initSuccess) {
+        QMessageBox::critical(this, tr(&quot;Cannot initialize renderer&quot;), tr(&quot;QQuickRenderControl::initialize() failed&quot;));
+        reset();
+        return;
+    }
+
+    const QSGRendererInterface::GraphicsApi api = m_scene-&gt;rendererInterface()-&gt;graphicsApi();
+    switch (api) {
+    case QSGRendererInterface::OpenGL:
+        m_apiMsg-&gt;setText(tr(&quot;OpenGL&quot;));
+        break;
+    case QSGRendererInterface::Direct3D11:
+        m_apiMsg-&gt;setText(tr(&quot;D3D11&quot;));
+        break;
+    case QSGRendererInterface::Direct3D12:
+        m_apiMsg-&gt;setText(tr(&quot;D3D12&quot;));
+        break;
+    case QSGRendererInterface::Vulkan:
+        m_apiMsg-&gt;setText(tr(&quot;Vulkan&quot;));
+        break;
+    case QSGRendererInterface::Metal:
+        m_apiMsg-&gt;setText(tr(&quot;Metal&quot;));
+        break;
+    default:
+        m_apiMsg-&gt;setText(tr(&quot;Unknown 3D API&quot;));
+        break;
+    }
+
+    QRhi *rhi = m_renderControl-&gt;rhi();
+    if (!rhi) {
+        QMessageBox::critical(this, tr(&quot;Cannot render&quot;), tr(&quot;No QRhi from QQuickRenderControl&quot;));
+        reset();
+        return;
+    }
+
+    m_driverInfoMsg-&gt;setText(QString::fromUtf8(rhi-&gt;driverInfo().deviceName));
+</db:programlisting>
+<db:note>
+<db:para>This application uses a model where Qt creates an instance of <db:link xlink:href="qrhi.xml">QRhi</db:link>. This is not the only possible approach: if the application maintains its own <db:link xlink:href="qrhi.xml">QRhi</db:link> (and so OpenGL context, Vulkan device, etc.), then Qt Quick can be requested to adopt and use that existing <db:link xlink:href="qrhi.xml">QRhi</db:link>. That is done via passing a <db:link xlink:href="qquickgraphicsdevice.xml">QQuickGraphicsDevice</db:link> created by <db:link xlink:href="qquickgraphicsdevice.xml#fromRhi">QQuickGraphicsDevice::fromRhi</db:link>() to <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link>, similarly to how <db:link xlink:href="qquickgraphicsconfiguration.xml">QQuickGraphicsConfiguration</db:link> is set in the snippet above. Consider for example the case of wanting to use the Qt Quick rendered textures in a <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link>: in that case the <db:link xlink:href="qrhiwidget.xml">QRhiWidget</db:link>'s <db:link xlink:href="qrhi.xml">QRhi</db:link> will need to passed on to Qt Quick, instead of letting Qt Quick create its own.</db:para>
+</db:note>
+<db:para>Once <db:link xlink:href="qquickrendercontrol.xml#initialize">QQuickRenderControl::initialize</db:link>() succeeds, the renderer is live and ready to go. For that, we need a color buffer to render into.</db:para>
+<db:para><db:link xlink:href="qquickrendertarget.xml">QQuickRenderTarget</db:link> is a lightweight implicitly-shared class that carries (but those not own) various sets of native or <db:link xlink:href="qrhi.xml">QRhi</db:link> objects that describe textures, render targets, or similar. Calling <db:link xlink:href="qquickwindow.xml#setRenderTarget">setRenderTarget</db:link>() on the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> (remember that we have a <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> that is not visible on-screen) is what triggers redirecting the Qt Quick scene graph's rendering into the texture provided by the application. When working with <db:link xlink:href="qrhi.xml">QRhi</db:link> (and not with native 3D API objects such as OpenGL texture IDs or VkImage objects), the application should set up a <db:link xlink:href="qrhitexturerendertarget.xml">QRhiTextureRenderTarget</db:link> and then pass it to Qt Quick via <db:link xlink:href="qquickrendertarget.xml#fromRhiRenderTarget">QQuickRenderTarget::fromRhiRenderTarget</db:link>().</db:para>
+<db:programlisting language="cpp">    const QSize pixelSize = rootItem-&gt;size().toSize(); // no scaling, i.e. the item size is in pixels
+
+    m_texture.reset(rhi-&gt;newTexture(QRhiTexture::RGBA8, pixelSize, 1,
+                                    QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource));
+    if (!m_texture-&gt;create()) {
+        QMessageBox::critical(this, tr(&quot;Cannot render&quot;), tr(&quot;Cannot create texture object&quot;));
+        reset();
+        return;
+    }
+
+    m_ds.reset(rhi-&gt;newRenderBuffer(QRhiRenderBuffer::DepthStencil, pixelSize, 1));
+    if (!m_ds-&gt;create()) {
+        QMessageBox::critical(this, tr(&quot;Cannot render&quot;), tr(&quot;Cannot create depth-stencil buffer&quot;));
+        reset();
+        return;
+    }
+
+    QRhiTextureRenderTargetDescription rtDesc(QRhiColorAttachment(m_texture.get()));
+    rtDesc.setDepthStencilBuffer(m_ds.get());
+    m_rt.reset(rhi-&gt;newTextureRenderTarget(rtDesc));
+    m_rpDesc.reset(m_rt-&gt;newCompatibleRenderPassDescriptor());
+    m_rt-&gt;setRenderPassDescriptor(m_rpDesc.get());
+    if (!m_rt-&gt;create()) {
+        QMessageBox::critical(this, tr(&quot;Cannot render&quot;), tr(&quot;Cannot create render target&quot;));
+        reset();
+        return;
+    }
+
+    m_scene-&gt;setRenderTarget(QQuickRenderTarget::fromRhiRenderTarget(m_rt.get()));
+</db:programlisting>
+<db:note>
+<db:para>Always provide a depth-stencil buffer for Qt Quick since both of these buffers and the depth and stencil test may get utilized by the Qt Quick scenegraph when rendering.</db:para>
+</db:note>
+<db:para>The main render loop is the following. This also shows how to perform GPU-&gt;CPU readbacks of images. Once a <db:link xlink:href="qimage.xml">QImage</db:link> is available, the <db:link xlink:href="qwidget.xml">QWidget</db:link>-based user interface updates accordingly. We will omit diving into the details for that here.</db:para>
+<db:para>The example also demonstrates a simple way of measuring the cost of rendering a frame on the CPU and the GPU. Offscreen-rendered frames are well suited for this due to certain internal <db:link xlink:href="qrhi.xml">QRhi</db:link> behavior, which implies that operations that otherwise are asynchronous (in the sense that they complete only when rendering a subsequent frame), are guaranteed to be ready once <db:link xlink:href="qrhi.xml#endOffscreenFrame">QRhi::endOffscreenFrame</db:link>() (i.e., <db:link xlink:href="qquickrendercontrol.xml#endFrame">QQuickRenderControl::endFrame</db:link>()) returns. We use this knowledge when reading back the texture, and it applies also to GPU timestamps as well. That is why the application can display the GPU time for each frame, while guaranteeing that the time actually refers to that particular frame (not an earlier one). See <db:link xlink:href="qrhicommandbuffer.xml#lastCompletedGpuTime">lastCompletedGpuTime</db:link>() for details around GPU timings. The CPU side timings are taken using <db:link xlink:href="qelapsedtimer.xml">QElapsedTimer</db:link>.</db:para>
+<db:programlisting language="cpp">    QElapsedTimer cpuTimer;
+    cpuTimer.start();
+
+    m_renderControl-&gt;polishItems();
+
+    m_renderControl-&gt;beginFrame();
+
+    m_renderControl-&gt;sync();
+    m_renderControl-&gt;render();
+
+    QRhi *rhi = m_renderControl-&gt;rhi();
+    QRhiReadbackResult readResult;
+    QRhiResourceUpdateBatch *readbackBatch = rhi-&gt;nextResourceUpdateBatch();
+    readbackBatch-&gt;readBackTexture(m_texture.get(), &amp;readResult);
+    m_renderControl-&gt;commandBuffer()-&gt;resourceUpdate(readbackBatch);
+
+    m_renderControl-&gt;endFrame();
+
+    const double gpuRenderTimeMs = m_renderControl-&gt;commandBuffer()-&gt;lastCompletedGpuTime() * 1000.0;
+    const double cpuRenderTimeMs = cpuTimer.nsecsElapsed() / 1000000.0;
+
+    // m_renderControl-&gt;begin/endFrame() is based on QRhi's
+    // begin/endOffscreenFrame() under the hood, meaning it does not do
+    // pipelining, unlike swapchain-based frames, and therefore the readback is
+    // guaranteed to complete once endFrame() returns.
+    QImage wrapperImage(reinterpret_cast&lt;const uchar *&gt;(readResult.data.constData()),
+                    readResult.pixelSize.width(), readResult.pixelSize.height(),
+                    QImage::Format_RGBA8888_Premultiplied);
+    QImage result;
+    if (rhi-&gt;isYUpInFramebuffer())
+        result = wrapperImage.mirrored();
+    else
+        result = wrapperImage.copy();
+
+</db:programlisting>
+<db:para>One important piece is the stepping of Qt Quick animations. As we do not have an on-screen window that can drive the animation system either via measuring elapsed time, an ordinary timer, or presentation rate-based throttling, redirecting the Qt Quick rendering often implies that the driving of animations needs to be taken over by the application. Otherwise, animations function based on a plain system timer, but the actual elapsed time will often have nothing to do with what the offscreen-rendered scene is expected to perceive. Consider rendering 5 frames in a row, in a tight loop. How the animations in those 5 frames move depends on the speed with which the CPU executes the loop iterations. That is almost never ideal. To ensure consistent animations, install a custom QAnimationDriver. While this is an undocumented (but public) API meant for advanced users, the example here provides a simple example of using it.</db:para>
+<db:programlisting language="cpp">class AnimationDriver : public QAnimationDriver
+{
+public:
+    AnimationDriver(QObject *parent = nullptr)
+        : QAnimationDriver(parent),
+          m_step(16)
+    {
+    }
+
+    void setStep(int milliseconds)
+    {
+        m_step = milliseconds;
+    }
+
+    void advance() override
+    {
+        m_elapsed += m_step;
+        advanceAnimation();
+    }
+
+    qint64 elapsed() const override
+    {
+        return m_elapsed;
+    }
+
+private:
+    int m_step;
+    qint64 m_elapsed = 0;
+};
+</db:programlisting>
+<db:para>The application has a <db:link xlink:href="qslider.xml">QSlider</db:link> that can be used to change the animation step value from the default 16 milliseconds to something else. Note the call to the setStep() function of our QAnimationDriver subclass.</db:para>
+<db:programlisting language="cpp">    QSlider *animSlider = new QSlider;
+    animSlider-&gt;setOrientation(Qt::Horizontal);
+    animSlider-&gt;setMinimum(1);
+    animSlider-&gt;setMaximum(1000);
+    QLabel *animLabel = new QLabel;
+    QObject::connect(animSlider, &amp;QSlider::valueChanged, animSlider, [this, animLabel, animSlider] {
+        if (m_animationDriver)
+            m_animationDriver-&gt;setStep(animSlider-&gt;value());
+        animLabel-&gt;setText(tr(&quot;Simulated elapsed time per frame: %1 ms&quot;).arg(animSlider-&gt;value()));
+    });
+    animSlider-&gt;setValue(16);
+    QCheckBox *animCheckBox = new QCheckBox(tr(&quot;Custom animation driver&quot;));
+    animCheckBox-&gt;setToolTip(tr(&quot;Note: Installing the custom animation driver makes widget drawing unreliable, depending on the platform.\n&quot;
+                                &quot;This is due to widgets themselves relying on QPropertyAnimation and similar, which are driven by the same QAnimationDriver.\n&quot;
+                                &quot;In any case, the functionality of the widgets are not affected, just the rendering may lag behind.\n&quot;
+                                &quot;When not checked, Qt Quick animations advance based on the system time, i.e. the time elapsed since the last press of the Next button.&quot;));
+    QObject::connect(animCheckBox, &amp;QCheckBox::checkStateChanged, animCheckBox, [this, animCheckBox, animSlider, animLabel] {
+        if (animCheckBox-&gt;isChecked()) {
+            animSlider-&gt;setEnabled(true);
+            animLabel-&gt;setEnabled(true);
+            m_animationDriver = new AnimationDriver(this);
+            m_animationDriver-&gt;install();
+            m_animationDriver-&gt;setStep(animSlider-&gt;value());
+        } else {
+            animSlider-&gt;setEnabled(false);
+            animLabel-&gt;setEnabled(false);
+            delete m_animationDriver;
+            m_animationDriver = nullptr;
+        }
+    });
+    animSlider-&gt;setEnabled(false);
+    animLabel-&gt;setEnabled(false);
+    controlLayout-&gt;addWidget(animCheckBox);
+    controlLayout-&gt;addWidget(animLabel);
+    controlLayout-&gt;addWidget(animSlider);
+</db:programlisting>
+<db:note>
+<db:para>Installing the custom animation driver is made optional via the <db:code>animCheckBox</db:code> check box. This allows comparing the effect of having and not having a custom animation driver installed. In addition, on some platforms (and perhaps depending on the theme), having the custom driver enabled may lead to lags in widget drawing. This is as expected, because if some widget animation (e.g. highlight of a <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> or <db:link xlink:href="qcheckbox.xml">QCheckBox</db:link>) is managed via <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link> and similar, then those animation are driven by the same QAnimationDriver, and that does not advance until a new frame is requested by clicking on the buttons.</db:para>
+</db:note>
+<db:para>Advancing the animations is done before each frame (i.e., before the <db:link xlink:href="qquickrendercontrol.xml#beginFrame">QQuickRenderControl::beginFrame</db:link>() call) by simply calling advance():</db:para>
+<db:programlisting language="cpp">void MainWindow::stepAnimations()
+{
+    if (m_animationDriver) {
+        // Now the Qt Quick scene will think that &lt;slider value&gt; milliseconds have
+        // elapsed and update animations accordingly when doing the next frame.
+        m_animationDriver-&gt;advance();
+    }
+}
+</db:programlisting>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/rendercontrol/rendercontrol_rhi?h=6.8">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qrhi.xml">QRhi</db:link></db:member>
+<db:member><db:link xlink:href="qquickrendercontrol.xml">QQuickRenderControl</db:link></db:member>
+<db:member><db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

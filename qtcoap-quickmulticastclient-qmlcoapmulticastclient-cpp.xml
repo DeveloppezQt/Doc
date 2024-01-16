@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Quick CoAP Multicast Discovery</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using the CoAP client for a multicast resource discovery with a Qt Quick user interface.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;qmlcoapmulticastclient.h&quot;
+
+#include &lt;QCoapResourceDiscoveryReply&gt;
+#include &lt;QLoggingCategory&gt;
+
+Q_LOGGING_CATEGORY(lcCoapClient, &quot;qt.coap.client&quot;)
+
+QmlCoapMulticastClient::QmlCoapMulticastClient(QObject *parent)
+    : QCoapClient(QtCoap::SecurityMode::NoSecurity, parent)
+{
+    connect(this, &amp;QCoapClient::finished, this,
+            [this](QCoapReply *reply) {
+                if (reply) {
+                    emit finished(static_cast&lt;int&gt;(reply-&gt;errorReceived()));
+                    reply-&gt;deleteLater();
+                    if (m_reply == reply) {
+                        m_reply = nullptr;
+                        emit isDiscoveringChanged();
+                    }
+                } else {
+                    qCWarning(lcCoapClient, &quot;Something went wrong, received a null reply&quot;);
+                }
+            });
+
+    connect(this, &amp;QCoapClient::error, this,
+            [this](QCoapReply *, QtCoap::Error err) {
+                emit finished(static_cast&lt;int&gt;(err));
+            });
+}
+
+void QmlCoapMulticastClient::discover(const QString &amp;host, int port, const QString &amp;discoveryPath)
+{
+    QUrl url;
+    url.setHost(host);
+    url.setPort(port);
+
+    m_reply = QCoapClient::discover(url, discoveryPath);
+    if (m_reply) {
+        connect(m_reply, &amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;QmlCoapMulticastClient::onDiscovered);
+        emit isDiscoveringChanged();
+    } else {
+        qCWarning(lcCoapClient, &quot;Discovery request failed.&quot;);
+    }
+}
+
+void QmlCoapMulticastClient::discover(QtCoap::MulticastGroup group, int port,
+                                      const QString &amp;discoveryPath)
+{
+    m_reply = QCoapClient::discover(group, port, discoveryPath);
+    if (m_reply) {
+        connect(m_reply, &amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;QmlCoapMulticastClient::onDiscovered);
+        emit isDiscoveringChanged();
+    } else {
+        qCWarning(lcCoapClient, &quot;Discovery request failed.&quot;);
+    }
+}
+
+void QmlCoapMulticastClient::stopDiscovery()
+{
+    if (m_reply)
+        m_reply-&gt;abortRequest();
+}
+
+bool QmlCoapMulticastClient::isDiscovering() const
+{
+    return m_reply &amp;&amp; !m_reply-&gt;isFinished();
+}
+
+void QmlCoapMulticastClient::onDiscovered(QCoapResourceDiscoveryReply *reply,
+                                          const QList&lt;QCoapResource&gt; &amp;resources)
+{
+    Q_UNUSED(reply)
+    for (const auto &amp;resource : resources)
+        emit discovered(resource);
+}
+
+#include &quot;moc_qmlcoapmulticastclient.cpp&quot;
+
+</db:programlisting>
+</db:article>

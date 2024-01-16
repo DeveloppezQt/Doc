@@ -1,0 +1,335 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QRhiSwapChain Class</db:title>
+<db:productname>QtGui</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GUI Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Swapchain resource.</db:para>
+<db:para>This class was introduced in Qt 6.6.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>rhi/qrhi.h</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Since</db:term>
+<db:listitem>
+<db:para>Qt 6.6</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>CMake</db:term>
+<db:listitem>
+<db:para>find_package(Qt6 REQUIRED COMPONENTS Gui)</db:para>
+<db:para>target_link_libraries(mytarget PRIVATE Qt6::GuiPrivate)</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += gui-private</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherits</db:term>
+<db:listitem>
+<db:para><db:link xlink:href="qrhiresource.xml" xlink:role="class">QRhiResource</db:link></db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherited By</db:term>
+<db:listitem>
+<db:para/>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para>A swapchain enables presenting rendering results to a surface. A swapchain is typically backed by a set of color buffers. Of these, one is displayed at a time.</db:para>
+<db:para>Below is a typical pattern for creating and managing a swapchain and some associated resources in order to render onto a <db:link xlink:href="qwindow.xml">QWindow</db:link>:</db:para>
+<db:programlisting language="cpp">void init()
+{
+    sc = rhi-&gt;newSwapChain();
+    ds = rhi-&gt;newRenderBuffer(QRhiRenderBuffer::DepthStencil,
+                              QSize(), // no need to set the size here due to UsedWithSwapChainOnly
+                              1,
+                              QRhiRenderBuffer::UsedWithSwapChainOnly);
+    sc-&gt;setWindow(window);
+    sc-&gt;setDepthStencil(ds);
+    rp = sc-&gt;newCompatibleRenderPassDescriptor();
+    sc-&gt;setRenderPassDescriptor(rp);
+    resizeSwapChain();
+}
+
+void resizeSwapChain()
+{
+    hasSwapChain = sc-&gt;createOrResize();
+}
+
+void render()
+{
+    if (!hasSwapChain || notExposed)
+        return;
+
+    if (sc-&gt;currentPixelSize() != sc-&gt;surfacePixelSize() || newlyExposed) {
+        resizeSwapChain();
+        if (!hasSwapChain)
+            return;
+        newlyExposed = false;
+    }
+
+    rhi-&gt;beginFrame(sc);
+    // ...
+    rhi-&gt;endFrame(sc);
+}
+</db:programlisting>
+<db:para>Avoid relying on <db:link xlink:href="qwindow.xml">QWindow</db:link> resize events to resize swapchains, especially considering that surface sizes may not always fully match the <db:link xlink:href="qwindow.xml">QWindow</db:link> reported dimensions. The safe, cross-platform approach is to do the check via surfacePixelSize() whenever starting a new frame.</db:para>
+<db:para>Releasing the swapchain must happen while the <db:link xlink:href="qwindow.xml">QWindow</db:link> and the underlying native window is fully up and running. Building on the previous example:</db:para>
+<db:programlisting language="cpp">void releaseSwapChain()
+{
+    if (hasSwapChain) {
+        sc-&gt;destroy();
+        hasSwapChain = false;
+    }
+}
+
+// assuming Window is our QWindow subclass
+bool Window::event(QEvent *e)
+{
+    switch (e-&gt;type()) {
+    case QEvent::UpdateRequest: // for QWindow::requestUpdate()
+        render();
+        break;
+    case QEvent::PlatformSurface:
+        if (static_cast&lt;QPlatformSurfaceEvent *&gt;(e)-&gt;surfaceEventType() == QPlatformSurfaceEvent::SurfaceAboutToBeDestroyed)
+            releaseSwapChain();
+        break;
+    default:
+        break;
+    }
+    return QWindow::event(e);
+}
+</db:programlisting>
+<db:para>Initializing the swapchain and starting to render the first frame cannot start at any time. The safe, cross-platform approach is to rely on expose events. <db:link xlink:href="qexposeevent.xml">QExposeEvent</db:link> is a loosely specified event that is sent whenever a window gets mapped, obscured, and resized, depending on the platform.</db:para>
+<db:programlisting language="cpp">void Window::exposeEvent(QExposeEvent *)
+{
+    // initialize and start rendering when the window becomes usable for graphics purposes
+    if (isExposed() &amp;&amp; !running) {
+        running = true;
+        init();
+    }
+
+    // stop pushing frames when not exposed or size becomes 0
+    if ((!isExposed() || (hasSwapChain &amp;&amp; sc-&gt;surfacePixelSize().isEmpty())) &amp;&amp; running)
+        notExposed = true;
+
+    // continue when exposed again and the surface has a valid size
+    if (isExposed() &amp;&amp; running &amp;&amp; notExposed &amp;&amp; !sc-&gt;surfacePixelSize().isEmpty()) {
+        notExposed = false;
+        newlyExposed = true;
+    }
+
+    if (isExposed() &amp;&amp; !sc-&gt;surfacePixelSize().isEmpty())
+        render();
+}
+</db:programlisting>
+<db:para>Once the rendering has started, a simple way to request a new frame is <db:link xlink:href="qwindow.xml#requestUpdate">QWindow::requestUpdate</db:link>(). While on some platforms this is merely a small timer, on others it has a specific implementation: for instance on macOS or iOS it may be backed by <db:link xlink:href="https://developer.apple.com/documentation/corevideo/cvdisplaylink?language=objc">CVDisplayLink</db:link>. The example above is already prepared for update requests by handling <db:link xlink:href="qevent.xml#Type-enum">QEvent::UpdateRequest</db:link>.</db:para>
+<db:para>While acting as a <db:link xlink:href="qrhirendertarget.xml">QRhiRenderTarget</db:link>, <db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link> also manages a <db:link xlink:href="qrhicommandbuffer.xml">QRhiCommandBuffer</db:link>. Calling <db:link xlink:href="qrhi.xml#endFrame">QRhi::endFrame</db:link>() submits the recorded commands and also enqueues a <db:code>present</db:code> request. The default behavior is to do this with a swap interval of 1, meaning synchronizing to the display's vertical refresh is enabled. Thus the rendering thread calling beginFrame() and endFrame() will get throttled to vsync. On some backends this can be disabled by passing <db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link>:<db:link xlink:href="qrhiswapchain.xml#Flag-enum">NoVSync</db:link> in flags().</db:para>
+<db:para>Multisampling (MSAA) is handled transparently to the applications when requested via setSampleCount(). Where applicable, <db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link> will take care of creating additional color buffers and issuing a multisample resolve command at the end of a frame. For OpenGL, it is necessary to request the appropriate sample count also via <db:link xlink:href="qsurfaceformat.xml">QSurfaceFormat</db:link>, by calling <db:link xlink:href="qsurfaceformat.xml#setDefaultFormat">QSurfaceFormat::setDefaultFormat</db:link>() before initializing the <db:link xlink:href="qrhi.xml">QRhi</db:link>.</db:para>
+<db:note>
+<db:para>This is a RHI API with limited compatibility guarantees, see <db:link xlink:href="qrhi.xml">QRhi</db:link> for details.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="member-type-documentation">
+<db:title>Member Type Documentation</db:title>
+<db:section xml:id="Flag-enum">
+<db:title>enum QRhiSwapChain::Flag</db:title>
+<db:bridgehead renderas="sect2">flags QRhiSwapChain::Flags</db:bridgehead>
+<db:para>Flag values to describe swapchain properties</db:para>
+<db:informaltable>
+<db:thead>
+<db:tr>
+<db:th>Constant</db:th>
+<db:th>Value</db:th>
+<db:th>Description</db:th>
+</db:tr>
+</db:thead>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::SurfaceHasPreMulAlpha</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 0</db:code></db:td>
+<db:td>
+<db:para>Indicates that the target surface has transparency with premultiplied alpha. For example, this is what Qt Quick uses when the alpha channel is enabled on the target <db:link xlink:href="qwindow.xml">QWindow</db:link>, because the scenegraph rendrerer always outputs fragments with alpha multiplied into the red, green, and blue values. To ensure identical behavior across platforms, always set <db:link xlink:href="qsurfaceformat.xml#alphaBufferSize">QSurfaceFormat::alphaBufferSize</db:link>() to a non-zero value on the target <db:link xlink:href="qwindow.xml">QWindow</db:link> whenever this flag is set on the swapchain.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::SurfaceHasNonPreMulAlpha</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 1</db:code></db:td>
+<db:td>
+<db:para>Indicates the target surface has transparency with non-premultiplied alpha. Be aware that this may not be supported on some systems, if the system compositor always expects content with premultiplied alpha. In that case the behavior with this flag set is expected to be equivalent to SurfaceHasPreMulAlpha.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::sRGB</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 2</db:code></db:td>
+<db:td>
+<db:para>Requests to pick an sRGB format for the swapchain's color buffers and/or render target views, where applicable. Note that this implies that sRGB framebuffer update and blending will get enabled for all content targeting this swapchain, and opting out is not possible. For OpenGL, set <db:link xlink:href="qsurfaceformat.xml#ColorSpace-enum" role="deprecated">sRGBColorSpace</db:link> on the <db:link xlink:href="qsurfaceformat.xml">QSurfaceFormat</db:link> of the <db:link xlink:href="qwindow.xml">QWindow</db:link> in addition. Applicable only when the swapchain format is set to <db:link xlink:href="qrhiswapchain.xml#Format-enum">QRhiSwapChain::SDR</db:link>.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::UsedAsTransferSource</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 3</db:code></db:td>
+<db:td>
+<db:para>Indicates the swapchain will be used as the source of a readback in <db:link xlink:href="qrhiresourceupdatebatch.xml#readBackTexture">QRhiResourceUpdateBatch::readBackTexture</db:link>().</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::NoVSync</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 4</db:code></db:td>
+<db:td>
+<db:para>Requests disabling waiting for vertical sync, also avoiding throttling the rendering thread. The behavior is backend specific and applicable only where it is possible to control this. Some may ignore the request altogether. For OpenGL, try instead setting the swap interval to 0 on the <db:link xlink:href="qwindow.xml">QWindow</db:link> via <db:link xlink:href="qsurfaceformat.xml#setSwapInterval">QSurfaceFormat::setSwapInterval</db:link>().</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::MinimalBufferCount</db:code></db:para>
+</db:td>
+<db:td><db:code>1 &lt;&lt; 5</db:code></db:td>
+<db:td>
+<db:para>Requests creating the swapchain with the minimum number of buffers, which is in practice 2, unless the graphics implementation has a higher minimum number than that. Only applicable with backends where such control is available via the graphics API, for example, Vulkan. By default it is up to the backend to decide what number of buffers it requests (in practice this is almost always either 2 or 3), and it is not the applications' concern. However, on Vulkan for instance the backend will likely prefer the higher number (3), for example to avoid odd performance issues with some Vulkan implementations on mobile devices. It could be that on some platforms it can prove to be beneficial to force the lower buffer count (2), so this flag allows forcing that. Note that all this has no effect on the number of frames kept in flight, so the CPU (<db:link xlink:href="qrhi.xml">QRhi</db:link>) will still prepare frames at most <db:code>N - 1</db:code> frames ahead of the GPU, even when the swapchain image buffer count larger than <db:code>N</db:code>. (<db:code>N</db:code> = <db:link xlink:href="qrhi.xml#ResourceLimit-enum">QRhi::FramesInFlight</db:link> and typically 2).</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The <db:code>Flags</db:code> type is a typedef for <db:code><db:link xlink:href="qflags.xml">QFlags</db:link>&lt;Flag&gt;. </db:code>It stores an OR combination of <db:code>Flag</db:code> values.</db:para>
+</db:section>
+<db:section xml:id="Format-enum">
+<db:title>enum QRhiSwapChain::Format</db:title>
+<db:para>Describes the swapchain format. The default format is SDR.</db:para>
+<db:para>This enum is used with <db:link xlink:href="">isFormatSupported()</db:link> to check upfront if creating the swapchain with the given format is supported by the platform and the window's associated screen, and with <db:link xlink:href="">setFormat()</db:link> to set the requested format in the swapchain before calling <db:link xlink:href="">createOrResize()</db:link> for the first time.</db:para>
+<db:informaltable>
+<db:thead>
+<db:tr>
+<db:th>Constant</db:th>
+<db:th>Value</db:th>
+<db:th>Description</db:th>
+</db:tr>
+</db:thead>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::SDR</db:code></db:para>
+</db:td>
+<db:td><db:code>0</db:code></db:td>
+<db:td>
+<db:para>8-bit RGBA or BGRA, depending on the backend and platform. With OpenGL ES in particular, it could happen that the platform provides less than 8 bits (e.g. due to EGL and the <db:link xlink:href="qsurfaceformat.xml">QSurfaceFormat</db:link> choosing a 565 or 444 format - this is outside the control of <db:link xlink:href="qrhi.xml">QRhi</db:link>). Standard dynamic range. May be combined with setting the <db:link xlink:href="qrhiswapchain.xml#Flag-enum">QRhiSwapChain::sRGB</db:link> flag.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::HDRExtendedSrgbLinear</db:code></db:para>
+</db:td>
+<db:td><db:code>1</db:code></db:td>
+<db:td>
+<db:para>16-bit float RGBA, high dynamic range, extended linear sRGB (scRGB) color space. This involves Rec. 709 primaries (same as SDR/sRGB) and linear colors. Conversion to the display's native color space (such as, HDR10) is performed by the windowing system. On Windows this is the canonical color space of the system compositor, and is the recommended format for HDR swapchains in general on desktop platforms.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::HDR10</db:code></db:para>
+</db:td>
+<db:td><db:code>2</db:code></db:td>
+<db:td>
+<db:para>10-bit unsigned int RGB or BGR with 2 bit alpha, high dynamic range, HDR10 (Rec. 2020) color space with an ST2084 PQ transfer function.</db:para>
+</db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::HDRExtendedDisplayP3Linear</db:code></db:para>
+</db:td>
+<db:td><db:code>3</db:code></db:td>
+<db:td>
+<db:para>16-bit float RGBA, high dynamic range, extended linear Display P3 color space. The primary choice for HDR on platforms such as iOS and VisionOS.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section xml:id="StereoTargetBuffer-enum">
+<db:title>enum QRhiSwapChain::StereoTargetBuffer</db:title>
+<db:para>Selects the backbuffer to use with a stereoscopic swapchain.</db:para>
+<db:informaltable>
+<db:thead>
+<db:tr>
+<db:th>Constant</db:th>
+</db:tr>
+</db:thead>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::LeftBuffer</db:code></db:para>
+</db:td>
+<db:td><db:code>0</db:code></db:td>
+</db:tr>
+<db:tr>
+<db:td>
+<db:para><db:code><db:emphasis role="bold"><db:link xlink:href="qrhiswapchain.xml">QRhiSwapChain</db:link></db:emphasis>::RightBuffer</db:code></db:para>
+</db:td>
+<db:td><db:code>1</db:code></db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="currentFrameRenderTarget">
+<db:title>[virtual] QRhiRenderTarget *QRhiSwapChain::currentFrameRenderTarget(QRhiSwapChain::StereoTargetBuffer <db:emphasis>targetBuffer</db:emphasis>)</db:title>
+<db:para>Returns a render target that can be used with beginPass() in order to render to the swapchain's left or right backbuffer. This overload should be used only with stereoscopic rendering, that is, when the associated <db:link xlink:href="qwindow.xml">QWindow</db:link> is backed by two color buffers, one for each eye, instead of just one.</db:para>
+<db:para>When stereoscopic rendering is not supported, the return value will be the default target. It is supported by all hardware backends except for Metal, in combination with <db:link xlink:href="qsurfaceformat.xml#FormatOption-enum">QSurfaceFormat::StereoBuffers</db:link>, assuming it is supported by the graphics and display driver stack at run time. Metal and Null backends are going to return the default render target from this overload.</db:para>
+<db:note>
+<db:para>the value must not be cached and reused between frames</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="hdrInfo">
+<db:title>[virtual] QRhiSwapChainHdrInfo QRhiSwapChain::hdrInfo()</db:title>
+<db:para>Returns the HDR information for the associated display.</db:para>
+<db:para>Do not assume that this is a cheap operation. Depending on the platform, this function makes various platform queries which may have a performance impact.</db:para>
+<db:note>
+<db:para>Can be called before createOrResize() as long as the window is set.</db:para>
+</db:note>
+<db:note>
+<db:para>What happens when moving a window with an initialized swapchain between displays (HDR to HDR with different characteristics, HDR to SDR, etc.) is not currently well-defined and depends heavily on the windowing system and compositor, with potentially varying behavior between platforms. Currently <db:link xlink:href="qrhi.xml">QRhi</db:link> only guarantees that hdrInfo() returns valid data, if available, for the display to which the swapchain's associated window belonged at the time of createOrResize().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qrhiswapchainhdrinfo.xml">QRhiSwapChainHdrInfo</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="resourceType">
+<db:title>[override virtual] QRhiResource::Type QRhiSwapChain::resourceType() const</db:title>
+<db:para>Returns the resource type.</db:para>
+</db:section>
+</db:section>
+</db:article>

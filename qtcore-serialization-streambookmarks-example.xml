@@ -1,0 +1,427 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QXmlStream Bookmarks Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read and write XBEL files.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The QXmlStream Bookmarks example provides a viewer for XML Bookmark Exchange Language (XBEL) files. It can read bookmarks using Qt's <db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link> and write them back out again using <db:link xlink:href="qxmlstreamwriter.xml">QXmlStreamWriter</db:link>. As this example aims to show how to use these reader and writer types, it provides no means to open a bookmark, add a new one, or merge two bookmark files, and only minimal scope for editing bookmarks. None the less, it could surely be extended with such features, if desired.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="xbelwriter-class-definition">
+<db:title>XbelWriter Class Definition</db:title>
+<db:para>The XbelWriter class takes a <db:link xlink:href="">tree widget</db:link> describing a hierarchy of folders containing bookmarks. Its writeFile() provides the means to write out this hierarchy, in XBEL format, to a given output device.</db:para>
+<db:para>Internally, it records the tree widget it was given and packages a private instance of <db:link xlink:href="qxmlstreamwriter.xml">QXmlStreamWriter</db:link>, which provides it with the means to stream XML. It has an internal writeItem() to write each item in its tree.</db:para>
+<db:programlisting language="cpp">class XbelWriter
+{
+public:
+    explicit XbelWriter(const QTreeWidget *treeWidget);
+    bool writeFile(QIODevice *device);
+
+private:
+    void writeItem(const QTreeWidgetItem *item);
+    QXmlStreamWriter xml;
+    const QTreeWidget *treeWidget;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelwriter-class-implementation">
+<db:title>XbelWriter Class Implementation</db:title>
+<db:para>The XbelWriter constructor accepts the <db:code role="parameter">treeWidget</db:code> it will describe. It stores that and enables <db:link xlink:href="qxmlstreamwriter.xml">QXmlStreamWriter</db:link>'s auto-formatting property. This last splits the data into several lines, with indentation to indicate the structure of the tree, which makes the XML output easier to read.</db:para>
+<db:programlisting language="cpp">XbelWriter::XbelWriter(const QTreeWidget *treeWidget) : treeWidget(treeWidget)
+{
+    xml.setAutoFormatting(true);
+}
+</db:programlisting>
+<db:para>The writeFile() function accepts a <db:link xlink:href="qiodevice.xml">QIODevice</db:link> object and directs its <db:link xlink:href="qxmlstreamwriter.xml">QXmlStreamWriter</db:link> member to write to this device, using setDevice(). This function then writes the document type definition(DTD), the start element, the version, and delegates writing of each of the treeWidget's top-level items to writeItem(). Finally, it closes the document and returns.</db:para>
+<db:programlisting language="cpp">bool XbelWriter::writeFile(QIODevice *device)
+{
+    xml.setDevice(device);
+
+    xml.writeStartDocument();
+    xml.writeDTD(&quot;&lt;!DOCTYPE xbel&gt;&quot;_L1);
+    xml.writeStartElement(&quot;xbel&quot;_L1);
+    xml.writeAttribute(&quot;version&quot;_L1, &quot;1.0&quot;_L1);
+    for (int i = 0; i &lt; treeWidget-&gt;topLevelItemCount(); ++i)
+        writeItem(treeWidget-&gt;topLevelItem(i));
+
+    xml.writeEndDocument();
+    return true;
+}
+</db:programlisting>
+<db:para>The writeItem() function accepts a QTreeWidgetItem object and writes to its XML stream a representation of the object, which depends on its UserRole, which can be one of a &quot;folder&quot;, &quot;bookmark&quot;, or &quot;separator&quot;. Within each folder, it calls itself recursively on each child item, to recursively include a representation of each child within the folder's XML element.</db:para>
+<db:programlisting language="cpp">void XbelWriter::writeItem(const QTreeWidgetItem *item)
+{
+    QString tagName = item-&gt;data(0, Qt::UserRole).toString();
+    if (tagName == &quot;folder&quot;_L1) {
+        bool folded = !item-&gt;isExpanded();
+        xml.writeStartElement(tagName);
+        xml.writeAttribute(&quot;folded&quot;_L1, folded ? &quot;yes&quot;_L1 : &quot;no&quot;_L1);
+        xml.writeTextElement(&quot;title&quot;_L1, item-&gt;text(0));
+        for (int i = 0; i &lt; item-&gt;childCount(); ++i)
+            writeItem(item-&gt;child(i));
+        xml.writeEndElement();
+    } else if (tagName == &quot;bookmark&quot;_L1) {
+        xml.writeStartElement(tagName);
+        if (!item-&gt;text(1).isEmpty())
+            xml.writeAttribute(&quot;href&quot;_L1, item-&gt;text(1));
+        xml.writeTextElement(&quot;title&quot;_L1, item-&gt;text(0));
+        xml.writeEndElement();
+    } else if (tagName == &quot;separator&quot;_L1) {
+        xml.writeEmptyElement(tagName);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelreader-class-definition">
+<db:title>XbelReader Class Definition</db:title>
+<db:para>The XbelReader takes a <db:link xlink:href="">tree widget</db:link> to populate with items describing a bookmark hierarchy. It supports reading XBEL data from a <db:link xlink:href="qiodevice.xml">QIODevice</db:link> as a source of these items. If parsing of the XBEL data fails, it can report what went wrong.</db:para>
+<db:para>Internally, it records the QTreeWidget that it will populate and packages an instance of <db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link>, the companion class to <db:link xlink:href="qxmlstreamwriter.xml">QXmlStreamWriter</db:link>, which it will use to read XBEL data.</db:para>
+<db:programlisting language="cpp">class XbelReader
+{
+public:
+    XbelReader(QTreeWidget *treeWidget);
+
+    bool read(QIODevice *device);
+    QString errorString() const;
+
+private:
+    void readXBEL();
+    void readTitle(QTreeWidgetItem *item);
+    void readSeparator(QTreeWidgetItem *item);
+    void readFolder(QTreeWidgetItem *item);
+    void readBookmark(QTreeWidgetItem *item);
+
+    QTreeWidgetItem *createChildItem(QTreeWidgetItem *item);
+
+    QXmlStreamReader xml;
+    QTreeWidget *treeWidget;
+
+    QIcon folderIcon;
+    QIcon bookmarkIcon;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="xbelreader-class-implementation">
+<db:title>XbelReader Class Implementation</db:title>
+<db:para>Since the XBEL reader is only concerned with reading XML elements, it makes extensive use of the <db:link xlink:href="qxmlstreamreader.xml#readNextStartElement">readNextStartElement</db:link>() convenience function.</db:para>
+<db:para>The XbelReader constructor requires a QTreeWidget that it will populate. It populates the tree widget's style with suitable icons: a folder icon that changes form to indicate whether each folder as open or closed; and a standard file icon for the individual bookmarks within those folders.</db:para>
+<db:programlisting language="cpp">XbelReader::XbelReader(QTreeWidget *treeWidget) : treeWidget(treeWidget)
+{
+    QStyle *style = treeWidget-&gt;style();
+
+    folderIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_DirClosedIcon), QIcon::Normal,
+                         QIcon::Off);
+    folderIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_DirOpenIcon), QIcon::Normal, QIcon::On);
+    bookmarkIcon.addPixmap(style-&gt;standardPixmap(QStyle::SP_FileIcon));
+}
+</db:programlisting>
+<db:para>The read() function accepts a <db:link xlink:href="qiodevice.xml">QIODevice</db:link>. It directs its <db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link> member to read content from that device. Note that the XML input must be well-formed to be accepted by <db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link>. First it reads the outer structure and verifies the content is an XBEL 1.0 file; if it is, read() delegates the actual reading of content to the internal readXBEL().</db:para>
+<db:para>Otherwise, the <db:link xlink:href="qxmlstreamreader.xml#raiseError">raiseError</db:link>() function is used to record an error message. The reader itself may also do the same if it encounters errors in the input. When read() has finished, it returns true if there were no errors.</db:para>
+<db:programlisting language="cpp">bool XbelReader::read(QIODevice *device)
+{
+    xml.setDevice(device);
+
+    if (xml.readNextStartElement()) {
+        if (xml.name() == &quot;xbel&quot;_L1 &amp;&amp; xml.attributes().value(&quot;version&quot;_L1) == &quot;1.0&quot;_L1)
+            readXBEL();
+        else
+            xml.raiseError(QObject::tr(&quot;The file is not an XBEL version 1.0 file.&quot;));
+    }
+
+    return !xml.error();
+}
+</db:programlisting>
+<db:para>If read() returns false, its caller can obtain a description of the error, complete with line and column number within the stream, by calling the errorString() function.</db:para>
+<db:programlisting language="cpp">QString XbelReader::errorString() const
+{
+    return QObject::tr(&quot;%1\nLine %2, column %3&quot;)
+            .arg(xml.errorString())
+            .arg(xml.lineNumber())
+            .arg(xml.columnNumber());
+}
+</db:programlisting>
+<db:para>The readXBEL() function reads the name of a startElement and calls the appropriate function to read it, depending on whether if its tag name is &quot;folder&quot;, &quot;bookmark&quot; or &quot;separator&quot;. Any other elements encountered are skipped. The function starts with a precondition, verifying that the XML reader has just opened an &quot;xbel&quot; element.</db:para>
+<db:programlisting language="cpp">void XbelReader::readXBEL()
+{
+    Q_ASSERT(xml.isStartElement() &amp;&amp; xml.name() == &quot;xbel&quot;_L1);
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == &quot;folder&quot;_L1)
+            readFolder(nullptr);
+        else if (xml.name() == &quot;bookmark&quot;_L1)
+            readBookmark(nullptr);
+        else if (xml.name() == &quot;separator&quot;_L1)
+            readSeparator(nullptr);
+        else
+            xml.skipCurrentElement();
+    }
+}
+</db:programlisting>
+<db:para>The readBookmark() function creates a new editable item representing a single bookmark. It records the XML &quot;href&quot; attribute of the current element as second column text of the item and provisionally sets its first column text to &quot;Unknown title&quot; before scanning the rest of the element for a title element to over-ride that, skipping any unrecognized child elements.</db:para>
+<db:programlisting language="cpp">void XbelReader::readTitle(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;&amp; xml.name() == &quot;title&quot;_L1);
+    item-&gt;setText(0, xml.readElementText());
+}
+</db:programlisting>
+<db:para>The readTitle() function reads a bookmark's title and records it as the title (first column text) of the item for which it was called.</db:para>
+<db:programlisting language="cpp">void XbelReader::readSeparator(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;&amp; xml.name() == &quot;separator&quot;_L1);
+    constexpr char16_t midDot = u'\xB7';
+    static const QString dots(30, midDot);
+
+    QTreeWidgetItem *separator = createChildItem(item);
+    separator-&gt;setFlags(item ? item-&gt;flags() &amp; ~Qt::ItemIsSelectable : Qt::ItemFlags{});
+    separator-&gt;setText(0, dots);
+    xml.skipCurrentElement();
+}
+</db:programlisting>
+<db:para>The readSeparator() function creates a separator and sets its flags. The separator item's text is set to 30 centered dots. The rest of the element is then skipped using <db:link xlink:href="qxmlstreamreader.xml#skipCurrentElement">skipCurrentElement</db:link>().</db:para>
+<db:programlisting language="cpp">void XbelReader::readSeparator(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;&amp; xml.name() == &quot;separator&quot;_L1);
+    constexpr char16_t midDot = u'\xB7';
+    static const QString dots(30, midDot);
+
+    QTreeWidgetItem *separator = createChildItem(item);
+    separator-&gt;setFlags(item ? item-&gt;flags() &amp; ~Qt::ItemIsSelectable : Qt::ItemFlags{});
+    separator-&gt;setText(0, dots);
+    xml.skipCurrentElement();
+}
+</db:programlisting>
+<db:para>The readFolder() function creates an item and iterates the content of the folder element, adding children to this item to represent the contents of the folder element. The loop over folder content is similar in form to the one in readXBEL(), save that it now accepts a title element to set the title of the folder.</db:para>
+<db:programlisting language="cpp">void XbelReader::readFolder(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;&amp; xml.name() == &quot;folder&quot;_L1);
+
+    QTreeWidgetItem *folder = createChildItem(item);
+    bool folded = xml.attributes().value(&quot;folded&quot;_L1) != &quot;no&quot;_L1;
+    folder-&gt;setExpanded(!folded);
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == &quot;title&quot;_L1)
+            readTitle(folder);
+        else if (xml.name() == &quot;folder&quot;_L1)
+            readFolder(folder);
+        else if (xml.name() == &quot;bookmark&quot;_L1)
+            readBookmark(folder);
+        else if (xml.name() == &quot;separator&quot;_L1)
+            readSeparator(folder);
+        else
+            xml.skipCurrentElement();
+    }
+}
+</db:programlisting>
+<db:para>The createChildItem() helper function creates a new tree widget item that's either a child of the given item or, if no parent item is given, a direct child of the tree widget. It sets the new item's UserRole to the tag name of the current XML element, matching how XbelWriter::writeFile() uses that UserRole.</db:para>
+<db:programlisting language="cpp">QTreeWidgetItem *XbelReader::createChildItem(QTreeWidgetItem *item)
+{
+    QTreeWidgetItem *childItem = item ? new QTreeWidgetItem(item) : new QTreeWidgetItem(treeWidget);
+    childItem-&gt;setData(0, Qt::UserRole, xml.name().toString());
+    return childItem;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The MainWindow class is a subclass of QMainWindow, with a File menu and a Help menu.</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow();
+
+public slots:
+    void open();
+    void saveAs();
+    void about();
+#if QT_CONFIG(clipboard) &amp;&amp; QT_CONFIG(contextmenu)
+    void onCustomContextMenuRequested(const QPoint &amp;pos);
+#endif
+private:
+    void createMenus();
+
+    QTreeWidget *const treeWidget;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>The MainWindow constructor sets up its QTreeWidget object, treeWidget, as its own central widget, with column headings for the title and location of each book-mark. It configures a custom menu that enables the user to perform actions on individual bookmarks within the tree widget.</db:para>
+<db:para>It invokes createMenus() to set up its own menus and their corresponding actions. It sets its title, announces itself as ready and sets its size to a reasonable proportion of the available screen space.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow() : treeWidget(new QTreeWidget)
+{
+    treeWidget-&gt;header()-&gt;setSectionResizeMode(QHeaderView::Stretch);
+    treeWidget-&gt;setHeaderLabels(QStringList{tr(&quot;Title&quot;), tr(&quot;Location&quot;)});
+#if QT_CONFIG(clipboard) &amp;&amp; QT_CONFIG(contextmenu)
+    treeWidget-&gt;setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(treeWidget, &amp;QWidget::customContextMenuRequested,
+            this, &amp;MainWindow::onCustomContextMenuRequested);
+#endif
+    setCentralWidget(treeWidget);
+
+    createMenus();
+
+    statusBar()-&gt;showMessage(tr(&quot;Ready&quot;));
+
+    setWindowTitle(tr(&quot;QXmlStream Bookmarks&quot;));
+    const QSize availableSize = screen()-&gt;availableGeometry().size();
+    resize(availableSize.width() / 2, availableSize.height() / 3);
+}
+</db:programlisting>
+<db:para>A custom menu, triggered when the user right-clicks on a bookmark, provides for copying the bookmark as a link or directing a desktop browser to open the URL it references. This menu is implemented (when relevant features are enabled) by onCustomContextMenuRequested().</db:para>
+<db:programlisting language="cpp">#if QT_CONFIG(clipboard) &amp;&amp; QT_CONFIG(contextmenu)
+void MainWindow::onCustomContextMenuRequested(const QPoint &amp;pos)
+{
+    const QTreeWidgetItem *item = treeWidget-&gt;itemAt(pos);
+    if (!item)
+        return;
+    const QString url = item-&gt;text(1);
+    QMenu contextMenu;
+    QAction *copyAction = contextMenu.addAction(tr(&quot;Copy Link to Clipboard&quot;));
+    QAction *openAction = contextMenu.addAction(tr(&quot;Open&quot;));
+    QAction *action = contextMenu.exec(treeWidget-&gt;viewport()-&gt;mapToGlobal(pos));
+    if (action == copyAction)
+        QGuiApplication::clipboard()-&gt;setText(url);
+    else if (action == openAction)
+        QDesktopServices::openUrl(QUrl(url));
+}
+#endif // QT_CONFIG(clipboard) &amp;&amp; QT_CONFIG(contextmenu)
+</db:programlisting>
+<db:para>The createMenus() function creates the fileMenu and helpMenu and adds QAction objects to them, bound variously to the open(), saveAs() and about() functions, along with QWidget::close() and QApplication::aboutQt(). The connections are as shown below:</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    QAction *openAct = fileMenu-&gt;addAction(tr(&quot;&amp;Open...&quot;), this, &amp;MainWindow::open);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+
+    QAction *saveAsAct = fileMenu-&gt;addAction(tr(&quot;&amp;Save As...&quot;), this, &amp;MainWindow::saveAs);
+    saveAsAct-&gt;setShortcuts(QKeySequence::SaveAs);
+
+    QAction *exitAct = fileMenu-&gt;addAction(tr(&quot;E&amp;xit&quot;), this, &amp;QWidget::close);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+
+    menuBar()-&gt;addSeparator();
+
+    QMenu *helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    helpMenu-&gt;addAction(tr(&quot;&amp;About&quot;), this, &amp;MainWindow::about);
+    helpMenu-&gt;addAction(tr(&quot;About &amp;Qt&quot;), qApp, &amp;QApplication::aboutQt);
+}
+</db:programlisting>
+<db:para>This creates the menu shown in the screenshots below:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/filemenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/helpmenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The open() function, when triggered, offers the user a file dialog to use to select a bookmarks file. If a file is selected, it is parsed using an XBelReader to populate the treeWidget with bookmarks. If problems arise with opening or parsing the file, a suitable warning message is displayed to the user, including file name and error message. Otherwise, the bookmarks read from the file are displayed and the window's status bar briefly reports that the file has been loaded.</db:para>
+<db:programlisting language="cpp">void MainWindow::open()
+{
+    QFileDialog fileDialog(this, tr(&quot;Open Bookmark File&quot;), QDir::currentPath());
+    fileDialog.setMimeTypeFilters({&quot;application/x-xbel&quot;_L1});
+    if (fileDialog.exec() != QDialog::Accepted)
+        return;
+
+    treeWidget-&gt;clear();
+
+    const QString fileName = fileDialog.selectedFiles().constFirst();
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;QXmlStream Bookmarks&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                                     .arg(QDir::toNativeSeparators(fileName), file.errorString()));
+        return;
+    }
+
+    XbelReader reader(treeWidget);
+    if (!reader.read(&amp;file)) {
+        QMessageBox::warning(
+                this, tr(&quot;QXmlStream Bookmarks&quot;),
+                tr(&quot;Parse error in file %1:\n\n%2&quot;)
+                        .arg(QDir::toNativeSeparators(fileName), reader.errorString()));
+    } else {
+        statusBar()-&gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+    }
+}
+</db:programlisting>
+<db:para>The saveAs() function displays a QFileDialog, prompting the user for a fileName, to which to save a copy of the bookmarks data. Similar to the open() function, this function also displays a warning message if the file cannot be written to.</db:para>
+<db:programlisting language="cpp">void MainWindow::saveAs()
+{
+    QFileDialog fileDialog(this, tr(&quot;Save Bookmark File&quot;), QDir::currentPath());
+    fileDialog.setAcceptMode(QFileDialog::AcceptSave);
+    fileDialog.setDefaultSuffix(&quot;xbel&quot;_L1);
+    fileDialog.setMimeTypeFilters({&quot;application/x-xbel&quot;_L1});
+    if (fileDialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString fileName = fileDialog.selectedFiles().constFirst();
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;QXmlStream Bookmarks&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                                     .arg(QDir::toNativeSeparators(fileName), file.errorString()));
+        return;
+    }
+
+    XbelWriter writer(treeWidget);
+    if (writer.writeFile(&amp;file))
+        statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+</db:programlisting>
+<db:para>The about() function displays a QMessageBox with a brief description of the example, or general information about Qt and the version of it in use.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About QXmlStream Bookmarks&quot;),
+                       tr(&quot;The &lt;b&gt;QXmlStream Bookmarks&lt;/b&gt; example demonstrates how to use Qt's &quot;
+                          &quot;QXmlStream classes to read and write XML documents.&quot;));
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="main-function">
+<db:title>main() Function</db:title>
+<db:para>The main() function instantiates MainWindow and invokes the show() function to display it, then its open(), as this is most likely what the user shall want to do first.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    MainWindow mainWin;
+    mainWin.show();
+    mainWin.open();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>See the <db:link xlink:href="https://pyxml.sourceforge.net/topics/xbel/">XML Bookmark Exchange Language Resource Page</db:link> for more information about XBEL files.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/serialization/streambookmarks?h=6.8">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

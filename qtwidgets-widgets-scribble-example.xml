@@ -1,0 +1,512 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scribble Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Scribble example shows how to reimplement some of <db:link xlink:href="qwidget.xml">QWidget</db:link>'s event handlers to receive the events generated for the application's widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>We reimplement the mouse event handlers to implement drawing, the paint event handler to update the application and the resize event handler to optimize the application's appearance. In addition we reimplement the close event handler to intercept the close events before terminating the application.</db:para>
+<db:para>The example also demonstrates how to use <db:link xlink:href="qpainter.xml">QPainter</db:link> to draw an image in real time, as well as to repaint widgets.</db:para>
+<db:mediaobject>
+<db:alt>Screenshot of the Scribble example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/scribble-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>With the Scribble application the users can draw an image. The <db:guilabel>File</db:guilabel> menu gives the users the possibility to open and edit an existing image file, save an image and exit the application. While drawing, the <db:guilabel>Options</db:guilabel> menu allows the users to choose the pen color and pen width, as well as clear the screen. In addition the <db:guilabel>Help</db:guilabel> menu provides the users with information about the Scribble example in particular, and about Qt in general.</db:para>
+<db:para>The example consists of two classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>ScribbleArea is a custom widget that displays a <db:link xlink:href="qimage.xml">QImage</db:link> and allows to the user to draw on it.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>MainWindow provides a menu above the ScribbleArea.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>We will start by reviewing the ScribbleArea class. Then we will review the MainWindow class, which uses ScribbleArea.</db:para>
+<db:section xml:id="scribblearea-class-definition">
+<db:title>ScribbleArea Class Definition</db:title>
+<db:programlisting language="cpp">class ScribbleArea : public QWidget
+{
+    Q_OBJECT
+
+public:
+    ScribbleArea(QWidget *parent = nullptr);
+
+    bool openImage(const QString &amp;fileName);
+    bool saveImage(const QString &amp;fileName, const char *fileFormat);
+    void setPenColor(const QColor &amp;newColor);
+    void setPenWidth(int newWidth);
+
+    bool isModified() const { return modified; }
+    QColor penColor() const { return myPenColor; }
+    int penWidth() const { return myPenWidth; }
+
+public slots:
+    void clearImage();
+    void print();
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+
+private:
+    void drawLineTo(const QPoint &amp;endPoint);
+    void resizeImage(QImage *image, const QSize &amp;newSize);
+
+    bool modified = false;
+    bool scribbling = false;
+    int myPenWidth = 1;
+    QColor myPenColor = Qt::blue;
+    QImage image;
+    QPoint lastPoint;
+};
+</db:programlisting>
+<db:para>The ScribbleArea class inherits from <db:link xlink:href="qwidget.xml">QWidget</db:link>. We reimplement the mousePressEvent(), mouseMoveEvent() and mouseReleaseEvent() functions to implement the drawing. We reimplement the paintEvent() function to update the scribble area, and the resizeEvent() function to ensure that the <db:link xlink:href="qimage.xml">QImage</db:link> on which we draw is at least as large as the widget at any time.</db:para>
+<db:para>We need several public functions: openImage() loads an image from a file into the scribble area, allowing the user to edit the image; save() writes the currently displayed image to file; clearImage() slot clears the image displayed in the scribble area. We need the private drawLineTo() function to actually do the drawing, and resizeImage() to change the size of a <db:link xlink:href="qimage.xml">QImage</db:link>. The print() slot handles printing.</db:para>
+<db:para>We also need the following private variables:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>modified is true if there are unsaved changes to the image displayed in the scribble area.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>scribbling is true while the user is pressing the left mouse button within the scribble area.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>penWidth and penColor hold the currently set width and color for the pen used in the application.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>image stores the image drawn by the user.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>lastPoint holds the position of the cursor at the last mouse press or mouse move event.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="scribblearea-class-implementation">
+<db:title>ScribbleArea Class Implementation</db:title>
+<db:programlisting language="cpp">ScribbleArea::ScribbleArea(QWidget *parent)
+    : QWidget(parent)
+{
+    setAttribute(Qt::WA_StaticContents);
+}
+</db:programlisting>
+<db:para>In the constructor, we set the <db:link xlink:href="qt.xml#WidgetAttribute-enum">Qt::WA_StaticContents</db:link> attribute for the widget, indicating that the widget contents are rooted to the top-left corner and don't change when the widget is resized. Qt uses this attribute to optimize paint events on resizes. This is purely an optimization and should only be used for widgets whose contents are static and rooted to the top-left corner.</db:para>
+<db:programlisting language="cpp">bool ScribbleArea::openImage(const QString &amp;fileName)
+{
+    QImage loadedImage;
+    if (!loadedImage.load(fileName))
+        return false;
+
+    QSize newSize = loadedImage.size().expandedTo(size());
+    resizeImage(&amp;loadedImage, newSize);
+    image = loadedImage;
+    modified = false;
+    update();
+    return true;
+}
+</db:programlisting>
+<db:para>In the openImage() function, we load the given image. Then we resize the loaded <db:link xlink:href="qimage.xml">QImage</db:link> to be at least as large as the widget in both directions using the private resizeImage() function and we set the image member variable to be the loaded image. At the end, we call <db:link xlink:href="qwidget.xml#update">QWidget::update</db:link>() to schedule a repaint.</db:para>
+<db:programlisting language="cpp">bool ScribbleArea::saveImage(const QString &amp;fileName, const char *fileFormat)
+{
+    QImage visibleImage = image;
+    resizeImage(&amp;visibleImage, size());
+
+    if (visibleImage.save(fileName, fileFormat)) {
+        modified = false;
+        return true;
+    }
+    return false;
+}
+</db:programlisting>
+<db:para>The saveImage() function creates a <db:link xlink:href="qimage.xml">QImage</db:link> object that covers only the visible section of the actual image and saves it using QImage::save(). If the image is successfully saved, we set the scribble area's modified variable to false, because there is no unsaved data.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::setPenColor(const QColor &amp;newColor)
+{
+    myPenColor = newColor;
+}
+
+void ScribbleArea::setPenWidth(int newWidth)
+{
+    myPenWidth = newWidth;
+}
+</db:programlisting>
+<db:para>The setPenColor() and setPenWidth() functions set the current pen color and width. These values will be used for future drawing operations.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::clearImage()
+{
+    image.fill(qRgb(255, 255, 255));
+    modified = true;
+    update();
+}
+</db:programlisting>
+<db:para>The public clearImage() slot clears the image displayed in the scribble area. We simply fill the entire image with white, which corresponds to RGB value (255, 255, 255). As usual when we modify the image, we set modified to true and schedule a repaint.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::mousePressEvent(QMouseEvent *event)
+{
+    if (event-&gt;button() == Qt::LeftButton) {
+        lastPoint = event-&gt;position().toPoint();
+        scribbling = true;
+    }
+}
+
+void ScribbleArea::mouseMoveEvent(QMouseEvent *event)
+{
+    if ((event-&gt;buttons() &amp; Qt::LeftButton) &amp;&amp; scribbling)
+        drawLineTo(event-&gt;position().toPoint());
+}
+
+void ScribbleArea::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (event-&gt;button() == Qt::LeftButton &amp;&amp; scribbling) {
+        drawLineTo(event-&gt;position().toPoint());
+        scribbling = false;
+    }
+}
+
+</db:programlisting>
+<db:para>For mouse press and mouse release events, we use the <db:link xlink:href="qsinglepointevent.xml#button">QMouseEvent::button</db:link>() function to find out which button caused the event. For mouse move events, we use <db:link xlink:href="qsinglepointevent.xml#buttons">QMouseEvent::buttons</db:link>() to find which buttons are currently held down (as an OR-combination).</db:para>
+<db:para>If the users press the left mouse button, we store the position of the mouse cursor in lastPoint. We also make a note that the user is currently scribbling. (The scribbling variable is necessary because we can't assume that a mouse move and mouse release event is always preceded by a mouse press event on the same widget.)</db:para>
+<db:para>If the user moves the mouse with the left button pressed down or releases the button, we call the private drawLineTo() function to draw.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    QRect dirtyRect = event-&gt;rect();
+    painter.drawImage(dirtyRect, image, dirtyRect);
+}
+</db:programlisting>
+<db:para>In the reimplementation of the <db:link xlink:href="qwidget.xml#paintEvent">paintEvent</db:link>() function, we simply create a <db:link xlink:href="qpainter.xml">QPainter</db:link> for the scribble area, and draw the image.</db:para>
+<db:para>At this point, you might wonder why we don't just draw directly onto the widget instead of drawing in a <db:link xlink:href="qimage.xml">QImage</db:link> and copying the <db:link xlink:href="qimage.xml">QImage</db:link> onto screen in paintEvent(). There are at least three good reasons for this:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The window system requires us to be able to redraw the widget <db:emphasis>at any time</db:emphasis>. For example, if the window is minimized and restored, the window system might have forgotten the contents of the widget and send us a paint event. In other words, we can't rely on the window system to remember our image.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Qt normally doesn't allow us to paint outside of paintEvent(). In particular, we can't paint from the mouse event handlers. (This behavior can be changed using the <db:link xlink:href="qt.xml#WidgetAttribute-enum">Qt::WA_PaintOnScreen</db:link> widget attribute, though.)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If initialized properly, a <db:link xlink:href="qimage.xml">QImage</db:link> is guaranteed to use 8-bit for each color channel (red, green, blue, and alpha), whereas a <db:link xlink:href="qwidget.xml">QWidget</db:link> might have a lower color depth, depending on the monitor configuration. This means that if we load a 24-bit or 32-bit image and paint it onto a <db:link xlink:href="qwidget.xml">QWidget</db:link>, then copy the <db:link xlink:href="qwidget.xml">QWidget</db:link> into a <db:link xlink:href="qimage.xml">QImage</db:link> again, we might lose some information.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:programlisting language="cpp">void ScribbleArea::resizeEvent(QResizeEvent *event)
+{
+    if (width() &gt; image.width() || height() &gt; image.height()) {
+        int newWidth = qMax(width() + 128, image.width());
+        int newHeight = qMax(height() + 128, image.height());
+        resizeImage(&amp;image, QSize(newWidth, newHeight));
+        update();
+    }
+    QWidget::resizeEvent(event);
+}
+</db:programlisting>
+<db:para>When the user starts the Scribble application, a resize event is generated and an image is created and displayed in the scribble area. We make this initial image slightly larger than the application's main window and scribble area, to avoid always resizing the image when the user resizes the main window (which would be very inefficient). But when the main window becomes larger than this initial size, the image needs to be resized.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::drawLineTo(const QPoint &amp;endPoint)
+{
+    QPainter painter(&amp;image);
+    painter.setPen(QPen(myPenColor, myPenWidth, Qt::SolidLine, Qt::RoundCap,
+                        Qt::RoundJoin));
+    painter.drawLine(lastPoint, endPoint);
+    modified = true;
+
+    int rad = (myPenWidth / 2) + 2;
+    update(QRect(lastPoint, endPoint).normalized()
+                                     .adjusted(-rad, -rad, +rad, +rad));
+    lastPoint = endPoint;
+}
+</db:programlisting>
+<db:para>In drawLineTo(), we draw a line from the point where the mouse was located when the last mouse press or mouse move occurred, we set modified to true, we generate a repaint event, and we update lastPoint so that next time drawLineTo() is called, we continue drawing from where we left.</db:para>
+<db:para>We could call the update() function with no parameter, but as an easy optimization we pass a <db:link xlink:href="qrect.xml">QRect</db:link> that specifies the rectangle inside the scribble are needs updating, to avoid a complete repaint of the widget.</db:para>
+<db:programlisting language="cpp">void ScribbleArea::resizeImage(QImage *image, const QSize &amp;newSize)
+{
+    if (image-&gt;size() == newSize)
+        return;
+
+    QImage newImage(newSize, QImage::Format_RGB32);
+    newImage.fill(qRgb(255, 255, 255));
+    QPainter painter(&amp;newImage);
+    painter.drawImage(QPoint(0, 0), *image);
+    *image = newImage;
+}
+</db:programlisting>
+<db:para><db:link xlink:href="qimage.xml">QImage</db:link> has no nice API for resizing an image. There's a <db:link xlink:href="qimage.xml#copy">QImage::copy</db:link>() function that could do the trick, but when used to expand an image, it fills the new areas with black, whereas we want white.</db:para>
+<db:para>So the trick is to create a brand new <db:link xlink:href="qimage.xml">QImage</db:link> with the right size, to fill it with white, and to draw the old image onto it using <db:link xlink:href="qpainter.xml">QPainter</db:link>. The new image is given the <db:link xlink:href="qimage.xml#Format-enum">QImage::Format_RGB32</db:link> format, which means that each pixel is stored as 0xffRRGGBB (where RR, GG, and BB are the red, green and blue color channels, ff is the hexadecimal value 255).</db:para>
+<db:para>Printing is handled by the print() slot:</db:para>
+<db:programlisting language="cpp">void ScribbleArea::print()
+{
+#if defined(QT_PRINTSUPPORT_LIB) &amp;&amp; QT_CONFIG(printdialog)
+    QPrinter printer(QPrinter::HighResolution);
+
+    QPrintDialog printDialog(&amp;printer, this);
+</db:programlisting>
+<db:para>We construct a high resolution <db:link xlink:href="qprinter.xml">QPrinter</db:link> object for the required output format, using a <db:link xlink:href="qprintdialog.xml">QPrintDialog</db:link> to ask the user to specify a page size and indicate how the output should be formatted on the page.</db:para>
+<db:para>If the dialog is accepted, we perform the task of printing to the paint device:</db:para>
+<db:programlisting language="cpp">    if (printDialog.exec() == QDialog::Accepted) {
+        QPainter painter(&amp;printer);
+        QRect rect = painter.viewport();
+        QSize size = image.size();
+        size.scale(rect.size(), Qt::KeepAspectRatio);
+        painter.setViewport(rect.x(), rect.y(), size.width(), size.height());
+        painter.setWindow(image.rect());
+        painter.drawImage(0, 0, image);
+    }
+#endif // QT_CONFIG(printdialog)
+}
+</db:programlisting>
+<db:para>Printing an image to a file in this way is simply a matter of painting onto the <db:link xlink:href="qprinter.xml">QPrinter</db:link>. We scale the image to fit within the available space on the page before painting it onto the paint device.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
+private slots:
+    void open();
+    void save();
+    void penColor();
+    void penWidth();
+    void about();
+
+private:
+    void createActions();
+    void createMenus();
+    bool maybeSave();
+    bool saveFile(const QByteArray &amp;fileFormat);
+
+    ScribbleArea *scribbleArea;
+
+    QMenu *saveAsMenu;
+    QMenu *fileMenu;
+    QMenu *optionMenu;
+    QMenu *helpMenu;
+
+    QAction *openAct;
+    QList&lt;QAction *&gt; saveAsActs;
+    QAction *exitAct;
+    QAction *penColorAct;
+    QAction *penWidthAct;
+    QAction *printAct;
+    QAction *clearScreenAct;
+    QAction *aboutAct;
+    QAction *aboutQtAct;
+};
+</db:programlisting>
+<db:para>The MainWindow class inherits from <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link>. We reimplement the <db:link xlink:href="qwidget.xml#closeEvent">closeEvent</db:link>() handler from <db:link xlink:href="qwidget.xml">QWidget</db:link>. The open(), save(), penColor() and penWidth() slots correspond to menu entries. In addition we create four private functions.</db:para>
+<db:para>We use the boolean maybeSave() function to check if there are any unsaved changes. If there are unsaved changes, we give the user the opportunity to save these changes. The function returns false if the user clicks <db:guilabel>Cancel</db:guilabel>. We use the saveFile() function to let the user save the image currently displayed in the scribble area.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent), scribbleArea(new ScribbleArea(this))
+{
+    setCentralWidget(scribbleArea);
+
+    createActions();
+    createMenus();
+
+    setWindowTitle(tr(&quot;Scribble&quot;));
+    resize(500, 500);
+}
+</db:programlisting>
+<db:para>In the constructor, we create a scribble area which we make the central widget of the MainWindow widget. Then we create the associated actions and menus.</db:para>
+<db:programlisting language="cpp">void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (maybeSave())
+        event-&gt;accept();
+    else
+        event-&gt;ignore();
+}
+</db:programlisting>
+<db:para>Close events are sent to widgets that the users want to close, usually by clicking <db:guilabel>File|Exit</db:guilabel> or by clicking the <db:guilabel>X</db:guilabel> title bar button. By reimplementing the event handler, we can intercept attempts to close the application.</db:para>
+<db:para>In this example, we use the close event to ask the user to save any unsaved changes. The logic for that is located in the maybeSave() function. If maybeSave() returns true, there are no modifications or the users successfully saved them, and we accept the event. The application can then terminate normally. If maybeSave() returns false, the user clicked <db:guilabel>Cancel</db:guilabel>, so we &quot;ignore&quot; the event, leaving the application unaffected by it.</db:para>
+<db:programlisting language="cpp">void MainWindow::open()
+{
+    if (maybeSave()) {
+        QString fileName = QFileDialog::getOpenFileName(this,
+                                   tr(&quot;Open File&quot;), QDir::currentPath());
+        if (!fileName.isEmpty())
+            scribbleArea-&gt;openImage(fileName);
+    }
+}
+</db:programlisting>
+<db:para>In the open() slot we first give the user the opportunity to save any modifications to the currently displayed image, before a new image is loaded into the scribble area. Then we ask the user to choose a file and we load the file in the ScribbleArea.</db:para>
+<db:programlisting language="cpp">void MainWindow::save()
+{
+    QAction *action = qobject_cast&lt;QAction *&gt;(sender());
+    QByteArray fileFormat = action-&gt;data().toByteArray();
+    saveFile(fileFormat);
+}
+</db:programlisting>
+<db:para>The save() slot is called when the users choose the <db:guilabel>Save As</db:guilabel> menu entry, and then choose an entry from the format menu. The first thing we need to do is to find out which action sent the signal using <db:link xlink:href="qobject.xml#sender">QObject::sender</db:link>(). This function returns the sender as a <db:link xlink:href="qobject.xml">QObject</db:link> pointer. Since we know that the sender is an action object, we can safely cast the <db:link xlink:href="qobject.xml">QObject</db:link>. We could have used a C-style cast or a C++ static_cast&lt;&gt;(), but as a defensive programming technique we use a <db:link xlink:href="qobject.xml#qobject_cast">qobject_cast</db:link>(). The advantage is that if the object has the wrong type, a null pointer is returned. Crashes due to null pointers are much easier to diagnose than crashes due to unsafe casts.</db:para>
+<db:para>Once we have the action, we extract the chosen format using <db:link xlink:href="qaction.xml#data">QAction::data</db:link>(). (When the actions are created, we use <db:link xlink:href="qaction.xml#setData">QAction::setData</db:link>() to set our own custom data attached to the action, as a <db:link xlink:href="qvariant.xml">QVariant</db:link>. More on this when we review createActions().)</db:para>
+<db:para>Now that we know the format, we call the private saveFile() function to save the currently displayed image.</db:para>
+<db:programlisting language="cpp">void MainWindow::penColor()
+{
+    QColor newColor = QColorDialog::getColor(scribbleArea-&gt;penColor());
+    if (newColor.isValid())
+        scribbleArea-&gt;setPenColor(newColor);
+}
+</db:programlisting>
+<db:para>We use the penColor() slot to retrieve a new color from the user with a <db:link xlink:href="qcolordialog.xml">QColorDialog</db:link>. If the user chooses a new color, we make it the scribble area's color.</db:para>
+<db:programlisting language="cpp">void MainWindow::penWidth()
+{
+    bool ok;
+    int newWidth = QInputDialog::getInt(this, tr(&quot;Scribble&quot;),
+                                        tr(&quot;Select pen width:&quot;),
+                                        scribbleArea-&gt;penWidth(),
+                                        1, 50, 1, &amp;ok);
+    if (ok)
+        scribbleArea-&gt;setPenWidth(newWidth);
+}
+</db:programlisting>
+<db:para>To retrieve a new pen width in the penWidth() slot, we use <db:link xlink:href="qinputdialog.xml">QInputDialog</db:link>. The <db:link xlink:href="qinputdialog.xml">QInputDialog</db:link> class provides a simple convenience dialog to get a single value from the user. We use the static <db:link xlink:href="qinputdialog.xml#getInt">QInputDialog::getInt</db:link>() function, which combines a <db:link xlink:href="qlabel.xml">QLabel</db:link> and a <db:link xlink:href="qspinbox.xml">QSpinBox</db:link>. The <db:link xlink:href="qspinbox.xml">QSpinBox</db:link> is initialized with the scribble area's pen width, allows a range from 1 to 50, a step of 1 (meaning that the up and down arrow increment or decrement the value by 1).</db:para>
+<db:para>The boolean ok variable will be set to true if the user clicked <db:guilabel>OK</db:guilabel> and to false if the user pressed <db:guilabel>Cancel</db:guilabel>.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About Scribble&quot;),
+            tr(&quot;&lt;p&gt;The &lt;b&gt;Scribble&lt;/b&gt; example shows how to use QMainWindow as the &quot;
+               &quot;base widget for an application, and how to reimplement some of &quot;
+               &quot;QWidget's event handlers to receive the events generated for &quot;
+               &quot;the application's widgets:&lt;/p&gt;&lt;p&gt; We reimplement the mouse event &quot;
+               &quot;handlers to facilitate drawing, the paint event handler to &quot;
+               &quot;update the application and the resize event handler to optimize &quot;
+               &quot;the application's appearance. In addition we reimplement the &quot;
+               &quot;close event handler to intercept the close events before &quot;
+               &quot;terminating the application.&lt;/p&gt;&lt;p&gt; The example also demonstrates &quot;
+               &quot;how to use QPainter to draw an image in real time, as well as &quot;
+               &quot;to repaint widgets.&lt;/p&gt;&quot;));
+}
+</db:programlisting>
+<db:para>We implement the about() slot to create a message box describing what the example is designed to show.</db:para>
+<db:programlisting language="cpp">void MainWindow::createActions()
+{
+    openAct = new QAction(tr(&quot;&amp;Open...&quot;), this);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+    connect(openAct, &amp;QAction::triggered, this, &amp;MainWindow::open);
+
+    const QList&lt;QByteArray&gt; imageFormats = QImageWriter::supportedImageFormats();
+    for (const QByteArray &amp;format : imageFormats) {
+        QString text = tr(&quot;%1...&quot;).arg(QString::fromLatin1(format).toUpper());
+
+        QAction *action = new QAction(text, this);
+        action-&gt;setData(format);
+        connect(action, &amp;QAction::triggered, this, &amp;MainWindow::save);
+        saveAsActs.append(action);
+    }
+
+    printAct = new QAction(tr(&quot;&amp;Print...&quot;), this);
+    connect(printAct, &amp;QAction::triggered, scribbleArea, &amp;ScribbleArea::print);
+
+    exitAct = new QAction(tr(&quot;E&amp;xit&quot;), this);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+    connect(exitAct, &amp;QAction::triggered, this, &amp;MainWindow::close);
+
+    penColorAct = new QAction(tr(&quot;&amp;Pen Color...&quot;), this);
+    connect(penColorAct, &amp;QAction::triggered, this, &amp;MainWindow::penColor);
+
+    penWidthAct = new QAction(tr(&quot;Pen &amp;Width...&quot;), this);
+    connect(penWidthAct, &amp;QAction::triggered, this, &amp;MainWindow::penWidth);
+
+    clearScreenAct = new QAction(tr(&quot;&amp;Clear Screen&quot;), this);
+    clearScreenAct-&gt;setShortcut(tr(&quot;Ctrl+L&quot;));
+    connect(clearScreenAct, &amp;QAction::triggered,
+            scribbleArea, &amp;ScribbleArea::clearImage);
+
+    aboutAct = new QAction(tr(&quot;&amp;About&quot;), this);
+    connect(aboutAct, &amp;QAction::triggered, this, &amp;MainWindow::about);
+
+    aboutQtAct = new QAction(tr(&quot;About &amp;Qt&quot;), this);
+    connect(aboutQtAct, &amp;QAction::triggered, qApp, &amp;QApplication::aboutQt);
+}
+</db:programlisting>
+<db:para>In the createAction() function we create the actions representing the menu entries and connect them to the appropriate slots. In particular we create the actions found in the <db:guilabel>Save As</db:guilabel> sub-menu. We use <db:link xlink:href="qimagewriter.xml#supportedImageFormats">QImageWriter::supportedImageFormats</db:link>() to get a list of the supported formats (as a <db:link xlink:href="qlist.xml">QList</db:link>&lt;<db:link xlink:href="qbytearray.xml">QByteArray</db:link>&gt;).</db:para>
+<db:para>Then we iterate through the list, creating an action for each format. We call <db:link xlink:href="qaction.xml#setData">QAction::setData</db:link>() with the file format, so we can retrieve it later as <db:link xlink:href="qaction.xml#data">QAction::data</db:link>(). We could also have deduced the file format from the action's text, by truncating the &quot;...&quot;, but that would have been inelegant.</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    saveAsMenu = new QMenu(tr(&quot;&amp;Save As&quot;), this);
+    for (QAction *action : std::as_const(saveAsActs))
+        saveAsMenu-&gt;addAction(action);
+
+    fileMenu = new QMenu(tr(&quot;&amp;File&quot;), this);
+    fileMenu-&gt;addAction(openAct);
+    fileMenu-&gt;addMenu(saveAsMenu);
+    fileMenu-&gt;addAction(printAct);
+    fileMenu-&gt;addSeparator();
+    fileMenu-&gt;addAction(exitAct);
+
+    optionMenu = new QMenu(tr(&quot;&amp;Options&quot;), this);
+    optionMenu-&gt;addAction(penColorAct);
+    optionMenu-&gt;addAction(penWidthAct);
+    optionMenu-&gt;addSeparator();
+    optionMenu-&gt;addAction(clearScreenAct);
+
+    helpMenu = new QMenu(tr(&quot;&amp;Help&quot;), this);
+    helpMenu-&gt;addAction(aboutAct);
+    helpMenu-&gt;addAction(aboutQtAct);
+
+    menuBar()-&gt;addMenu(fileMenu);
+    menuBar()-&gt;addMenu(optionMenu);
+    menuBar()-&gt;addMenu(helpMenu);
+}
+</db:programlisting>
+<db:para>In the createMenu() function, we add the previously created format actions to the saveAsMenu. Then we add the rest of the actions as well as the saveAsMenu sub-menu to the <db:guilabel>File</db:guilabel>, <db:guilabel>Options</db:guilabel> and <db:guilabel>Help</db:guilabel> menus.</db:para>
+<db:para>The <db:link xlink:href="qmenu.xml">QMenu</db:link> class provides a menu widget for use in menu bars, context menus, and other popup menus. The <db:link xlink:href="qmenubar.xml">QMenuBar</db:link> class provides a horizontal menu bar with a list of pull-down <db:link xlink:href="qmenu.xml">QMenu</db:link>s. At the end we put the <db:guilabel>File</db:guilabel> and <db:guilabel>Options</db:guilabel> menus in the MainWindow's menu bar, which we retrieve using the <db:link xlink:href="qmainwindow.xml#menuBar">QMainWindow::menuBar</db:link>() function.</db:para>
+<db:programlisting language="cpp">bool MainWindow::maybeSave()
+{
+    if (scribbleArea-&gt;isModified()) {
+       QMessageBox::StandardButton ret;
+       ret = QMessageBox::warning(this, tr(&quot;Scribble&quot;),
+                          tr(&quot;The image has been modified.\n&quot;
+                             &quot;Do you want to save your changes?&quot;),
+                          QMessageBox::Save | QMessageBox::Discard
+                          | QMessageBox::Cancel);
+        if (ret == QMessageBox::Save)
+            return saveFile(&quot;png&quot;);
+        else if (ret == QMessageBox::Cancel)
+            return false;
+    }
+    return true;
+}
+</db:programlisting>
+<db:para>In mayBeSave(), we check if there are any unsaved changes. If there are any, we use <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to give the user a warning that the image has been modified and the opportunity to save the modifications.</db:para>
+<db:para>As with <db:link xlink:href="qcolordialog.xml">QColorDialog</db:link> and <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link>, the easiest way to create a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> is to use its static functions. <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> provides a range of different messages arranged along two axes: severity (question, information, warning and critical) and complexity (the number of necessary response buttons). Here we use the warning() function sice the message is rather important.</db:para>
+<db:para>If the user chooses to save, we call the private saveFile() function. For simplicitly, we use PNG as the file format; the user can always press <db:guilabel>Cancel</db:guilabel> and save the file using another format.</db:para>
+<db:para>The maybeSave() function returns false if the user clicks <db:guilabel>Cancel</db:guilabel>; otherwise it returns true.</db:para>
+<db:programlisting language="cpp">bool MainWindow::saveFile(const QByteArray &amp;fileFormat)
+{
+    QString initialPath = QDir::currentPath() + &quot;/untitled.&quot; + fileFormat;
+
+    QString fileName = QFileDialog::getSaveFileName(this, tr(&quot;Save As&quot;),
+                               initialPath,
+                               tr(&quot;%1 Files (*.%2);;All Files (*)&quot;)
+                               .arg(QString::fromLatin1(fileFormat.toUpper()))
+                               .arg(QString::fromLatin1(fileFormat)));
+    if (fileName.isEmpty())
+        return false;
+    return scribbleArea-&gt;saveImage(fileName, fileFormat.constData());
+}
+</db:programlisting>
+<db:para>In saveFile(), we pop up a file dialog with a file name suggestion. The static <db:link xlink:href="qfiledialog.xml#getSaveFileName">QFileDialog::getSaveFileName</db:link>() function returns a file name selected by the user. The file does not have to exist.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/widgets/scribble?h=6.8">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Singletons in QML</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Qml Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A guide for using singletons in QML.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>In QML, a singleton is an object which is created at most once per <db:link xlink:href="qqmlengine.xml">engine</db:link>. In this guide, we'll <db:link xlink:href="qml-singleton.xml#how-can-singletons-be-created-in-qml">explain how to create</db:link> singletons and <db:link xlink:href="qml-singleton.xml#accessing-singletons">how to use them</db:link>. We'll also provide some best practices for working with singletons.</db:para>
+<db:section xml:id="how-can-singletons-be-created-in-qml">
+<db:title>How can singletons be created in QML?</db:title>
+<db:para>There are two separate ways of creating singletons in QML. You can either define the singleton in a QML file, or register it from C++.</db:para>
+<db:section xml:id="defining-singletons-in-qml">
+<db:title>Defining singletons in QML</db:title>
+<db:para>To define a singleton in QML, you first have to add</db:para>
+<db:programlisting language="cpp">pragma Singleton
+</db:programlisting>
+<db:para>to the top of your file. There's one more step: You will need to add an entry to the QML module's <db:link xlink:href="qtqml-modules-qmldir.xml">qmldir file</db:link>.</db:para>
+<db:section xml:id="using-qt-add-qml-module-cmake">
+<db:title>Using qt_add_qml_module (CMake)</db:title>
+<db:para>When using CMake, the qmldir is automatically created by <db:link xlink:href="qt-add-qml-module.xml">qt_add_qml_module</db:link>. To indicate that the QML file should be turned into a singleton, you need to set the QT_QML_SINGLETON_TYPE file property on it:</db:para>
+<db:programlisting language="cpp">set_source_files_properties(MySingleton.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+</db:programlisting>
+<db:para>You can pass multiple files at once to set_source_files_properties:</db:para>
+<db:programlisting language="cpp">set(plain_qml_files
+    MyItem1.qml
+    MyItem2.qml
+    FancyButton.qml
+)
+set(qml_singletons
+    MySingleton.qml
+    MyOtherSingleton.qml
+)
+set_source_files_properties(${qml_singletons}
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+qt_add_qml_module(myapp
+    URI MyModule
+    QML_FILES ${plain_qml_files} ${qml_singletons}
+)
+</db:programlisting>
+<db:note>
+<db:para>set_source_files_properties needs to be called before qt_add_qml_module</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="without-qt-add-qml-module">
+<db:title>Without qt_add_qml_module</db:title>
+<db:para>If you aren't using qt_add_qml_module, you'll need to manually create a <db:link xlink:href="qtqml-modules-qmldir.xml">qmldir file</db:link>. There, you'll need to mark your singletons accordingly:</db:para>
+<db:programlisting language="cpp">module MyModule
+singleton MySingleton 1.0 MySingleton.qml
+singleton MyOtherSingleton 1.0 MyOtherSingleton.qml
+</db:programlisting>
+<db:para>See also <db:link xlink:href="qtqml-modules-qmldir.xml#object-type-declaration">Object Type Declaration</db:link> for more details.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="defining-singletons-in-c">
+<db:title>Defining singletons in C++</db:title>
+<db:para>There are multiple ways of exposing singletons to QML from C++. The main difference depends on whether a new instance of a class should be created when needed by the QML engine; or if some existing object needs to be exposed to a QML program.</db:para>
+<db:section xml:id="registering-a-class-to-provide-singletons">
+<db:title>Registering a class to provide singletons</db:title>
+<db:para>The simplest way of defining a singleton is to have a default-constructible class, which derives from <db:link xlink:href="qobject.xml">QObject</db:link> and mark it with the <db:link xlink:href="qqmlintegration-h-qtqml-proxy.xml#QML_SINGLETON">QML_SINGLETON</db:link> and <db:link xlink:href="qqmlintegration-h-qtqml-proxy.xml#QML_ELEMENT">QML_ELEMENT</db:link> macros.</db:para>
+<db:programlisting language="cpp">class MySingleton : public QObject
+{
+    Q_OBJECT
+    QML_SINGLETON
+    QML_ELEMENT
+public:
+    MySingleton(QObject *parent = nullptr) : QObject(parent) {
+        // ...
+    }
+};
+</db:programlisting>
+<db:para>This will register the MySingleton class under the name MySingleton in the QML module to which the file belongs. If you want to expose it under a different name, you can use <db:link xlink:href="qqmlintegration-h-qtqml-proxy.xml#QML_NAMED_ELEMENT">QML_NAMED_ELEMENT</db:link> instead.</db:para>
+<db:para>If the class can't be made default-constructible, or if you need access to the <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> in which the singleton is instantiated, it is possible to use a static create function instead. It must have the signature MySingleton *create(QQmlEngine *, QJSEngine *), where MySingleton is the type of the class that gets registered.</db:para>
+<db:programlisting language="cpp">class MyNonDefaultConstructibleSingleton : public QObject
+{
+    Q_OBJECT
+    QML_SINGLETON
+    QML_NAMED_ELEMENT(MySingleton)
+public:
+    MyNonDefaultConstructibleSingleton(QJSValue id, QObject *parent = nullptr)
+        : QObject(parent)
+        , m_symbol(std::move(id))
+    {}
+
+    static MyNonDefaultConstructibleSingleton *create(QQmlEngine *qmlEngine, QJSEngine *)
+    {
+         return new MyNonDefaultConstructibleSingleton(qmlEngine-&gt;newSymbol(u&quot;MySingleton&quot;_s));
+    }
+
+private:
+    QJSValue m_symbol;
+};
+</db:programlisting>
+<db:note>
+<db:para>The create function takes both a <db:link xlink:href="qjsengine.xml">QJSEngine</db:link> and a <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> parameter. That is for historical reasons. They both point to the same object which is in fact a <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link>.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="exposing-an-existing-object-as-a-singleton">
+<db:title>Exposing an existing object as a singleton</db:title>
+<db:para>Sometimes, you have an existing object that might have been created via some third-party API. Often, the right choice in this case is to have one singleton, which exposes those objects as its properties (see <db:link xlink:href="qml-singleton.xml#grouping-together-related-data">Grouping together related data</db:link>). But if that is not the case, for example because there is only a single object that needs to be exposed, use the following approach to expose an instance of type MySingleton to the engine. We first expose the Singleton as a <db:link xlink:href="qqmlintegration-h-qtqml-proxy.xml#QML_FOREIGN">foreign type</db:link>:</db:para>
+<db:programlisting language="cpp">struct SingletonForeign
+{
+    Q_GADGET
+    QML_FOREIGN(MySingleton)
+    QML_SINGLETON
+    QML_NAMED_ELEMENT(MySingleton)
+public:
+
+    inline static MySingleton *s_singletonInstance = nullptr;
+
+    static MySingleton *create(QQmlEngine *, QJSEngine *engine)
+    {
+        // The instance has to exist before it is used. We cannot replace it.
+        Q_ASSERT(s_singletonInstance);
+
+        // The engine has to have the same thread affinity as the singleton.
+        Q_ASSERT(engine-&gt;thread() == s_singletonInstance-&gt;thread());
+
+        // There can only be one engine accessing the singleton.
+        if (s_engine)
+            Q_ASSERT(engine == s_engine);
+        else
+            s_engine = engine;
+
+        // Explicitly specify C++ ownership so that the engine doesn't delete
+        // the instance.
+        QJSEngine::setObjectOwnership(s_singletonInstance,
+                                      QJSEngine::CppOwnership);
+        return s_singletonInstance;
+    }
+
+private:
+    inline static QJSEngine *s_engine = nullptr;
+};
+</db:programlisting>
+<db:para>Then we set SingletonForeign::s_singletonInstance before we start the first engine</db:para>
+<db:programlisting language="cpp">SingletonForeign::s_singletonInstance = getSingletonInstance();
+QQmlApplicationEngine engine;
+engine.loadFromModule(&quot;MyModule&quot;, &quot;Main&quot;);
+</db:programlisting>
+<db:note>
+<db:para>It can be very tempting to simply use <db:link xlink:href="qqml-h-qtqml-proxy.xml#qmlRegisterSingletonInstance">qmlRegisterSingletonInstance</db:link> in this case. However, be wary of the pitfalls of imperative type registration listed in the next section.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="imperative-type-registration">
+<db:title>Imperative type registration</db:title>
+<db:para>Before Qt 5.15, all types, including singletons were registered via the qmlRegisterType API. Singletons specifically were registered via either <db:link xlink:href="qqml-h-qtqml-proxy.xml#qmlRegisterSingletonType">qmlRegisterSingletonType</db:link> or <db:link xlink:href="qqml-h-qtqml-proxy.xml#qmlRegisterSingletonInstance">qmlRegisterSingletonInstance</db:link>. Besides the minor annoyance of having to repeat the module name for each type and the forced decoupling of the class declaration and its registration, the major problem with that approach was that it is tooling unfriendly: It was not statically possible to extract all the necessary information about the types of a module at compile time. The declarative registration solved this issue.</db:para>
+<db:note>
+<db:para>There is one remaining use case for the imperative qmlRegisterType API: It is a way to expose a singleton of non-<db:link xlink:href="qobject.xml">QObject</db:link> type as a var property via <db:link xlink:href="qqml-h-qtqml-proxy.xml#qmlRegisterSingletonType">the QJSValue based qmlRegisterSingletonType overload</db:link> . Prefer the alternative: Expose that value as the property of a (QObject) based singleton, so that type information will be available.</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="accessing-singletons">
+<db:title>Accessing singletons</db:title>
+<db:para>Singletons can be accessed both from QML as well as from C++. In QML, you need to import the containing module. Afterwards, you can access the singleton via its name. Reading its properties and writing to them inside JavaScript contexts is done in the same way as with normal objects:</db:para>
+<db:programlisting language="cpp">import QtQuick
+import MyModule
+
+Item {
+    x: MySingleton.posX
+    Component.onCompleted: MySingleton.ready = true;
+}
+</db:programlisting>
+<db:para>Setting up bindings on a singletons properties is not possible; however, if it is needed, a <db:link xlink:href="qml-qtqml-binding.xml">Binding</db:link> element can be used to achieve the same result:</db:para>
+<db:programlisting language="cpp">import QtQuick
+import MyModule
+
+Item {
+    id: root
+    Binding {
+        target: MySingleton
+        property: &quot;posX&quot;
+        value: root.x
+    }
+}
+</db:programlisting>
+<db:note>
+<db:para>Care must be taken when installing a binding on a singleton property: If done by more than one file, the results are not defined.</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="guidelines-for-not-using-singletons">
+<db:title>Guidelines for (not) using singletons</db:title>
+<db:para>Singletons allow you to expose data which needs to be accessed in multiple places to the engine. That can be globally shared settings, like the spacing between elements, or data models which need to be displayed in multiple places. Compared to context properties which can solve a similar use case, they have the benefit of being typed, being supported by tooling like the <db:link xlink:href="qtqml-tooling-qmlls.xml">QML Language Server</db:link>, and they are also generally faster at runtime.</db:para>
+<db:para>It is recommended not to register too many singletons in a module: Singletons, once created, stay alive until the engine itself gets destroyed and come with the drawbacks of shared state as they are part of the global state. Thus consider using the following techniques to reduce the amount of singletons in your application:</db:para>
+<db:section xml:id="grouping-together-related-data">
+<db:title>Grouping together related data</db:title>
+<db:para>Adding one singleton for each object which you want to expose adds quite some boiler plate. Most of the time, it makes more sense to group data you want to expose together as properties of a single singleton. Assume for instance that you want to create an ebook reader where you need to expose three <db:link xlink:href="qabstractitemmodel.xml">abstract item models</db:link>, one for local books, and two for remote sources. Instead of repeating the process for <db:link xlink:href="qml-singleton.xml#exposing-an-existing-object-as-a-singleton">exposing existing objects</db:link> three times, you can instead create one singleton and set it up before starting the main application:</db:para>
+<db:programlisting language="cpp">class GlobalState : QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    QML_SINGLETON
+    Q_PROPERTY(QAbstractItemModel* localBooks MEMBER localBooks)
+    Q_PROPERTY(QAbstractItemModel* digitalStoreFront MEMBER digitalStoreFront)
+    Q_PROPERTY(QAbstractItemModel* publicLibrary MEMBER publicLibrary)
+public:
+    QAbstractItemModel* localBooks;
+    QAbstractItemModel* digitalStoreFront;
+    QAbstractItemModel* publicLibrary
+};
+
+int main() {
+    QQmlApplicationEngine engine;
+    auto globalState = engine.singletonInstance&lt;GlobalState *&gt;(&quot;MyModule&quot;, &quot;GlobalState&quot;);
+    globalState-&gt;localBooks = getLocalBooks();
+    globalState-&gt;digitalStoreFront = setupLoalStoreFront();
+    globalState-&gt;publicLibrary = accessPublicLibrary();
+    engine.loadFromModule(&quot;MyModule&quot;, &quot;Main&quot;);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="use-object-instances">
+<db:title>Use object instances</db:title>
+<db:para>In the last section, we had the example of exposing three models as members of a singleton. That can be useful when either the models need to be used in multiple places, or when they are provided by some external API over which we have no control. However, if we need the models only in a single place it might make more sense have them as an instantiable type. Coming back to the previous example, we can add an instantiable RemoteBookModel class, and then instantiate it inside the book browser QML file:</db:para>
+<db:programlisting language="cpp">// remotebookmodel.h
+class RemoteBookModel : public QAbstractItemModel
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(QUrl url READ url WRITE setUrl NOTIFY urlChanged)
+    // ...
+};
+
+// bookbrowser.qml
+Row {
+    ListView {
+        model: RemoteBookModel { url: &quot;www.public-lib.example&quot;}
+    }
+    ListView {
+        model: RemoteBookModel { url: &quot;www.store-front.example&quot;}
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="passing-initial-state">
+<db:title>Passing initial state</db:title>
+<db:para>While singletons can be used to pass state to QML, they are wasteful when the state is only needed for the initial setup of the application. In that case, it is often possible to use <db:link xlink:href="qqmlapplicationengine.xml#setInitialProperties">QQmlApplicationEngine::setInitialProperties</db:link>. You might for instance want to set <db:link xlink:href="">Window::visibility</db:link> to fullscreen if a corresponding command line flag has been set:</db:para>
+<db:programlisting language="cpp">QQmlApplicationEngine engine;
+if (parser.isSet(fullScreenOption)) {
+    // assumes root item is ApplicationWindow
+    engine.setInitialProperties(
+        { &quot;visibility&quot;, QVariant::fromValue(QWindow::FullScreen)}
+    );
+}
+engine.loadFromModule(&quot;MyModule, &quot;Main&quot;);
+</db:programlisting>
+</db:section>
+</db:section>
+</db:article>

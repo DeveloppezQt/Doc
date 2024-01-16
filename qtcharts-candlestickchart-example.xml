@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Creating Candlestick Charts</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt Charts | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to create a candlestick chart.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:note>
+<db:para>This is part of the <db:link xlink:href="qtcharts-chartsgallery-example.xml">Charts with Widgets Gallery</db:link> example.</db:para>
+</db:note>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/examples_candlestickchart.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>To display a candlestick chart, we start by creating <db:link xlink:href="qcandlestickseries-qtcharts.xml">QCandlestickSeries</db:link> to handle daily data. We are also specifying custom increasing and decreasing body colors.</db:para>
+<db:programlisting language="cpp">auto acmeSeries = new QCandlestickSeries;
+acmeSeries-&gt;setName(&quot;Acme Ltd&quot;);
+acmeSeries-&gt;setIncreasingColor(QColor(Qt::green));
+acmeSeries-&gt;setDecreasingColor(QColor(Qt::red));
+</db:programlisting>
+<db:para><db:link xlink:href="qfile.xml">QFile</db:link> is used for accessing a text file where the non-continuous data is kept. The <db:code>CandlestickDataReader</db:code> is an auxiliary class for reading the text file and finding the open, high, low, close, and timestamp values from the data. The <db:code>CandlestickDataReader</db:code> is explained in more detail later. The method <db:code>readCandlestickSet()</db:code> reads the values and sets them to the <db:link xlink:href="qcandlestickset-qtcharts.xml">QCandlestickSet</db:link> item which the method returns for the caller. The returned <db:link xlink:href="qcandlestickset-qtcharts.xml">QCandlestickSet</db:link> item is added to the series. We are also saving custom categories list for later use.</db:para>
+<db:programlisting language="cpp">QFile acmeData(&quot;:candlestick&quot;);
+if (!acmeData.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    m_loadError = QStringLiteral(&quot;Failed to load '%1' file.&quot;).arg(acmeData.fileName());
+    return false;
+}
+
+QStringList categories;
+
+CandlestickDataReader dataReader(&amp;acmeData);
+while (!dataReader.atEnd()) {
+    QCandlestickSet *set = dataReader.readCandlestickSet();
+    if (set) {
+        acmeSeries-&gt;append(set);
+        categories &lt;&lt; QDateTime::fromMSecsSinceEpoch(set-&gt;timestamp()).toString(&quot;dd&quot;);
+    }
+}
+</db:programlisting>
+<db:para>Below, a new <db:link xlink:href="qchart-qtcharts.xml">QChart</db:link> instance is created and the previously created series object is added to it. We also define a title, and set an animation as <db:link xlink:href="qchart-qtcharts.xml#AnimationOption-enum">QChart::SeriesAnimation</db:link>.</db:para>
+<db:programlisting language="cpp">auto chart = new QChart;
+chart-&gt;addSeries(acmeSeries);
+chart-&gt;setTitle(&quot;Acme Ltd. Historical Data (July 2015)&quot;);
+chart-&gt;setAnimationOptions(QChart::SeriesAnimations);
+</db:programlisting>
+<db:para>Here, we ask the chart to create default axes for our presentation. Then, we set custom categories for the horizontal axis by querying the pointer for the axis from the chart, and then setting the categories from previously saved custom categories list. We also set the range for the vertical axis by querying the pointer for the axis from the chart, and then setting the min and max values for that axis.</db:para>
+<db:programlisting language="cpp">chart-&gt;createDefaultAxes();
+
+auto axisX = qobject_cast&lt;QBarCategoryAxis *&gt;(chart-&gt;axes(Qt::Horizontal).at(0));
+axisX-&gt;setCategories(categories);
+
+auto axisY = qobject_cast&lt;QValueAxis *&gt;(chart-&gt;axes(Qt::Vertical).at(0));
+axisY-&gt;setMax(axisY-&gt;max() * 1.01);
+axisY-&gt;setMin(axisY-&gt;min() * 0.99);
+</db:programlisting>
+<db:para>Below, we set the legend to be visible and place it at the bottom of the chart.</db:para>
+<db:programlisting language="cpp">chart-&gt;legend()-&gt;setVisible(true);
+chart-&gt;legend()-&gt;setAlignment(Qt::AlignBottom);
+</db:programlisting>
+<db:para>Finally, we add the chart onto a view.</db:para>
+<db:programlisting language="cpp">createDefaultChartView(chart);
+</db:programlisting>
+<db:para>The chart is ready to be shown.</db:para>
+<db:para>Here, the method <db:code>readCandlestickSet()</db:code> is explained in detail. First, a line is read from the file, rejecting any lines starting with # as they are considered comment lines.</db:para>
+<db:programlisting language="cpp">QString line = m_textStream.readLine();
+if (line.startsWith(&quot;#&quot;) || line.isEmpty())
+    return nullptr;
+</db:programlisting>
+<db:para>In the file, the data is arranged as a space-delimited sequence of numbers. On this snippet the line is split into single number strings which are stored in a <db:link xlink:href="qstringlist.xml">QStringList</db:link>.</db:para>
+<db:programlisting language="cpp">QStringList strList = line.split(QLatin1Char(' '), Qt::SkipEmptyParts);
+if (strList.count() != 5)
+    return nullptr;
+</db:programlisting>
+<db:para>To select values from the continuous data, following code is used. The values in a <db:code>strList</db:code> are stored in the following order: timestamp, open, high, low, close.</db:para>
+<db:programlisting language="cpp">const qreal timestamp = strList.at(0).toDouble();
+const qreal open = strList.at(1).toDouble();
+const qreal high = strList.at(2).toDouble();
+const qreal low = strList.at(3).toDouble();
+const qreal close = strList.at(4).toDouble();
+</db:programlisting>
+<db:para>Finally, the following snippet shows how to create a new <db:link xlink:href="qcandlestickset-qtcharts.xml">QCandlestickSet</db:link> and provide it with all the necessary values.</db:para>
+<db:programlisting language="cpp">auto candlestickSet = new QCandlestickSet(timestamp);
+candlestickSet-&gt;setOpen(open);
+candlestickSet-&gt;setHigh(high);
+candlestickSet-&gt;setLow(low);
+candlestickSet-&gt;setClose(close);
+</db:programlisting>
+</db:article>
