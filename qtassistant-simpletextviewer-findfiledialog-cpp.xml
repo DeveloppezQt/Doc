@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple Text Viewer Example</db:title>
+<db:productname>QtAssistant</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Assistant Manual</db:titleabbrev>
+<db:abstract>
+<db:para>Using <db:emphasis>Qt Assistant</db:emphasis> as a customized help viewer for your application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtCore/QDir&gt;
+#include &lt;QtWidgets/QLayout&gt;
+#include &lt;QtWidgets/QComboBox&gt;
+#include &lt;QtWidgets/QTreeWidget&gt;
+#include &lt;QtWidgets/QLayout&gt;
+#include &lt;QtWidgets/QFileDialog&gt;
+#include &lt;QtWidgets/QDialogButtonBox&gt;
+#include &lt;QtWidgets/QToolButton&gt;
+#include &lt;QtWidgets/QPushButton&gt;
+#include &lt;QtWidgets/QLabel&gt;
+
+#include &quot;findfiledialog.h&quot;
+#include &quot;assistant.h&quot;
+#include &quot;textedit.h&quot;
+
+FindFileDialog::FindFileDialog(TextEdit *editor, Assistant *assistant)
+    : QDialog(editor)
+{
+    currentAssistant = assistant;
+    currentEditor = editor;
+
+    createButtons();
+    createComboBoxes();
+    createFilesTree();
+    createLabels();
+    createLayout();
+
+    directoryComboBox-&gt;addItem(QDir::toNativeSeparators(QDir::currentPath()));
+    fileNameComboBox-&gt;addItem(&quot;*&quot;);
+    findFiles();
+
+    setWindowTitle(tr(&quot;Find File&quot;));
+}
+
+void FindFileDialog::browse()
+{
+    QString currentDirectory = directoryComboBox-&gt;currentText();
+    QString newDirectory = QFileDialog::getExistingDirectory(this,
+                               tr(&quot;Select Directory&quot;), currentDirectory);
+    if (!newDirectory.isEmpty()) {
+        directoryComboBox-&gt;addItem(QDir::toNativeSeparators(newDirectory));
+        directoryComboBox-&gt;setCurrentIndex(directoryComboBox-&gt;count() - 1);
+        update();
+    }
+}
+
+void FindFileDialog::help()
+{
+    currentAssistant-&gt;showDocumentation(&quot;filedialog.html&quot;);
+}
+
+void FindFileDialog::openFile(QTreeWidgetItem *item)
+{
+    if (!item) {
+        item = foundFilesTree-&gt;currentItem();
+        if (!item)
+            return;
+    }
+
+    QString fileName = item-&gt;text(0);
+    QString path = directoryComboBox-&gt;currentText() + QDir::separator();
+
+    currentEditor-&gt;setContents(path + fileName);
+    close();
+}
+
+void FindFileDialog::update()
+{
+    findFiles();
+    buttonBox-&gt;button(QDialogButtonBox::Open)-&gt;setEnabled(
+            foundFilesTree-&gt;topLevelItemCount() &gt; 0);
+}
+
+void FindFileDialog::findFiles()
+{
+    QRegExp filePattern(fileNameComboBox-&gt;currentText() + &quot;*&quot;);
+    filePattern.setPatternSyntax(QRegExp::Wildcard);
+
+    QDir directory(directoryComboBox-&gt;currentText());
+
+    QStringList allFiles = directory.entryList(QDir::Files | QDir::NoSymLinks);
+    QStringList matchingFiles;
+
+    foreach (QString file, allFiles) {
+        if (filePattern.exactMatch(file))
+            matchingFiles &lt;&lt; file;
+    }
+    showFiles(matchingFiles);
+}
+
+void FindFileDialog::showFiles(const QStringList &amp;files)
+{
+    foundFilesTree-&gt;clear();
+
+    for (int i = 0; i &lt; files.count(); ++i) {
+        QTreeWidgetItem *item = new QTreeWidgetItem(foundFilesTree);
+        item-&gt;setText(0, files[i]);
+    }
+
+    if (files.count() &gt; 0)
+        foundFilesTree-&gt;setCurrentItem(foundFilesTree-&gt;topLevelItem(0));
+}
+
+void FindFileDialog::createButtons()
+{
+    browseButton = new QToolButton;
+    browseButton-&gt;setText(tr(&quot;...&quot;));
+    connect(browseButton, SIGNAL(clicked()), this, SLOT(browse()));
+
+    buttonBox = new QDialogButtonBox(QDialogButtonBox::Open
+                                     | QDialogButtonBox::Cancel
+                                     | QDialogButtonBox::Help);
+    connect(buttonBox, SIGNAL(accepted()), this, SLOT(openFile()));
+    connect(buttonBox, SIGNAL(rejected()), this, SLOT(reject()));
+    connect(buttonBox, SIGNAL(helpRequested()), this, SLOT(help()));
+}
+
+void FindFileDialog::createComboBoxes()
+{
+    directoryComboBox = new QComboBox;
+    fileNameComboBox = new QComboBox;
+
+    fileNameComboBox-&gt;setEditable(true);
+    fileNameComboBox-&gt;setSizePolicy(QSizePolicy::Expanding,
+                                    QSizePolicy::Preferred);
+
+    directoryComboBox-&gt;setMinimumContentsLength(30);
+    directoryComboBox-&gt;setSizeAdjustPolicy(
+            QComboBox::AdjustToMinimumContentsLength);
+    directoryComboBox-&gt;setSizePolicy(QSizePolicy::Expanding,
+                                     QSizePolicy::Preferred);
+
+    connect(fileNameComboBox, SIGNAL(editTextChanged(QString)),
+            this, SLOT(update()));
+    connect(directoryComboBox, SIGNAL(currentIndexChanged(QString)),
+            this, SLOT(update()));
+}
+
+void FindFileDialog::createFilesTree()
+{
+    foundFilesTree = new QTreeWidget;
+    foundFilesTree-&gt;setColumnCount(1);
+    foundFilesTree-&gt;setHeaderLabels(QStringList(tr(&quot;Matching Files&quot;)));
+    foundFilesTree-&gt;setRootIsDecorated(false);
+    foundFilesTree-&gt;setSelectionMode(QAbstractItemView::SingleSelection);
+
+    connect(foundFilesTree, SIGNAL(itemActivated(QTreeWidgetItem*,int)),
+            this, SLOT(openFile(QTreeWidgetItem*)));
+}
+
+void FindFileDialog::createLabels()
+{
+    directoryLabel = new QLabel(tr(&quot;Search in:&quot;));
+    fileNameLabel = new QLabel(tr(&quot;File name (including wildcards):&quot;));
+}
+
+void FindFileDialog::createLayout()
+{
+    QHBoxLayout *fileLayout = new QHBoxLayout;
+    fileLayout-&gt;addWidget(fileNameLabel);
+    fileLayout-&gt;addWidget(fileNameComboBox);
+
+    QHBoxLayout *directoryLayout = new QHBoxLayout;
+    directoryLayout-&gt;addWidget(directoryLabel);
+    directoryLayout-&gt;addWidget(directoryComboBox);
+    directoryLayout-&gt;addWidget(browseButton);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout-&gt;addLayout(fileLayout);
+    mainLayout-&gt;addLayout(directoryLayout);
+    mainLayout-&gt;addWidget(foundFilesTree);
+    mainLayout-&gt;addStretch();
+    mainLayout-&gt;addWidget(buttonBox);
+    setLayout(mainLayout);
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,495 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;browserapplication.h&quot;
+#include &quot;browsermainwindow.h&quot;
+#include &quot;cookiejar.h&quot;
+#include &quot;downloadmanager.h&quot;
+#include &quot;featurepermissionbar.h&quot;
+#include &quot;ui_passworddialog.h&quot;
+#include &quot;ui_proxy.h&quot;
+#include &quot;tabwidget.h&quot;
+#include &quot;webview.h&quot;
+
+#include &lt;QtGui/QClipboard&gt;
+#include &lt;QtNetwork/QAuthenticator&gt;
+#include &lt;QtNetwork/QNetworkReply&gt;
+#include &lt;QtWidgets/QMenu&gt;
+#include &lt;QtWidgets/QMessageBox&gt;
+#include &lt;QtGui/QMouseEvent&gt;
+
+#include &lt;QWebEngineContextMenuData&gt;
+
+#ifndef QT_NO_UITOOLS
+#include &lt;QtUiTools/QUiLoader&gt;
+#endif  //QT_NO_UITOOLS
+
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtCore/QBuffer&gt;
+#include &lt;QtCore/QTimer&gt;
+
+WebPage::WebPage(QWebEngineProfile *profile, QObject *parent)
+    : QWebEnginePage(profile, parent)
+    , m_keyboardModifiers(Qt::NoModifier)
+    , m_pressedButtons(Qt::NoButton)
+{
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+    setNetworkAccessManager(BrowserApplication::networkAccessManager());
+#endif
+#if defined(QWEBENGINEPAGE_UNSUPPORTEDCONTENT)
+    connect(this, SIGNAL(unsupportedContent(QNetworkReply*)),
+            this, SLOT(handleUnsupportedContent(QNetworkReply*)));
+#endif
+    connect(this, SIGNAL(authenticationRequired(const QUrl &amp;, QAuthenticator*)),
+            SLOT(authenticationRequired(const QUrl &amp;, QAuthenticator*)));
+    connect(this, SIGNAL(proxyAuthenticationRequired(const QUrl &amp;, QAuthenticator *, const QString &amp;)),
+            SLOT(proxyAuthenticationRequired(const QUrl &amp;, QAuthenticator *, const QString &amp;)));
+}
+
+BrowserMainWindow *WebPage::mainWindow()
+{
+    QObject *w = this-&gt;parent();
+    while (w) {
+        if (BrowserMainWindow *mw = qobject_cast&lt;BrowserMainWindow*&gt;(w))
+            return mw;
+        w = w-&gt;parent();
+    }
+    return BrowserApplication::instance()-&gt;mainWindow();
+}
+
+bool WebPage::certificateError(const QWebEngineCertificateError &amp;error)
+{
+    if (error.isOverridable()) {
+        QMessageBox msgBox;
+        msgBox.setIcon(QMessageBox::Warning);
+        msgBox.setText(error.errorDescription());
+        msgBox.setInformativeText(tr(&quot;If you wish so, you may continue with an unverified certificate. &quot;
+                                     &quot;Accepting an unverified certificate means &quot;
+                                     &quot;you may not be connected with the host you tried to connect to.\n&quot;
+                                     &quot;Do you wish to override the security check and continue?&quot;));
+        msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+        msgBox.setDefaultButton(QMessageBox::No);
+        return msgBox.exec() == QMessageBox::Yes;
+    }
+    QMessageBox::critical(view(), tr(&quot;Certificate Error&quot;), error.errorDescription(), QMessageBox::Ok, QMessageBox::NoButton);
+    return false;
+}
+
+class PopupWindow : public QWidget {
+    Q_OBJECT
+public:
+    PopupWindow(QWebEngineProfile *profile)
+        : m_addressBar(new QLineEdit(this))
+        , m_view(new WebView(this))
+    {
+        m_view-&gt;setPage(new WebPage(profile, m_view));
+        QVBoxLayout *layout = new QVBoxLayout;
+        layout-&gt;setMargin(0);
+        setLayout(layout);
+        layout-&gt;addWidget(m_addressBar);
+        layout-&gt;addWidget(m_view);
+        m_view-&gt;setFocus();
+
+        connect(m_view, &amp;WebView::titleChanged, this, &amp;QWidget::setWindowTitle);
+        connect(m_view, &amp;WebView::urlChanged, this, &amp;PopupWindow::setUrl);
+        connect(page(), &amp;WebPage::geometryChangeRequested, this, &amp;PopupWindow::adjustGeometry);
+        connect(page(), &amp;WebPage::windowCloseRequested, this, &amp;QWidget::close);
+    }
+
+    QWebEnginePage* page() const { return m_view-&gt;page(); }
+
+private Q_SLOTS:
+    void setUrl(const QUrl &amp;url)
+    {
+        m_addressBar-&gt;setText(url.toString());
+    }
+
+    void adjustGeometry(const QRect &amp;newGeometry)
+    {
+        const int x1 = frameGeometry().left() - geometry().left();
+        const int y1 = frameGeometry().top() - geometry().top();
+        const int x2 = frameGeometry().right() - geometry().right();
+        const int y2 = frameGeometry().bottom() - geometry().bottom();
+
+        setGeometry(newGeometry.adjusted(x1, y1 - m_addressBar-&gt;height(), x2, y2));
+    }
+
+private:
+    QLineEdit *m_addressBar;
+    WebView *m_view;
+
+};
+
+#include &quot;webview.moc&quot;
+
+QWebEnginePage *WebPage::createWindow(QWebEnginePage::WebWindowType type)
+{
+    if (type == QWebEnginePage::WebBrowserTab) {
+        return mainWindow()-&gt;tabWidget()-&gt;newTab()-&gt;page();
+    } else if (type == QWebEnginePage::WebBrowserBackgroundTab) {
+        return mainWindow()-&gt;tabWidget()-&gt;newTab(false)-&gt;page();
+    } else if (type == QWebEnginePage::WebBrowserWindow) {
+        BrowserApplication::instance()-&gt;newMainWindow();
+        BrowserMainWindow *mainWindow = BrowserApplication::instance()-&gt;mainWindow();
+        return mainWindow-&gt;currentTab()-&gt;page();
+    } else {
+        PopupWindow *popup = new PopupWindow(profile());
+        popup-&gt;setAttribute(Qt::WA_DeleteOnClose);
+        popup-&gt;show();
+        return popup-&gt;page();
+    }
+}
+
+#if !defined(QT_NO_UITOOLS)
+QObject *WebPage::createPlugin(const QString &amp;classId, const QUrl &amp;url, const QStringList &amp;paramNames, const QStringList &amp;paramValues)
+{
+    Q_UNUSED(url);
+    Q_UNUSED(paramNames);
+    Q_UNUSED(paramValues);
+    QUiLoader loader;
+    return loader.createWidget(classId, view());
+}
+#endif // !defined(QT_NO_UITOOLS)
+
+#if defined(QWEBENGINEPAGE_UNSUPPORTEDCONTENT)
+void WebPage::handleUnsupportedContent(QNetworkReply *reply)
+{
+    QString errorString = reply-&gt;errorString();
+
+    if (m_loadingUrl != reply-&gt;url()) {
+        // sub resource of this page
+        qWarning() &lt;&lt; &quot;Resource&quot; &lt;&lt; reply-&gt;url().toEncoded() &lt;&lt; &quot;has unknown Content-Type, will be ignored.&quot;;
+        reply-&gt;deleteLater();
+        return;
+    }
+
+    if (reply-&gt;error() == QNetworkReply::NoError &amp;&amp; !reply-&gt;header(QNetworkRequest::ContentTypeHeader).isValid()) {
+        errorString = &quot;Unknown Content-Type&quot;;
+    }
+
+    QFile file(QLatin1String(&quot;:/notfound.html&quot;));
+    bool isOpened = file.open(QIODevice::ReadOnly);
+    Q_ASSERT(isOpened);
+    Q_UNUSED(isOpened)
+
+    QString title = tr(&quot;Error loading page: %1&quot;).arg(reply-&gt;url().toString());
+    QString html = QString(QLatin1String(file.readAll()))
+                        .arg(title)
+                        .arg(errorString)
+                        .arg(reply-&gt;url().toString());
+
+    QBuffer imageBuffer;
+    imageBuffer.open(QBuffer::ReadWrite);
+    QIcon icon = view()-&gt;style()-&gt;standardIcon(QStyle::SP_MessageBoxWarning, 0, view());
+    QPixmap pixmap = icon.pixmap(QSize(32,32));
+    if (pixmap.save(&amp;imageBuffer, &quot;PNG&quot;)) {
+        html.replace(QLatin1String(&quot;IMAGE_BINARY_DATA_HERE&quot;),
+                     QString(QLatin1String(imageBuffer.buffer().toBase64())));
+    }
+
+    QList&lt;QWebEngineFrame*&gt; frames;
+    frames.append(mainFrame());
+    while (!frames.isEmpty()) {
+        QWebEngineFrame *frame = frames.takeFirst();
+        if (frame-&gt;url() == reply-&gt;url()) {
+            frame-&gt;setHtml(html, reply-&gt;url());
+            return;
+        }
+        QList&lt;QWebEngineFrame *&gt; children = frame-&gt;childFrames();
+        foreach (QWebEngineFrame *frame, children)
+            frames.append(frame);
+    }
+    if (m_loadingUrl == reply-&gt;url()) {
+        mainFrame()-&gt;setHtml(html, reply-&gt;url());
+    }
+}
+#endif
+
+void WebPage::authenticationRequired(const QUrl &amp;requestUrl, QAuthenticator *auth)
+{
+    BrowserMainWindow *mainWindow = BrowserApplication::instance()-&gt;mainWindow();
+
+    QDialog dialog(mainWindow);
+    dialog.setWindowFlags(Qt::Sheet);
+
+    Ui::PasswordDialog passwordDialog;
+    passwordDialog.setupUi(&amp;dialog);
+
+    passwordDialog.iconLabel-&gt;setText(QString());
+    passwordDialog.iconLabel-&gt;setPixmap(mainWindow-&gt;style()-&gt;standardIcon(QStyle::SP_MessageBoxQuestion, 0, mainWindow).pixmap(32, 32));
+
+    QString introMessage = tr(&quot;&lt;qt&gt;Enter username and password for \&quot;%1\&quot; at %2&lt;/qt&gt;&quot;);
+    introMessage = introMessage.arg(auth-&gt;realm()).arg(requestUrl.toString().toHtmlEscaped());
+    passwordDialog.introLabel-&gt;setText(introMessage);
+    passwordDialog.introLabel-&gt;setWordWrap(true);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        auth-&gt;setUser(passwordDialog.userNameLineEdit-&gt;text());
+        auth-&gt;setPassword(passwordDialog.passwordLineEdit-&gt;text());
+    } else {
+        // Set authenticator null if dialog is cancelled
+        *auth = QAuthenticator();
+    }
+}
+
+void WebPage::proxyAuthenticationRequired(const QUrl &amp;requestUrl, QAuthenticator *auth, const QString &amp;proxyHost)
+{
+    Q_UNUSED(requestUrl);
+    BrowserMainWindow *mainWindow = BrowserApplication::instance()-&gt;mainWindow();
+
+    QDialog dialog(mainWindow);
+    dialog.setWindowFlags(Qt::Sheet);
+
+    Ui::ProxyDialog proxyDialog;
+    proxyDialog.setupUi(&amp;dialog);
+
+    proxyDialog.iconLabel-&gt;setText(QString());
+    proxyDialog.iconLabel-&gt;setPixmap(mainWindow-&gt;style()-&gt;standardIcon(QStyle::SP_MessageBoxQuestion, 0, mainWindow).pixmap(32, 32));
+
+    QString introMessage = tr(&quot;&lt;qt&gt;Connect to proxy \&quot;%1\&quot; using:&lt;/qt&gt;&quot;);
+    introMessage = introMessage.arg(proxyHost.toHtmlEscaped());
+    proxyDialog.introLabel-&gt;setText(introMessage);
+    proxyDialog.introLabel-&gt;setWordWrap(true);
+
+    if (dialog.exec() == QDialog::Accepted) {
+        auth-&gt;setUser(proxyDialog.userNameLineEdit-&gt;text());
+        auth-&gt;setPassword(proxyDialog.passwordLineEdit-&gt;text());
+    } else {
+        // Set authenticator null if dialog is cancelled
+        *auth = QAuthenticator();
+    }
+}
+
+WebView::WebView(QWidget* parent)
+    : QWebEngineView(parent)
+    , m_progress(0)
+    , m_page(0)
+{
+    connect(this, SIGNAL(loadProgress(int)),
+            this, SLOT(setProgress(int)));
+    connect(this, SIGNAL(loadFinished(bool)),
+            this, SLOT(loadFinished(bool)));
+    connect(this, &amp;QWebEngineView::renderProcessTerminated,
+            [=](QWebEnginePage::RenderProcessTerminationStatus termStatus, int statusCode) {
+        const char *status = &quot;&quot;;
+        switch (termStatus) {
+        case QWebEnginePage::NormalTerminationStatus:
+            status = &quot;(normal exit)&quot;;
+            break;
+        case QWebEnginePage::AbnormalTerminationStatus:
+            status = &quot;(abnormal exit)&quot;;
+            break;
+        case QWebEnginePage::CrashedTerminationStatus:
+            status = &quot;(crashed)&quot;;
+            break;
+        case QWebEnginePage::KilledTerminationStatus:
+            status = &quot;(killed)&quot;;
+            break;
+        }
+
+        qInfo() &lt;&lt; &quot;Render process exited with code&quot; &lt;&lt; statusCode &lt;&lt; status;
+        QTimer::singleShot(0, [this] { reload(); });
+    });
+}
+
+void WebView::setPage(WebPage *_page)
+{
+    if (m_page)
+        m_page-&gt;deleteLater();
+    m_page = _page;
+    QWebEngineView::setPage(_page);
+#if defined(QWEBENGINEPAGE_STATUSBARMESSAGE)
+    connect(page(), SIGNAL(statusBarMessage(QString)),
+            SLOT(setStatusBarText(QString)));
+#endif
+    disconnect(page(), &amp;QWebEnginePage::iconChanged, this, &amp;WebView::iconChanged);
+    connect(page(), SIGNAL(iconChanged(QIcon)),
+            this, SLOT(onIconChanged(QIcon)));
+    connect(page(), &amp;WebPage::featurePermissionRequested, this, &amp;WebView::onFeaturePermissionRequested);
+#if defined(QWEBENGINEPAGE_UNSUPPORTEDCONTENT)
+    page()-&gt;setForwardUnsupportedContent(true);
+#endif
+}
+
+void WebView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu;
+    if (page()-&gt;contextMenuData().linkUrl().isValid()) {
+        menu = new QMenu(this);
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::OpenLinkInThisWindow));
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::OpenLinkInNewWindow));
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::OpenLinkInNewBackgroundTab));
+        menu-&gt;addSeparator();
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::DownloadLinkToDisk));
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::CopyLinkToClipboard));
+    } else {
+        menu = page()-&gt;createStandardContextMenu();
+    }
+    if (page()-&gt;contextMenuData().selectedText().isEmpty())
+        menu-&gt;addAction(page()-&gt;action(QWebEnginePage::SavePage));
+    connect(menu, &amp;QMenu::aboutToHide, menu, &amp;QObject::deleteLater);
+    menu-&gt;popup(event-&gt;globalPos());
+}
+
+void WebView::wheelEvent(QWheelEvent *event)
+{
+#if defined(QWEBENGINEPAGE_SETTEXTSIZEMULTIPLIER)
+    if (QApplication::keyboardModifiers() &amp; Qt::ControlModifier) {
+        int numDegrees = event-&gt;delta() / 8;
+        int numSteps = numDegrees / 15;
+        setTextSizeMultiplier(textSizeMultiplier() + numSteps * 0.1);
+        event-&gt;accept();
+        return;
+    }
+#endif
+    QWebEngineView::wheelEvent(event);
+}
+
+void WebView::openLinkInNewTab()
+{
+    pageAction(QWebEnginePage::OpenLinkInNewTab)-&gt;trigger();
+}
+
+void WebView::onFeaturePermissionRequested(const QUrl &amp;securityOrigin, QWebEnginePage::Feature feature)
+{
+    FeaturePermissionBar *permissionBar = new FeaturePermissionBar(this);
+    connect(permissionBar, &amp;FeaturePermissionBar::featurePermissionProvided, page(), &amp;QWebEnginePage::setFeaturePermission);
+
+    // Discard the bar on new loads (if we navigate away or reload).
+    connect(page(), &amp;QWebEnginePage::loadStarted, permissionBar, &amp;QObject::deleteLater);
+
+    permissionBar-&gt;requestPermission(securityOrigin, feature);
+}
+
+void WebView::setProgress(int progress)
+{
+    m_progress = progress;
+}
+
+void WebView::loadFinished(bool success)
+{
+    if (success &amp;&amp; 100 != m_progress) {
+        qWarning() &lt;&lt; &quot;Received finished signal while progress is still:&quot; &lt;&lt; progress()
+                   &lt;&lt; &quot;Url:&quot; &lt;&lt; url();
+    }
+    m_progress = 0;
+}
+
+void WebView::loadUrl(const QUrl &amp;url)
+{
+    m_initialUrl = url;
+    load(url);
+}
+
+QString WebView::lastStatusBarText() const
+{
+    return m_statusBarText;
+}
+
+QUrl WebView::url() const
+{
+    QUrl url = QWebEngineView::url();
+    if (!url.isEmpty())
+        return url;
+
+    return m_initialUrl;
+}
+
+void WebView::onIconChanged(const QIcon &amp;icon)
+{
+    if (icon.isNull())
+        emit iconChanged(BrowserApplication::instance()-&gt;defaultIcon());
+    else
+        emit iconChanged(icon);
+}
+
+void WebView::mousePressEvent(QMouseEvent *event)
+{
+    m_page-&gt;m_pressedButtons = event-&gt;buttons();
+    m_page-&gt;m_keyboardModifiers = event-&gt;modifiers();
+    QWebEngineView::mousePressEvent(event);
+}
+
+void WebView::mouseReleaseEvent(QMouseEvent *event)
+{
+    QWebEngineView::mouseReleaseEvent(event);
+    if (!event-&gt;isAccepted() &amp;&amp; (m_page-&gt;m_pressedButtons &amp; Qt::MidButton)) {
+        QUrl url(QApplication::clipboard()-&gt;text(QClipboard::Selection));
+        if (!url.isEmpty() &amp;&amp; url.isValid() &amp;&amp; !url.scheme().isEmpty()) {
+            setUrl(url);
+        }
+    }
+}
+
+void WebView::setStatusBarText(const QString &amp;string)
+{
+    m_statusBarText = string;
+}
+
+</db:programlisting>
+</db:article>

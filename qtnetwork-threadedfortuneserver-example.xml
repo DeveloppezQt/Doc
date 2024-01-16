@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Threaded Fortune Server Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Threaded Fortune Server example shows how to create a server for a simple network service that uses threads to handle requests from different clients. It is intended to be run alongside the Fortune Client example.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/threadedfortuneserver-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The implementation of this example is similar to that of the <db:link xlink:href="qtnetwork-fortuneserver-example.xml">Fortune Server</db:link> example, but here we will implement a subclass of <db:link xlink:href="qtcpserver.xml">QTcpServer</db:link> that starts each connection in a different thread.</db:para>
+<db:para>For this we need two classes: FortuneServer, a <db:link xlink:href="qtcpserver.xml">QTcpServer</db:link> subclass, and FortuneThread, which inherits <db:link xlink:href="qthread.xml">QThread</db:link>.</db:para>
+<db:programlisting language="cpp">class FortuneServer : public QTcpServer
+{
+    Q_OBJECT
+
+public:
+    FortuneServer(QObject *parent = 0);
+
+protected:
+    void incomingConnection(qintptr socketDescriptor) Q_DECL_OVERRIDE;
+
+private:
+    QStringList fortunes;
+};
+</db:programlisting>
+<db:para>FortuneServer inherits <db:link xlink:href="qtcpserver.xml">QTcpServer</db:link> and reimplements <db:link xlink:href="qtcpserver.xml#incomingConnection">QTcpServer::incomingConnection</db:link>(). We also use it for storing the list of random fortunes.</db:para>
+<db:programlisting language="cpp">FortuneServer::FortuneServer(QObject *parent)
+    : QTcpServer(parent)
+{
+    fortunes &lt;&lt; tr(&quot;You've been leading a dog's life. Stay off the furniture.&quot;)
+             &lt;&lt; tr(&quot;You've got to think about tomorrow.&quot;)
+             &lt;&lt; tr(&quot;You will be surprised by a loud noise.&quot;)
+             &lt;&lt; tr(&quot;You will feel hungry again in another hour.&quot;)
+             &lt;&lt; tr(&quot;You might have mail.&quot;)
+             &lt;&lt; tr(&quot;You cannot kill time without injuring eternity.&quot;)
+             &lt;&lt; tr(&quot;Computers are not intelligent. They only think they are.&quot;);
+}
+</db:programlisting>
+<db:para>We use FortuneServer's constructor to simply generate the list of fortunes.</db:para>
+<db:programlisting language="cpp">void FortuneServer::incomingConnection(qintptr socketDescriptor)
+{
+    QString fortune = fortunes.at(qrand() % fortunes.size());
+    FortuneThread *thread = new FortuneThread(socketDescriptor, fortune, this);
+    connect(thread, SIGNAL(finished()), thread, SLOT(deleteLater()));
+    thread-&gt;start();
+}
+</db:programlisting>
+<db:para>Our implementation of <db:link xlink:href="qtcpserver.xml#incomingConnection">QTcpServer::incomingConnection</db:link>() creates a FortuneThread object, passing the incoming socket descriptor and a random fortune to FortuneThread's constructor. By connecting FortuneThread's finished() signal to <db:link xlink:href="qobject.xml#deleteLater">QObject::deleteLater</db:link>(), we ensure that the thread gets deleted once it has finished. We can then call <db:link xlink:href="qthread.xml#start">QThread::start</db:link>(), which starts the thread.</db:para>
+<db:programlisting language="cpp">class FortuneThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    FortuneThread(int socketDescriptor, const QString &amp;fortune, QObject *parent);
+
+    void run() Q_DECL_OVERRIDE;
+
+signals:
+    void error(QTcpSocket::SocketError socketError);
+
+private:
+    int socketDescriptor;
+    QString text;
+};
+</db:programlisting>
+<db:para>Moving on to the FortuneThread class, this is a <db:link xlink:href="qthread.xml">QThread</db:link> subclass whose job is to write the fortune to the connected socket. The class reimplements <db:link xlink:href="qthread.xml#run">QThread::run</db:link>(), and it has a signal for reporting errors.</db:para>
+<db:programlisting language="cpp">FortuneThread::FortuneThread(int socketDescriptor, const QString &amp;fortune, QObject *parent)
+    : QThread(parent), socketDescriptor(socketDescriptor), text(fortune)
+{
+}
+</db:programlisting>
+<db:para>FortuneThread's constructor simply stores the socket descriptor and fortune text, so that they are available for run() later on.</db:para>
+<db:programlisting language="cpp">void FortuneThread::run()
+{
+    QTcpSocket tcpSocket;
+</db:programlisting>
+<db:para>The first thing our run() function does is to create a <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> object on the stack. What's worth noticing is that we are creating this object inside the thread, which automatically associates the socket to the thread's event loop. This ensures that Qt will not try to deliver events to our socket from the main thread while we are accessing it from FortuneThread::run().</db:para>
+<db:programlisting language="cpp">    if (!tcpSocket.setSocketDescriptor(socketDescriptor)) {
+        emit error(tcpSocket.error());
+        return;
+    }
+</db:programlisting>
+<db:para>The socket is initialized by calling <db:link xlink:href="qabstractsocket.xml#setSocketDescriptor">QTcpSocket::setSocketDescriptor</db:link>(), passing our socket descriptor as an argument. We expect this to succeed, but just to be sure, (although unlikely, the system may run out of resources,) we catch the return value and report any error.</db:para>
+<db:programlisting language="cpp">    QByteArray block;
+    QDataStream out(&amp;block, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_4_0);
+    out &lt;&lt; text;
+</db:programlisting>
+<db:para>As with the <db:link xlink:href="qtnetwork-fortuneserver-example.xml">Fortune Server</db:link> example, we encode the fortune into a <db:link xlink:href="qbytearray.xml">QByteArray</db:link> using <db:link xlink:href="qdatastream.xml">QDataStream</db:link>.</db:para>
+<db:programlisting language="cpp">    tcpSocket.write(block);
+    tcpSocket.disconnectFromHost();
+    tcpSocket.waitForDisconnected();
+}
+</db:programlisting>
+<db:para>But unlike the previous example, we finish off by calling <db:link xlink:href="qabstractsocket.xml#waitForDisconnected">QTcpSocket::waitForDisconnected</db:link>(), which blocks the calling thread until the socket has disconnected. Because we are running in a separate thread, the GUI will remain responsive.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/dialog.cpp">threadedfortuneserver/dialog.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/dialog.h">threadedfortuneserver/dialog.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/fortuneserver.cpp">threadedfortuneserver/fortuneserver.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/fortuneserver.h">threadedfortuneserver/fortuneserver.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/fortunethread.cpp">threadedfortuneserver/fortunethread.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/fortunethread.h">threadedfortuneserver/fortunethread.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/main.cpp">threadedfortuneserver/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threadedfortuneserver/threadedfortuneserver.pro">threadedfortuneserver/threadedfortuneserver.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtnetwork-fortuneserver-example.xml">Fortune Server Example</db:link></db:member>
+<db:member><db:link xlink:href="qtnetwork-fortuneclient-example.xml">Fortune Client Example</db:link></db:member>
+<db:member><db:link xlink:href="qtnetwork-blockingfortuneclient-example.xml">Blocking Fortune Client Example</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section></db:article>

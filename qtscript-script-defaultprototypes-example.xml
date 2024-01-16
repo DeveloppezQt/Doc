@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Default Prototypes Example</db:title>
+<db:productname>QtScript</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>QtScript Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>QtScript Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This Qt Script example shows how to use default prototypes to make a non-<db:link xlink:href="qobject.xml">QObject</db:link>-based type scriptable.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/defaultprototypes-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>With <db:link xlink:href="qscriptengine.xml#setDefaultPrototype">QScriptEngine::setDefaultPrototype</db:link>() you can specify a Qt Script object that defines a scripting interface for a C++ type; Qt Script operations on values of such types will then be delegated to your prototype object. In this example, a simple scripting interface for <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> is defined, so that the text of items can easily be accessed from script code.</db:para>
+<db:para>To define a scripting API for <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> in terms of Qt properties and slots, we subclass <db:link xlink:href="qobject.xml">QObject</db:link> and <db:link xlink:href="qscriptable.xml">QScriptable</db:link>.</db:para>
+<db:programlisting language="cpp">class ListWidgetItemPrototype : public QObject, public QScriptable
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text READ text WRITE setText)
+public:
+    ListWidgetItemPrototype(QObject *parent = 0);
+
+    QString text() const;
+    void setText(const QString &amp;text);
+
+public slots:
+    QString toString() const;
+};
+</db:programlisting>
+<db:para>A single property, <db:code>text</db:code>, is defined, along with a slot, <db:code>toString</db:code>.</db:para>
+<db:programlisting language="cpp">ListWidgetItemPrototype::ListWidgetItemPrototype(QObject *parent)
+    : QObject(parent)
+{
+}
+
+QString ListWidgetItemPrototype::text() const
+{
+    QListWidgetItem *item = qscriptvalue_cast&lt;QListWidgetItem*&gt;(thisObject());
+    if (item)
+        return item-&gt;text();
+    return QString();
+}
+
+void ListWidgetItemPrototype::setText(const QString &amp;text)
+{
+    QListWidgetItem *item = qscriptvalue_cast&lt;QListWidgetItem*&gt;(thisObject());
+    if (item)
+        item-&gt;setText(text);
+}
+
+QString ListWidgetItemPrototype::toString() const
+{
+    return QString(&quot;ListWidgetItem(text = %0)&quot;).arg(text());
+}
+</db:programlisting>
+<db:para>The implementation of the property accessors use the <db:link xlink:href="qscriptvalue.xml#qscriptvalue_cast">qscriptvalue_cast</db:link>() function to cast the script object to a <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> pointer. The normal C++ <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> API is then used to implement the desired functionality.</db:para>
+<db:para>Although not shown here, it is possible to throw a script exception from a prototype function; for example, you could throw a TypeError exception if the <db:link xlink:href="qscriptvalue.xml#qscriptvalue_cast">qscriptvalue_cast</db:link>() fails.</db:para>
+<db:para>QListWidgetItems are usually added to a <db:link xlink:href="qlistwidget.xml">QListWidget</db:link>. While <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> is a <db:link xlink:href="qobject.xml">QObject</db:link>-based class, not all the functionality needed for this example are present. We can solve this by creating a default prototype for the <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> class as well. The prototype will augment the functionality already provided by the Qt Script <db:link xlink:href="qobject.xml">QObject</db:link> integration; i.e. if a property or slot is not found in the <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> object itself, the prototype will be used as a fallback.</db:para>
+<db:programlisting language="cpp">class ListWidgetPrototype : public QObject, public QScriptable
+{
+    Q_OBJECT
+public:
+    ListWidgetPrototype(QObject *parent = 0);
+
+public slots:
+    void addItem(const QString &amp;text);
+    void addItems(const QStringList &amp;texts);
+    void setBackgroundColor(const QString &amp;colorName);
+};
+</db:programlisting>
+<db:para>The additional slots will make it possible to add items to a <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> from script code, and to set the background color of the widget from a string.</db:para>
+<db:programlisting language="cpp">ListWidgetPrototype::ListWidgetPrototype(QObject *parent)
+    : QObject(parent)
+{
+}
+
+void ListWidgetPrototype::addItem(const QString &amp;text)
+{
+    QListWidget *widget = qscriptvalue_cast&lt;QListWidget*&gt;(thisObject());
+    if (widget)
+        widget-&gt;addItem(text);
+}
+
+void ListWidgetPrototype::addItems(const QStringList &amp;texts)
+{
+    QListWidget *widget = qscriptvalue_cast&lt;QListWidget*&gt;(thisObject());
+    if (widget)
+        widget-&gt;addItems(texts);
+}
+
+void ListWidgetPrototype::setBackgroundColor(const QString &amp;colorName)
+{
+    QListWidget *widget = qscriptvalue_cast&lt;QListWidget*&gt;(thisObject());
+    if (widget) {
+#ifdef Q_WS_MAEMO_5
+        QString style = QString(&quot;QListWidget::item {background-color: %1;}&quot;).arg(colorName);
+        style += &quot;QListWidget::item {selection-color: black;}&quot;;
+        widget-&gt;setStyleSheet(style);
+#else
+        QPalette palette = widget-&gt;palette();
+        QColor color(colorName);
+        palette.setBrush(QPalette::Base, color);
+        widget-&gt;setPalette(palette);
+#endif
+    }
+}
+</db:programlisting>
+<db:para>Again, we use <db:link xlink:href="qscriptvalue.xml#qscriptvalue_cast">qscriptvalue_cast</db:link>() to cast the script object to the relevant C++ type, in this case a <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> pointer. The addItem() and addItems() functions simply forward their arguments to the corresponding functions in the <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> class. setBackgroundColor() gets the widget's palette, creates a <db:link xlink:href="qcolor.xml">QColor</db:link> from the given string argument and changes the palette accordingly.</db:para>
+<db:programlisting language="cpp">Q_DECLARE_METATYPE(QListWidgetItem*)
+Q_DECLARE_METATYPE(QListWidget*)
+</db:programlisting>
+<db:para>The relevant C++ types must be made known to Qt's meta type system.</db:para>
+<db:programlisting language="cpp">    QScriptEngine engine;
+
+    ListWidgetItemPrototype lwiProto;
+    engine.setDefaultPrototype(qMetaTypeId&lt;QListWidgetItem*&gt;(),
+                               engine.newQObject(&amp;lwiProto));
+
+    ListWidgetPrototype lwProto;
+    engine.setDefaultPrototype(qMetaTypeId&lt;QListWidget*&gt;(),
+                               engine.newQObject(&amp;lwProto));
+</db:programlisting>
+<db:para>For each type that we want to associate a prototype object with, we create an instance of the prototype class, pass it to <db:link xlink:href="qscriptengine.xml#newQObject">QScriptEngine::newQObject</db:link>(), and then create the link between the C++ type and the resulting script object by calling <db:link xlink:href="qscriptengine.xml#setDefaultPrototype">QScriptEngine::setDefaultPrototype</db:link>().</db:para>
+<db:programlisting language="cpp">    QListWidget listWidget;
+    engine.globalObject().setProperty(&quot;listWidget&quot;,
+                                      engine.newQObject(&amp;listWidget));
+</db:programlisting>
+<db:para>In this example, a single <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> object is added as a global script variable, called <db:code>listWidget</db:code>. Script code can add items to this widget by calling addItem() or addItems().</db:para>
+<db:programlisting language="cpp">listWidget.addItem(&quot;Red&quot;);
+listWidget.addItem(&quot;Blue&quot;);
+listWidget.addItem(&quot;Green&quot;);
+listWidget.addItem(&quot;Cyan&quot;);
+listWidget.addItem(&quot;Yellow&quot;);
+listWidget.addItem(&quot;Purple&quot;);
+listWidget.addItems([&quot;Orange&quot;, &quot;Gray&quot;]);
+</db:programlisting>
+<db:para>Script code can connect to signals of the <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> object; signal handlers can use the interface defined in the <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> prototype to manipulate item arguments.</db:para>
+<db:programlisting language="cpp">listWidget.currentItemChanged.connect(
+    function(item)
+    {
+        listWidget.setBackgroundColor(item.text);
+    }
+);
+</db:programlisting>
+<db:para>Not shown in this example is how to make <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> constructible from Qt Script code, i.e. to be able to write &quot;new QListWidgetItem()&quot; in a script. In order to do this, you have to define your own script constructor for the type. The constructor would just be a factory function that constructs a new C++ <db:link xlink:href="qlistwidgetitem.xml">QListWidgetItem</db:link> and returns it back to the script. See <db:link xlink:href="qscriptengine.xml#newFunction">QScriptEngine::newFunction</db:link>() for more information.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/code.js">script/defaultprototypes/code.js</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/defaultprototypes.pro">script/defaultprototypes/defaultprototypes.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/defaultprototypes.qrc">script/defaultprototypes/defaultprototypes.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/main.cpp">script/defaultprototypes/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/prototypes.cpp">script/defaultprototypes/prototypes.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="script/defaultprototypes/prototypes.h">script/defaultprototypes/prototypes.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

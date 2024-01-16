@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Purchasing Examples - QtHangman</db:title>
+<db:productname>QtPurchasing</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Purchasing Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>QtHangman is an example that demonstrates how to use the Qt Purchasing API with Qt Quick.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the Purchasing module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL3-COMM$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;hangmangame.h&quot;
+#include &lt;QFile&gt;
+#include &lt;QDebug&gt;
+#include &lt;time.h&gt;
+#include &lt;QBuffer&gt;
+#include &lt;QtConcurrent/QtConcurrentRun&gt;
+
+HangmanGame::HangmanGame(QObject *parent)
+    : QObject(parent)
+    , m_lock(QMutex::Recursive)
+    , m_vowelsUnlocked(false)
+{
+    qsrand(::time(0));
+    connect(this, SIGNAL(vowelBought(QChar)), this, SLOT(registerLetterBought(QChar)));
+
+    QtConcurrent::run(this, &amp;HangmanGame::initWordList);
+
+    m_vowelsUnlocked = m_persistentSettings.value(&quot;Hangman/vowelsUnlocked&quot;, false).toBool();
+    m_vowelsAvailable = m_persistentSettings.value(&quot;Hangman/vowelsAvailable&quot;, 0).toInt();
+    m_wordsGiven = m_persistentSettings.value(&quot;Hangman/wordsGiven&quot;, 0).toInt();
+    m_wordsGuessedCorrectly = m_persistentSettings.value(&quot;Hangman/wordsGuessedCorrectly&quot;, 0).toInt();
+    m_score = m_persistentSettings.value(&quot;Hangman/score&quot;, 0).toInt();
+}
+
+void HangmanGame::reset()
+{
+    m_lettersOwned.clear();
+    emit lettersOwnedChanged();
+    emit errorCountChanged();
+    chooseRandomWord();
+}
+
+void HangmanGame::reveal()
+{
+    m_lettersOwned += vowels() + consonants();
+    emit errorCountChanged();
+    emit lettersOwnedChanged();
+}
+
+void HangmanGame::gameOverReveal()
+{
+    m_lettersOwned += vowels() + consonants();
+    emit lettersOwnedChanged();
+}
+
+void HangmanGame::requestLetter(const QString &amp;letterString)
+{
+    Q_ASSERT(letterString.size() == 1);
+    QChar letter = letterString.at(0);
+    registerLetterBought(letter);
+}
+
+void HangmanGame::guessWord(const QString &amp;word)
+{
+    if (word.compare(m_word, Qt::CaseInsensitive) == 0) {
+        //Determine how many vowels were earned
+        setVowelsAvailable(m_vowelsAvailable + calculateEarnedVowels());
+        //score is number of remaining consonants + remaining errors
+        setScore(m_score + calculateEarnedPoints());
+        m_lettersOwned += m_word.toUpper();
+    } else {
+        // Small hack to get an additional penalty for guessing wrong
+        static int i=0;
+        Q_ASSERT(i &lt; 10);
+        m_lettersOwned += QString::number(i++);
+        emit errorCountChanged();
+    }
+    emit lettersOwnedChanged();
+}
+
+bool HangmanGame::isVowel(const QString &amp;letter)
+{
+    Q_ASSERT(letter.size() == 1);
+    QChar letterChar = letter.at(0);
+    return vowels().contains(letterChar);
+}
+
+QString HangmanGame::vowels() const
+{
+    return QStringLiteral(&quot;AEIOU&quot;);
+}
+
+QString HangmanGame::consonants() const
+{
+    return QStringLiteral(&quot;BCDFGHJKLMNPQRSTVWXYZ&quot;);
+}
+
+int HangmanGame::errorCount() const
+{
+    int count = 0;
+    foreach (QChar c, m_lettersOwned) {
+        if (!m_word.contains(c))
+            ++count;
+    }
+    return count;
+}
+
+bool HangmanGame::vowelsUnlocked() const
+{
+    return m_vowelsUnlocked;
+}
+
+void HangmanGame::setVowelsUnlocked(bool vowelsUnlocked)
+{
+    if (m_vowelsUnlocked != vowelsUnlocked) {
+        m_vowelsUnlocked = vowelsUnlocked;
+        m_persistentSettings.setValue(&quot;Hangman/vowelsUnlocked&quot;, m_vowelsUnlocked);
+        emit vowelsUnlockedChanged(m_vowelsUnlocked);
+    }
+}
+
+int HangmanGame::vowelsAvailable() const
+{
+    return m_vowelsAvailable;
+}
+
+int HangmanGame::wordsGiven() const
+{
+    return m_wordsGiven;
+}
+
+int HangmanGame::wordsGuessedCorrectly() const
+{
+    return m_wordsGuessedCorrectly;
+}
+
+int HangmanGame::score() const
+{
+    return m_score;
+}
+
+void HangmanGame::setScore(int score)
+{
+    if (m_score != score) {
+        m_score = score;
+        m_persistentSettings.setValue(&quot;Hangman/score&quot;, m_score);
+        emit scoreChanged(score);
+    }
+}
+
+void HangmanGame::setWordsGiven(int count)
+{
+    if (m_wordsGiven != count) {
+        m_wordsGiven = count;
+        m_persistentSettings.setValue(&quot;Hangman/wordsGiven&quot;, m_wordsGiven);
+        emit wordsGivenChanged(count);
+    }
+}
+
+void HangmanGame::setWordsGuessedCorrectly(int count)
+{
+    if (m_wordsGuessedCorrectly != count) {
+        m_wordsGuessedCorrectly = count;
+        m_persistentSettings.setValue(&quot;Hangman/wordsGuessedCorrectly&quot;, m_wordsGuessedCorrectly);
+        emit wordsGuessedCorrectlyChanged(count);
+    }
+}
+
+void HangmanGame::setVowelsAvailable(int count)
+{
+    if (m_vowelsAvailable != count) {
+        m_vowelsAvailable = count;
+        m_persistentSettings.setValue(&quot;Hangman/vowelsAvailable&quot;, m_vowelsAvailable);
+        emit vowelsAvailableChanged(count);
+    }
+}
+
+void HangmanGame::registerLetterBought(const QChar &amp;letter)
+{
+    if (m_lettersOwned.contains(letter))
+        return;
+
+    m_lettersOwned.append(letter);
+    emit lettersOwnedChanged();
+
+    if (!m_word.contains(letter))
+        emit errorCountChanged();
+}
+
+void HangmanGame::chooseRandomWord()
+{
+    QMutexLocker locker(&amp;m_lock);
+    if (m_wordList.isEmpty())
+        return;
+
+    m_word = m_wordList.at(qrand() % m_wordList.size());
+    emit wordChanged();
+}
+
+void HangmanGame::initWordList()
+{
+    QMutexLocker locker(&amp;m_lock);
+    qsrand(::time(0) + 1000);
+    QFile file(&quot;:/enable2.txt&quot;);
+    if (file.open(QIODevice::ReadOnly)) {
+        QByteArray allData = file.readAll();
+        QBuffer buffer(&amp;allData);
+        if (!buffer.open(QIODevice::ReadOnly))
+            qFatal(&quot;Couldn't open buffer for reading!&quot;);
+
+        while (!buffer.atEnd()) {
+            QByteArray ba = buffer.readLine().trimmed().toUpper();
+            if (!ba.isEmpty() &amp;&amp; ba.length() &lt; 10)
+                m_wordList.append(QString::fromLatin1(ba));
+        }
+    }
+
+    chooseRandomWord();
+}
+
+int HangmanGame::calculateEarnedVowels()
+{
+    int total = 0;
+    for (int i = 0; i &lt; m_word.length(); ++i) {
+        if (isVowel(QString(m_word[i])) &amp;&amp; !m_lettersOwned.contains(QString(m_word[i])))
+            total++;
+    }
+    return total;
+}
+
+int HangmanGame::calculateEarnedPoints()
+{
+    int total = 0;
+    for (int i = 0; i &lt; m_word.length(); ++i) {
+        if (consonants().contains(QString(m_word[i])) &amp;&amp; !m_lettersOwned.contains(QString(m_word[i])))
+            total++;
+    }
+    total += 8 - errorCount();
+    return total;
+}
+
+</db:programlisting>
+</db:article>

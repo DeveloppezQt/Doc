@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Item Model Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using an item model as data source for Q3DBars.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The item model example shows how to make a simple 3D bar graph using Q3DBars and how to modify the data being drawn at run-time. The example shows how to:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Create an application with Q3DBars and widgets</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Use QItemModelBarDataProxy to set data to the graph</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Use a table widget to modify the data in the graph</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>For instructions about how to interact with the graph, see <db:link xlink:href="qtdatavisualization-interacting-with-data.xml">this page</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/itemmodel-example-2.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="creating-the-application">
+<db:title>Creating the application</db:title>
+<db:para>First, in main.cpp, we create a <db:link xlink:href="qapplication.xml">QApplication</db:link>, instantiate Q3DBars and a window container for it:</db:para>
+<db:programlisting language="cpp">QApplication app(argc, argv);
+Q3DBars *graph = new Q3DBars();
+QWidget *container = QWidget::createWindowContainer(graph);
+</db:programlisting>
+<db:para>The call to <db:link xlink:href="qwidget.xml#createWindowContainer">QWidget::createWindowContainer</db:link> is required, as all data visualization graph classes (Q3DBars, Q3DScatter, and Q3DSurface) inherit <db:link xlink:href="qwindow.xml">QWindow</db:link>. Any class inheriting <db:link xlink:href="qwindow.xml">QWindow</db:link> cannot be used as a widget any other way.</db:para>
+<db:para>Then we'll create a layout and add the graph and the table widget into it:</db:para>
+<db:programlisting language="cpp">QWidget widget;
+QVBoxLayout *layout = new QVBoxLayout(&amp;widget);
+QTableWidget *tableWidget = new QTableWidget(&amp;widget);
+layout-&gt;addWidget(container, 1);
+layout-&gt;addWidget(tableWidget, 1, Qt::AlignHCenter);
+</db:programlisting>
+<db:para>The table widget is going to be used to display the numerical data being inserted into the graph, and to modify it (See <db:link xlink:href="qtdatavisualization-scatter-example.xml#adding-data-to-the-graph">Adding data to the graph</db:link> and <db:link xlink:href="qtdatavisualization-itemmodel-example.xml#interacting-with-the-data">Interacting with the data</db:link>).</db:para>
+<db:para>We need to instantiate QItemModelBarDataProxy and a QBar3DSeries for it, and give the series to the graph:</db:para>
+<db:programlisting language="cpp">// Since we are dealing with QTableWidget, the model will already have data sorted properly
+// into rows and columns, so we simply set useModelCategories property to true to utilize this.
+QItemModelBarDataProxy *proxy = new QItemModelBarDataProxy(tableWidget-&gt;model());
+proxy-&gt;setUseModelCategories(true);
+QBar3DSeries *series = new QBar3DSeries(proxy);
+series-&gt;setMesh(QAbstract3DSeries::MeshPyramid);
+graph-&gt;addSeries(series);
+</db:programlisting>
+<db:para>Here we tell the proxy to directly map the model's rows and columns into the proxy's rows and columns instead of defining row and column roles to map for them. Then we give the model from the table widget to the proxy. We also create a series instance and set the proxy to it. We customize the series visuals a bit by changing the object mesh to pyramids, and finally add the series to the graph.</db:para>
+<db:para>Next, let's create another class to handle the data addition and other interaction with the graph. Let's call it <db:code>GraphDataGenerator</db:code> (See <db:link xlink:href="qtdatavisualization-scatter-example.xml#setting-up-the-graph">Setting up the graph</db:link> and <db:link xlink:href="qtdatavisualization-scatter-example.xml#adding-data-to-the-graph">Adding data to the graph</db:link> for details) and connect some signals between QBar3DSeries, <db:code>GraphDataGenerator</db:code>, and <db:link xlink:href="qtablewidget.xml">QTableWidget</db:link> (See <db:link xlink:href="qtdatavisualization-itemmodel-example.xml#interacting-with-the-data">Interacting with the data</db:link> for a closer look):</db:para>
+<db:programlisting language="cpp">GraphDataGenerator generator(graph, tableWidget);
+QObject::connect(series, &amp;QBar3DSeries::selectedBarChanged, &amp;generator,
+                 &amp;GraphDataGenerator::selectFromTable);
+QObject::connect(tableWidget, &amp;QTableWidget::currentCellChanged, &amp;generator,
+                 &amp;GraphDataGenerator::selectedFromTable);
+</db:programlisting>
+<db:para>The application main is done and we can show the graph and start the event loop:</db:para>
+<db:programlisting language="cpp">widget.show();
+generator.start();
+return app.exec();
+</db:programlisting>
+</db:section>
+<db:section xml:id="setting-up-the-graph">
+<db:title>Setting up the graph</db:title>
+<db:para>Let's set up the visual attributes for the graph in the constructor of <db:code>GraphDataGenerator</db:code>:</db:para>
+<db:programlisting language="cpp">// Set up bar specifications; make the bars as wide as they are deep,
+// and add a small space between them
+m_graph-&gt;setBarThickness(1.0f);
+m_graph-&gt;setBarSpacing(QSizeF(0.2, 0.2));
+
+// Set selection mode to slice row
+m_graph-&gt;setSelectionMode(QAbstract3DGraph::SelectionItemAndRow | QAbstract3DGraph::SelectionSlice);
+
+// Set theme
+m_graph-&gt;activeTheme()-&gt;setType(Q3DTheme::ThemeDigia);
+
+// Set font
+m_graph-&gt;activeTheme()-&gt;setFont(QFont(&quot;Impact&quot;, 20));
+
+// Set preset camera position
+m_graph-&gt;scene()-&gt;activeCamera()-&gt;setCameraPreset(Q3DCamera::CameraPresetFront);
+</db:programlisting>
+<db:para>First we set bar thickness ratio to 1.0, which means bars will be as wide as they are deep. 1.0 is also the default value, so the line is basically unnecessary. It's left there so you could easily try how changing it affects the graph. The second line sets bar spacings to 0.2, which means there will be a gap of 20% of the bar's thickness between the bars in both directions.</db:para>
+<db:para>We want to be able to select rows of data for a closer inspection, so we set the selection mode to slice item and row. This means that whenever we select a bar in the graph, the whole row will be displayed separately and the selected bar will be highlighted.</db:para>
+<db:para>We don't want to use the default colors, so we set one of the predefined themes as the active theme.</db:para>
+<db:para>Next line sets the font to <db:code>Impact</db:code>. If your system doesn't have it, it will be replaced by the system default.</db:para>
+<db:para>And finally, we set the camera position to one of the predefined camera positions. Now the initial graph settings are done.</db:para>
+<db:note>
+<db:para>You do not need to set any of these in case you're happy with the defaults. You can easily try them by commenting out the contents of the constructor.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="adding-data-to-the-graph">
+<db:title>Adding data to the graph</db:title>
+<db:para>We created the data generator in the application main and gave it the graph and the table widget as parameters:</db:para>
+<db:programlisting language="cpp">We added a separate start method to the generator, so that it wouldn't start doing anything
+until everything else is set up. We then called the method when starting the application:
+
+\code generator.start(); </db:programlisting>
+<db:para>Let's have a look at the contents of the <db:code>start()</db:code> method:</db:para>
+<db:programlisting language="cpp">setupModel();
+
+// Table needs to be shown before the size of its headers can be accurately obtained,
+// so we postpone it a bit
+m_dataTimer = new QTimer();
+m_dataTimer-&gt;setSingleShot(true);
+QObject::connect(m_dataTimer, &amp;QTimer::timeout, this, &amp;GraphDataGenerator::fixTableSize);
+m_dataTimer-&gt;start(0);
+</db:programlisting>
+<db:para>The main thing <db:code>start()</db:code> does is set up the data model. It also activates a timer for getting the accurate dimensions of the table widget after it's been filled with data. The reason we do this is that the widget doesn't know its final visual domensions until all the data has been inserted to it and it has been shown. The data timer usage is not vital for the application, so we won't take a closer look at it. It's just there to make <db:link xlink:href="qtablewidget.xml">QTableWidget</db:link> look better.</db:para>
+<db:para>In <db:code>setupModel()</db:code> we first introduce the row and column labels, and the actual data:</db:para>
+<db:programlisting language="cpp">// Set up row and column names
+QStringList days;
+days &lt;&lt; &quot;Monday&quot; &lt;&lt; &quot;Tuesday&quot; &lt;&lt; &quot;Wednesday&quot; &lt;&lt; &quot;Thursday&quot; &lt;&lt; &quot;Friday&quot; &lt;&lt; &quot;Saturday&quot; &lt;&lt; &quot;Sunday&quot;;
+QStringList weeks;
+weeks &lt;&lt; &quot;week 1&quot; &lt;&lt; &quot;week 2&quot; &lt;&lt; &quot;week 3&quot; &lt;&lt; &quot;week 4&quot; &lt;&lt; &quot;week 5&quot;;
+
+// Set up data         Mon  Tue  Wed  Thu  Fri  Sat  Sun
+float hours[5][7] = {{2.0f, 1.0f, 3.0f, 0.2f, 1.0f, 5.0f, 10.0f},     // week 1
+                     {0.5f, 1.0f, 3.0f, 1.0f, 2.0f, 2.0f, 3.0f},      // week 2
+                     {1.0f, 1.0f, 2.0f, 1.0f, 4.0f, 4.0f, 4.0f},      // week 3
+                     {0.0f, 1.0f, 0.0f, 0.0f, 2.0f, 2.0f, 0.3f},      // week 4
+                     {3.0f, 3.0f, 6.0f, 2.0f, 2.0f, 1.0f, 1.0f}};     // week 5
+</db:programlisting>
+<db:para>Then we set up the axes:</db:para>
+<db:programlisting language="cpp">m_graph-&gt;rowAxis()-&gt;setTitle(&quot;Week of year&quot;);
+m_graph-&gt;rowAxis()-&gt;setTitleVisible(true);
+m_graph-&gt;columnAxis()-&gt;setTitle(&quot;Day of week&quot;);
+m_graph-&gt;columnAxis()-&gt;setTitleVisible(true);
+m_graph-&gt;valueAxis()-&gt;setTitle(&quot;Hours spent on the Internet&quot;);
+m_graph-&gt;valueAxis()-&gt;setTitleVisible(true);
+m_graph-&gt;valueAxis()-&gt;setLabelFormat(&quot;%.1f h&quot;);
+</db:programlisting>
+<db:para>Next we will set up the table widget:</db:para>
+<db:programlisting language="cpp">m_tableWidget-&gt;setRowCount(5);
+m_tableWidget-&gt;setColumnCount(7);
+m_tableWidget-&gt;setHorizontalHeaderLabels(days);
+m_tableWidget-&gt;setVerticalHeaderLabels(weeks);
+m_tableWidget-&gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+m_tableWidget-&gt;setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+m_tableWidget-&gt;setCurrentCell(-1, -1);
+m_tableWidget-&gt;setSelectionMode(QAbstractItemView::SingleSelection);
+</db:programlisting>
+<db:para>After that all that's left is adding the data to the table widget:</db:para>
+<db:programlisting language="cpp">for (int week = 0; week &lt; weeks.size(); week++) {
+    for (int day = 0; day &lt; days.size(); day++) {
+        QModelIndex index = m_tableWidget-&gt;model()-&gt;index(week, day);
+        m_tableWidget-&gt;model()-&gt;setData(index, hours[week][day]);
+    }
+}
+</db:programlisting>
+<db:para>Now we have a bar graph and a table widget, both displaying the same data.</db:para>
+<db:para>You're probably wondering how the data can be displayed in the graph, as the only thing we did was add it to the table widget? That's because of what we did earlier, in the application main:</db:para>
+<db:programlisting language="cpp">// Since we are dealing with QTableWidget, the model will already have data sorted properly
+// into rows and columns, so we simply set useModelCategories property to true to utilize this.
+QItemModelBarDataProxy *proxy = new QItemModelBarDataProxy(tableWidget-&gt;model());
+proxy-&gt;setUseModelCategories(true);
+QBar3DSeries *series = new QBar3DSeries(proxy);
+series-&gt;setMesh(QAbstract3DSeries::MeshPyramid);
+graph-&gt;addSeries(series);
+</db:programlisting>
+<db:para>We created QItemModelBarDataProxy instance, and gave the proxy the model of the table widget we just created. The proxy maps the rows and the columns in the model of the table widget into rows and columns for itself directly, as we set the QItemModelBarDataProxy::useModelCategories property to true, and the graph gets the data to be displayed via the series that owns the proxy.</db:para>
+</db:section>
+<db:section xml:id="interacting-with-the-data">
+<db:title>Interacting with the data</db:title>
+<db:para>We made a couple of signal connections in the application main earlier:</db:para>
+<db:programlisting language="cpp">GraphDataGenerator generator(graph, tableWidget);
+QObject::connect(series, &amp;QBar3DSeries::selectedBarChanged, &amp;generator,
+                 &amp;GraphDataGenerator::selectFromTable);
+QObject::connect(tableWidget, &amp;QTableWidget::currentCellChanged, &amp;generator,
+                 &amp;GraphDataGenerator::selectedFromTable);
+</db:programlisting>
+<db:para>Now we'll find out what these were for.</db:para>
+<db:para>The first one connects a signal from Q3DBars to the <db:code>GraphDataGenerator</db:code>. Signal QBar3DSeries::selectedBarChanged() is emitted when a bar is selected from the series. We connect that to a method in the data generator that selects the same data item in the table widget:</db:para>
+<db:programlisting language="cpp">void GraphDataGenerator::selectFromTable(const QPoint &amp;selection)
+{
+    m_tableWidget-&gt;setFocus();
+    m_tableWidget-&gt;setCurrentCell(selection.x(), selection.y());
+}
+</db:programlisting>
+<db:para>The second connection does the opposite; it connects a signal from the table widget to a method in the data generator. The method then selects the corresponding bar in the series:</db:para>
+<db:programlisting language="cpp">void GraphDataGenerator::selectedFromTable(int currentRow, int currentColumn,
+                                           int previousRow, int previousColumn)
+{
+    Q_UNUSED(previousRow)
+    Q_UNUSED(previousColumn)
+    m_graph-&gt;seriesList().at(0)-&gt;setSelectedBar(QPoint(currentRow, currentColumn));
+}
+</db:programlisting>
+<db:para>You can even select an item in the widget and change the value of it, and the new value is updated to the graph. This is handled again by the proxy with mapping between the data in the table widget and itself.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/itemmodel-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section xml:id="example-contents">
+<db:title>Example contents</db:title>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="itemmodel/itemmodel.pro">itemmodel/itemmodel.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemmodel/main.cpp">itemmodel/main.cpp</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+</db:section></db:article>

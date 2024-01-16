@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Image Viewer Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to combine <db:link xlink:href="qlabel.xml">QLabel</db:link> and <db:link xlink:href="qscrollarea.xml">QScrollArea</db:link> to display an image.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+#ifndef QT_NO_PRINTER
+#include &lt;QPrintDialog&gt;
+#endif
+
+#include &quot;imageviewer.h&quot;
+
+ImageViewer::ImageViewer()
+   : imageLabel(new QLabel)
+   , scrollArea(new QScrollArea)
+   , scaleFactor(1)
+{
+    imageLabel-&gt;setBackgroundRole(QPalette::Base);
+    imageLabel-&gt;setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    imageLabel-&gt;setScaledContents(true);
+
+    scrollArea-&gt;setBackgroundRole(QPalette::Dark);
+    scrollArea-&gt;setWidget(imageLabel);
+    scrollArea-&gt;setVisible(false);
+    setCentralWidget(scrollArea);
+
+    createActions();
+
+    resize(QGuiApplication::primaryScreen()-&gt;availableSize() * 3 / 5);
+}
+
+
+bool ImageViewer::loadFile(const QString &amp;fileName)
+{
+    QImageReader reader(fileName);
+    reader.setAutoTransform(true);
+    const QImage newImage = reader.read();
+    if (newImage.isNull()) {
+        QMessageBox::information(this, QGuiApplication::applicationDisplayName(),
+                                 tr(&quot;Cannot load %1: %2&quot;)
+                                 .arg(QDir::toNativeSeparators(fileName), reader.errorString()));
+        return false;
+    }
+
+    setImage(newImage);
+
+    setWindowFilePath(fileName);
+
+    const QString message = tr(&quot;Opened \&quot;%1\&quot;, %2x%3, Depth: %4&quot;)
+        .arg(QDir::toNativeSeparators(fileName)).arg(image.width()).arg(image.height()).arg(image.depth());
+    statusBar()-&gt;showMessage(message);
+    return true;
+}
+
+void ImageViewer::setImage(const QImage &amp;newImage)
+{
+    image = newImage;
+    imageLabel-&gt;setPixmap(QPixmap::fromImage(image));
+    scaleFactor = 1.0;
+
+    scrollArea-&gt;setVisible(true);
+    printAct-&gt;setEnabled(true);
+    fitToWindowAct-&gt;setEnabled(true);
+    updateActions();
+
+    if (!fitToWindowAct-&gt;isChecked())
+        imageLabel-&gt;adjustSize();
+}
+
+
+bool ImageViewer::saveFile(const QString &amp;fileName)
+{
+    QImageWriter writer(fileName);
+
+    if (!writer.write(image)) {
+        QMessageBox::information(this, QGuiApplication::applicationDisplayName(),
+                                 tr(&quot;Cannot write %1: %2&quot;)
+                                 .arg(QDir::toNativeSeparators(fileName)), writer.errorString());
+        return false;
+    }
+    const QString message = tr(&quot;Wrote \&quot;%1\&quot;&quot;).arg(QDir::toNativeSeparators(fileName));
+    statusBar()-&gt;showMessage(message);
+    return true;
+}
+
+
+static void initializeImageFileDialog(QFileDialog &amp;dialog, QFileDialog::AcceptMode acceptMode)
+{
+    static bool firstDialog = true;
+
+    if (firstDialog) {
+        firstDialog = false;
+        const QStringList picturesLocations = QStandardPaths::standardLocations(QStandardPaths::PicturesLocation);
+        dialog.setDirectory(picturesLocations.isEmpty() ? QDir::currentPath() : picturesLocations.last());
+    }
+
+    QStringList mimeTypeFilters;
+    const QByteArrayList supportedMimeTypes = acceptMode == QFileDialog::AcceptOpen
+        ? QImageReader::supportedMimeTypes() : QImageWriter::supportedMimeTypes();
+    foreach (const QByteArray &amp;mimeTypeName, supportedMimeTypes)
+        mimeTypeFilters.append(mimeTypeName);
+    mimeTypeFilters.sort();
+    dialog.setMimeTypeFilters(mimeTypeFilters);
+    dialog.selectMimeTypeFilter(&quot;image/jpeg&quot;);
+    if (acceptMode == QFileDialog::AcceptSave)
+        dialog.setDefaultSuffix(&quot;jpg&quot;);
+}
+
+void ImageViewer::open()
+{
+    QFileDialog dialog(this, tr(&quot;Open File&quot;));
+    initializeImageFileDialog(dialog, QFileDialog::AcceptOpen);
+
+    while (dialog.exec() == QDialog::Accepted &amp;&amp; !loadFile(dialog.selectedFiles().first())) {}
+}
+
+void ImageViewer::saveAs()
+{
+    QFileDialog dialog(this, tr(&quot;Save File As&quot;));
+    initializeImageFileDialog(dialog, QFileDialog::AcceptSave);
+
+    while (dialog.exec() == QDialog::Accepted &amp;&amp; !saveFile(dialog.selectedFiles().first())) {}
+}
+
+void ImageViewer::print()
+{
+    Q_ASSERT(imageLabel-&gt;pixmap());
+#if !defined(QT_NO_PRINTER) &amp;&amp; !defined(QT_NO_PRINTDIALOG)
+    QPrintDialog dialog(&amp;printer, this);
+    if (dialog.exec()) {
+        QPainter painter(&amp;printer);
+        QRect rect = painter.viewport();
+        QSize size = imageLabel-&gt;pixmap()-&gt;size();
+        size.scale(rect.size(), Qt::KeepAspectRatio);
+        painter.setViewport(rect.x(), rect.y(), size.width(), size.height());
+        painter.setWindow(imageLabel-&gt;pixmap()-&gt;rect());
+        painter.drawPixmap(0, 0, *imageLabel-&gt;pixmap());
+    }
+#endif
+}
+
+void ImageViewer::copy()
+{
+#ifndef QT_NO_CLIPBOARD
+    QGuiApplication::clipboard()-&gt;setImage(image);
+#endif // !QT_NO_CLIPBOARD
+}
+
+#ifndef QT_NO_CLIPBOARD
+static QImage clipboardImage()
+{
+    if (const QMimeData *mimeData = QGuiApplication::clipboard()-&gt;mimeData()) {
+        if (mimeData-&gt;hasImage()) {
+            const QImage image = qvariant_cast&lt;QImage&gt;(mimeData-&gt;imageData());
+            if (!image.isNull())
+                return image;
+        }
+    }
+    return QImage();
+}
+#endif // !QT_NO_CLIPBOARD
+
+void ImageViewer::paste()
+{
+#ifndef QT_NO_CLIPBOARD
+    const QImage newImage = clipboardImage();
+    if (newImage.isNull()) {
+        statusBar()-&gt;showMessage(tr(&quot;No image in clipboard&quot;));
+    } else {
+        setImage(newImage);
+        setWindowFilePath(QString());
+        const QString message = tr(&quot;Obtained image from clipboard, %1x%2, Depth: %3&quot;)
+            .arg(newImage.width()).arg(newImage.height()).arg(newImage.depth());
+        statusBar()-&gt;showMessage(message);
+    }
+#endif // !QT_NO_CLIPBOARD
+}
+
+void ImageViewer::zoomIn()
+{
+    scaleImage(1.25);
+}
+
+void ImageViewer::zoomOut()
+{
+    scaleImage(0.8);
+}
+
+void ImageViewer::normalSize()
+{
+    imageLabel-&gt;adjustSize();
+    scaleFactor = 1.0;
+}
+
+void ImageViewer::fitToWindow()
+{
+    bool fitToWindow = fitToWindowAct-&gt;isChecked();
+    scrollArea-&gt;setWidgetResizable(fitToWindow);
+    if (!fitToWindow)
+        normalSize();
+    updateActions();
+}
+
+void ImageViewer::about()
+{
+    QMessageBox::about(this, tr(&quot;About Image Viewer&quot;),
+            tr(&quot;&lt;p&gt;The &lt;b&gt;Image Viewer&lt;/b&gt; example shows how to combine QLabel &quot;
+               &quot;and QScrollArea to display an image. QLabel is typically used &quot;
+               &quot;for displaying a text, but it can also display an image. &quot;
+               &quot;QScrollArea provides a scrolling view around another widget. &quot;
+               &quot;If the child widget exceeds the size of the frame, QScrollArea &quot;
+               &quot;automatically provides scroll bars. &lt;/p&gt;&lt;p&gt;The example &quot;
+               &quot;demonstrates how QLabel's ability to scale its contents &quot;
+               &quot;(QLabel::scaledContents), and QScrollArea's ability to &quot;
+               &quot;automatically resize its contents &quot;
+               &quot;(QScrollArea::widgetResizable), can be used to implement &quot;
+               &quot;zooming and scaling features. &lt;/p&gt;&lt;p&gt;In addition the example &quot;
+               &quot;shows how to use QPainter to print an image.&lt;/p&gt;&quot;));
+}
+
+void ImageViewer::createActions()
+{
+    QMenu *fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+
+    QAction *openAct = fileMenu-&gt;addAction(tr(&quot;&amp;Open...&quot;), this, &amp;ImageViewer::open);
+    openAct-&gt;setShortcut(QKeySequence::Open);
+
+    saveAsAct = fileMenu-&gt;addAction(tr(&quot;&amp;Save As...&quot;), this, &amp;ImageViewer::saveAs);
+    saveAsAct-&gt;setEnabled(false);
+
+    printAct = fileMenu-&gt;addAction(tr(&quot;&amp;Print...&quot;), this, &amp;ImageViewer::print);
+    printAct-&gt;setShortcut(QKeySequence::Print);
+    printAct-&gt;setEnabled(false);
+
+    fileMenu-&gt;addSeparator();
+
+    QAction *exitAct = fileMenu-&gt;addAction(tr(&quot;E&amp;xit&quot;), this, &amp;QWidget::close);
+    exitAct-&gt;setShortcut(tr(&quot;Ctrl+Q&quot;));
+
+    QMenu *editMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Edit&quot;));
+
+    copyAct = editMenu-&gt;addAction(tr(&quot;&amp;Copy&quot;), this, &amp;ImageViewer::copy);
+    copyAct-&gt;setShortcut(QKeySequence::Copy);
+    copyAct-&gt;setEnabled(false);
+
+    QAction *pasteAct = editMenu-&gt;addAction(tr(&quot;&amp;Paste&quot;), this, &amp;ImageViewer::paste);
+    pasteAct-&gt;setShortcut(QKeySequence::Paste);
+
+    QMenu *viewMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;View&quot;));
+
+    zoomInAct = viewMenu-&gt;addAction(tr(&quot;Zoom &amp;In (25%)&quot;), this, &amp;ImageViewer::zoomIn);
+    zoomInAct-&gt;setShortcut(QKeySequence::ZoomIn);
+    zoomInAct-&gt;setEnabled(false);
+
+    zoomOutAct = viewMenu-&gt;addAction(tr(&quot;Zoom &amp;Out (25%)&quot;), this, &amp;ImageViewer::zoomOut);
+    zoomOutAct-&gt;setShortcut(QKeySequence::ZoomOut);
+    zoomOutAct-&gt;setEnabled(false);
+
+    normalSizeAct = viewMenu-&gt;addAction(tr(&quot;&amp;Normal Size&quot;), this, &amp;ImageViewer::normalSize);
+    normalSizeAct-&gt;setShortcut(tr(&quot;Ctrl+S&quot;));
+    normalSizeAct-&gt;setEnabled(false);
+
+    viewMenu-&gt;addSeparator();
+
+    fitToWindowAct = viewMenu-&gt;addAction(tr(&quot;&amp;Fit to Window&quot;), this, &amp;ImageViewer::fitToWindow);
+    fitToWindowAct-&gt;setEnabled(false);
+    fitToWindowAct-&gt;setCheckable(true);
+    fitToWindowAct-&gt;setShortcut(tr(&quot;Ctrl+F&quot;));
+
+    QMenu *helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+
+    helpMenu-&gt;addAction(tr(&quot;&amp;About&quot;), this, &amp;ImageViewer::about);
+    helpMenu-&gt;addAction(tr(&quot;About &amp;Qt&quot;), &amp;QApplication::aboutQt);
+}
+
+void ImageViewer::updateActions()
+{
+    saveAsAct-&gt;setEnabled(!image.isNull());
+    copyAct-&gt;setEnabled(!image.isNull());
+    zoomInAct-&gt;setEnabled(!fitToWindowAct-&gt;isChecked());
+    zoomOutAct-&gt;setEnabled(!fitToWindowAct-&gt;isChecked());
+    normalSizeAct-&gt;setEnabled(!fitToWindowAct-&gt;isChecked());
+}
+
+void ImageViewer::scaleImage(double factor)
+{
+    Q_ASSERT(imageLabel-&gt;pixmap());
+    scaleFactor *= factor;
+    imageLabel-&gt;resize(scaleFactor * imageLabel-&gt;pixmap()-&gt;size());
+
+    adjustScrollBar(scrollArea-&gt;horizontalScrollBar(), factor);
+    adjustScrollBar(scrollArea-&gt;verticalScrollBar(), factor);
+
+    zoomInAct-&gt;setEnabled(scaleFactor &lt; 3.0);
+    zoomOutAct-&gt;setEnabled(scaleFactor &gt; 0.333);
+}
+
+void ImageViewer::adjustScrollBar(QScrollBar *scrollBar, double factor)
+{
+    scrollBar-&gt;setValue(int(factor * scrollBar-&gt;value()
+                            + ((factor - 1) * scrollBar-&gt;pageStep()/2)));
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Blocking Fortune Client Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create a client for a network service.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/blockingfortuneclient-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> supports two general approaches to network programming:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:emphasis>The asynchronous (non-blocking) approach.</db:emphasis> Operations are scheduled and performed when control returns to Qt's event loop. When the operation is finished, <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> emits a signal. For example, <db:link xlink:href="qabstractsocket.xml#connectToHost">QTcpSocket::connectToHost</db:link>() returns immediately, and when the connection has been established, <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> emits <db:link xlink:href="qabstractsocket.xml#connected">connected</db:link>().</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>The synchronous (blocking) approach.</db:emphasis> In non-GUI and multithreaded applications, you can call the waitFor...() functions (e.g., <db:link xlink:href="qabstractsocket.xml#waitForConnected">QTcpSocket::waitForConnected</db:link>()) to suspend the calling thread until the operation has completed, instead of connecting to signals.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The implementation is very similar to the <db:link xlink:href="qtnetwork-fortuneclient-example.xml">Fortune Client</db:link> example, but instead of having <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> as a member of the main class, doing asynchronous networking in the main thread, we will do all network operations in a separate thread and use <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link>'s blocking API.</db:para>
+<db:para>The purpose of this example is to demonstrate a pattern that you can use to simplify your networking code, without losing responsiveness in your user interface. Use of Qt's blocking network API often leads to simpler code, but because of its blocking behavior, it should only be used in non-GUI threads to prevent the user interface from freezing. But contrary to what many think, using threads with <db:link xlink:href="qthread.xml">QThread</db:link> does not necessarily add unmanagable complexity to your application.</db:para>
+<db:para>We will start with the FortuneThread class, which handles the network code.</db:para>
+<db:programlisting language="cpp">class FortuneThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    FortuneThread(QObject *parent = 0);
+    ~FortuneThread();
+
+    void requestNewFortune(const QString &amp;hostName, quint16 port);
+    void run() Q_DECL_OVERRIDE;
+
+signals:
+    void newFortune(const QString &amp;fortune);
+    void error(int socketError, const QString &amp;message);
+
+private:
+    QString hostName;
+    quint16 port;
+    QMutex mutex;
+    QWaitCondition cond;
+    bool quit;
+};
+</db:programlisting>
+<db:para>FortuneThread is a <db:link xlink:href="qthread.xml">QThread</db:link> subclass that provides an API for scheduling requests for fortunes, and it has signals for delivering fortunes and reporting errors. You can call requestNewFortune() to request a new fortune, and the result is delivered by the newFortune() signal. If any error occurs, the error() signal is emitted.</db:para>
+<db:para>It's important to notice that requestNewFortune() is called from the main, GUI thread, but the host name and port values it stores will be accessed from FortuneThread's thread. Because we will be reading and writing FortuneThread's data members from different threads concurrently, we use <db:link xlink:href="qmutex.xml">QMutex</db:link> to synchronize access.</db:para>
+<db:programlisting language="cpp">void FortuneThread::requestNewFortune(const QString &amp;hostName, quint16 port)
+{
+    QMutexLocker locker(&amp;mutex);
+    this-&gt;hostName = hostName;
+    this-&gt;port = port;
+    if (!isRunning())
+        start();
+    else
+        cond.wakeOne();
+}
+</db:programlisting>
+<db:para>The requestNewFortune() function stores the host name and port of the fortune server as member data, and we lock the mutex with <db:link xlink:href="qmutexlocker.xml">QMutexLocker</db:link> to protect this data. We then start the thread, unless it is already running. We will come back to the <db:link xlink:href="qwaitcondition.xml#wakeOne">QWaitCondition::wakeOne</db:link>() call later.</db:para>
+<db:programlisting language="cpp">void FortuneThread::run()
+{
+    mutex.lock();
+    QString serverName = hostName;
+    quint16 serverPort = port;
+    mutex.unlock();
+</db:programlisting>
+<db:para>In the run() function, we start by acquiring the mutex lock, fetching the host name and port from the member data, and then releasing the lock again. The case that we are protecting ourselves against is that requestNewFortune() could be called at the same time as we are fetching this data. <db:link xlink:href="qstring.xml">QString</db:link> is <db:link xlink:href="threads-reentrancy.xml">reentrant</db:link> but <db:emphasis>not</db:emphasis> <db:link xlink:href="threads-reentrancy.xml">thread-safe</db:link>, and we must also avoid the unlikely risk of reading the host name from one request, and port of another. And as you might have guessed, FortuneThread can only handle one request at a time.</db:para>
+<db:para>The run() function now enters a loop:</db:para>
+<db:programlisting language="cpp">    while (!quit) {
+        const int Timeout = 5 * 1000;
+
+        QTcpSocket socket;
+        socket.connectToHost(serverName, serverPort);
+</db:programlisting>
+<db:para>The loop will continue requesting fortunes for as long as <db:emphasis>quit</db:emphasis> is false. We start our first request by creating a <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> on the stack, and then we call <db:link xlink:href="qabstractsocket.xml#connectToHost">connectToHost</db:link>(). This starts an asynchronous operation which, after control returns to Qt's event loop, will cause <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> to emit <db:link xlink:href="qabstractsocket.xml#connected">connected</db:link>() or <db:link xlink:href="qabstractsocket.xml#error">error</db:link>().</db:para>
+<db:programlisting language="cpp">        if (!socket.waitForConnected(Timeout)) {
+            emit error(socket.error(), socket.errorString());
+            return;
+        }
+</db:programlisting>
+<db:para>But since we are running in a non-GUI thread, we do not have to worry about blocking the user interface. So instead of entering an event loop, we simply call <db:link xlink:href="qabstractsocket.xml#waitForConnected">QTcpSocket::waitForConnected</db:link>(). This function will wait, blocking the calling thread, until <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> emits connected() or an error occurs. If connected() is emitted, the function returns true; if the connection failed or timed out (which in this example happens after 5 seconds), false is returned. <db:link xlink:href="qabstractsocket.xml#waitForConnected">QTcpSocket::waitForConnected</db:link>(), like the other waitFor...() functions, is part of <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link>'s <db:emphasis>blocking API</db:emphasis>.</db:para>
+<db:para>After this statement, we have a connected socket to work with.</db:para>
+<db:programlisting language="cpp">        QDataStream in(&amp;socket);
+        in.setVersion(QDataStream::Qt_4_0);
+        QString fortune;
+</db:programlisting>
+<db:para>Now we can create a <db:link xlink:href="qdatastream.xml">QDataStream</db:link> object, passing the socket to <db:link xlink:href="qdatastream.xml">QDataStream</db:link>'s constructor, and as in the other client examples we set the stream protocol version to <db:link xlink:href="qdatastream.xml#Version-enum">QDataStream::Qt_4_0</db:link>.</db:para>
+<db:programlisting language="cpp">        do {
+            if (!socket.waitForReadyRead(Timeout)) {
+                emit error(socket.error(), socket.errorString());
+                return;
+            }
+
+            in.startTransaction();
+            in &gt;&gt; fortune;
+        } while (!in.commitTransaction());
+</db:programlisting>
+<db:para>We proceed by initiating a loop that waits for the fortune string data by calling <db:link xlink:href="qabstractsocket.xml#waitForReadyRead">QTcpSocket::waitForReadyRead</db:link>(). If it returns false, we abort the operation. After this statement, we start a stream read transaction. We exit the loop when <db:link xlink:href="qdatastream.xml#commitTransaction">QDataStream::commitTransaction</db:link>() returns true, which means successful fortune string loading. The resulting fortune is delivered by emitting newFortune():</db:para>
+<db:programlisting language="cpp">        mutex.lock();
+        emit newFortune(fortune);
+
+        cond.wait(&amp;mutex);
+        serverName = hostName;
+        serverPort = port;
+        mutex.unlock();
+    }
+</db:programlisting>
+<db:para>The final part of our loop is that we acquire the mutex so that we can safely read from our member data. We then let the thread go to sleep by calling <db:link xlink:href="qwaitcondition.xml#wait">QWaitCondition::wait</db:link>(). At this point, we can go back to requestNewFortune() and look closed at the call to wakeOne():</db:para>
+<db:programlisting language="cpp">void FortuneThread::requestNewFortune(const QString &amp;hostName, quint16 port)
+{
+    ...
+    if (!isRunning())
+        start();
+    else
+        cond.wakeOne();
+}
+</db:programlisting>
+<db:para>What happened here was that because the thread falls asleep waiting for a new request, we needed to wake it up again when a new request arrives. <db:link xlink:href="qwaitcondition.xml">QWaitCondition</db:link> is often used in threads to signal a wakeup call like this.</db:para>
+<db:programlisting language="cpp">FortuneThread::~FortuneThread()
+{
+    mutex.lock();
+    quit = true;
+    cond.wakeOne();
+    mutex.unlock();
+    wait();
+}
+</db:programlisting>
+<db:para>Finishing off the FortuneThread walkthrough, this is the destructor that sets <db:emphasis>quit</db:emphasis> to true, wakes up the thread and waits for the thread to exit before returning. This lets the while loop in run() will finish its current iteration. When run() returns, the thread will terminate and be destroyed.</db:para>
+<db:para>Now for the BlockingClient class:</db:para>
+<db:programlisting language="cpp">class BlockingClient : public QWidget
+{
+    Q_OBJECT
+
+public:
+    BlockingClient(QWidget *parent = 0);
+
+private slots:
+    void requestNewFortune();
+    void showFortune(const QString &amp;fortune);
+    void displayError(int socketError, const QString &amp;message);
+    void enableGetFortuneButton();
+
+private:
+    QLabel *hostLabel;
+    QLabel *portLabel;
+    QLineEdit *hostLineEdit;
+    QLineEdit *portLineEdit;
+    QLabel *statusLabel;
+    QPushButton *getFortuneButton;
+    QPushButton *quitButton;
+    QDialogButtonBox *buttonBox;
+
+    FortuneThread thread;
+    QString currentFortune;
+};
+</db:programlisting>
+<db:para>BlockingClient is very similar to the Client class in the <db:link xlink:href="qtnetwork-fortuneclient-example.xml">Fortune Client</db:link> example, but in this class we store a FortuneThread member instead of a pointer to a <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link>. When the user clicks the &quot;Get Fortune&quot; button, the same slot is called, but its implementation is slightly different:</db:para>
+<db:programlisting language="cpp">    connect(&amp;thread, SIGNAL(newFortune(QString)),
+            this, SLOT(showFortune(QString)));
+    connect(&amp;thread, SIGNAL(error(int,QString)),
+            this, SLOT(displayError(int,QString)));
+</db:programlisting>
+<db:para>We connect our FortuneThread's two signals newFortune() and error() (which are somewhat similar to <db:link xlink:href="qiodevice.xml#readyRead">QTcpSocket::readyRead</db:link>() and <db:link xlink:href="qabstractsocket.xml#error">QTcpSocket::error</db:link>() in the previous example) to requestNewFortune() and displayError().</db:para>
+<db:programlisting language="cpp">void BlockingClient::requestNewFortune()
+{
+    getFortuneButton-&gt;setEnabled(false);
+    thread.requestNewFortune(hostLineEdit-&gt;text(),
+                             portLineEdit-&gt;text().toInt());
+}
+</db:programlisting>
+<db:para>The requestNewFortune() slot calls FortuneThread::requestNewFortune(), which <db:emphasis>shedules</db:emphasis> the request. When the thread has received a new fortune and emits newFortune(), our showFortune() slot is called:</db:para>
+<db:programlisting language="cpp">void BlockingClient::showFortune(const QString &amp;nextFortune)
+{
+    if (nextFortune == currentFortune) {
+        requestNewFortune();
+        return;
+    }
+
+    currentFortune = nextFortune;
+    statusLabel-&gt;setText(currentFortune);
+    getFortuneButton-&gt;setEnabled(true);
+}
+</db:programlisting>
+<db:para>Here, we simply display the fortune we received as the argument.</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/blockingclient.cpp">blockingfortuneclient/blockingclient.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/blockingclient.h">blockingfortuneclient/blockingclient.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/blockingfortuneclient.pro">blockingfortuneclient/blockingfortuneclient.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/fortunethread.cpp">blockingfortuneclient/fortunethread.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/fortunethread.h">blockingfortuneclient/fortunethread.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="blockingfortuneclient/main.cpp">blockingfortuneclient/main.cpp</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtnetwork-fortuneclient-example.xml">Fortune Client Example</db:link></db:member>
+<db:member><db:link xlink:href="qtnetwork-fortuneserver-example.xml">Fortune Server Example</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section></db:article>

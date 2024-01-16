@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Fortune Server Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create a server for a network service.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+#include &lt;QtNetwork&gt;
+
+#include &lt;stdlib.h&gt;
+
+#include &quot;server.h&quot;
+
+Server::Server(QWidget *parent)
+    : QDialog(parent)
+    , statusLabel(new QLabel)
+    , tcpServer(Q_NULLPTR)
+    , networkSession(0)
+{
+    setWindowFlags(windowFlags() &amp; ~Qt::WindowContextHelpButtonHint);
+    statusLabel-&gt;setTextInteractionFlags(Qt::TextBrowserInteraction);
+
+    QNetworkConfigurationManager manager;
+    if (manager.capabilities() &amp; QNetworkConfigurationManager::NetworkSessionRequired) {
+        // Get saved network configuration
+        QSettings settings(QSettings::UserScope, QLatin1String(&quot;QtProject&quot;));
+        settings.beginGroup(QLatin1String(&quot;QtNetwork&quot;));
+        const QString id = settings.value(QLatin1String(&quot;DefaultNetworkConfiguration&quot;)).toString();
+        settings.endGroup();
+
+        // If the saved network configuration is not currently discovered use the system default
+        QNetworkConfiguration config = manager.configurationFromIdentifier(id);
+        if ((config.state() &amp; QNetworkConfiguration::Discovered) !=
+            QNetworkConfiguration::Discovered) {
+            config = manager.defaultConfiguration();
+        }
+
+        networkSession = new QNetworkSession(config, this);
+        connect(networkSession, &amp;QNetworkSession::opened, this, &amp;Server::sessionOpened);
+
+        statusLabel-&gt;setText(tr(&quot;Opening network session.&quot;));
+        networkSession-&gt;open();
+    } else {
+        sessionOpened();
+    }
+
+        fortunes &lt;&lt; tr(&quot;You've been leading a dog's life. Stay off the furniture.&quot;)
+                 &lt;&lt; tr(&quot;You've got to think about tomorrow.&quot;)
+                 &lt;&lt; tr(&quot;You will be surprised by a loud noise.&quot;)
+                 &lt;&lt; tr(&quot;You will feel hungry again in another hour.&quot;)
+                 &lt;&lt; tr(&quot;You might have mail.&quot;)
+                 &lt;&lt; tr(&quot;You cannot kill time without injuring eternity.&quot;)
+                 &lt;&lt; tr(&quot;Computers are not intelligent. They only think they are.&quot;);
+        QPushButton *quitButton = new QPushButton(tr(&quot;Quit&quot;));
+        quitButton-&gt;setAutoDefault(false);
+        connect(quitButton, &amp;QAbstractButton::clicked, this, &amp;QWidget::close);
+        connect(tcpServer, &amp;QTcpServer::newConnection, this, &amp;Server::sendFortune);
+
+        QHBoxLayout *buttonLayout = new QHBoxLayout;
+        buttonLayout-&gt;addStretch(1);
+        buttonLayout-&gt;addWidget(quitButton);
+        buttonLayout-&gt;addStretch(1);
+
+        QVBoxLayout *mainLayout = Q_NULLPTR;
+        if (QGuiApplication::styleHints()-&gt;showIsFullScreen() || QGuiApplication::styleHints()-&gt;showIsMaximized()) {
+            QVBoxLayout *outerVerticalLayout = new QVBoxLayout(this);
+            outerVerticalLayout-&gt;addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding));
+            QHBoxLayout *outerHorizontalLayout = new QHBoxLayout;
+            outerHorizontalLayout-&gt;addItem(new QSpacerItem(0, 0, QSizePolicy::MinimumExpanding, QSizePolicy::Ignored));
+            QGroupBox *groupBox = new QGroupBox(QGuiApplication::applicationDisplayName());
+            mainLayout = new QVBoxLayout(groupBox);
+            outerHorizontalLayout-&gt;addWidget(groupBox);
+            outerHorizontalLayout-&gt;addItem(new QSpacerItem(0, 0, QSizePolicy::MinimumExpanding, QSizePolicy::Ignored));
+            outerVerticalLayout-&gt;addLayout(outerHorizontalLayout);
+            outerVerticalLayout-&gt;addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding));
+        } else {
+            mainLayout = new QVBoxLayout(this);
+        }
+
+        mainLayout-&gt;addWidget(statusLabel);
+        mainLayout-&gt;addLayout(buttonLayout);
+
+        setWindowTitle(QGuiApplication::applicationDisplayName());
+}
+
+void Server::sessionOpened()
+{
+    // Save the used configuration
+    if (networkSession) {
+        QNetworkConfiguration config = networkSession-&gt;configuration();
+        QString id;
+        if (config.type() == QNetworkConfiguration::UserChoice)
+            id = networkSession-&gt;sessionProperty(QLatin1String(&quot;UserChoiceConfiguration&quot;)).toString();
+        else
+            id = config.identifier();
+
+        QSettings settings(QSettings::UserScope, QLatin1String(&quot;QtProject&quot;));
+        settings.beginGroup(QLatin1String(&quot;QtNetwork&quot;));
+        settings.setValue(QLatin1String(&quot;DefaultNetworkConfiguration&quot;), id);
+        settings.endGroup();
+    }
+
+    tcpServer = new QTcpServer(this);
+    if (!tcpServer-&gt;listen()) {
+        QMessageBox::critical(this, tr(&quot;Fortune Server&quot;),
+                              tr(&quot;Unable to start the server: %1.&quot;)
+                              .arg(tcpServer-&gt;errorString()));
+        close();
+        return;
+    }
+    QString ipAddress;
+    QList&lt;QHostAddress&gt; ipAddressesList = QNetworkInterface::allAddresses();
+    // use the first non-localhost IPv4 address
+    for (int i = 0; i &lt; ipAddressesList.size(); ++i) {
+        if (ipAddressesList.at(i) != QHostAddress::LocalHost &amp;&amp;
+            ipAddressesList.at(i).toIPv4Address()) {
+            ipAddress = ipAddressesList.at(i).toString();
+            break;
+        }
+    }
+    // if we did not find one, use IPv4 localhost
+    if (ipAddress.isEmpty())
+        ipAddress = QHostAddress(QHostAddress::LocalHost).toString();
+    statusLabel-&gt;setText(tr(&quot;The server is running on\n\nIP: %1\nport: %2\n\n&quot;
+                            &quot;Run the Fortune Client example now.&quot;)
+                         .arg(ipAddress).arg(tcpServer-&gt;serverPort()));
+}
+
+void Server::sendFortune()
+{
+    QByteArray block;
+    QDataStream out(&amp;block, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_4_0);
+
+    out &lt;&lt; fortunes.at(qrand() % fortunes.size());
+
+    QTcpSocket *clientConnection = tcpServer-&gt;nextPendingConnection();
+    connect(clientConnection, &amp;QAbstractSocket::disconnected,
+            clientConnection, &amp;QObject::deleteLater);
+
+    clientConnection-&gt;write(block);
+    clientConnection-&gt;disconnectFromHost();
+}
+
+</db:programlisting>
+</db:article>

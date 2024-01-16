@@ -1,0 +1,233 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SVG Viewer Example</db:title>
+<db:productname>QtSvg</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SVG Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt SVG Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;exportdialog.h&quot;
+
+#include &lt;QtWidgets&gt;
+#include &lt;QSvgRenderer&gt;
+
+#include &quot;svgview.h&quot;
+
+static inline QString picturesLocation()
+{
+    return QStandardPaths::standardLocations(QStandardPaths::PicturesLocation).value(0, QDir::currentPath());
+}
+
+MainWindow::MainWindow()
+    : QMainWindow()
+    , m_view(new SvgView)
+{
+    QToolBar *toolBar = new QToolBar(this);
+    addToolBar(Qt::TopToolBarArea, toolBar);
+
+    QMenu *fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    const QIcon openIcon = QIcon::fromTheme(&quot;document-open&quot;, QIcon(&quot;:/qt-project.org/styles/commonstyle/images/standardbutton-open-32.png&quot;));
+    QAction *openAction = fileMenu-&gt;addAction(openIcon, tr(&quot;&amp;Open...&quot;), this, &amp;MainWindow::openFile);
+    openAction-&gt;setShortcut(QKeySequence::Open);
+    toolBar-&gt;addAction(openAction);
+    const QIcon exportIcon = QIcon::fromTheme(&quot;document-save&quot;, QIcon(&quot;:/qt-project.org/styles/commonstyle/images/standardbutton-save-32.png&quot;));
+    QAction *exportAction = fileMenu-&gt;addAction(exportIcon, tr(&quot;&amp;Export...&quot;), this, &amp;MainWindow::exportImage);
+    exportAction-&gt;setToolTip(tr(&quot;Export Image&quot;));
+    exportAction-&gt;setShortcut(Qt::CTRL + Qt::Key_E);
+    toolBar-&gt;addAction(exportAction);
+    QAction *quitAction = fileMenu-&gt;addAction(tr(&quot;E&amp;xit&quot;), qApp, QCoreApplication::quit);
+    quitAction-&gt;setShortcuts(QKeySequence::Quit);
+
+    QMenu *viewMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;View&quot;));
+    m_backgroundAction = viewMenu-&gt;addAction(tr(&quot;&amp;Background&quot;));
+    m_backgroundAction-&gt;setEnabled(false);
+    m_backgroundAction-&gt;setCheckable(true);
+    m_backgroundAction-&gt;setChecked(false);
+    connect(m_backgroundAction, &amp;QAction::toggled, m_view, &amp;SvgView::setViewBackground);
+
+    m_outlineAction = viewMenu-&gt;addAction(tr(&quot;&amp;Outline&quot;));
+    m_outlineAction-&gt;setEnabled(false);
+    m_outlineAction-&gt;setCheckable(true);
+    m_outlineAction-&gt;setChecked(true);
+    connect(m_outlineAction, &amp;QAction::toggled, m_view, &amp;SvgView::setViewOutline);
+
+    QMenu *rendererMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Renderer&quot;));
+    m_nativeAction = rendererMenu-&gt;addAction(tr(&quot;&amp;Native&quot;));
+    m_nativeAction-&gt;setCheckable(true);
+    m_nativeAction-&gt;setChecked(true);
+    m_nativeAction-&gt;setData(int(SvgView::Native));
+#ifndef QT_NO_OPENGL
+    m_glAction = rendererMenu-&gt;addAction(tr(&quot;&amp;OpenGL&quot;));
+    m_glAction-&gt;setCheckable(true);
+    m_glAction-&gt;setData(int(SvgView::OpenGL));
+#endif
+    m_imageAction = rendererMenu-&gt;addAction(tr(&quot;&amp;Image&quot;));
+    m_imageAction-&gt;setCheckable(true);
+    m_imageAction-&gt;setData(int(SvgView::Image));
+
+    rendererMenu-&gt;addSeparator();
+    m_highQualityAntialiasingAction = rendererMenu-&gt;addAction(tr(&quot;&amp;High Quality Antialiasing&quot;));
+    m_highQualityAntialiasingAction-&gt;setEnabled(false);
+    m_highQualityAntialiasingAction-&gt;setCheckable(true);
+    m_highQualityAntialiasingAction-&gt;setChecked(false);
+    connect(m_highQualityAntialiasingAction, &amp;QAction::toggled, m_view, &amp;SvgView::setHighQualityAntialiasing);
+#ifdef QT_NO_OPENGL
+    m_highQualityAntialiasingAction-&gt;setVisible(false);
+#endif
+
+    QActionGroup *rendererGroup = new QActionGroup(this);
+    rendererGroup-&gt;addAction(m_nativeAction);
+#ifndef QT_NO_OPENGL
+    rendererGroup-&gt;addAction(m_glAction);
+#endif
+    rendererGroup-&gt;addAction(m_imageAction);
+
+    menuBar()-&gt;addMenu(rendererMenu);
+
+    connect(rendererGroup, &amp;QActionGroup::triggered,
+            [this] (QAction *a) { setRenderer(a-&gt;data().toInt()); });
+
+    QMenu *help = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    help-&gt;addAction(tr(&quot;About Qt&quot;), qApp, &amp;QApplication::aboutQt);
+
+    setCentralWidget(m_view);
+}
+
+void MainWindow::openFile()
+{
+    QFileDialog fileDialog(this);
+    fileDialog.setAcceptMode(QFileDialog::AcceptOpen);
+    fileDialog.setMimeTypeFilters(QStringList() &lt;&lt; &quot;image/svg+xml&quot; &lt;&lt; &quot;image/svg+xml-compressed&quot;);
+    fileDialog.setWindowTitle(tr(&quot;Open SVG File&quot;));
+    if (m_currentPath.isEmpty())
+        fileDialog.setDirectory(picturesLocation());
+
+    while (fileDialog.exec() == QDialog::Accepted &amp;&amp; !loadFile(fileDialog.selectedFiles().constFirst()))
+        ;
+}
+
+bool MainWindow::loadFile(const QString &amp;fileName)
+{
+    if (!QFileInfo::exists(fileName) || !m_view-&gt;openFile(fileName)) {
+        QMessageBox::critical(this, tr(&quot;Open SVG File&quot;),
+                              tr(&quot;Could not open file '%1'.&quot;).arg(QDir::toNativeSeparators(fileName)));
+        return false;
+    }
+
+    if (!fileName.startsWith(&quot;:/&quot;)) {
+        m_currentPath = fileName;
+        setWindowFilePath(fileName);
+        const QSize size = m_view-&gt;svgSize();
+        const QString message =
+            tr(&quot;Opened %1, %2x%3&quot;).arg(QFileInfo(fileName).fileName()).arg(size.width()).arg(size.width());
+        statusBar()-&gt;showMessage(message);
+    }
+
+    m_outlineAction-&gt;setEnabled(true);
+    m_backgroundAction-&gt;setEnabled(true);
+
+    const QSize availableSize = QApplication::desktop()-&gt;availableGeometry(this).size();
+    resize(m_view-&gt;sizeHint().expandedTo(availableSize / 4) + QSize(80, 80 + menuBar()-&gt;height()));
+
+    return true;
+}
+
+void MainWindow::setRenderer(int renderMode)
+{
+
+    m_highQualityAntialiasingAction-&gt;setEnabled(renderMode == SvgView::OpenGL);
+    m_view-&gt;setRenderer(static_cast&lt;SvgView::RendererType&gt;(renderMode));
+}
+
+void MainWindow::exportImage()
+{
+    ExportDialog exportDialog(this);
+    exportDialog.setExportSize(m_view-&gt;svgSize());
+    QString fileName;
+    if (m_currentPath.isEmpty()) {
+        fileName = picturesLocation() + QLatin1String(&quot;/export.png&quot;);
+    } else {
+        const QFileInfo fi(m_currentPath);
+        fileName = fi.absolutePath() + QLatin1Char('/') + fi.baseName() + QLatin1String(&quot;.png&quot;);
+    }
+    exportDialog.setExportFileName(fileName);
+
+    while (true) {
+        if (exportDialog.exec() != QDialog::Accepted)
+            break;
+
+        const QSize imageSize = exportDialog.exportSize();
+        QImage image(imageSize, QImage::Format_ARGB32);
+        image.fill(Qt::transparent);
+        QPainter painter;
+        painter.begin(&amp;image);
+        m_view-&gt;renderer()-&gt;render(&amp;painter, QRectF(QPointF(), QSizeF(imageSize)));
+        painter.end();
+
+        const QString fileName = exportDialog.exportFileName();
+        if (image.save(fileName)) {
+
+            const QString message = tr(&quot;Exported %1, %2x%3, %4 bytes&quot;)
+                .arg(QDir::toNativeSeparators(fileName)).arg(imageSize.width()).arg(imageSize.height())
+                .arg(QFileInfo(fileName).size());
+            statusBar()-&gt;showMessage(message);
+            break;
+        } else {
+            QMessageBox::critical(this, tr(&quot;Export Image&quot;),
+                                  tr(&quot;Could not write file '%1'.&quot;).arg(QDir::toNativeSeparators(fileName)));
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

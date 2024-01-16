@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.7.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;settings.h&quot;
+
+#include &quot;browserapplication.h&quot;
+#include &quot;browsermainwindow.h&quot;
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+#include &quot;cookiejar.h&quot;
+#endif
+#include &quot;history.h&quot;
+#include &quot;webview.h&quot;
+
+#include &lt;QtCore/QLocale&gt;
+#include &lt;QtCore/QSettings&gt;
+#include &lt;QtWidgets/QtWidgets&gt;
+#include &lt;QtWebEngineWidgets/QtWebEngineWidgets&gt;
+
+SettingsDialog::SettingsDialog(QWidget *parent)
+    : QDialog(parent)
+{
+    setupUi(this);
+    connect(setHomeToCurrentPageButton, SIGNAL(clicked()), this, SLOT(setHomeToCurrentPage()));
+    connect(standardFontButton, SIGNAL(clicked()), this, SLOT(chooseFont()));
+    connect(fixedFontButton, SIGNAL(clicked()), this, SLOT(chooseFixedFont()));
+
+    loadDefaults();
+    loadFromSettings();
+}
+
+static QString defaultAcceptLanguage()
+{
+    const QStringList langs = QLocale().uiLanguages();
+    if (langs.isEmpty())
+        return QString();
+    QString str = langs.first();
+    const float qstep = 1.0f / float(langs.count());
+    float q = 1.0f - qstep;
+    for (int i = 1; i &lt; langs.count(); ++i) {
+        str += QStringLiteral(&quot;, &quot;) + langs.at(i) + QStringLiteral(&quot;;q=&quot;) + QString::number(q, 'f', 2);
+        q -= qstep;
+    }
+    return str;
+}
+
+void SettingsDialog::loadDefaults()
+{
+    QWebEngineSettings *defaultSettings = QWebEngineSettings::globalSettings();
+    QString standardFontFamily = defaultSettings-&gt;fontFamily(QWebEngineSettings::StandardFont);
+    int standardFontSize = defaultSettings-&gt;fontSize(QWebEngineSettings::DefaultFontSize);
+    standardFont = QFont(standardFontFamily, standardFontSize);
+    standardLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(standardFont.family()).arg(standardFont.pointSize()));
+
+    QString fixedFontFamily = defaultSettings-&gt;fontFamily(QWebEngineSettings::FixedFont);
+    int fixedFontSize = defaultSettings-&gt;fontSize(QWebEngineSettings::DefaultFixedFontSize);
+    fixedFont = QFont(fixedFontFamily, fixedFontSize);
+    fixedLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(fixedFont.family()).arg(fixedFont.pointSize()));
+
+    downloadsLocation-&gt;setText(QStandardPaths::writableLocation(QStandardPaths::DesktopLocation));
+
+    enableJavascript-&gt;setChecked(defaultSettings-&gt;testAttribute(QWebEngineSettings::JavascriptEnabled));
+    enablePlugins-&gt;setChecked(defaultSettings-&gt;testAttribute(QWebEngineSettings::PluginsEnabled));
+
+    enableScrollAnimator-&gt;setChecked(defaultSettings-&gt;testAttribute(QWebEngineSettings::ScrollAnimatorEnabled));
+
+    persistentDataPath-&gt;setText(QWebEngineProfile::defaultProfile()-&gt;persistentStoragePath());
+    sessionCookiesCombo-&gt;setCurrentIndex(QWebEngineProfile::defaultProfile()-&gt;persistentCookiesPolicy());
+    httpUserAgent-&gt;setText(QWebEngineProfile::defaultProfile()-&gt;httpUserAgent());
+    httpAcceptLanguage-&gt;setText(defaultAcceptLanguage());
+
+    if (!defaultSettings-&gt;testAttribute(QWebEngineSettings::AutoLoadIconsForPage))
+        faviconDownloadMode-&gt;setCurrentIndex(0);
+    else if (!defaultSettings-&gt;testAttribute(QWebEngineSettings::TouchIconsEnabled))
+        faviconDownloadMode-&gt;setCurrentIndex(1);
+    else
+        faviconDownloadMode-&gt;setCurrentIndex(2);
+}
+
+void SettingsDialog::loadFromSettings()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(&quot;MainWindow&quot;));
+    const QString defaultHome = QLatin1String(BrowserMainWindow::defaultHome);
+    homeLineEdit-&gt;setText(settings.value(QLatin1String(&quot;home&quot;), defaultHome).toString());
+    settings.endGroup();
+
+    settings.beginGroup(QLatin1String(&quot;history&quot;));
+    int historyExpire = settings.value(QLatin1String(&quot;historyExpire&quot;)).toInt();
+    int idx = 0;
+    switch (historyExpire) {
+    case 1: idx = 0; break;
+    case 7: idx = 1; break;
+    case 14: idx = 2; break;
+    case 30: idx = 3; break;
+    case 365: idx = 4; break;
+    case -1: idx = 5; break;
+    default:
+        idx = 5;
+    }
+    expireHistory-&gt;setCurrentIndex(idx);
+    settings.endGroup();
+
+    settings.beginGroup(QLatin1String(&quot;downloadmanager&quot;));
+    QString downloadDirectory = settings.value(QLatin1String(&quot;downloadDirectory&quot;), downloadsLocation-&gt;text()).toString();
+    downloadsLocation-&gt;setText(downloadDirectory);
+    settings.endGroup();
+
+    settings.beginGroup(QLatin1String(&quot;general&quot;));
+    openLinksIn-&gt;setCurrentIndex(settings.value(QLatin1String(&quot;openLinksIn&quot;), openLinksIn-&gt;currentIndex()).toInt());
+
+    settings.endGroup();
+
+    // Appearance
+    settings.beginGroup(QLatin1String(&quot;websettings&quot;));
+    fixedFont = qvariant_cast&lt;QFont&gt;(settings.value(QLatin1String(&quot;fixedFont&quot;), fixedFont));
+    standardFont = qvariant_cast&lt;QFont&gt;(settings.value(QLatin1String(&quot;standardFont&quot;), standardFont));
+
+    standardLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(standardFont.family()).arg(standardFont.pointSize()));
+    fixedLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(fixedFont.family()).arg(fixedFont.pointSize()));
+
+    enableJavascript-&gt;setChecked(settings.value(QLatin1String(&quot;enableJavascript&quot;), enableJavascript-&gt;isChecked()).toBool());
+    enablePlugins-&gt;setChecked(settings.value(QLatin1String(&quot;enablePlugins&quot;), enablePlugins-&gt;isChecked()).toBool());
+    userStyleSheet-&gt;setPlainText(settings.value(QLatin1String(&quot;userStyleSheet&quot;)).toString());
+    enableScrollAnimator-&gt;setChecked(settings.value(QLatin1String(&quot;enableScrollAnimator&quot;), enableScrollAnimator-&gt;isChecked()).toBool());
+    httpUserAgent-&gt;setText(settings.value(QLatin1String(&quot;httpUserAgent&quot;), httpUserAgent-&gt;text()).toString());
+    httpAcceptLanguage-&gt;setText(settings.value(QLatin1String(&quot;httpAcceptLanguage&quot;), httpAcceptLanguage-&gt;text()).toString());
+    faviconDownloadMode-&gt;setCurrentIndex(settings.value(QLatin1String(&quot;faviconDownloadMode&quot;), faviconDownloadMode-&gt;currentIndex()).toInt());
+    settings.endGroup();
+
+    // Privacy
+    settings.beginGroup(QLatin1String(&quot;cookies&quot;));
+
+    int persistentCookiesPolicy = settings.value(QLatin1String(&quot;persistentCookiesPolicy&quot;), sessionCookiesCombo-&gt;currentIndex()).toInt();
+    sessionCookiesCombo-&gt;setCurrentIndex(persistentCookiesPolicy);
+
+    QString pdataPath = settings.value(QLatin1String(&quot;persistentDataPath&quot;), persistentDataPath-&gt;text()).toString();
+    persistentDataPath-&gt;setText(pdataPath);
+
+    settings.endGroup();
+
+    // Proxy
+    settings.beginGroup(QLatin1String(&quot;proxy&quot;));
+    proxySupport-&gt;setChecked(settings.value(QLatin1String(&quot;enabled&quot;), false).toBool());
+    proxyType-&gt;setCurrentIndex(settings.value(QLatin1String(&quot;type&quot;), 0).toInt());
+    proxyHostName-&gt;setText(settings.value(QLatin1String(&quot;hostName&quot;)).toString());
+    proxyPort-&gt;setValue(settings.value(QLatin1String(&quot;port&quot;), 1080).toInt());
+    proxyUserName-&gt;setText(settings.value(QLatin1String(&quot;userName&quot;)).toString());
+    proxyPassword-&gt;setText(settings.value(QLatin1String(&quot;password&quot;)).toString());
+    settings.endGroup();
+}
+
+void SettingsDialog::saveToSettings()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(&quot;MainWindow&quot;));
+    settings.setValue(QLatin1String(&quot;home&quot;), homeLineEdit-&gt;text());
+    settings.endGroup();
+
+    settings.beginGroup(QLatin1String(&quot;general&quot;));
+    settings.setValue(QLatin1String(&quot;openLinksIn&quot;), openLinksIn-&gt;currentIndex());
+    settings.endGroup();
+
+    settings.beginGroup(QLatin1String(&quot;history&quot;));
+    int historyExpire = expireHistory-&gt;currentIndex();
+    int idx = -1;
+    switch (historyExpire) {
+    case 0: idx = 1; break;
+    case 1: idx = 7; break;
+    case 2: idx = 14; break;
+    case 3: idx = 30; break;
+    case 4: idx = 365; break;
+    case 5: idx = -1; break;
+    }
+    settings.setValue(QLatin1String(&quot;historyExpire&quot;), idx);
+    settings.endGroup();
+
+    // Appearance
+    settings.beginGroup(QLatin1String(&quot;websettings&quot;));
+    settings.setValue(QLatin1String(&quot;fixedFont&quot;), fixedFont);
+    settings.setValue(QLatin1String(&quot;standardFont&quot;), standardFont);
+    settings.setValue(QLatin1String(&quot;enableJavascript&quot;), enableJavascript-&gt;isChecked());
+    settings.setValue(QLatin1String(&quot;enablePlugins&quot;), enablePlugins-&gt;isChecked());
+    settings.setValue(QLatin1String(&quot;enableScrollAnimator&quot;), enableScrollAnimator-&gt;isChecked());
+    settings.setValue(QLatin1String(&quot;userStyleSheet&quot;), userStyleSheet-&gt;toPlainText());
+    settings.setValue(QLatin1String(&quot;httpUserAgent&quot;), httpUserAgent-&gt;text());
+    settings.setValue(QLatin1String(&quot;httpAcceptLanguage&quot;), httpAcceptLanguage-&gt;text());
+    settings.setValue(QLatin1String(&quot;faviconDownloadMode&quot;), faviconDownloadMode-&gt;currentIndex());
+    settings.endGroup();
+
+    //Privacy
+    settings.beginGroup(QLatin1String(&quot;cookies&quot;));
+
+    int persistentCookiesPolicy = sessionCookiesCombo-&gt;currentIndex();
+    settings.setValue(QLatin1String(&quot;persistentCookiesPolicy&quot;), persistentCookiesPolicy);
+
+    QString pdataPath = persistentDataPath-&gt;text();
+    settings.setValue(QLatin1String(&quot;persistentDataPath&quot;), pdataPath);
+
+    settings.endGroup();
+
+    // proxy
+    settings.beginGroup(QLatin1String(&quot;proxy&quot;));
+    settings.setValue(QLatin1String(&quot;enabled&quot;), proxySupport-&gt;isChecked());
+    settings.setValue(QLatin1String(&quot;type&quot;), proxyType-&gt;currentIndex());
+    settings.setValue(QLatin1String(&quot;hostName&quot;), proxyHostName-&gt;text());
+    settings.setValue(QLatin1String(&quot;port&quot;), proxyPort-&gt;text());
+    settings.setValue(QLatin1String(&quot;userName&quot;), proxyUserName-&gt;text());
+    settings.setValue(QLatin1String(&quot;password&quot;), proxyPassword-&gt;text());
+    settings.endGroup();
+
+    BrowserApplication::instance()-&gt;loadSettings();
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+    BrowserApplication::cookieJar()-&gt;loadSettings();
+#endif
+    BrowserApplication::historyManager()-&gt;loadSettings();
+}
+
+void SettingsDialog::accept()
+{
+    saveToSettings();
+    QDialog::accept();
+}
+
+void SettingsDialog::showCookies()
+{
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+    CookiesDialog *dialog = new CookiesDialog(BrowserApplication::cookieJar(), this);
+    dialog-&gt;exec();
+#endif
+}
+
+void SettingsDialog::showExceptions()
+{
+#if defined(QWEBENGINEPAGE_SETNETWORKACCESSMANAGER)
+    CookiesExceptionsDialog *dialog = new CookiesExceptionsDialog(BrowserApplication::cookieJar(), this);
+    dialog-&gt;exec();
+#endif
+}
+
+void SettingsDialog::chooseFont()
+{
+    bool ok;
+    QFont font = QFontDialog::getFont(&amp;ok, standardFont, this);
+    if ( ok ) {
+        standardFont = font;
+        standardLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(font.family()).arg(font.pointSize()));
+    }
+}
+
+void SettingsDialog::chooseFixedFont()
+{
+    bool ok;
+    QFont font = QFontDialog::getFont(&amp;ok, fixedFont, this);
+    if ( ok ) {
+        fixedFont = font;
+        fixedLabel-&gt;setText(QString(QLatin1String(&quot;%1 %2&quot;)).arg(font.family()).arg(font.pointSize()));
+    }
+}
+
+void SettingsDialog::on_httpUserAgent_editingFinished()
+{
+    QWebEngineProfile::defaultProfile()-&gt;setHttpUserAgent(httpUserAgent-&gt;text());
+}
+
+void SettingsDialog::on_httpAcceptLanguage_editingFinished()
+{
+    QWebEngineProfile::defaultProfile()-&gt;setHttpAcceptLanguage(httpAcceptLanguage-&gt;text());
+}
+
+void SettingsDialog::setHomeToCurrentPage()
+{
+    BrowserMainWindow *mw = static_cast&lt;BrowserMainWindow*&gt;(parent());
+    WebView *webView = mw-&gt;currentTab();
+    if (webView)
+        homeLineEdit-&gt;setText(webView-&gt;url().toString());
+}
+
+</db:programlisting>
+</db:article>
