@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Address Book Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.15.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The address book example shows how to use proxy models to display different views onto data from a single model.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the Address Book example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example provides an address book that allows contacts to be grouped alphabetically into 9 groups: ABC, DEF, GHI, ... , VW, ..., XYZ. This is achieved by using multiple views on the same model, each of which is filtered using an instance of the <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> class.</db:para>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>The address book contains 5 classes: MainWindow, AddressWidget, TableModel, NewAddressTab and AddDialog. The MainWindow class uses AddressWidget as its central widget and provides <db:guilabel>File</db:guilabel> and <db:guilabel>Tools</db:guilabel> menus.</db:para>
+<db:mediaobject>
+<db:alt>Diagram for Address Book Example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-classes.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The AddressWidget class is a <db:link xlink:href="qtabwidget.xml">QTabWidget</db:link> subclass that is used to manipulate the 10 tabs displayed in the example: the 9 alphabet group tabs and an instance of NewAddressTab. The NewAddressTab class is a subclass of <db:link xlink:href="qwidget.xml">QWidget</db:link> that is only used whenever the address book is empty, prompting the user to add some contacts. AddressWidget also interacts with an instance of TableModel to add, edit and remove entries to the address book.</db:para>
+<db:para>TableModel is a subclass of <db:link xlink:href="qabstracttablemodel.xml">QAbstractTableModel</db:link> that provides the standard model/view API to access data. It holds a list of added contacts. However, this data is not all visible in a single tab. Instead, <db:link xlink:href="qtableview.xml">QTableView</db:link> is used to provide 9 different views of the same data, according to the alphabet groups.</db:para>
+<db:para><db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> is the class responsible for filtering the contacts for each group of contacts. Each proxy model uses a <db:link xlink:href="qregexp.xml">QRegExp</db:link> to filter out contacts that do not belong in the corresponding alphabetical group. The AddDialog class is used to obtain information from the user for the address book. This <db:link xlink:href="qdialog.xml">QDialog</db:link> subclass is instantiated by NewAddressTab to add contacts, and by AddressWidget to add and edit contacts.</db:para>
+<db:para>We begin by looking at the TableModel implementation.</db:para>
+</db:section>
+<db:section xml:id="tablemodel-class-definition">
+<db:title>TableModel Class Definition</db:title>
+<db:para>The TableModel class provides standard API to access data in its list of contacts by subclassing <db:link xlink:href="qabstracttablemodel.xml">QAbstractTableModel</db:link>. The basic functions that must be implemented in order to do so are: rowCount(), columnCount(), data(), headerData(). For <db:link xlink:href="qml-qt-labs-qmlmodels-tablemodel.xml">TableModel</db:link> to be editable, it has to provide implementations insertRows(), removeRows(), setData() and flags() functions.</db:para>
+<db:programlisting language="cpp">struct Contact
+{
+    QString name;
+    QString address;
+
+    bool operator==(const Contact &amp;amp;other) const
+    {
+        return name == other.name &amp;amp;&amp;amp; address == other.address;
+    }
+};
+
+inline QDataStream &amp;amp;operator&amp;lt;&amp;lt;(QDataStream &amp;amp;stream, const Contact &amp;amp;contact)
+{
+    return stream &amp;lt;&amp;lt; contact.name &amp;lt;&amp;lt; contact.address;
+}
+
+inline QDataStream &amp;amp;operator&amp;gt;&amp;gt;(QDataStream &amp;amp;stream, Contact &amp;amp;contact)
+{
+    return stream &amp;gt;&amp;gt; contact.name &amp;gt;&amp;gt; contact.address;
+}
+
+class TableModel : public QAbstractTableModel
+{
+    Q_OBJECT
+
+public:
+    TableModel(QObject *parent = nullptr);
+    TableModel(const QVector&amp;lt;Contact&amp;gt; &amp;amp;contacts, QObject *parent = nullptr);
+
+    int rowCount(const QModelIndex &amp;amp;parent) const override;
+    int columnCount(const QModelIndex &amp;amp;parent) const override;
+    QVariant data(const QModelIndex &amp;amp;index, int role) const override;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
+    Qt::ItemFlags flags(const QModelIndex &amp;amp;index) const override;
+    bool setData(const QModelIndex &amp;amp;index, const QVariant &amp;amp;value, int role = Qt::EditRole) override;
+    bool insertRows(int position, int rows, const QModelIndex &amp;amp;index = QModelIndex()) override;
+    bool removeRows(int position, int rows, const QModelIndex &amp;amp;index = QModelIndex()) override;
+    const QVector&amp;lt;Contact&amp;gt; &amp;amp;getContacts() const;
+
+private:
+    QVector&amp;lt;Contact&amp;gt; contacts;
+};
+</db:programlisting>
+<db:para>Two constructors are used, a default constructor which uses TableModel's own QVector&lt;Contact&gt; and one that takes QVector&lt;Contact&gt; as an argument, for convenience.</db:para>
+</db:section>
+<db:section xml:id="tablemodel-class-implementation">
+<db:title>TableModel Class Implementation</db:title>
+<db:para>We implement the two constructors as defined in the header file. The second constructor initializes the list of contacts in the model, with the parameter value.</db:para>
+<db:programlisting language="cpp">TableModel::TableModel(QObject *parent)
+    : QAbstractTableModel(parent)
+{
+}
+
+TableModel::TableModel(const QVector&amp;lt;Contact&amp;gt; &amp;amp;contacts, QObject *parent)
+    : QAbstractTableModel(parent),
+      contacts(contacts)
+{
+}
+</db:programlisting>
+<db:para>The rowCount() and columnCount() functions return the dimensions of the model. Whereas, rowCount()'s value will vary depending on the number of contacts added to the address book, columnCount()'s value is always 2 because we only need space for the <db:emphasis role="bold">Name</db:emphasis> and <db:emphasis role="bold">Address</db:emphasis> columns.</db:para>
+<db:programlisting language="cpp">int TableModel::rowCount(const QModelIndex &amp;amp;parent) const
+{
+    return parent.isValid() ? 0 : contacts.size();
+}
+
+int TableModel::columnCount(const QModelIndex &amp;amp;parent) const
+{
+    return parent.isValid() ? 0 : 2;
+}
+</db:programlisting>
+<db:para>The data() function returns either a <db:emphasis role="bold">Name</db:emphasis> or <db:emphasis role="bold">Address</db:emphasis>, based on the contents of the model index supplied. The row number stored in the model index is used to reference an item in the list of contacts. Selection is handled by the <db:link xlink:href="qitemselectionmodel.xml">QItemSelectionModel</db:link>, which will be explained with AddressWidget.</db:para>
+<db:programlisting language="cpp">QVariant TableModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid())
+        return QVariant();
+
+    if (index.row() &amp;gt;= contacts.size() || index.row() &amp;lt; 0)
+        return QVariant();
+
+    if (role == Qt::DisplayRole) {
+        const auto &amp;amp;contact = contacts.at(index.row());
+
+        switch (index.column()) {
+            case 0:
+                return contact.name;
+            case 1:
+                return contact.address;
+            default:
+                break;
+        }
+    }
+    return QVariant();
+}
+</db:programlisting>
+<db:para>The headerData() function displays the table's header, <db:emphasis role="bold">Name</db:emphasis> and <db:emphasis role="bold">Address</db:emphasis>. If you require numbered entries for your address book, you can use a vertical header which we have hidden in this example (see the AddressWidget implementation).</db:para>
+<db:programlisting language="cpp">QVariant TableModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    if (orientation == Qt::Horizontal) {
+        switch (section) {
+            case 0:
+                return tr(&quot;Name&quot;);
+            case 1:
+                return tr(&quot;Address&quot;);
+            default:
+                break;
+        }
+    }
+    return QVariant();
+}
+</db:programlisting>
+<db:para>The insertRows() function is called before new data is added, otherwise the data will not be displayed. The beginInsertRows() and endInsertRows() functions are called to ensure all connected views are aware of the changes.</db:para>
+<db:programlisting language="cpp">bool TableModel::insertRows(int position, int rows, const QModelIndex &amp;amp;index)
+{
+    Q_UNUSED(index);
+    beginInsertRows(QModelIndex(), position, position + rows - 1);
+
+    for (int row = 0; row &amp;lt; rows; ++row)
+        contacts.insert(position, { QString(), QString() });
+
+    endInsertRows();
+    return true;
+}
+</db:programlisting>
+<db:para>The removeRows() function is called to remove data. Again, <db:link xlink:href="qabstractitemmodel.xml#beginRemoveRows">beginRemoveRows</db:link>() and <db:link xlink:href="qabstractitemmodel.xml#endRemoveRows">endRemoveRows</db:link>() are called to ensure all connected views are aware of the changes.</db:para>
+<db:programlisting language="cpp">bool TableModel::removeRows(int position, int rows, const QModelIndex &amp;amp;index)
+{
+    Q_UNUSED(index);
+    beginRemoveRows(QModelIndex(), position, position + rows - 1);
+
+    for (int row = 0; row &amp;lt; rows; ++row)
+        contacts.removeAt(position);
+
+    endRemoveRows();
+    return true;
+}
+</db:programlisting>
+<db:para>The setData() function is the function that inserts data into the table, item by item and not row by row. This means that to fill a row in the address book, setData() must be called twice, as each row has 2 columns. It is important to emit the <db:link xlink:href="qabstractitemmodel.xml#dataChanged">dataChanged</db:link>() signal as it tells all connected views to update their displays.</db:para>
+<db:programlisting language="cpp">bool TableModel::setData(const QModelIndex &amp;amp;index, const QVariant &amp;amp;value, int role)
+{
+    if (index.isValid() &amp;amp;&amp;amp; role == Qt::EditRole) {
+        const int row = index.row();
+        auto contact = contacts.value(row);
+
+        switch (index.column()) {
+            case 0:
+                contact.name = value.toString();
+                break;
+            case 1:
+                contact.address = value.toString();
+                break;
+            default:
+                return false;
+        }
+        contacts.replace(row, contact);
+        emit dataChanged(index, index, {Qt::DisplayRole, Qt::EditRole});
+
+        return true;
+    }
+
+    return false;
+}
+</db:programlisting>
+<db:para>The flags() function returns the item flags for the given index.</db:para>
+<db:programlisting language="cpp">Qt::ItemFlags TableModel::flags(const QModelIndex &amp;amp;index) const
+{
+    if (!index.isValid())
+        return Qt::ItemIsEnabled;
+
+    return QAbstractTableModel::flags(index) | Qt::ItemIsEditable;
+}
+</db:programlisting>
+<db:para>We set the <db:link xlink:href="qt.xml#ItemFlag-enum">Qt::ItemIsEditable</db:link> flag because we want to allow the TableModel to be edited. Although for this example we don't use the editing features of the <db:link xlink:href="qtableview.xml">QTableView</db:link> object, we enable them here so that we can reuse the model in other programs.</db:para>
+<db:para>The last function in TableModel, getContacts() returns the <db:link xlink:href="qvector.xml">QVector</db:link>&lt;Contact&gt; object that holds all the contacts in the address book. We use this function later to obtain the list of contacts to check for existing entries, write the contacts to a file and read them back. Further explanation is given with AddressWidget.</db:para>
+<db:programlisting language="cpp">const QVector&amp;lt;Contact&amp;gt; &amp;amp;TableModel::getContacts() const
+{
+    return contacts;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="addresswidget-class-definition">
+<db:title>AddressWidget Class Definition</db:title>
+<db:para>The AddressWidget class is technically the main class involved in this example as it provides functions to add, edit and remove contacts, to save the contacts to a file and to load them from a file.</db:para>
+<db:programlisting language="cpp">class AddressWidget : public QTabWidget
+{
+    Q_OBJECT
+
+public:
+    AddressWidget(QWidget *parent = nullptr);
+    void readFromFile(const QString &amp;amp;fileName);
+    void writeToFile(const QString &amp;amp;fileName);
+
+public slots:
+    void showAddEntryDialog();
+    void addEntry(const QString &amp;amp;name, const QString &amp;amp;address);
+    void editEntry();
+    void removeEntry();
+
+signals:
+    void selectionChanged (const QItemSelection &amp;amp;selected);
+
+private:
+    void setupTabs();
+
+    TableModel *table;
+    NewAddressTab *newAddressTab;
+};
+</db:programlisting>
+<db:para>AddressWidget extends <db:link xlink:href="qtabwidget.xml">QTabWidget</db:link> in order to hold 10 tabs (NewAddressTab and the 9 alphabet group tabs) and also manipulates table, the TableModel object, proxyModel, the <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> object that we use to filter the entries, and tableView, the <db:link xlink:href="qtableview.xml">QTableView</db:link> object.</db:para>
+</db:section>
+<db:section xml:id="addresswidget-class-implementation">
+<db:title>AddressWidget Class Implementation</db:title>
+<db:para>The AddressWidget constructor accepts a parent widget and instantiates NewAddressTab, TableModel and <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link>. The NewAddressTab object, which is used to indicate that the address book is empty, is added and the rest of the 9 tabs are set up with setupTabs().</db:para>
+<db:programlisting language="cpp">AddressWidget::AddressWidget(QWidget *parent)
+    : QTabWidget(parent),
+      table(new TableModel(this)),
+      newAddressTab(new NewAddressTab(this))
+{
+    connect(newAddressTab, &amp;amp;NewAddressTab::sendDetails,
+        this, &amp;amp;AddressWidget::addEntry);
+
+    addTab(newAddressTab, tr(&quot;Address Book&quot;));
+
+    setupTabs();
+}
+</db:programlisting>
+<db:para>The setupTabs() function is used to set up the 9 alphabet group tabs, table views and proxy models in AddressWidget. Each proxy model in turn is set to filter contact names according to the relevant alphabet group using a <db:link xlink:href="qt.xml#CaseSensitivity-enum">case-insensitive</db:link> <db:link xlink:href="qregexp.xml">QRegExp</db:link> object. The table views are also sorted in ascending order using the corresponding proxy model's <db:link xlink:href="qsortfilterproxymodel.xml#sort">sort</db:link>() function.</db:para>
+<db:para>Each table view's <db:link xlink:href="qabstractitemview.xml#selectionMode-prop">selectionMode</db:link> is set to <db:link xlink:href="qabstractitemview.xml#SelectionMode-enum">QAbstractItemView::SingleSelection</db:link> and <db:link xlink:href="qabstractitemview.xml#selectionBehavior-prop">selectionBehavior</db:link> is set to <db:link xlink:href="qabstractitemview.xml#SelectionBehavior-enum">QAbstractItemView::SelectRows</db:link>, allowing the user to select all the items in one row at the same time. Each <db:link xlink:href="qtableview.xml">QTableView</db:link> object is automatically given a <db:link xlink:href="qitemselectionmodel.xml">QItemSelectionModel</db:link> that keeps track of the selected indexes.</db:para>
+<db:programlisting language="cpp">void AddressWidget::setupTabs()
+{
+    const auto groups = { &quot;ABC&quot;, &quot;DEF&quot;, &quot;GHI&quot;, &quot;JKL&quot;, &quot;MNO&quot;, &quot;PQR&quot;, &quot;STU&quot;, &quot;VW&quot;, &quot;XYZ&quot; };
+
+    for (const QString &amp;amp;str : groups) {
+        const auto regExp = QRegularExpression(QString(&quot;^[%1].*&quot;).arg(str),
+                                               QRegularExpression::CaseInsensitiveOption);
+
+        auto proxyModel = new QSortFilterProxyModel(this);
+        proxyModel-&amp;gt;setSourceModel(table);
+        proxyModel-&amp;gt;setFilterRegularExpression(regExp);
+        proxyModel-&amp;gt;setFilterKeyColumn(0);
+
+        QTableView *tableView = new QTableView;
+        tableView-&amp;gt;setModel(proxyModel);
+        tableView-&amp;gt;setSelectionBehavior(QAbstractItemView::SelectRows);
+        tableView-&amp;gt;horizontalHeader()-&amp;gt;setStretchLastSection(true);
+        tableView-&amp;gt;verticalHeader()-&amp;gt;hide();
+        tableView-&amp;gt;setEditTriggers(QAbstractItemView::NoEditTriggers);
+        tableView-&amp;gt;setSelectionMode(QAbstractItemView::SingleSelection);
+        tableView-&amp;gt;setSortingEnabled(true);
+
+        connect(tableView-&amp;gt;selectionModel(), &amp;amp;QItemSelectionModel::selectionChanged,
+                this, &amp;amp;AddressWidget::selectionChanged);
+
+        connect(this, &amp;amp;QTabWidget::currentChanged, this, [this, tableView](int tabIndex) {
+            if (widget(tabIndex) == tableView)
+                emit selectionChanged(tableView-&amp;gt;selectionModel()-&amp;gt;selection());
+        });
+
+        addTab(tableView, str);
+    }
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qitemselectionmodel.xml">QItemSelectionModel</db:link> class provides a <db:link xlink:href="qitemselectionmodel.xml#selectionChanged">selectionChanged</db:link> signal that is connected to AddressWidget's selectionChanged() signal. We also connect <db:link xlink:href="qtabwidget.xml#currentChanged">QTabWidget::currentChanged</db:link>() signal to the lambda expression which emits AddressWidget's selectionChanged() as well. These connections are necessary to enable the <db:guilabel>Edit Entry...</db:guilabel> and <db:guilabel>Remove Entry</db:guilabel> actions in MainWindow's Tools menu. It is further explained in MainWindow's implementation.</db:para>
+<db:para>Each table view in the address book is added as a tab to the <db:link xlink:href="qtabwidget.xml">QTabWidget</db:link> with the relevant label, obtained from the <db:link xlink:href="qstringlist.xml">QStringList</db:link> of groups.</db:para>
+<db:mediaobject>
+<db:alt>Signals and Slots Connections</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-signals.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>We provide two addEntry() functions: One which is intended to be used to accept user input, and the other which performs the actual task of adding new entries to the address book. We divide the responsibility of adding entries into two parts to allow newAddressTab to insert data without having to popup a dialog.</db:para>
+<db:para>The first addEntry() function is a slot connected to the MainWindow's <db:guilabel>Add Entry...</db:guilabel> action. This function creates an AddDialog object and then calls the second addEntry() function to actually add the contact to table.</db:para>
+<db:programlisting language="cpp">void AddressWidget::showAddEntryDialog()
+{
+    AddDialog aDialog;
+
+    if (aDialog.exec())
+        addEntry(aDialog.name(), aDialog.address());
+}
+</db:programlisting>
+<db:para>Basic validation is done in the second addEntry() function to prevent duplicate entries in the address book. As mentioned with TableModel, this is part of the reason why we require the getter method getContacts().</db:para>
+<db:programlisting language="cpp">void AddressWidget::addEntry(const QString &amp;amp;name, const QString &amp;amp;address)
+{
+    if (!table-&amp;gt;getContacts().contains({ name, address })) {
+        table-&amp;gt;insertRows(0, 1, QModelIndex());
+
+        QModelIndex index = table-&amp;gt;index(0, 0, QModelIndex());
+        table-&amp;gt;setData(index, name, Qt::EditRole);
+        index = table-&amp;gt;index(0, 1, QModelIndex());
+        table-&amp;gt;setData(index, address, Qt::EditRole);
+        removeTab(indexOf(newAddressTab));
+    } else {
+        QMessageBox::information(this, tr(&quot;Duplicate Name&quot;),
+            tr(&quot;The name \&quot;%1\&quot; already exists.&quot;).arg(name));
+    }
+}
+</db:programlisting>
+<db:para>If the model does not already contain an entry with the same name, we call setData() to insert the name and address into the first and second columns. Otherwise, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to inform the user.</db:para>
+<db:note>
+<db:para>The newAddressTab is removed once a contact is added as the address book is no longer empty.</db:para>
+</db:note>
+<db:para>Editing an entry is a way to update the contact's address only, as the example does not allow the user to change the name of an existing contact.</db:para>
+<db:para>Firstly, we obtain the active tab's <db:link xlink:href="qtableview.xml">QTableView</db:link> object using <db:link xlink:href="qtabwidget.xml#currentWidget">QTabWidget::currentWidget</db:link>(). Then we extract the selectionModel from the tableView to obtain the selected indexes.</db:para>
+<db:programlisting language="cpp">void AddressWidget::editEntry()
+{
+    QTableView *temp = static_cast&amp;lt;QTableView*&amp;gt;(currentWidget());
+    QSortFilterProxyModel *proxy = static_cast&amp;lt;QSortFilterProxyModel*&amp;gt;(temp-&amp;gt;model());
+    QItemSelectionModel *selectionModel = temp-&amp;gt;selectionModel();
+
+    const QModelIndexList indexes = selectionModel-&amp;gt;selectedRows();
+    QString name;
+    QString address;
+    int row = -1;
+
+    for (const QModelIndex &amp;amp;index : indexes) {
+        row = proxy-&amp;gt;mapToSource(index).row();
+        QModelIndex nameIndex = table-&amp;gt;index(row, 0, QModelIndex());
+        QVariant varName = table-&amp;gt;data(nameIndex, Qt::DisplayRole);
+        name = varName.toString();
+
+        QModelIndex addressIndex = table-&amp;gt;index(row, 1, QModelIndex());
+        QVariant varAddr = table-&amp;gt;data(addressIndex, Qt::DisplayRole);
+        address = varAddr.toString();
+    }
+</db:programlisting>
+<db:para>Next we extract data from the row the user intends to edit. This data is displayed in an instance of AddDialog with a different window title. The table is only updated if changes have been made to data in aDialog.</db:para>
+<db:programlisting language="cpp">    AddDialog aDialog;
+    aDialog.setWindowTitle(tr(&quot;Edit a Contact&quot;));
+    aDialog.editAddress(name, address);
+
+    if (aDialog.exec()) {
+        const QString newAddress = aDialog.address();
+        if (newAddress != address) {
+            const QModelIndex index = table-&amp;gt;index(row, 1, QModelIndex());
+            table-&amp;gt;setData(index, newAddress, Qt::EditRole);
+        }
+    }
+}
+</db:programlisting>
+<db:mediaobject>
+<db:alt>Screenshot of Dialog to Edit a Contact</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-editdialog.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Entries are removed using the removeEntry() function. The selected row is removed by accessing it through the <db:link xlink:href="qitemselectionmodel.xml">QItemSelectionModel</db:link> object, selectionModel. The newAddressTab is re-added to the AddressWidget only if the user removes all the contacts in the address book.</db:para>
+<db:programlisting language="cpp">void AddressWidget::removeEntry()
+{
+    QTableView *temp = static_cast&amp;lt;QTableView*&amp;gt;(currentWidget());
+    QSortFilterProxyModel *proxy = static_cast&amp;lt;QSortFilterProxyModel*&amp;gt;(temp-&amp;gt;model());
+    QItemSelectionModel *selectionModel = temp-&amp;gt;selectionModel();
+
+    const QModelIndexList indexes = selectionModel-&amp;gt;selectedRows();
+
+    for (QModelIndex index : indexes) {
+        int row = proxy-&amp;gt;mapToSource(index).row();
+        table-&amp;gt;removeRows(row, 1, QModelIndex());
+    }
+
+    if (table-&amp;gt;rowCount(QModelIndex()) == 0)
+        insertTab(0, newAddressTab, tr(&quot;Address Book&quot;));
+}
+</db:programlisting>
+<db:para>The writeToFile() function is used to save a file containing all the contacts in the address book. The file is saved in a custom .dat format. The contents of the list of contacts are written to file using <db:link xlink:href="qdatastream.xml">QDataStream</db:link>. If the file cannot be opened, a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> is displayed with the related error message.</db:para>
+<db:programlisting language="cpp">void AddressWidget::writeToFile(const QString &amp;amp;fileName)
+{
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;), file.errorString());
+        return;
+    }
+
+    QDataStream out(&amp;amp;file);
+    out &amp;lt;&amp;lt; table-&amp;gt;getContacts();
+}
+</db:programlisting>
+<db:para>The readFromFile() function loads a file containing all the contacts in the address book, previously saved using writeToFile(). <db:link xlink:href="qdatastream.xml">QDataStream</db:link> is used to read the contents of a .dat file into a list of contacts and each of these is added using addEntry().</db:para>
+<db:programlisting language="cpp">void AddressWidget::readFromFile(const QString &amp;amp;fileName)
+{
+    QFile file(fileName);
+
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+            file.errorString());
+        return;
+    }
+
+    QVector&amp;lt;Contact&amp;gt; contacts;
+    QDataStream in(&amp;amp;file);
+    in &amp;gt;&amp;gt; contacts;
+
+    if (contacts.isEmpty()) {
+        QMessageBox::information(this, tr(&quot;No contacts in file&quot;),
+                                 tr(&quot;The file you are attempting to open contains no contacts.&quot;));
+    } else {
+        for (const auto &amp;amp;contact: qAsConst(contacts))
+            addEntry(contact.name, contact.address);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="newaddresstab-class-definition">
+<db:title>NewAddressTab Class Definition</db:title>
+<db:para>The NewAddressTab class provides an informative tab telling the user that the address book is empty. It appears and disappears according to the contents of the address book, as mentioned in AddressWidget's implementation.</db:para>
+<db:mediaobject>
+<db:alt>Screenshot of NewAddressTab</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-newaddresstab.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The NewAddressTab class extends <db:link xlink:href="qwidget.xml">QWidget</db:link> and contains a <db:link xlink:href="qlabel.xml">QLabel</db:link> and <db:link xlink:href="qpushbutton.xml">QPushButton</db:link>.</db:para>
+<db:programlisting language="cpp">class NewAddressTab : public QWidget
+{
+    Q_OBJECT
+
+public:
+    NewAddressTab(QWidget *parent = nullptr);
+
+public slots:
+    void addEntry();
+
+signals:
+    void sendDetails(const QString &amp;amp;name, const QString &amp;amp;address);
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="newaddresstab-class-implementation">
+<db:title>NewAddressTab Class Implementation</db:title>
+<db:para>The constructor instantiates the addButton, descriptionLabel and connects the addButton's signal to the addEntry() slot.</db:para>
+<db:programlisting language="cpp">NewAddressTab::NewAddressTab(QWidget *parent)
+    : QWidget(parent)
+{
+    auto descriptionLabel = new QLabel(tr(&quot;There are currently no contacts in your address book. &quot;
+                                          &quot;\nClick Add to add new contacts.&quot;));
+
+    auto addButton = new QPushButton(tr(&quot;Add&quot;));
+
+    connect(addButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;NewAddressTab::addEntry);
+
+    auto mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addWidget(descriptionLabel);
+    mainLayout-&amp;gt;addWidget(addButton, 0, Qt::AlignCenter);
+
+    setLayout(mainLayout);
+}
+</db:programlisting>
+<db:para>The addEntry() function is similar to AddressWidget's addEntry() in the sense that both functions instantiate an AddDialog object. Data from the dialog is extracted and sent to AddressWidget's addEntry() slot by emitting the sendDetails() signal.</db:para>
+<db:programlisting language="cpp">void NewAddressTab::addEntry()
+{
+    AddDialog aDialog;
+
+    if (aDialog.exec())
+        emit sendDetails(aDialog.name(), aDialog.address());
+}
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/signals-n-slots-aw-nat.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section xml:id="adddialog-class-definition">
+<db:title>AddDialog Class Definition</db:title>
+<db:para>The AddDialog class extends <db:link xlink:href="qdialog.xml">QDialog</db:link> and provides the user with a <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> and a <db:link xlink:href="qtextedit.xml">QTextEdit</db:link> to input data into the address book.</db:para>
+<db:programlisting language="cpp">class AddDialog : public QDialog
+{
+    Q_OBJECT
+
+public:
+    AddDialog(QWidget *parent = nullptr);
+
+    QString name() const;
+    QString address() const;
+    void editAddress(const QString &amp;amp;name, const QString &amp;amp;address);
+
+private:
+    QLineEdit *nameText;
+    QTextEdit *addressText;
+};
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-adddialog.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section xml:id="adddialog-class-implementation">
+<db:title>AddDialog Class Implementation</db:title>
+<db:para>The AddDialog's constructor sets up the user interface, creating the necessary widgets and placing them into layouts.</db:para>
+<db:programlisting language="cpp">AddDialog::AddDialog(QWidget *parent)
+    : QDialog(parent),
+      nameText(new QLineEdit),
+      addressText(new QTextEdit)
+{
+    auto nameLabel = new QLabel(tr(&quot;Name&quot;));
+    auto addressLabel = new QLabel(tr(&quot;Address&quot;));
+    auto okButton = new QPushButton(tr(&quot;OK&quot;));
+    auto cancelButton = new QPushButton(tr(&quot;Cancel&quot;));
+
+    auto gLayout = new QGridLayout;
+    gLayout-&amp;gt;setColumnStretch(1, 2);
+    gLayout-&amp;gt;addWidget(nameLabel, 0, 0);
+    gLayout-&amp;gt;addWidget(nameText, 0, 1);
+
+    gLayout-&amp;gt;addWidget(addressLabel, 1, 0, Qt::AlignLeft|Qt::AlignTop);
+    gLayout-&amp;gt;addWidget(addressText, 1, 1, Qt::AlignLeft);
+
+    auto buttonLayout = new QHBoxLayout;
+    buttonLayout-&amp;gt;addWidget(okButton);
+    buttonLayout-&amp;gt;addWidget(cancelButton);
+
+    gLayout-&amp;gt;addLayout(buttonLayout, 2, 1, Qt::AlignRight);
+
+    auto mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addLayout(gLayout);
+    setLayout(mainLayout);
+
+    connect(okButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;QDialog::accept);
+    connect(cancelButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;QDialog::reject);
+
+    setWindowTitle(tr(&quot;Add a Contact&quot;));
+}
+
+QString AddDialog::name() const
+{
+    return nameText-&amp;gt;text();
+}
+
+QString AddDialog::address() const
+{
+    return addressText-&amp;gt;toPlainText();
+}
+
+void AddDialog::editAddress(const QString &amp;amp;name, const QString &amp;amp;address)
+{
+    nameText-&amp;gt;setReadOnly(true);
+    nameText-&amp;gt;setText(name);
+    addressText-&amp;gt;setPlainText(address);
+}
+</db:programlisting>
+<db:para>To give the dialog the desired behavior, we connect the <db:guilabel>OK</db:guilabel> and <db:guilabel>Cancel</db:guilabel> buttons to the dialog's <db:link xlink:href="qdialog.xml#accept">accept</db:link>() and <db:link xlink:href="qdialog.xml#reject">reject</db:link>() slots. Since the dialog only acts as a container for name and address information, we do not need to implement any other functions for it.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The MainWindow class extends <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> and implements the menus and actions necessary to manipulate the address book.</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-filemenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-toolsmenu.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow();
+
+private slots:
+    void updateActions(const QItemSelection &amp;amp;selection);
+    void openFile();
+    void saveFile();
+
+private:
+    void createMenus();
+
+    AddressWidget *addressWidget;
+    QAction *editAct;
+    QAction *removeAct;
+};
+</db:programlisting>
+<db:para>The MainWindow class uses an AddressWidget as its central widget and provides the File menu with <db:guilabel>Open</db:guilabel>, <db:guilabel>Close</db:guilabel> and <db:guilabel>Exit</db:guilabel> actions, as well as the <db:guilabel>Tools</db:guilabel> menu with <db:guilabel>Add Entry...</db:guilabel>, <db:guilabel>Edit Entry...</db:guilabel> and <db:guilabel>Remove Entry</db:guilabel> actions.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>The constructor for MainWindow instantiates AddressWidget, sets it as its central widget and calls the createMenus() function.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow()
+    : QMainWindow(),
+      addressWidget(new AddressWidget)
+{
+    setCentralWidget(addressWidget);
+    createMenus();
+    setWindowTitle(tr(&quot;Address Book&quot;));
+}
+</db:programlisting>
+<db:para>The createMenus() function sets up the <db:guilabel>File</db:guilabel> and <db:guilabel>Tools</db:guilabel> menus, connecting the actions to their respective slots. Both the <db:guilabel>Edit Entry...</db:guilabel> and <db:guilabel>Remove Entry</db:guilabel> actions are disabled by default as such actions cannot be carried out on an empty address book. They are only enabled when one or more contacts are added.</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+
+    QAction *openAct = new QAction(tr(&quot;&amp;amp;Open...&quot;), this);
+    fileMenu-&amp;gt;addAction(openAct);
+    connect(openAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::openFile);
+    ...
+
+    editAct = new QAction(tr(&quot;&amp;amp;Edit Entry...&quot;), this);
+    editAct-&amp;gt;setEnabled(false);
+    toolMenu-&amp;gt;addAction(editAct);
+    connect(editAct, &amp;amp;QAction::triggered, addressWidget, &amp;amp;AddressWidget::editEntry);
+
+    toolMenu-&amp;gt;addSeparator();
+
+    removeAct = new QAction(tr(&quot;&amp;amp;Remove Entry&quot;), this);
+    removeAct-&amp;gt;setEnabled(false);
+    toolMenu-&amp;gt;addAction(removeAct);
+    connect(removeAct, &amp;amp;QAction::triggered, addressWidget, &amp;amp;AddressWidget::removeEntry);
+
+    connect(addressWidget, &amp;amp;AddressWidget::selectionChanged,
+        this, &amp;amp;MainWindow::updateActions);
+}
+</db:programlisting>
+<db:para>Apart from connecting all the actions' signals to their respective slots, we also connect AddressWidget's selectionChanged() signal to its updateActions() slot.</db:para>
+<db:para>The openFile() function allows the user to choose a file with the <db:link xlink:href="qfiledialog.xml#getOpenFileName">open file dialog</db:link>. The chosen file has to be a custom .dat file that contains address book contacts. This function is a slot connected to openAct in the <db:guilabel>File</db:guilabel> menu.</db:para>
+<db:programlisting language="cpp">void MainWindow::openFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this);
+    if (!fileName.isEmpty())
+        addressWidget-&amp;gt;readFromFile(fileName);
+}
+</db:programlisting>
+<db:para>The saveFile() function allows the user to save a file with the <db:link xlink:href="qfiledialog.xml#getSaveFileName">save file dialog</db:link>. This function is a slot connected to saveAct in the <db:guilabel>File</db:guilabel> menu.</db:para>
+<db:programlisting language="cpp">void MainWindow::saveFile()
+{
+    QString fileName = QFileDialog::getSaveFileName(this);
+    if (!fileName.isEmpty())
+        addressWidget-&amp;gt;writeToFile(fileName);
+}
+</db:programlisting>
+<db:para>The updateActions() function enables and disables <db:guilabel>Edit Entry...</db:guilabel> and <db:guilabel>Remove Entry</db:guilabel> depending on the contents of the address book. If the address book is empty, these actions are disabled; otherwise, they are enabled. This function is a slot is connected to the AddressWidget's selectionChanged() signal.</db:para>
+<db:programlisting language="cpp">void MainWindow::updateActions(const QItemSelection &amp;amp;selection)
+{
+    QModelIndexList indexes = selection.indexes();
+
+    if (!indexes.isEmpty()) {
+        removeAct-&amp;gt;setEnabled(true);
+        editAct-&amp;gt;setEnabled(true);
+    } else {
+        removeAct-&amp;gt;setEnabled(false);
+        editAct-&amp;gt;setEnabled(false);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="main-function">
+<db:title>main() Function</db:title>
+<db:para>The main function for the address book instantiates <db:link xlink:href="qapplication.xml">QApplication</db:link> and opens a MainWindow before running the event loop.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+#ifdef Q_OS_ANDROID
+    QApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+#endif
+    QApplication app(argc, argv);
+    MainWindow mw;
+    mw.show();
+    return app.exec();
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/itemviews/addressbook?h=5.15">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

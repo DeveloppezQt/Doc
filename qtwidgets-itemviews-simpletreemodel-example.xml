@@ -1,0 +1,331 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple Tree Model Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.15.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Simple Tree Model example shows how to use a hierarchical model with Qt's standard view classes.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simpletreemodel-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Qt's model/view architecture provides a standard way for views to manipulate information in a data source, using an abstract model of the data to simplify and standardize the way it is accessed. Simple models represent data as a table of items, and allow views to access this data via an <db:link xlink:href="model-view-programming.xml#models">index-based</db:link> system. More generally, models can be used to represent data in the form of a tree structure by allowing each item to act as a parent to a table of child items.</db:para>
+<db:para>Before attempting to implement a tree model, it is worth considering whether the data is supplied by an external source, or whether it is going to be maintained within the model itself. In this example, we will implement an internal structure to hold data rather than discuss how to package data from an external source.</db:para>
+<db:section xml:id="design-and-concepts">
+<db:title>Design and Concepts</db:title>
+<db:para>The data structure that we use to represent the structure of the data takes the form of a tree built from TreeItem objects. Each TreeItem represents an item in a tree view, and contains several columns of data.</db:para>
+<db:anchor xml:id="simpletreemodelstructure"/>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/treemodel-structure.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:td>
+<db:td>
+<db:para><db:emphasis role="bold">Simple Tree Model Structure</db:emphasis></db:para>
+<db:para>The data is stored internally in the model using TreeItem objects that are linked together in a pointer-based tree structure. Generally, each TreeItem has a parent item, and can have a number of child items. However, the root item in the tree structure has no parent item and it is never referenced outside the model.</db:para>
+<db:para>Each TreeItem contains information about its place in the tree structure; it can return its parent item and its row number. Having this information readily available makes implementing the model easier.</db:para>
+<db:para>Since each item in a tree view usually contains several columns of data (a title and a summary in this example), it is natural to store this information in each item. For simplicity, we will use a list of <db:link xlink:href="qvariant.xml">QVariant</db:link> objects to store the data for each column in the item.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The use of a pointer-based tree structure means that, when passing a model index to a view, we can record the address of the corresponding item in the index (see <db:link xlink:href="qabstractitemmodel.xml#createIndex">QAbstractItemModel::createIndex</db:link>()) and retrieve it later with <db:link xlink:href="qmodelindex.xml#internalPointer">QModelIndex::internalPointer</db:link>(). This makes writing the model easier and ensures that all model indexes that refer to the same item have the same internal data pointer.</db:para>
+<db:para>With the appropriate data structure in place, we can create a tree model with a minimal amount of extra code to supply model indexes and data to other components.</db:para>
+</db:section>
+<db:section xml:id="treeitem-class-definition">
+<db:title>TreeItem Class Definition</db:title>
+<db:para>The TreeItem class is defined as follows:</db:para>
+<db:programlisting language="cpp">class TreeItem
+{
+public:
+    explicit TreeItem(const QVector&amp;lt;QVariant&amp;gt; &amp;amp;data, TreeItem *parentItem = nullptr);
+    ~TreeItem();
+
+    void appendChild(TreeItem *child);
+
+    TreeItem *child(int row);
+    int childCount() const;
+    int columnCount() const;
+    QVariant data(int column) const;
+    int row() const;
+    TreeItem *parentItem();
+
+private:
+    QVector&amp;lt;TreeItem*&amp;gt; m_childItems;
+    QVector&amp;lt;QVariant&amp;gt; m_itemData;
+    TreeItem *m_parentItem;
+};
+</db:programlisting>
+<db:para>The class is a basic C++ class. It does not inherit from <db:link xlink:href="qobject.xml">QObject</db:link> or provide signals and slots. It is used to hold a list of QVariants, containing column data, and information about its position in the tree structure. The functions provide the following features:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The appendChildItem() is used to add data when the model is first constructed and is not used during normal use.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The child() and childCount() functions allow the model to obtain information about any child items.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Information about the number of columns associated with the item is provided by columnCount(), and the data in each column can be obtained with the data() function.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The row() and parent() functions are used to obtain the item's row number and parent item.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The parent item and column data are stored in the parentItem and itemData private member variables. The childItems variable contains a list of pointers to the item's own child items.</db:para>
+</db:section>
+<db:section xml:id="treeitem-class-implementation">
+<db:title>TreeItem Class Implementation</db:title>
+<db:para>The constructor is only used to record the item's parent and the data associated with each column.</db:para>
+<db:programlisting language="cpp">TreeItem::TreeItem(const QVector&amp;lt;QVariant&amp;gt; &amp;amp;data, TreeItem *parent)
+    : m_itemData(data), m_parentItem(parent)
+{}
+</db:programlisting>
+<db:para>A pointer to each of the child items belonging to this item will be stored in the childItems private member variable. When the class's destructor is called, it must delete each of these to ensure that their memory is reused:</db:para>
+<db:programlisting language="cpp">TreeItem::~TreeItem()
+{
+    qDeleteAll(m_childItems);
+}
+</db:programlisting>
+<db:para>Since each of the child items are constructed when the model is initially populated with data, the function to add child items is straightforward:</db:para>
+<db:programlisting language="cpp">void TreeItem::appendChild(TreeItem *item)
+{
+    m_childItems.append(item);
+}
+</db:programlisting>
+<db:para>Each item is able to return any of its child items when given a suitable row number. For example, in the <db:link xlink:href="qtwidgets-itemviews-simpletreemodel-example.xml#simpletreemodelstructure">above diagram</db:link>, the item marked with the letter &quot;A&quot; corresponds to the child of the root item with row = 0, the &quot;B&quot; item is a child of the &quot;A&quot; item with row = 1, and the &quot;C&quot; item is a child of the root item with row = 1.</db:para>
+<db:para>The child() function returns the child that corresponds to the specified row number in the item's list of child items:</db:para>
+<db:programlisting language="cpp">TreeItem *TreeItem::child(int row)
+{
+    if (row &amp;lt; 0 || row &amp;gt;= m_childItems.size())
+        return nullptr;
+    return m_childItems.at(row);
+}
+</db:programlisting>
+<db:para>The number of child items held can be found with childCount():</db:para>
+<db:programlisting language="cpp">int TreeItem::childCount() const
+{
+    return m_childItems.count();
+}
+</db:programlisting>
+<db:para>The TreeModel uses this function to determine the number of rows that exist for a given parent item.</db:para>
+<db:para>The row() function reports the item's location within its parent's list of items:</db:para>
+<db:programlisting language="cpp">int TreeItem::row() const
+{
+    if (m_parentItem)
+        return m_parentItem-&amp;gt;m_childItems.indexOf(const_cast&amp;lt;TreeItem*&amp;gt;(this));
+
+    return 0;
+}
+</db:programlisting>
+<db:para>Note that, although the root item (with no parent item) is automatically assigned a row number of 0, this information is never used by the model.</db:para>
+<db:para>The number of columns of data in the item is trivially returned by the columnCount() function.</db:para>
+<db:programlisting language="cpp">int TreeItem::columnCount() const
+{
+    return m_itemData.count();
+}
+</db:programlisting>
+<db:para>Column data is returned by the data() function. The bounds are checked before accessing the container with the data:</db:para>
+<db:programlisting language="cpp">QVariant TreeItem::data(int column) const
+{
+    if (column &amp;lt; 0 || column &amp;gt;= m_itemData.size())
+        return QVariant();
+    return m_itemData.at(column);
+}
+</db:programlisting>
+<db:para>The item's parent is found with parent():</db:para>
+<db:programlisting language="cpp">TreeItem *TreeItem::parentItem()
+{
+    return m_parentItem;
+}
+</db:programlisting>
+<db:para>Note that, since the root item in the model will not have a parent, this function will return zero in that case. We need to ensure that the model handles this case correctly when we implement the TreeModel::parent() function.</db:para>
+</db:section>
+<db:section xml:id="treemodel-class-definition">
+<db:title>TreeModel Class Definition</db:title>
+<db:para>The TreeModel class is defined as follows:</db:para>
+<db:programlisting language="cpp">class TreeModel : public QAbstractItemModel
+{
+    Q_OBJECT
+
+public:
+    explicit TreeModel(const QString &amp;amp;data, QObject *parent = nullptr);
+    ~TreeModel();
+
+    QVariant data(const QModelIndex &amp;amp;index, int role) const override;
+    Qt::ItemFlags flags(const QModelIndex &amp;amp;index) const override;
+    QVariant headerData(int section, Qt::Orientation orientation,
+                        int role = Qt::DisplayRole) const override;
+    QModelIndex index(int row, int column,
+                      const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+    QModelIndex parent(const QModelIndex &amp;amp;index) const override;
+    int rowCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+    int columnCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+
+private:
+    void setupModelData(const QStringList &amp;amp;lines, TreeItem *parent);
+
+    TreeItem *rootItem;
+};
+</db:programlisting>
+<db:para>This class is similar to most other subclasses of <db:link xlink:href="qabstractitemmodel.xml">QAbstractItemModel</db:link> that provide read-only models. Only the form of the constructor and the setupModelData() function are specific to this model. In addition, we provide a destructor to clean up when the model is destroyed.</db:para>
+</db:section>
+<db:section xml:id="treemodel-class-implementation">
+<db:title>TreeModel Class Implementation</db:title>
+<db:para>For simplicity, the model does not allow its data to be edited. As a result, the constructor takes an argument containing the data that the model will share with views and delegates:</db:para>
+<db:programlisting language="cpp">TreeModel::TreeModel(const QString &amp;amp;data, QObject *parent)
+    : QAbstractItemModel(parent)
+{
+    rootItem = new TreeItem({tr(&quot;Title&quot;), tr(&quot;Summary&quot;)});
+    setupModelData(data.split('\n'), rootItem);
+}
+</db:programlisting>
+<db:para>It is up to the constructor to create a root item for the model. This item only contains vertical header data for convenience. We also use it to reference the internal data structure that contains the model data, and it is used to represent an imaginary parent of top-level items in the model.</db:para>
+<db:para>The model's internal data structure is populated with items by the setupModelData() function. We will examine this function separately at the end of this document.</db:para>
+<db:para>The destructor ensures that the root item and all of its descendants are deleted when the model is destroyed:</db:para>
+<db:programlisting language="cpp">TreeModel::~TreeModel()
+{
+    delete rootItem;
+}
+</db:programlisting>
+<db:para>Since we cannot add data to the model after it is constructed and set up, this simplifies the way that the internal tree of items is managed.</db:para>
+<db:para>Models must implement an index() function to provide indexes for views and delegates to use when accessing data. Indexes are created for other components when they are referenced by their row and column numbers, and their parent model index. If an invalid model index is specified as the parent, it is up to the model to return an index that corresponds to a top-level item in the model.</db:para>
+<db:para>When supplied with a model index, we first check whether it is valid. If it is not, we assume that a top-level item is being referred to; otherwise, we obtain the data pointer from the model index with its <db:link xlink:href="qmodelindex.xml#internalPointer">internalPointer</db:link>() function and use it to reference a TreeItem object. Note that all the model indexes that we construct will contain a pointer to an existing TreeItem, so we can guarantee that any valid model indexes that we receive will contain a valid data pointer.</db:para>
+<db:programlisting language="cpp">QModelIndex TreeModel::index(int row, int column, const QModelIndex &amp;amp;parent) const
+{
+    if (!hasIndex(row, column, parent))
+        return QModelIndex();
+
+    TreeItem *parentItem;
+
+    if (!parent.isValid())
+        parentItem = rootItem;
+    else
+        parentItem = static_cast&amp;lt;TreeItem*&amp;gt;(parent.internalPointer());
+
+    TreeItem *childItem = parentItem-&amp;gt;child(row);
+    if (childItem)
+        return createIndex(row, column, childItem);
+    return QModelIndex();
+}
+</db:programlisting>
+<db:para>Since the row and column arguments to this function refer to a child item of the corresponding parent item, we obtain the item using the TreeItem::child() function. The <db:link xlink:href="qabstractitemmodel.xml#createIndex">createIndex</db:link>() function is used to create a model index to be returned. We specify the row and column numbers, and a pointer to the item itself. The model index can be used later to obtain the item's data.</db:para>
+<db:para>The way that the TreeItem objects are defined makes writing the parent() function easy:</db:para>
+<db:programlisting language="cpp">QModelIndex TreeModel::parent(const QModelIndex &amp;amp;index) const
+{
+    if (!index.isValid())
+        return QModelIndex();
+
+    TreeItem *childItem = static_cast&amp;lt;TreeItem*&amp;gt;(index.internalPointer());
+    TreeItem *parentItem = childItem-&amp;gt;parentItem();
+
+    if (parentItem == rootItem)
+        return QModelIndex();
+
+    return createIndex(parentItem-&amp;gt;row(), 0, parentItem);
+}
+</db:programlisting>
+<db:para>We only need to ensure that we never return a model index corresponding to the root item. To be consistent with the way that the index() function is implemented, we return an invalid model index for the parent of any top-level items in the model.</db:para>
+<db:para>When creating a model index to return, we must specify the row and column numbers of the parent item within its own parent. We can easily discover the row number with the TreeItem::row() function, but we follow a convention of specifying 0 as the column number of the parent. The model index is created with <db:link xlink:href="qabstractitemmodel.xml#createIndex">createIndex</db:link>() in the same way as in the index() function.</db:para>
+<db:para>The rowCount() function simply returns the number of child items for the TreeItem that corresponds to a given model index, or the number of top-level items if an invalid index is specified:</db:para>
+<db:programlisting language="cpp">int TreeModel::rowCount(const QModelIndex &amp;amp;parent) const
+{
+    TreeItem *parentItem;
+    if (parent.column() &amp;gt; 0)
+        return 0;
+
+    if (!parent.isValid())
+        parentItem = rootItem;
+    else
+        parentItem = static_cast&amp;lt;TreeItem*&amp;gt;(parent.internalPointer());
+
+    return parentItem-&amp;gt;childCount();
+}
+</db:programlisting>
+<db:para>Since each item manages its own column data, the columnCount() function has to call the item's own columnCount() function to determine how many columns are present for a given model index. As with the rowCount() function, if an invalid model index is specified, the number of columns returned is determined from the root item:</db:para>
+<db:programlisting language="cpp">int TreeModel::columnCount(const QModelIndex &amp;amp;parent) const
+{
+    if (parent.isValid())
+        return static_cast&amp;lt;TreeItem*&amp;gt;(parent.internalPointer())-&amp;gt;columnCount();
+    return rootItem-&amp;gt;columnCount();
+}
+</db:programlisting>
+<db:para>Data is obtained from the model via data(). Since the item manages its own columns, we need to use the column number to retrieve the data with the TreeItem::data() function:</db:para>
+<db:programlisting language="cpp">QVariant TreeModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid())
+        return QVariant();
+
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    TreeItem *item = static_cast&amp;lt;TreeItem*&amp;gt;(index.internalPointer());
+
+    return item-&amp;gt;data(index.column());
+}
+</db:programlisting>
+<db:para>Note that we only support the <db:link xlink:href="qt.xml#ItemDataRole-enum">DisplayRole</db:link> in this implementation, and we also return invalid <db:link xlink:href="qvariant.xml">QVariant</db:link> objects for invalid model indexes.</db:para>
+<db:para>We use the flags() function to ensure that views know that the model is read-only:</db:para>
+<db:programlisting language="cpp">Qt::ItemFlags TreeModel::flags(const QModelIndex &amp;amp;index) const
+{
+    if (!index.isValid())
+        return Qt::NoItemFlags;
+
+    return QAbstractItemModel::flags(index);
+}
+</db:programlisting>
+<db:para>The headerData() function returns data that we conveniently stored in the root item:</db:para>
+<db:programlisting language="cpp">QVariant TreeModel::headerData(int section, Qt::Orientation orientation,
+                               int role) const
+{
+    if (orientation == Qt::Horizontal &amp;amp;&amp;amp; role == Qt::DisplayRole)
+        return rootItem-&amp;gt;data(section);
+
+    return QVariant();
+}
+</db:programlisting>
+<db:para>This information could have been supplied in a different way: either specified in the constructor, or hard coded into the headerData() function.</db:para>
+</db:section>
+<db:section xml:id="setting-up-the-data-in-the-model">
+<db:title>Setting Up the Data in the Model</db:title>
+<db:para>We use the setupModelData() function to set up the initial data in the model. This function parses a text file, extracting strings of text to use in the model, and creates item objects that record both the data and the overall model structure. Naturally, this function works in a way that is very specific to this model. We provide the following description of its behavior, and refer the reader to the example code itself for more information.</db:para>
+<db:para>We begin with a text file in the following format:</db:para>
+<db:programlisting language="cpp">Getting Started                         How to familiarize yourself with Qt Designer
+    Launching Designer                  Running the Qt Designer application
+    The User Interface                  How to interact with Qt Designer
+    ...
+</db:programlisting>
+<db:programlisting language="cpp">Connection Editing Mode                 Connecting widgets together with signals and slots
+    Connecting Objects                  Making connections in Qt Designer
+    Editing Connections                 Changing existing connections
+</db:programlisting>
+<db:para>We process the text file with the following two rules:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>For each pair of strings on each line, create an item (or node) in a tree structure, and place each string in a column of data in the item.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>When the first string on a line is indented with respect to the first string on the previous line, make the item a child of the previous item created.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>To ensure that the model works correctly, it is only necessary to create instances of TreeItem with the correct data and parent item.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/itemviews/simpletreemodel?h=5.15">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
