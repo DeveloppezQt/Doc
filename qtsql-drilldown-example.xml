@@ -1,0 +1,487 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Drill Down Example</db:title>
+<db:productname>QtSql</db:productname>
+<db:edition>Qt 5.13.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SQL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Drill Down example shows how to read data from a database as well as submit changes, using the QSqlRelationalTableModel and QDataWidgetMapper classes.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/drilldown-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Screenshot of the Drill Down Example</db:para>
+<db:para>When running the example application, a user can retrieve information about each item by clicking the corresponding image. The application pops up an information window displaying the data, and allows the users to alter the description as well as the image. The main view will be updated when the users submit their changes.</db:para>
+<db:para>The example consists of three classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>ImageItem</db:code> is a custom graphics item class used to display the images.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>View</db:code> is the main application widget allowing the user to browse through the various items.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>InformationWindow</db:code> displays the requested information, allowing the users to alter it and submit their changes to the database.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>We will first take a look at the <db:code>InformationWindow</db:code> class to see how you can read and modify data from a database. Then we will review the main application widget, i.e., the <db:code>View</db:code> class, and the associated <db:code>ImageItem</db:code> class.</db:para>
+<db:section xml:id="informationwindow-class-definition">
+<db:title>InformationWindow Class Definition</db:title>
+<db:para>The <db:code>InformationWindow</db:code> class is a custom widget inheriting QWidget:</db:para>
+<db:programlisting language="cpp">class InformationWindow : public QDialog
+{
+    Q_OBJECT
+
+public:
+    InformationWindow(int id, QSqlRelationalTableModel *items,
+                      QWidget *parent = nullptr);
+
+    int id() const;
+
+signals:
+    void imageChanged(int id, const QString &amp;amp;fileName);
+</db:programlisting>
+<db:para>When we create an information window, we pass the associated item ID, a parent, and a pointer to the database, to the constructor. We will use the database pointer to populate our window with data, while passing the parent parameter on to the base class. The ID is stored for future reference.</db:para>
+<db:para>Once a window is created, we will use the public <db:code>id()</db:code> function to locate it whenever information for the given location is requested. We will also use the ID to update the main application widget when the users submit their changes to the database, i.e., we will emit a signal carrying the ID and file name as parameters whenever the users changes the associated image.</db:para>
+<db:programlisting language="cpp">private slots:
+    void revert();
+    void submit();
+    void enableButtons(bool enable = true);
+</db:programlisting>
+<db:para>Since we allow the users to alter some of the data, we must provide functionality for reverting and submitting their changes. The <db:code>enableButtons()</db:code> slot is provided for convenience to enable and disable the various buttons when required.</db:para>
+<db:programlisting language="cpp">private:
+    void createButtons();
+
+    int itemId;
+    QString displayedImage;
+
+    QComboBox *imageFileEditor = nullptr;
+    QLabel *itemText = nullptr;
+    QTextEdit *descriptionEditor = nullptr;
+
+    QPushButton *closeButton = nullptr;
+    QPushButton *submitButton = nullptr;
+    QPushButton *revertButton = nullptr;
+    QDialogButtonBox *buttonBox = nullptr;
+
+    QDataWidgetMapper *mapper = nullptr;
+};
+</db:programlisting>
+<db:para>The <db:code>createButtons()</db:code> function is also a convenience function, provided to simplify the constructor. As mentioned above we store the item ID for future reference. We also store the name of the currently displayed image file to be able to determine when to emit the <db:code>imageChanged()</db:code> signal.</db:para>
+<db:para>The information window uses the QLabel class to display the name of an item. The associated image file is displayed using a QComboBox instance while the description is displayed using QTextEdit. In addition, the window has three buttons to control the data flow and whether the window is shown or not.</db:para>
+<db:para>Finally, we declare a <db:emphasis>mapper</db:emphasis>. The QDataWidgetMapper class provides mapping between a section of a data model to widgets. We will use the mapper to extract data from the given database, updating the database whenever the user modifies the data.</db:para>
+</db:section>
+<db:section xml:id="informationwindow-class-implementation">
+<db:title>InformationWindow Class Implementation</db:title>
+<db:para>The constructor takes three arguments: an item ID, a database pointer and a parent widget. The database pointer is actually a pointer to a QSqlRelationalTableModel object providing an editable data model (with foreign key support) for our database table.</db:para>
+<db:programlisting language="cpp">InformationWindow::InformationWindow(int id, QSqlRelationalTableModel *items,
+                                     QWidget *parent)
+    : QDialog(parent)
+{
+    QLabel *itemLabel = new QLabel(tr(&quot;Item: &quot;));
+    QLabel *descriptionLabel = new QLabel(tr(&quot;Description: &quot;));
+    QLabel *imageFileLabel = new QLabel(tr(&quot;Image file: &quot;));
+
+    createButtons();
+
+    itemText = new QLabel;
+    descriptionEditor = new QTextEdit;
+</db:programlisting>
+<db:para>First we create the various widgets required to display the data contained in the database. Most of the widgets are created in a straight forward manner. But note the combobox displaying the name of the image file:</db:para>
+<db:programlisting language="cpp">    imageFileEditor = new QComboBox;
+    imageFileEditor-&amp;gt;setModel(items-&amp;gt;relationModel(1));
+    imageFileEditor-&amp;gt;setModelColumn(items-&amp;gt;relationModel(1)-&amp;gt;fieldIndex(&quot;file&quot;));
+</db:programlisting>
+<db:para>In this example, information about the items are stored in a database table called &quot;items&quot;. When creating the model, we will use a foreign key to establish a relation between this table and a second data base table, &quot;images&quot;, containing the names of the available image files. We will get back to how this is done when reviewing the <db:code>View</db:code> class. The rationale for creating such a relation though, is that we want to ensure that the user only can choose between predefined image files.</db:para>
+<db:para>The model corresponding to the &quot;images&quot; database table, is available through the QSqlRelationalTableModel's <db:link xlink:href="">relationModel()</db:link> function, requiring the foreign key (in this case the &quot;imagefile&quot; column number) as argument. We use QComboBox's <db:link xlink:href="">setModel()</db:link> function to make the combobox use the &quot;images&quot; model. And, since this model has two columns (&quot;itemid&quot; and &quot;file&quot;), we also specify which column we want to be visible using the QComboBox::setModelColumn() function.</db:para>
+<db:programlisting language="cpp">    mapper = new QDataWidgetMapper(this);
+    mapper-&amp;gt;setModel(items);
+    mapper-&amp;gt;setSubmitPolicy(QDataWidgetMapper::ManualSubmit);
+    mapper-&amp;gt;setItemDelegate(new QSqlRelationalDelegate(mapper));
+    mapper-&amp;gt;addMapping(imageFileEditor, 1);
+    mapper-&amp;gt;addMapping(itemText, 2, &quot;text&quot;);
+    mapper-&amp;gt;addMapping(descriptionEditor, 3);
+    mapper-&amp;gt;setCurrentIndex(id);
+</db:programlisting>
+<db:para>Then we create the mapper. The QDataWidgetMapper class allows us to create data-aware widgets by mapping them to sections of an item model.</db:para>
+<db:para>The <db:link xlink:href="">addMapping()</db:link> function adds a mapping between the given widget and the specified section of the model. If the mapper's orientation is horizontal (the default) the section is a column in the model, otherwise it is a row. We call the <db:link xlink:href="">setCurrentIndex()</db:link> function to initialize the widgets with the data associated with the given item ID. Every time the current index changes, all the widgets are updated with the contents from the model.</db:para>
+<db:para>We also set the mapper's submit policy to QDataWidgetMapper::ManualSubmit. This means that no data is submitted to the database until the user expliclity requests a submit (the alternative is QDataWidgetMapper::AutoSubmit, automatically submitting changes when the corresponding widget loses focus). Finally, we specify the item delegate the mapper view should use for its items. The QSqlRelationalDelegate class represents a delegate that unlike the default delegate, enables combobox functionality for fields that are foreign keys into other tables (like &quot;imagefile&quot; in our &quot;items&quot; table).</db:para>
+<db:programlisting language="cpp">    connect(descriptionEditor, &amp;amp;QTextEdit::textChanged, [=]() {
+        enableButtons();
+    });
+    connect(imageFileEditor, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged), [=]() {
+        enableButtons();
+    });
+
+    QFormLayout *formLayout = new QFormLayout;
+    formLayout-&amp;gt;addRow(itemLabel, itemText);
+    formLayout-&amp;gt;addRow(imageFileLabel, imageFileEditor);
+    formLayout-&amp;gt;addRow(descriptionLabel, descriptionEditor);
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout-&amp;gt;addLayout(formLayout);
+    layout-&amp;gt;addWidget(buttonBox);
+    setLayout(layout);
+
+    itemId = id;
+    displayedImage = imageFileEditor-&amp;gt;currentText();
+
+    setWindowFlags(Qt::Window);
+    enableButtons(false);
+    setWindowTitle(itemText-&amp;gt;text());
+}
+</db:programlisting>
+<db:para>Finally, we connect the &quot;something's changed&quot; signals in the editors to our custom <db:code>enableButtons</db:code> slot, enabling the users to either submit or revert their changes. We need to use lambdas for connecting the <db:code>enableButtons</db:code> slot because its signature does not match <db:code>QTextEdit::textChanged</db:code> and <db:code>QComboBox::currentIndexChanged</db:code>. Since the latter has another overload with the signature <db:code>const QString &amp;</db:code> and the selected signal would be ambiguous, we need to use <db:code>QOverload&lt;int&gt;::of</db:code> to select a specific overload for <db:code>currentIndexChanged</db:code>.</db:para>
+<db:para>We add all the widgets into a layout, store the item ID and the name of the displayed image file for future reference, and set the window title and initial size.</db:para>
+<db:para>Note that we also set the Qt::Window window flag to indicate that our widget is in fact a window, with a window system frame and a title bar.</db:para>
+<db:programlisting language="cpp">int InformationWindow::id() const
+{
+    return itemId;
+}
+</db:programlisting>
+<db:para>When a window is created, it is not deleted until the main application exits (i.e., if the user closes the information window, it is only hidden). For this reason we do not want to create more than one <db:code>InformationWindow</db:code> object for each item, and we provide the public <db:code>id()</db:code> function to be able to determine whether a window already exists for a given location when the user requests information about it.</db:para>
+<db:programlisting language="cpp">void InformationWindow::revert()
+{
+    mapper-&amp;gt;revert();
+    enableButtons(false);
+}
+</db:programlisting>
+<db:para>The <db:code>revert()</db:code> slot is triggered whenever the user hits the <db:guilabel>Revert</db:guilabel> button.</db:para>
+<db:para>Since we set the QDataWidgetMapper::ManualSubmit submit policy, none of the user's changes are written back to the model unless the user expliclity choose to submit all of them. Nevertheless, we can use the QDataWidgetMapper's <db:link xlink:href="">revert()</db:link> slot to reset the editor widgets, repopulating all widgets with the current data of the model.</db:para>
+<db:programlisting language="cpp">void InformationWindow::submit()
+{
+    QString newImage(imageFileEditor-&amp;gt;currentText());
+
+    if (displayedImage != newImage) {
+        displayedImage = newImage;
+        emit imageChanged(itemId, newImage);
+    }
+
+    mapper-&amp;gt;submit();
+    mapper-&amp;gt;setCurrentIndex(itemId);
+
+    enableButtons(false);
+}
+</db:programlisting>
+<db:para>Likewise, the <db:code>submit()</db:code> slot is triggered whenever the users decide to submit their changes by pressing the <db:guilabel>Submit</db:guilabel> button.</db:para>
+<db:para>We use QDataWidgetMapper's <db:link xlink:href="">submit()</db:link> slot to submit all changes from the mapped widgets to the model, i.e. to the database. For every mapped section, the item delegate will then read the current value from the widget and set it in the model. Finally, the <db:emphasis>model</db:emphasis>'s <db:link xlink:href="">submit()</db:link> function is invoked to let the model know that it should submit whatever it has cached to the permanent storage.</db:para>
+<db:para>Note that before any data is submitted, we check if the user has chosen another image file using the previously stored <db:code>displayedImage</db:code> variable as reference. If the current and stored file names differ, we store the new file name and emit the <db:code>imageChanged()</db:code> signal.</db:para>
+<db:programlisting language="cpp">void InformationWindow::createButtons()
+{
+    closeButton = new QPushButton(tr(&quot;&amp;amp;Close&quot;));
+    revertButton = new QPushButton(tr(&quot;&amp;amp;Revert&quot;));
+    submitButton = new QPushButton(tr(&quot;&amp;amp;Submit&quot;));
+
+    closeButton-&amp;gt;setDefault(true);
+
+    connect(closeButton, &amp;amp;QPushButton::clicked, this, &amp;amp;InformationWindow::close);
+    connect(revertButton, &amp;amp;QPushButton::clicked, this, &amp;amp;InformationWindow::revert);
+    connect(submitButton, &amp;amp;QPushButton::clicked, this, &amp;amp;InformationWindow::submit);
+</db:programlisting>
+<db:para>The <db:code>createButtons()</db:code> function is provided for convenience, i.e., to simplify the constructor.</db:para>
+<db:para>We make the <db:guilabel>Close</db:guilabel> button the default button, i.e., the button that is pressed when the user presses <db:guilabel>Enter</db:guilabel>, and connect its <db:link xlink:href="">clicked()</db:link> signal to the widget's <db:link xlink:href="">close()</db:link> slot. As mentioned above closing the window only hides the widget; it is not deleted. We also connect the <db:guilabel>Submit</db:guilabel> and <db:guilabel>Revert</db:guilabel> buttons to the corresponding <db:code>submit()</db:code> and <db:code>revert()</db:code> slots.</db:para>
+<db:programlisting language="cpp">    buttonBox = new QDialogButtonBox(this);
+    buttonBox-&amp;gt;addButton(submitButton, QDialogButtonBox::AcceptRole);
+    buttonBox-&amp;gt;addButton(revertButton, QDialogButtonBox::ResetRole);
+    buttonBox-&amp;gt;addButton(closeButton, QDialogButtonBox::RejectRole);
+}
+</db:programlisting>
+<db:para>The QDialogButtonBox class is a widget that presents buttons in a layout that is appropriate to the current widget style. Dialogs like our information window, typically present buttons in a layout that conforms to the interface guidelines for that platform. Invariably, different platforms have different layouts for their dialogs. QDialogButtonBox allows us to add buttons, automatically using the appropriate layout for the user's desktop environment.</db:para>
+<db:para>Most buttons for a dialog follow certain roles. We give the <db:guilabel>Submit</db:guilabel> and <db:guilabel>Revert</db:guilabel> buttons the reset role, i.e., indicating that pressing the button resets the fields to the default values (in our case the information contained in the database). The reject role indicates that clicking the button causes the dialog to be rejected. On the other hand, since we only hide the information window, any changes that the user has made will be preserved until the user explicitly reverts or submits them.</db:para>
+<db:programlisting language="cpp">void InformationWindow::enableButtons(bool enable)
+{
+    revertButton-&amp;gt;setEnabled(enable);
+    submitButton-&amp;gt;setEnabled(enable);
+}
+</db:programlisting>
+<db:para>The <db:code>enableButtons()</db:code> slot is called to enable the buttons whenever the user changes the presented data. Likewise, when the user chooses to submit the changes, the buttons are disabled to indicate that the current data is stored in the database.</db:para>
+<db:para>This completes the <db:code>InformationWindow</db:code> class. Let's take a look at how we have used it in our example application.</db:para>
+</db:section>
+<db:section xml:id="view-class-definition">
+<db:title>View Class Definition</db:title>
+<db:para>The <db:code>View</db:code> class represents the main application window and inherits QGraphicsView:</db:para>
+<db:programlisting language="cpp">class View : public QGraphicsView
+{
+    Q_OBJECT
+
+public:
+    View(const QString &amp;amp;items, const QString &amp;amp;images, QWidget *parent = nullptr);
+
+protected:
+    void mouseReleaseEvent(QMouseEvent *event) override;
+
+private slots:
+    void updateImage(int id, const QString &amp;amp;fileName);
+</db:programlisting>
+<db:para>The QGraphicsView class is part of the <db:link xlink:href="graphicsview.xml">Graphics View Framework</db:link> which we will use to display the images. To be able to respond to user interaction by displaying the appropriate information window when the image is clicked, we reimplement QGraphicsView's <db:link xlink:href="">mouseReleaseEvent()</db:link> function.</db:para>
+<db:para>Note that the constructor expects the names of two database tables: One containing the detailed information about the items, and another containing the names of the available image files. We also provide a private <db:code>updateImage()</db:code> slot to catch <db:code>InformationWindow</db:code>'s <db:code>imageChanged()</db:code> signal that is emitted whenever the user changes an image associated with the item.</db:para>
+<db:programlisting language="cpp">private:
+    void addItems();
+    InformationWindow *findWindow(int id) const;
+    void showInformation(ImageItem *image);
+
+    QGraphicsScene *scene;
+    QList&amp;lt;InformationWindow *&amp;gt; informationWindows;
+</db:programlisting>
+<db:para>The <db:code>addItems()</db:code> function is a convenience function provided to simplify the constructor. It is called only once, creating the various items and adding them to the view.</db:para>
+<db:para>The <db:code>findWindow()</db:code> function, on the other hand, is frequently used. It is called from the <db:code>showInformation()</db:code> function to detemine whether a window is already created for the given item (whenever we create an <db:code>InformationWindow</db:code> object, we store a reference to it in the <db:code>informationWindows</db:code> list). The latter function is in turn called from our custom <db:code>mouseReleaseEvent()</db:code> implementation.</db:para>
+<db:programlisting language="cpp">    QSqlRelationalTableModel *itemTable;
+};
+</db:programlisting>
+<db:para>Finally, we declare a QSqlRelationalTableModel pointer. As previously mentioned, the QSqlRelationalTableModel class provides an editable data model with foreign key support. There are a couple of things you should keep in mind when using the QSqlRelationalTableModel class: The table must have a primary key declared and this key cannot contain a relation to another table, that is, it cannot be a foreign key. Also note that if a relational table contains keys that refer to non-existent rows in the referenced table, the rows containing the invalid keys will not be exposed through the model. It is the user's or the database's responsibility to maintain referential integrity.</db:para>
+</db:section>
+<db:section xml:id="view-class-implementation">
+<db:title>View Class Implementation</db:title>
+<db:para>Although the constructor requests the names of both the table containing office details as well as the table containing the names of the available image files, we only have to create a QSqlRelationalTableModel object for the &quot;items&quot; table:</db:para>
+<db:programlisting language="cpp">View::View(const QString &amp;amp;items, const QString &amp;amp;images, QWidget *parent)
+    : QGraphicsView(parent)
+{
+    itemTable = new QSqlRelationalTableModel(this);
+    itemTable-&amp;gt;setTable(items);
+    itemTable-&amp;gt;setRelation(1, QSqlRelation(images, &quot;itemid&quot;, &quot;file&quot;));
+    itemTable-&amp;gt;select();
+</db:programlisting>
+<db:para>The reason is that once we have a model with the item details, we can create a relation to the available image files using QSqlRelationalTableModel's <db:link xlink:href="">setRelation()</db:link> function. This function creates a foreign key for the given model column. The key is specified by the provided QSqlRelation object constructed by the name of the table the key refers to, the field the key is mapping to and the field that should be presented to the user.</db:para>
+<db:para>Note that setting the table only specifies which table the model operates on, i.e., we must explicitly call the model's <db:link xlink:href="">select()</db:link> function to populate our model.</db:para>
+<db:programlisting language="cpp">    scene = new QGraphicsScene(this);
+    scene-&amp;gt;setSceneRect(0, 0, 465, 365);
+    setScene(scene);
+
+    addItems();
+
+    setMinimumSize(470, 370);
+    setMaximumSize(470, 370);
+
+    QLinearGradient gradient(QPointF(0, 0), QPointF(0, 370));
+    gradient.setColorAt(0, QColor(&quot;#868482&quot;));
+    gradient.setColorAt(1, QColor(&quot;#5d5b59&quot;));
+    setBackgroundBrush(gradient);
+}
+</db:programlisting>
+<db:para>Then we create the contents of our view, i.e., the scene and its items. The labels are regular QGraphicsTextItem objects, whereas the images are instances of the <db:code>ImageItem</db:code> class, derived from QGraphicsPixmapItem. We will get back to this shortly when reviewing the <db:code>addItems()</db:code> function.</db:para>
+<db:para>Finally, we set the main application widget's size constraints and window title.</db:para>
+<db:programlisting language="cpp">void View::addItems()
+{
+    int itemCount = itemTable-&amp;gt;rowCount();
+
+    int imageOffset = 150;
+    int leftMargin = 70;
+    int topMargin = 40;
+
+    for (int i = 0; i &amp;lt; itemCount; i++) {
+        QSqlRecord record = itemTable-&amp;gt;record(i);
+
+        int id = record.value(&quot;id&quot;).toInt();
+        QString file = record.value(&quot;file&quot;).toString();
+        QString item = record.value(&quot;itemtype&quot;).toString();
+
+        int columnOffset = ((i % 2) * 37);
+        int x = ((i % 2) * imageOffset) + leftMargin + columnOffset;
+        int y = ((i / 2) * imageOffset) + topMargin;
+
+        ImageItem *image = new ImageItem(id, QPixmap(&quot;:/&quot; + file));
+        image-&amp;gt;setData(0, i);
+        image-&amp;gt;setPos(x, y);
+        scene-&amp;gt;addItem(image);
+
+        QGraphicsTextItem *label = scene-&amp;gt;addText(item);
+        label-&amp;gt;setDefaultTextColor(QColor(&quot;#d7d6d5&quot;));
+        QPointF labelOffset((120 - label-&amp;gt;boundingRect().width()) / 2, 120.0);
+        label-&amp;gt;setPos(QPointF(x, y) + labelOffset);
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>addItems()</db:code> function is called only once when creating the main application window. For each row in the database table, we first extract the corresponding record using the model's <db:link xlink:href="">record()</db:link> function. The QSqlRecord class encapsulates both the functionality and characteristics of a database record, and supports adding and removing fields as well as setting and retrieving field values. The QSqlRecord::value() function returns the value of the field with the given name or index as a QVariant object.</db:para>
+<db:para>For each record, we create a label item as well as an image item, calculate their position and add them to the scene. The image items are represented by instances of the <db:code>ImageItem</db:code> class. The reason we must create a custom item class is that we want to catch the item's hover events, animating the item when the mouse cursor is hovering over the image (by default, no items accept hover events). Please see the <db:link xlink:href="graphicsview.xml">Graphics View Framework</db:link> documentation and the <db:link xlink:href="examples-graphicsview.xml">Graphics View Examples</db:link> for more details.</db:para>
+<db:programlisting language="cpp">void View::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (QGraphicsItem *item = itemAt(event-&amp;gt;pos())) {
+        if (ImageItem *image = qgraphicsitem_cast&amp;lt;ImageItem *&amp;gt;(item))
+            showInformation(image);
+    }
+    QGraphicsView::mouseReleaseEvent(event);
+}
+</db:programlisting>
+<db:para>We reimplement QGraphicsView's <db:link xlink:href="">mouseReleaseEvent()</db:link> event handler to respond to user interaction. If the user clicks any of the image items, this function calls the private <db:code>showInformation()</db:code> function to pop up the associated information window.</db:para>
+<db:para>The <db:link xlink:href="graphicsview.xml">Graphics View Framework</db:link> provides the qgraphicsitem_cast() function to determine whether the given QGraphicsItem instance is of a given type. Note that if the event is not related to any of our image items, we pass it on to the base class implementation.</db:para>
+<db:programlisting language="cpp">void View::showInformation(ImageItem *image)
+{
+    int id = image-&amp;gt;id();
+    if (id &amp;lt; 0 || id &amp;gt;= itemTable-&amp;gt;rowCount())
+        return;
+
+    InformationWindow *window = findWindow(id);
+    if (!window) {
+        window = new InformationWindow(id, itemTable, this);
+
+        connect(window, QOverload&amp;lt;int,const QString &amp;amp;&amp;gt;::of(&amp;amp;InformationWindow::imageChanged),
+                this, QOverload&amp;lt;int,const QString &amp;amp;&amp;gt;::of(&amp;amp;View::updateImage));
+
+        window-&amp;gt;move(pos() + QPoint(20, 40));
+        window-&amp;gt;show();
+        informationWindows.append(window);
+    }
+
+    if (window-&amp;gt;isVisible()) {
+        window-&amp;gt;raise();
+        window-&amp;gt;activateWindow();
+    } else
+        window-&amp;gt;show();
+}
+</db:programlisting>
+<db:para>The <db:code>showInformation()</db:code> function is given an <db:code>ImageItem</db:code> object as argument, and starts off by extracting the item's item ID.</db:para>
+<db:para>Then it determines if there already is created an information window for this location. If no window for the given location exists, we create one by passing the item ID, a pointer to the model, and our view as a parent, to the <db:code>InformationWindow</db:code> constructor. Note that we connect the information window's <db:code>imageChanged()</db:code> signal to <db:emphasis>this</db:emphasis> widget's <db:code>updateImage()</db:code> slot, before we give it a suitable position and add it to the list of existing windows. If there is a window for the given location, and that window is visible, it ensures that the window is raised to the top of the widget stack and activated. If it is hidden, calling its <db:link xlink:href="">show()</db:link> slot gives the same result.</db:para>
+<db:programlisting language="cpp">void View::updateImage(int id, const QString &amp;amp;fileName)
+{
+    QList&amp;lt;QGraphicsItem *&amp;gt; items = scene-&amp;gt;items();
+
+    while(!items.empty()) {
+        QGraphicsItem *item = items.takeFirst();
+
+        if (ImageItem *image = qgraphicsitem_cast&amp;lt;ImageItem *&amp;gt;(item)) {
+            if (image-&amp;gt;id() == id){
+                image-&amp;gt;setPixmap(QPixmap(&quot;:/&quot; +fileName));
+                image-&amp;gt;adjust();
+                break;
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>updateImage()</db:code> slot takes an item ID and the name of an image file as arguments. It filters out the image items, and updates the one that correspond to the given item ID, with the provided image file.</db:para>
+<db:programlisting language="cpp">InformationWindow *View::findWindow(int id) const
+{
+    for (auto window : informationWindows) {
+        if (window &amp;amp;&amp;amp; (window-&amp;gt;id() == id))
+            return window;
+    }
+    return nullptr;
+}
+</db:programlisting>
+<db:para>The <db:code>findWindow()</db:code> function simply searches through the list of existing windows, returning a pointer to the window that matches the given item ID, or 0 if the window doesn't exists.</db:para>
+<db:para>Finally, let's take a quick look at our custom <db:code>ImageItem</db:code> class:</db:para>
+</db:section>
+<db:section xml:id="imageitem-class-definition">
+<db:title>ImageItem Class Definition</db:title>
+<db:para>The <db:code>ImageItem</db:code> class is provided to facilitate animation of the image items. It inherits QGraphicsPixmapItem and reimplements its hover event handlers:</db:para>
+<db:programlisting language="cpp">class ImageItem : public QObject, public QGraphicsPixmapItem
+{
+    Q_OBJECT
+
+public:
+    ImageItem(int id, const QPixmap &amp;amp;pixmap, QGraphicsItem *parent = nullptr);
+
+    void adjust();
+    int id() const;
+
+protected:
+    void hoverEnterEvent(QGraphicsSceneHoverEvent *event) override;
+    void hoverLeaveEvent(QGraphicsSceneHoverEvent *event) override;
+
+private slots:
+    void setFrame(int frame);
+    void updateItemPosition();
+
+private:
+    QTimeLine timeLine;
+    int recordId;
+    double z;
+};
+</db:programlisting>
+<db:para>In addition, we implement a public <db:code>id()</db:code> function to be able to identify the associated location and a public <db:code>adjust()</db:code> function that can be called to ensure that the image item is given the preferred size regardless of the original image file.</db:para>
+<db:para>The animation is implemented using the QTimeLine class together with the event handlers and the private <db:code>setFrame()</db:code> slot: The image item will expand when the mouse cursor hovers over it, returning back to its original size when the cursor leaves its borders.</db:para>
+<db:para>Finally, we store the item ID that this particular record is associated with as well as a z-value. In the <db:link xlink:href="graphicsview.xml">Graphics View Framework</db:link>, an item's z-value determines its position in the item stack. An item of high z-value will be drawn on top of an item with a lower z-value if they share the same parent item. We also provide an <db:code>updateItemPosition()</db:code> function to refresh the view when required.</db:para>
+</db:section>
+<db:section xml:id="imageitem-class-implementation">
+<db:title>ImageItem Class Implementation</db:title>
+<db:para>The <db:code>ImageItem</db:code> class is really only a QGraphicsPixmapItem with some additional features, i.e., we can pass most of the constructor's arguments (the pixmap, parent and scene) on to the base class constructor:</db:para>
+<db:programlisting language="cpp">ImageItem::ImageItem(int id, const QPixmap &amp;amp;pixmap, QGraphicsItem *parent)
+    : QGraphicsPixmapItem(pixmap, parent)
+{
+    recordId = id;
+    setAcceptHoverEvents(true);
+
+    timeLine.setDuration(150);
+    timeLine.setFrameRange(0, 150);
+
+    connect(&amp;amp;timeLine, &amp;amp;QTimeLine::frameChanged, this, &amp;amp;ImageItem::setFrame);
+    connect(&amp;amp;timeLine, &amp;amp;QTimeLine::finished, this, &amp;amp;ImageItem::updateItemPosition);
+
+    adjust();
+}
+</db:programlisting>
+<db:para>Then we store the ID for future reference, and ensure that our image item will accept hover events. Hover events are delivered when there is no current mouse grabber item. They are sent when the mouse cursor enters an item, when it moves around inside the item, and when the cursor leaves an item. As we mentioned earlier, none of the <db:link xlink:href="graphicsview.xml">Graphics View Framework</db:link>'s items accept hover event's by default.</db:para>
+<db:para>The QTimeLine class provides a timeline for controlling animations. Its duration property holds the total duration of the timeline in milliseconds. By default, the time line runs once from the beginning and towards the end. The QTimeLine::setFrameRange() function sets the timeline's frame counter; when the timeline is running, the <db:link xlink:href="">frameChanged()</db:link> signal is emitted each time the frame changes. We set the duration and frame range for our animation, and connect the time line's <db:link xlink:href="">frameChanged()</db:link> and <db:link xlink:href="">finished()</db:link> signals to our private <db:code>setFrame()</db:code> and <db:code>updateItemPosition()</db:code> slots.</db:para>
+<db:para>Finally, we call <db:code>adjust()</db:code> to ensure that the item is given the preferred size.</db:para>
+<db:programlisting language="cpp">void ImageItem::hoverEnterEvent(QGraphicsSceneHoverEvent * /*event*/)
+{
+    timeLine.setDirection(QTimeLine::Forward);
+
+    if (z != 1.0) {
+        z = 1.0;
+        updateItemPosition();
+    }
+
+    if (timeLine.state() == QTimeLine::NotRunning)
+        timeLine.start();
+}
+
+void ImageItem::hoverLeaveEvent(QGraphicsSceneHoverEvent * /*event*/)
+{
+    timeLine.setDirection(QTimeLine::Backward);
+    if (z != 0.0)
+        z = 0.0;
+
+    if (timeLine.state() == QTimeLine::NotRunning)
+        timeLine.start();
+}
+</db:programlisting>
+<db:para>Whenever the mouse cursor enters or leaves the image item, the corresponding event handlers are triggered: We first set the time line's direction, making the item expand or shrink, respectively. Then we alter the item's z-value if it is not already set to the expected value.</db:para>
+<db:para>In the case of hover <db:emphasis>enter</db:emphasis> events, we immediately update the item's position since we want the item to appear on top of all other items as soon as it starts expanding. In the case of hover <db:emphasis>leave</db:emphasis> events, on the other hand, we postpone the actual update to achieve the same result. But remember that when we constructed our item, we connected the time line's <db:link xlink:href="">finished()</db:link> signal to the <db:code>updateItemPosition()</db:code> slot. In this way the item is given the correct position in the item stack once the animation is completed. Finally, if the time line is not already running, we start it.</db:para>
+<db:programlisting language="cpp">void ImageItem::setFrame(int frame)
+{
+    adjust();
+    QPointF center = boundingRect().center();
+
+    setTransform(QTransform::fromTranslate(center.x(), center.y()), true);
+    setTransform(QTransform::fromScale(1 + frame / 330.0, 1 + frame / 330.0), true);
+    setTransform(QTransform::fromTranslate(-center.x(), -center.y()), true);
+}
+</db:programlisting>
+<db:para>When the time line is running, it triggers the <db:code>setFrame()</db:code> slot whenever the current frame changes due to the connection we created in the item constructor. It is this slot that controls the animation, expanding or shrinking the image item step by step.</db:para>
+<db:para>We first call the <db:code>adjust()</db:code> function to ensure that we start off with the item's original size. Then we scale the item with a factor depending on the animation's progress (using the <db:code>frame</db:code> parameter). Note that by default, the transformation will be relative to the item's top-left corner. Since we want the item to be transformed relative to its center, we must translate the coordinate system before we scale the item.</db:para>
+<db:para>In the end, only the following convenience functions remain:</db:para>
+<db:programlisting language="cpp">void ImageItem::adjust()
+{
+    setTransform(QTransform::fromScale(120 / boundingRect().width(),
+                                       120 / boundingRect().height()));
+}
+
+int ImageItem::id() const
+{
+    return recordId;
+}
+
+void ImageItem::updateItemPosition()
+{
+    setZValue(z);
+}
+</db:programlisting>
+<db:para>The <db:code>adjust()</db:code> function defines and applies a transformation matrix, ensuring that our image item appears with the preferred size regardless of the size of the source image. The <db:code>id()</db:code> function is trivial, and is simply provided to be able to identify the item. In the <db:code>updateItemPosition()</db:code> slot we call the QGraphicsItem::setZValue() function, setting the elevation of the item.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/sql/drilldown?h=5.13">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
