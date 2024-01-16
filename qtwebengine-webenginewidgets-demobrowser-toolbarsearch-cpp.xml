@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Demo Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demo browser based on Qt <db:link xlink:href="qml-qtwebengine-webengine.xml">WebEngine</db:link> Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;toolbarsearch.h&quot;
+#include &quot;autosaver.h&quot;
+#include &quot;browserapplication.h&quot;
+
+#include &lt;QtCore/QSettings&gt;
+#include &lt;QtCore/QUrl&gt;
+#include &lt;QtCore/QUrlQuery&gt;
+
+#include &lt;QtWidgets/QCompleter&gt;
+#include &lt;QtWidgets/QMenu&gt;
+#include &lt;QtCore/QStringListModel&gt;
+
+#include &lt;QWebEngineSettings&gt;
+
+/*
+    ToolbarSearch is a very basic search widget that also contains a small history.
+    Searches are turned into urls that use Google to perform search
+ */
+ToolbarSearch::ToolbarSearch(QWidget *parent)
+    : SearchLineEdit(parent)
+    , m_autosaver(new AutoSaver(this))
+    , m_maxSavedSearches(10)
+    , m_stringListModel(new QStringListModel(this))
+{
+    QMenu *m = menu();
+    connect(m, SIGNAL(aboutToShow()), this, SLOT(aboutToShowMenu()));
+    connect(m, SIGNAL(triggered(QAction*)), this, SLOT(triggeredMenuAction(QAction*)));
+
+    QCompleter *completer = new QCompleter(m_stringListModel, this);
+    completer-&gt;setCompletionMode(QCompleter::InlineCompletion);
+    lineEdit()-&gt;setCompleter(completer);
+
+    connect(lineEdit(), SIGNAL(returnPressed()), SLOT(searchNow()));
+    setInactiveText(tr(&quot;Google&quot;));
+    load();
+}
+
+ToolbarSearch::~ToolbarSearch()
+{
+    m_autosaver-&gt;saveIfNeccessary();
+}
+
+void ToolbarSearch::save()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(&quot;toolbarsearch&quot;));
+    settings.setValue(QLatin1String(&quot;recentSearches&quot;), m_stringListModel-&gt;stringList());
+    settings.setValue(QLatin1String(&quot;maximumSaved&quot;), m_maxSavedSearches);
+    settings.endGroup();
+}
+
+void ToolbarSearch::load()
+{
+    QSettings settings;
+    settings.beginGroup(QLatin1String(&quot;toolbarsearch&quot;));
+    QStringList list = settings.value(QLatin1String(&quot;recentSearches&quot;)).toStringList();
+    m_maxSavedSearches = settings.value(QLatin1String(&quot;maximumSaved&quot;), m_maxSavedSearches).toInt();
+    m_stringListModel-&gt;setStringList(list);
+    settings.endGroup();
+}
+
+void ToolbarSearch::searchNow()
+{
+    QString searchText = lineEdit()-&gt;text();
+    QStringList newList = m_stringListModel-&gt;stringList();
+    if (newList.contains(searchText))
+        newList.removeAt(newList.indexOf(searchText));
+    newList.prepend(searchText);
+    if (newList.size() &gt;= m_maxSavedSearches)
+        newList.removeLast();
+
+    if (!BrowserApplication::instance()-&gt;privateBrowsing()) {
+        m_stringListModel-&gt;setStringList(newList);
+        m_autosaver-&gt;changeOccurred();
+    }
+
+    QUrl url(QLatin1String(&quot;http://www.google.com/search&quot;));
+    QUrlQuery urlQuery;
+    urlQuery.addQueryItem(QLatin1String(&quot;q&quot;), searchText);
+    urlQuery.addQueryItem(QLatin1String(&quot;ie&quot;), QLatin1String(&quot;UTF-8&quot;));
+    urlQuery.addQueryItem(QLatin1String(&quot;oe&quot;), QLatin1String(&quot;UTF-8&quot;));
+    urlQuery.addQueryItem(QLatin1String(&quot;client&quot;), QLatin1String(&quot;qtdemobrowser&quot;));
+    url.setQuery(urlQuery);
+    emit search(url);
+}
+
+void ToolbarSearch::aboutToShowMenu()
+{
+    lineEdit()-&gt;selectAll();
+    QMenu *m = menu();
+    m-&gt;clear();
+    QStringList list = m_stringListModel-&gt;stringList();
+    if (list.isEmpty()) {
+        m-&gt;addAction(tr(&quot;No Recent Searches&quot;));
+        return;
+    }
+
+    QAction *recent = m-&gt;addAction(tr(&quot;Recent Searches&quot;));
+    recent-&gt;setEnabled(false);
+    for (int i = 0; i &lt; list.count(); ++i) {
+        QString text = list.at(i);
+        m-&gt;addAction(text)-&gt;setData(text);
+    }
+    m-&gt;addSeparator();
+    m-&gt;addAction(tr(&quot;Clear Recent Searches&quot;), this, SLOT(clear()));
+}
+
+void ToolbarSearch::triggeredMenuAction(QAction *action)
+{
+    QVariant v = action-&gt;data();
+    if (v.canConvert&lt;QString&gt;()) {
+        QString text = v.toString();
+        lineEdit()-&gt;setText(text);
+        searchNow();
+    }
+}
+
+void ToolbarSearch::clear()
+{
+    m_stringListModel-&gt;setStringList(QStringList());
+    m_autosaver-&gt;changeOccurred();;
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt SCXML FTP Client Example</db:title>
+<db:productname>QtScxml</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Scxml Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Implements a simple FTP client using a state machine.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtScxml module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;simpleftp.h&quot;
+#include &quot;ftpcontrolchannel.h&quot;
+#include &quot;ftpdatachannel.h&quot;
+#include &lt;QCoreApplication&gt;
+#include &lt;iostream&gt;
+
+struct Command {
+    QString cmd;
+    QString args;
+};
+
+int main(int argc, char *argv[])
+{
+    if (argc != 3) {
+        qDebug() &lt;&lt; &quot;Usage: ftpclient &lt;server&gt; &lt;file&gt;&quot;;
+        return 1;
+    }
+
+    QString server = QString::fromLocal8Bit(argv[1]);
+    QString file = QString::fromLocal8Bit(argv[2]);
+
+    QCoreApplication app(argc, argv);
+    FtpClient ftpClient;
+    FtpDataChannel dataChannel;
+    FtpControlChannel controlChannel;
+
+    // Print all data retrieved from the server on the console.
+    QObject::connect(&amp;dataChannel, &amp;FtpDataChannel::dataReceived, [](const QByteArray &amp;data) {
+        std::cout &lt;&lt; data.constData();
+    });
+
+    // Translate server replies into state machine events.
+    QObject::connect(&amp;controlChannel, &amp;FtpControlChannel::reply, &amp;ftpClient,
+                     [&amp;ftpClient](int code, const QString &amp;parameters) {
+        ftpClient.submitEvent(QString(&quot;reply.%1xx&quot;).arg(code / 100), parameters);
+    });
+
+    // Translate commands from the state machine into FTP control messages.
+    ftpClient.connectToEvent(&quot;submit.cmd&quot;, &amp;controlChannel,
+                             [&amp;controlChannel](const QScxmlEvent &amp;event) {
+        controlChannel.command(event.name().mid(11).toUtf8(), event.data().toByteArray());
+    });
+
+    // Commands to be sent
+    QList&lt;Command&gt; commands({
+        {&quot;cmd.USER&quot;, &quot;anonymous&quot;},// login
+        {&quot;cmd.PORT&quot;, &quot;&quot;},         // announce port for data connection, args added below.
+        {&quot;cmd.RETR&quot;, file}        // retrieve a file
+    });
+
+    // When entering &quot;B&quot; state, send the next command.
+    ftpClient.connectToState(&quot;B&quot;, QScxmlStateMachine::onEntry([&amp;]() {
+        if (commands.isEmpty()) {
+            app.quit();
+            return;
+        }
+        Command command = commands.takeFirst();
+        qDebug() &lt;&lt; &quot;Posting command&quot; &lt;&lt; command.cmd &lt;&lt; command.args;
+        ftpClient.submitEvent(command.cmd, command.args);
+    }));
+
+    // If the server asks for a password, send one.
+    ftpClient.connectToState(&quot;P&quot;, QScxmlStateMachine::onEntry([&amp;ftpClient]() {
+        qDebug() &lt;&lt; &quot;Sending password&quot;;
+        ftpClient.submitEvent(&quot;cmd.PASS&quot;, QString());
+    }));
+
+    // Connect to our own local FTP server
+    controlChannel.connectToServer(server);
+    QObject::connect(&amp;controlChannel, &amp;FtpControlChannel::opened,
+                     [&amp;](const QHostAddress &amp;address, int) {
+        dataChannel.listen(address);
+        commands[1].args = dataChannel.portspec();
+        ftpClient.start();
+    });
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

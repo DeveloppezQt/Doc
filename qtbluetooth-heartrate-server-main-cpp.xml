@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Heart Rate Server Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An example demonstrating how to set up and advertise a GATT service. The example demonstrates the use of the Qt Bluetooth Low Energy classes related to peripheral (slave) functionality.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/***************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtBluetooth/qlowenergyadvertisingdata.h&gt;
+#include &lt;QtBluetooth/qlowenergyadvertisingparameters.h&gt;
+#include &lt;QtBluetooth/qlowenergycharacteristic.h&gt;
+#include &lt;QtBluetooth/qlowenergycharacteristicdata.h&gt;
+#include &lt;QtBluetooth/qlowenergydescriptordata.h&gt;
+#include &lt;QtBluetooth/qlowenergycontroller.h&gt;
+#include &lt;QtBluetooth/qlowenergyservice.h&gt;
+#include &lt;QtBluetooth/qlowenergyservicedata.h&gt;
+#include &lt;QtCore/qbytearray.h&gt;
+#include &lt;QtCore/qcoreapplication.h&gt;
+#include &lt;QtCore/qlist.h&gt;
+#include &lt;QtCore/qscopedpointer.h&gt;
+#include &lt;QtCore/qtimer.h&gt;
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+
+    QLowEnergyAdvertisingData advertisingData;
+    advertisingData.setDiscoverability(QLowEnergyAdvertisingData::DiscoverabilityGeneral);
+    advertisingData.setIncludePowerLevel(true);
+    advertisingData.setLocalName(&quot;HeartRateServer&quot;);
+    advertisingData.setServices(QList&lt;QBluetoothUuid&gt;() &lt;&lt; QBluetoothUuid::HeartRate);
+
+    QLowEnergyCharacteristicData charData;
+    charData.setUuid(QBluetoothUuid::HeartRateMeasurement);
+    charData.setValue(QByteArray(2, 0));
+    charData.setProperties(QLowEnergyCharacteristic::Notify);
+    const QLowEnergyDescriptorData clientConfig(QBluetoothUuid::ClientCharacteristicConfiguration,
+                                                QByteArray(2, 0));
+    charData.addDescriptor(clientConfig);
+
+    QLowEnergyServiceData serviceData;
+    serviceData.setType(QLowEnergyServiceData::ServiceTypePrimary);
+    serviceData.setUuid(QBluetoothUuid::HeartRate);
+    serviceData.addCharacteristic(charData);
+
+    const QScopedPointer&lt;QLowEnergyController&gt; leController(QLowEnergyController::createPeripheral());
+    const QScopedPointer&lt;QLowEnergyService&gt; service(leController-&gt;addService(serviceData));
+    leController-&gt;startAdvertising(QLowEnergyAdvertisingParameters(), advertisingData,
+                                   advertisingData);
+
+    QTimer heartbeatTimer;
+    quint8 currentHeartRate = 60;
+    enum ValueChange { ValueUp, ValueDown } valueChange = ValueUp;
+    const auto heartbeatProvider = [&amp;service, &amp;currentHeartRate, &amp;valueChange]() {
+        QByteArray value;
+        value.append(char(0)); // Flags that specify the format of the value.
+        value.append(char(currentHeartRate)); // Actual value.
+        QLowEnergyCharacteristic characteristic
+                = service-&gt;characteristic(QBluetoothUuid::HeartRateMeasurement);
+        Q_ASSERT(characteristic.isValid());
+        service-&gt;writeCharacteristic(characteristic, value); // Potentially causes notification.
+        if (currentHeartRate == 60)
+            valueChange = ValueUp;
+        else if (currentHeartRate == 100)
+            valueChange = ValueDown;
+        if (valueChange == ValueUp)
+            ++currentHeartRate;
+        else
+            --currentHeartRate;
+    };
+    QObject::connect(&amp;heartbeatTimer, &amp;QTimer::timeout, heartbeatProvider);
+    heartbeatTimer.start(1000);
+
+    auto reconnect = [&amp;leController, advertisingData]() {
+        leController-&gt;startAdvertising(QLowEnergyAdvertisingParameters(), advertisingData,
+                                       advertisingData);
+    };
+    QObject::connect(leController.data(), &amp;QLowEnergyController::disconnected, reconnect);
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

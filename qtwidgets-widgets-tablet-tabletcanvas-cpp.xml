@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Tablet Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to use a Wacom tablet in Qt applications.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+#include &lt;math.h&gt;
+
+#include &quot;tabletcanvas.h&quot;
+
+TabletCanvas::TabletCanvas()
+  : QWidget(Q_NULLPTR)
+  , m_alphaChannelValuator(TangentialPressureValuator)
+  , m_colorSaturationValuator(NoValuator)
+  , m_lineWidthValuator(PressureValuator)
+  , m_color(Qt::red)
+  , m_brush(m_color)
+  , m_pen(m_brush, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin)
+  , m_deviceDown(false)
+{
+    resize(500, 500);
+    initPixmap();
+    setAutoFillBackground(true);
+}
+
+void TabletCanvas::initPixmap()
+{
+    QPixmap newPixmap = QPixmap(width(), height());
+    newPixmap.fill(Qt::white);
+    QPainter painter(&amp;newPixmap);
+    if (!m_pixmap.isNull())
+        painter.drawPixmap(0, 0, m_pixmap);
+    painter.end();
+    m_pixmap = newPixmap;
+}
+
+bool TabletCanvas::saveImage(const QString &amp;file)
+{
+    return m_pixmap.save(file);
+}
+
+bool TabletCanvas::loadImage(const QString &amp;file)
+{
+    bool success = m_pixmap.load(file);
+
+    if (success) {
+        update();
+        return true;
+    }
+    return false;
+}
+
+void TabletCanvas::tabletEvent(QTabletEvent *event)
+{
+
+    switch (event-&gt;type()) {
+        case QEvent::TabletPress:
+            if (!m_deviceDown) {
+                m_deviceDown = true;
+                lastPoint.pos = event-&gt;posF();
+                lastPoint.rotation = event-&gt;rotation();
+            }
+            break;
+        case QEvent::TabletMove:
+            if (event-&gt;device() == QTabletEvent::RotationStylus)
+                updateCursor(event);
+            if (m_deviceDown) {
+                updateBrush(event);
+                QPainter painter(&amp;m_pixmap);
+                paintPixmap(painter, event);
+                lastPoint.pos = event-&gt;posF();
+                lastPoint.rotation = event-&gt;rotation();
+            }
+            break;
+        case QEvent::TabletRelease:
+            if (m_deviceDown &amp;&amp; event-&gt;buttons() == Qt::NoButton)
+                m_deviceDown = false;
+            break;
+        default:
+            break;
+    }
+    event-&gt;accept();
+    update();
+}
+
+void TabletCanvas::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    painter.drawPixmap(0, 0, m_pixmap);
+}
+
+void TabletCanvas::paintPixmap(QPainter &amp;painter, QTabletEvent *event)
+{
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    switch (event-&gt;device()) {
+        case QTabletEvent::Airbrush:
+            {
+                painter.setPen(Qt::NoPen);
+                QRadialGradient grad(lastPoint.pos, m_pen.widthF() * 10.0);
+                QColor color = m_brush.color();
+                color.setAlphaF(color.alphaF() * 0.25);
+                grad.setColorAt(0, m_brush.color());
+                grad.setColorAt(0.5, Qt::transparent);
+                painter.setBrush(grad);
+                qreal radius = grad.radius();
+                painter.drawEllipse(event-&gt;posF(), radius, radius);
+            }
+            break;
+        case QTabletEvent::RotationStylus:
+            {
+                m_brush.setStyle(Qt::SolidPattern);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(m_brush);
+                QPolygonF poly;
+                qreal halfWidth = m_pen.widthF();
+                QPointF brushAdjust(qSin(qDegreesToRadians(lastPoint.rotation)) * halfWidth,
+                                    qCos(qDegreesToRadians(lastPoint.rotation)) * halfWidth);
+                poly &lt;&lt; lastPoint.pos + brushAdjust;
+                poly &lt;&lt; lastPoint.pos - brushAdjust;
+                brushAdjust = QPointF(qSin(qDegreesToRadians(event-&gt;rotation())) * halfWidth,
+                                      qCos(qDegreesToRadians(event-&gt;rotation())) * halfWidth);
+                poly &lt;&lt; event-&gt;posF() - brushAdjust;
+                poly &lt;&lt; event-&gt;posF() + brushAdjust;
+                painter.drawConvexPolygon(poly);
+            }
+            break;
+        case QTabletEvent::Puck:
+        case QTabletEvent::FourDMouse:
+            {
+                const QString error(tr(&quot;This input device is not supported by the example.&quot;));
+#ifndef QT_NO_STATUSTIP
+                QStatusTipEvent status(error);
+                QApplication::sendEvent(this, &amp;status);
+#else
+                qWarning() &lt;&lt; error;
+#endif
+            }
+            break;
+        default:
+            {
+                const QString error(tr(&quot;Unknown tablet device - treating as stylus&quot;));
+#ifndef QT_NO_STATUSTIP
+                QStatusTipEvent status(error);
+                QApplication::sendEvent(this, &amp;status);
+#else
+                qWarning() &lt;&lt; error;
+#endif
+            }
+            // FALL-THROUGH
+        case QTabletEvent::Stylus:
+            painter.setPen(m_pen);
+            painter.drawLine(lastPoint.pos, event-&gt;posF());
+            break;
+    }
+}
+
+void TabletCanvas::updateBrush(const QTabletEvent *event)
+{
+    int hue, saturation, value, alpha;
+    m_color.getHsv(&amp;hue, &amp;saturation, &amp;value, &amp;alpha);
+
+    int vValue = int(((event-&gt;yTilt() + 60.0) / 120.0) * 255);
+    int hValue = int(((event-&gt;xTilt() + 60.0) / 120.0) * 255);
+
+    switch (m_alphaChannelValuator) {
+        case PressureValuator:
+            m_color.setAlphaF(event-&gt;pressure());
+            break;
+        case TangentialPressureValuator:
+            if (event-&gt;device() == QTabletEvent::Airbrush)
+                m_color.setAlphaF(qMax(0.01, (event-&gt;tangentialPressure() + 1.0) / 2.0));
+            else
+                m_color.setAlpha(255);
+            break;
+        case TiltValuator:
+            m_color.setAlpha(maximum(abs(vValue - 127), abs(hValue - 127)));
+            break;
+        default:
+            m_color.setAlpha(255);
+    }
+
+    switch (m_colorSaturationValuator) {
+        case VTiltValuator:
+            m_color.setHsv(hue, vValue, value, alpha);
+            break;
+        case HTiltValuator:
+            m_color.setHsv(hue, hValue, value, alpha);
+            break;
+        case PressureValuator:
+            m_color.setHsv(hue, int(event-&gt;pressure() * 255.0), value, alpha);
+            break;
+        default:
+            ;
+    }
+
+    switch (m_lineWidthValuator) {
+        case PressureValuator:
+            m_pen.setWidthF(event-&gt;pressure() * 10 + 1);
+            break;
+        case TiltValuator:
+            m_pen.setWidthF(maximum(abs(vValue - 127), abs(hValue - 127)) / 12);
+            break;
+        default:
+            m_pen.setWidthF(1);
+    }
+
+    if (event-&gt;pointerType() == QTabletEvent::Eraser) {
+        m_brush.setColor(Qt::white);
+        m_pen.setColor(Qt::white);
+        m_pen.setWidthF(event-&gt;pressure() * 10 + 1);
+    } else {
+        m_brush.setColor(m_color);
+        m_pen.setColor(m_color);
+    }
+}
+
+void TabletCanvas::updateCursor(const QTabletEvent *event)
+{
+    QCursor cursor;
+    if (event-&gt;type() != QEvent::TabletLeaveProximity) {
+        if (event-&gt;pointerType() == QTabletEvent::Eraser) {
+            cursor = QCursor(QPixmap(&quot;:/images/cursor-eraser.png&quot;), 3, 28);
+        } else {
+            switch (event-&gt;device()) {
+            case QTabletEvent::Stylus:
+                cursor = QCursor(QPixmap(&quot;:/images/cursor-pencil.png&quot;), 0, 0);
+                break;
+            case QTabletEvent::Airbrush:
+                cursor = QCursor(QPixmap(&quot;:/images/cursor-airbrush.png&quot;), 3, 4);
+                break;
+            case QTabletEvent::RotationStylus: {
+                QImage origImg(QLatin1String(&quot;:/images/cursor-felt-marker.png&quot;));
+                QImage img(32, 32, QImage::Format_ARGB32);
+                QColor solid = m_color;
+                solid.setAlpha(255);
+                img.fill(solid);
+                QPainter painter(&amp;img);
+                QTransform transform = painter.transform();
+                transform.translate(16, 16);
+                transform.rotate(-event-&gt;rotation());
+                painter.setTransform(transform);
+                painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                painter.drawImage(-24, -24, origImg);
+                painter.setCompositionMode(QPainter::CompositionMode_HardLight);
+                painter.drawImage(-24, -24, origImg);
+                painter.end();
+                cursor = QCursor(QPixmap::fromImage(img), 16, 16);
+            } break;
+            default:
+                break;
+            }
+        }
+    }
+    setCursor(cursor);
+}
+
+void TabletCanvas::resizeEvent(QResizeEvent *)
+{
+    initPixmap();
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Wayland Compositor Examples - QWindow Compositor</db:title>
+<db:productname>QtWaylandCompositor</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Wayland Compositor Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para><db:link xlink:href="qwindow.xml">QWindow</db:link> Compositor is an example that demonstrates how to write a Wayland compositor in C++.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Wayland module
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#ifndef WINDOWCOMPOSITOR_H
+#define WINDOWCOMPOSITOR_H
+
+#include &lt;QtWaylandCompositor/QWaylandCompositor&gt;
+#include &lt;QtWaylandCompositor/QWaylandSurface&gt;
+#include &lt;QtWaylandCompositor/QWaylandView&gt;
+#include &lt;QtWaylandCompositor/QWaylandWlShellSurface&gt;
+#include &lt;QtWaylandCompositor/QWaylandXdgSurfaceV5&gt;
+#include &lt;QTimer&gt;
+
+class QWaylandWlShell;
+class QWaylandWlShellSurface;
+class QWaylandXdgShellV5;
+class QOpenGLTexture;
+
+class View : public QWaylandView
+{
+    Q_OBJECT
+public:
+    View();
+    QOpenGLTexture *getTexture();
+    QPointF position() const { return m_position; }
+    void setPosition(const QPointF &amp;pos) { m_position = pos; }
+    bool isCursor() const;
+    bool hasShell() const { return m_wlShellSurface; }
+    void setParentView(View *parent) { m_parentView = parent; }
+    View *parentView() const { return m_parentView; }
+    QPointF parentPosition() const { return m_parentView ? (m_parentView-&gt;position() + m_parentView-&gt;parentPosition()) : QPointF(); }
+    QSize windowSize() { return m_xdgSurface ? m_xdgSurface-&gt;windowGeometry().size() : surface()-&gt;size(); }
+    QPoint offset() const { return m_offset; }
+
+private:
+    friend class Compositor;
+    GLenum m_textureTarget;
+    QOpenGLTexture *m_texture;
+    QPointF m_position;
+    QWaylandWlShellSurface *m_wlShellSurface;
+    QWaylandXdgSurfaceV5 *m_xdgSurface;
+    QWaylandXdgPopupV5 *m_xdgPopup;
+    View *m_parentView;
+    QPoint m_offset;
+
+public slots:
+    void onXdgSetMaximized();
+    void onXdgUnsetMaximized();
+    void onXdgSetFullscreen(QWaylandOutput *output);
+    void onXdgUnsetFullscreen();
+    void onOffsetForNextFrame(const QPoint &amp;offset);
+};
+
+class Compositor : public QWaylandCompositor
+{
+    Q_OBJECT
+public:
+    Compositor(QWindow *window);
+    ~Compositor();
+    void create() Q_DECL_OVERRIDE;
+
+    void startRender();
+    void endRender();
+
+    QList&lt;View*&gt; views() const { return m_views; }
+    void raise(View *view);
+
+    void handleMouseEvent(QWaylandView *target, QMouseEvent *me);
+    void handleResize(View *target, const QSize &amp;initialSize, const QPoint &amp;delta, int edge);
+    void handleDrag(View *target, QMouseEvent *me);
+
+    QWaylandClient *popupClient() const;
+    void closePopups();
+protected:
+    void adjustCursorSurface(QWaylandSurface *surface, int hotspotX, int hotspotY);
+
+signals:
+    void startMove();
+    void startResize(int edge, bool anchored);
+    void dragStarted(View *dragIcon);
+    void frameOffset(const QPoint &amp;offset);
+
+private slots:
+    void surfaceHasContentChanged();
+    void surfaceDestroyed();
+    void viewSurfaceDestroyed();
+    void onStartMove();
+    void onWlStartResize(QWaylandSeat *seat, QWaylandWlShellSurface::ResizeEdge edges);
+    void onXdgStartResize(QWaylandSeat *seat, QWaylandXdgSurfaceV5::ResizeEdge edges);
+
+    void startDrag();
+
+    void triggerRender();
+
+    void onSurfaceCreated(QWaylandSurface *surface);
+    void onWlShellSurfaceCreated(QWaylandWlShellSurface *wlShellSurface);
+    void onXdgSurfaceCreated(QWaylandXdgSurfaceV5 *xdgSurface);
+    void onXdgPopupRequested(QWaylandSurface *surface, QWaylandSurface *parent, QWaylandSeat *seat,
+                             const QPoint &amp;position, const QWaylandResource &amp;resource);
+    void onSetTransient(QWaylandSurface *parentSurface, const QPoint &amp;relativeToParent, bool inactive);
+    void onSetPopup(QWaylandSeat *seat, QWaylandSurface *parent, const QPoint &amp;relativeToParent);
+
+    void onSubsurfaceChanged(QWaylandSurface *child, QWaylandSurface *parent);
+    void onSubsurfacePositionChanged(const QPoint &amp;position);
+
+    void updateCursor();
+private:
+    View *findView(const QWaylandSurface *s) const;
+    QWindow *m_window;
+    QList&lt;View*&gt; m_views;
+    QWaylandWlShell *m_wlShell;
+    QWaylandXdgShellV5 *m_xdgShell;
+    QWaylandView m_cursorView;
+    int m_cursorHotspotX;
+    int m_cursorHotspotY;
+};
+
+
+#endif // WINDOWCOMPOSITOR_H
+
+</db:programlisting>
+</db:article>

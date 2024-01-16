@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>StackedBarChart Drilldown Example</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to implement drilldown using a stacked barchart.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>In the drilldown example we create a stacked bar chart, which shows the harvest of various chili peppers during season. In season view the harvest is grouped by month. To drill down to weekly view, right-click the selected month. On weekly view, the harvest of the month clicked is shown by week.</db:para>
+<db:para>The season view looks like this:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/examples_stackedbarchartdrilldown1.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Clicking on a month shows that month's harvest:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/examples_stackedbarchartdrilldown2.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="implementing-drilldown">
+<db:title>Implementing Drilldown</db:title>
+<db:para>First we define a drilldown series class, which adds categories to the stacked bar series and mapping for categories to other drilldown series. The purpose of the drilldown series is to contain knowledge of the drilldown structure. The mapDrilldownSeries function maps the category to a given series. We can request the mapping for a category with the drilldownSeries(int category) function.</db:para>
+<db:programlisting language="cpp">class DrilldownBarSeries : public QStackedBarSeries
+{
+    Q_OBJECT
+public:
+    DrilldownBarSeries(QStringList categories, QObject *parent = 0);
+
+    void mapDrilldownSeries(int index, DrilldownBarSeries *drilldownSeries);
+
+    DrilldownBarSeries *drilldownSeries(int index);
+
+    QStringList categories();
+
+private:
+    QMap&lt;int, DrilldownBarSeries *&gt; m_DrilldownSeries;
+    QStringList m_categories;
+};
+</db:programlisting>
+<db:para>Next we define our own drilldown chart, which implements the handler for the mouse click. All QBarSeries derived classes send out the clicked(QBarSet*, int) signal when a series is clicked with the mouse. The parameter QBarSet contains the pointer to the clicked bar set and parameter int contains the index of the clicked category.</db:para>
+<db:programlisting language="cpp">class DrilldownChart : public QChart
+{
+    Q_OBJECT
+public:
+    explicit DrilldownChart(QGraphicsItem *parent = 0, Qt::WindowFlags wFlags = 0);
+
+    void changeSeries(DrilldownBarSeries *series);
+
+public Q_SLOTS:
+    void handleClicked(int index, QBarSet *barset);
+
+private:
+    DrilldownBarSeries *m_currentSeries;
+};
+</db:programlisting>
+<db:para>Now we have our drilldown classes and we can start using them. First create the chart.</db:para>
+<db:programlisting language="cpp">    DrilldownChart *drilldownChart =  new DrilldownChart();
+    drilldownChart-&gt;setAnimationOptions(QChart::SeriesAnimations);
+</db:programlisting>
+<db:para>We define the categories from which the drilldown series will be constructed.</db:para>
+<db:programlisting language="cpp">    // Define categories
+    QStringList months;
+    months &lt;&lt; &quot;May&quot; &lt;&lt; &quot;Jun&quot; &lt;&lt; &quot;Jul&quot; &lt;&lt; &quot;Aug&quot; &lt;&lt; &quot;Sep&quot;;
+    QStringList weeks;
+    weeks &lt;&lt; &quot;week 1&quot; &lt;&lt; &quot;week 2&quot; &lt;&lt; &quot;week 3&quot; &lt;&lt; &quot;week 4&quot;;
+    QStringList plants;
+    plants &lt;&lt; &quot;Habanero&quot; &lt;&lt; &quot;Lemon Drop&quot; &lt;&lt; &quot;Starfish&quot; &lt;&lt; &quot;Aji Amarillo&quot;;
+</db:programlisting>
+<db:para>To create the drilldown structure, we first create our top level series, which we call seasonSeries. For each month in seasonSeries we create a drilldown series called weeklySeries which contains more detailed data for that month. In weeklySeries, we use the drilldown handler to bring us back to seasonSeries. To do so we add mapping to the series. The seasonSeries is mapped to weeklySeries for each month. Every weeklySeries is mapped back to the seasonSeries. To make mapping work, we connect the clicked signals from our series to the drilldownChart.</db:para>
+<db:programlisting language="cpp">    // Create drilldown structure
+    DrilldownBarSeries *seasonSeries = new DrilldownBarSeries(months, drilldownChart);
+    seasonSeries-&gt;setName(&quot;Crop by month - Season&quot;);
+
+    // Each month in season series has drilldown series for weekly data
+    for (int month = 0; month &lt; months.count(); month++) {
+
+        // Create drilldown series for every week
+        DrilldownBarSeries *weeklySeries = new DrilldownBarSeries(weeks, drilldownChart);
+        seasonSeries-&gt;mapDrilldownSeries(month, weeklySeries);
+
+        // Drilling down from weekly data brings us back to season data.
+        for (int week = 0; week &lt; weeks.count(); week++) {
+            weeklySeries-&gt;mapDrilldownSeries(week, seasonSeries);
+            weeklySeries-&gt;setName(QString(&quot;Crop by week - &quot; + months.at(month)));
+        }
+
+        // Use clicked signal to implement drilldown
+        QObject::connect(weeklySeries, SIGNAL(clicked(int,QBarSet*)), drilldownChart, SLOT(handleClicked(int,QBarSet*)));
+    }
+
+    // Enable drilldown from season series using clicked signal
+    QObject::connect(seasonSeries, SIGNAL(clicked(int,QBarSet*)), drilldownChart, SLOT(handleClicked(int,QBarSet*)));
+</db:programlisting>
+<db:para>When we have our drilldown structure ready, we can add the data to it. Here we generate a random crop for each plant in each week. The monthly crop is calculated from weekly crops and is set as value to the monthly series.</db:para>
+<db:programlisting language="cpp">    // Fill monthly and weekly series with data
+    foreach (QString plant, plants) {
+        QBarSet *monthlyCrop = new QBarSet(plant);
+        for (int month = 0; month &lt; months.count(); month++) {
+            QBarSet *weeklyCrop = new QBarSet(plant);
+            for (int week = 0; week &lt; weeks.count(); week++)
+                *weeklyCrop &lt;&lt; (qrand() % 20);
+            // Get the drilldown series from season series and add crop to it.
+            seasonSeries-&gt;drilldownSeries(month)-&gt;append(weeklyCrop);
+            *monthlyCrop &lt;&lt; weeklyCrop-&gt;sum();
+        }
+        seasonSeries-&gt;append(monthlyCrop);
+    }
+</db:programlisting>
+<db:para>Here we set the chart to show the top level series initially.</db:para>
+<db:programlisting language="cpp">    // Show season series in initial view
+    drilldownChart-&gt;changeSeries(seasonSeries);
+    drilldownChart-&gt;setTitle(seasonSeries-&gt;name());
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/drilldownchart.cpp">stackedbarchartdrilldown/drilldownchart.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/drilldownchart.h">stackedbarchartdrilldown/drilldownchart.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/drilldownseries.cpp">stackedbarchartdrilldown/drilldownseries.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/drilldownseries.h">stackedbarchartdrilldown/drilldownseries.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/main.cpp">stackedbarchartdrilldown/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="stackedbarchartdrilldown/stackedbarchartdrilldown.pro">stackedbarchartdrilldown/stackedbarchartdrilldown.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

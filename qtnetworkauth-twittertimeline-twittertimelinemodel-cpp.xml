@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Twitter Timeline Example</db:title>
+<db:productname>QtNetworkAuth</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Authorization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates authenticating with OAuth to access a Twitter timeline.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Network Auth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;twittertimelinemodel.h&quot;
+
+#include &lt;QtGui&gt;
+#include &lt;QtCore&gt;
+#include &lt;QtWidgets&gt;
+
+TwitterTimelineModel::TwitterTimelineModel(QObject *parent) : QAbstractTableModel(parent)
+{
+    connect(&amp;twitter, &amp;Twitter::authenticated, this, &amp;TwitterTimelineModel::authenticated);
+    connect(&amp;twitter, &amp;Twitter::authenticated, this, &amp;TwitterTimelineModel::updateTimeline);
+}
+
+int TwitterTimelineModel::rowCount(const QModelIndex &amp;parent) const
+{
+#if defined(QT_DEBUG)
+    Q_ASSERT(!parent.isValid());
+#else
+    Q_UNUSED(parent)
+#endif
+    return tweets.size();
+}
+
+QVariant TwitterTimelineModel::data(const QModelIndex &amp;index, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    auto it = tweets.begin();
+    std::advance(it, index.row());
+    switch (index.column())
+    {
+    case 0:
+        return QString::number(it-&gt;id);
+    case 1:
+        return it-&gt;createdAt.toString(Qt::SystemLocaleShortDate);
+    case 2:
+        return it-&gt;user;
+    case 3:
+        return it-&gt;text;
+    }
+    return QVariant();
+}
+
+int TwitterTimelineModel::columnCount(const QModelIndex &amp;) const
+{
+    return 4;
+}
+
+QVariant TwitterTimelineModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    if (orientation == Qt::Horizontal) {
+        switch (section) {
+        case 0:
+            return QStringLiteral(&quot;Id&quot;);
+        case 1:
+            return QStringLiteral(&quot;Created at&quot;);
+        case 2:
+            return QStringLiteral(&quot;User&quot;);
+        case 3:
+            return QStringLiteral(&quot;Text&quot;);
+        }
+    }
+    return section;
+}
+
+void TwitterTimelineModel::authenticate(const QPair&lt;QString, QString&gt; &amp;clientCredentials)
+{
+    twitter.setClientCredentials(clientCredentials);
+    twitter.grant();
+}
+
+QAbstractOAuth::Status TwitterTimelineModel::status() const
+{
+    return twitter.status();
+}
+
+void TwitterTimelineModel::updateTimeline()
+{
+    if (twitter.status() != Twitter::Status::Granted)
+        QMessageBox::warning(nullptr, qApp-&gt;applicationName(), &quot;Not authenticated&quot;);
+
+    QUrl url(&quot;https://api.twitter.com/1.1/statuses/home_timeline.json&quot;);
+    QUrlQuery query;
+    if (tweets.size()) {
+        // Tweets are time-ordered, newest first.  Pass the most recent
+        // ID we have to request everything more recent than it:
+        query.addQueryItem(&quot;since_id&quot;, QString::number(tweets.first().id));
+        // From https://dev.twitter.com/rest/reference/get/search/tweets:
+        // Returns results with an ID greater than (that is, more recent than)
+        // the specified ID. There are limits to the number of Tweets which can
+        // be accessed through the API. If the limit of Tweets has occurred
+        // since the since_id, the since_id will be forced to the oldest ID
+        // available.
+    }
+    url.setQuery(query);
+    QNetworkReply *reply = twitter.get(url);
+    connect(reply, &amp;QNetworkReply::finished, this, &amp;TwitterTimelineModel::parseJson);
+}
+
+void TwitterTimelineModel::parseJson()
+{
+    QJsonParseError parseError;
+    auto reply = qobject_cast&lt;QNetworkReply*&gt;(sender());
+    Q_ASSERT(reply);
+    const auto data = reply-&gt;readAll();
+    const auto document = QJsonDocument::fromJson(data, &amp;parseError);
+    if (parseError.error) {
+        qCritical() &lt;&lt; &quot;TwitterTimelineModel::parseJson. Error at:&quot; &lt;&lt; parseError.offset
+                    &lt;&lt; parseError.errorString();
+        return;
+    } else if (document.isObject()) {
+        // Error received :(
+        const auto object = document.object();
+        const auto errorArray = object.value(&quot;errors&quot;).toArray();
+        Q_ASSERT_X(errorArray.size(), &quot;parse&quot;, data);
+        QStringList errors;
+        for (const auto error : errorArray) {
+            Q_ASSERT(error.isObject());
+            Q_ASSERT(error.toObject().contains(&quot;message&quot;));
+            errors.append(error.toObject().value(&quot;message&quot;).toString());
+        }
+        QMessageBox::warning(nullptr, qApp-&gt;applicationName(), errors.join(&quot;&lt;br /&gt;&quot;));
+        return;
+    }
+
+    Q_ASSERT_X(document.isArray(), &quot;parse&quot;, data);
+    const auto array = document.array();
+    if (array.size()) {
+        beginInsertRows(QModelIndex(), 0, array.size() - 1);
+        auto before = tweets.begin();
+        for (const auto &amp;value : array) {
+            Q_ASSERT(value.isObject());
+            const auto object = value.toObject();
+            const auto createdAt = QDateTime::fromString(object.value(&quot;created_at&quot;).toString(),
+                                                         &quot;ddd MMM dd HH:mm:ss +0000 yyyy&quot;);
+            before = tweets.insert(before, Tweet{
+                                       object.value(&quot;id&quot;).toVariant().toULongLong(),
+                                       createdAt,
+                                       object.value(&quot;user&quot;).toObject().value(&quot;name&quot;).toString(),
+                                       object.value(&quot;text&quot;).toString()
+                                   });
+            std::advance(before, 1);
+        }
+        endInsertRows();
+    }
+}
+
+</db:programlisting>
+</db:article>

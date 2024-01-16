@@ -1,0 +1,344 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Modbus Slave example</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example implements a Modbus slave application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtSerialBus module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;settingsdialog.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+
+#include &lt;QModbusRtuSerialSlave&gt;
+#include &lt;QModbusTcpServer&gt;
+#include &lt;QRegularExpression&gt;
+#include &lt;QStatusBar&gt;
+#include &lt;QUrl&gt;
+
+enum ModbusConnection {
+    Serial,
+    Tcp
+};
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , ui(new Ui::MainWindow)
+    , modbusDevice(nullptr)
+{
+    ui-&gt;setupUi(this);
+    setupWidgetContainers();
+
+    ui-&gt;connectType-&gt;setCurrentIndex(0);
+    on_connectType_currentIndexChanged(0);
+
+    m_settingsDialog = new SettingsDialog(this);
+    initActions();
+}
+
+MainWindow::~MainWindow()
+{
+    if (modbusDevice)
+        modbusDevice-&gt;disconnectDevice();
+    delete modbusDevice;
+
+    delete ui;
+}
+
+void MainWindow::initActions()
+{
+    ui-&gt;actionConnect-&gt;setEnabled(true);
+    ui-&gt;actionDisconnect-&gt;setEnabled(false);
+    ui-&gt;actionExit-&gt;setEnabled(true);
+    ui-&gt;actionOptions-&gt;setEnabled(true);
+
+    connect(ui-&gt;actionConnect, &amp;QAction::triggered,
+            this, &amp;MainWindow::on_connectButton_clicked);
+    connect(ui-&gt;actionDisconnect, &amp;QAction::triggered,
+            this, &amp;MainWindow::on_connectButton_clicked);
+
+    connect(ui-&gt;actionExit, &amp;QAction::triggered, this, &amp;QMainWindow::close);
+    connect(ui-&gt;actionOptions, &amp;QAction::triggered, m_settingsDialog, &amp;QDialog::show);
+}
+
+void MainWindow::on_connectType_currentIndexChanged(int index)
+{
+    if (modbusDevice) {
+        modbusDevice-&gt;disconnect();
+        delete modbusDevice;
+        modbusDevice = nullptr;
+    }
+
+    ModbusConnection type = static_cast&lt;ModbusConnection&gt; (index);
+    if (type == Serial) {
+        modbusDevice = new QModbusRtuSerialSlave(this);
+    } else if (type == Tcp) {
+        modbusDevice = new QModbusTcpServer(this);
+        if (ui-&gt;portEdit-&gt;text().isEmpty())
+            ui-&gt;portEdit-&gt;setText(QLatin1Literal(&quot;127.0.0.1:502&quot;));
+    }
+    ui-&gt;listenOnlyBox-&gt;setEnabled(type == Serial);
+
+    if (!modbusDevice) {
+        ui-&gt;connectButton-&gt;setDisabled(true);
+        if (type == Serial)
+            statusBar()-&gt;showMessage(tr(&quot;Could not create Modbus slave.&quot;), 5000);
+        else
+            statusBar()-&gt;showMessage(tr(&quot;Could not create Modbus server.&quot;), 5000);
+    } else {
+        QModbusDataUnitMap reg;
+        reg.insert(QModbusDataUnit::Coils, { QModbusDataUnit::Coils, 0, 10 });
+        reg.insert(QModbusDataUnit::DiscreteInputs, { QModbusDataUnit::DiscreteInputs, 0, 10 });
+        reg.insert(QModbusDataUnit::InputRegisters, { QModbusDataUnit::InputRegisters, 0, 10 });
+        reg.insert(QModbusDataUnit::HoldingRegisters, { QModbusDataUnit::HoldingRegisters, 0, 10 });
+
+        modbusDevice-&gt;setMap(reg);
+
+        connect(modbusDevice, &amp;QModbusServer::dataWritten,
+                this, &amp;MainWindow::updateWidgets);
+        connect(modbusDevice, &amp;QModbusServer::stateChanged,
+                this, &amp;MainWindow::onStateChanged);
+        connect(modbusDevice, &amp;QModbusServer::errorOccurred,
+                this, &amp;MainWindow::handleDeviceError);
+
+        connect(ui-&gt;listenOnlyBox, &amp;QCheckBox::toggled, this, [this](bool toggled) {
+            if (modbusDevice)
+                modbusDevice-&gt;setValue(QModbusServer::ListenOnlyMode, toggled);
+        });
+        emit ui-&gt;listenOnlyBox-&gt;toggled(ui-&gt;listenOnlyBox-&gt;isChecked());
+        connect(ui-&gt;setBusyBox, &amp;QCheckBox::toggled, this, [this](bool toggled) {
+            if (modbusDevice)
+                modbusDevice-&gt;setValue(QModbusServer::DeviceBusy, toggled ? 0xffff : 0x0000);
+        });
+        emit ui-&gt;setBusyBox-&gt;toggled(ui-&gt;setBusyBox-&gt;isChecked());
+
+        setupDeviceData();
+    }
+}
+
+void MainWindow::handleDeviceError(QModbusDevice::Error newError)
+{
+    if (newError == QModbusDevice::NoError || !modbusDevice)
+        return;
+
+    statusBar()-&gt;showMessage(modbusDevice-&gt;errorString(), 5000);
+}
+
+void MainWindow::on_connectButton_clicked()
+{
+    bool intendToConnect = (modbusDevice-&gt;state() == QModbusDevice::UnconnectedState);
+
+    statusBar()-&gt;clearMessage();
+
+    if (intendToConnect) {
+        if (static_cast&lt;ModbusConnection&gt; (ui-&gt;connectType-&gt;currentIndex()) == Serial) {
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::SerialPortNameParameter,
+                ui-&gt;portEdit-&gt;text());
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::SerialParityParameter,
+                m_settingsDialog-&gt;settings().parity);
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::SerialBaudRateParameter,
+                m_settingsDialog-&gt;settings().baud);
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::SerialDataBitsParameter,
+                m_settingsDialog-&gt;settings().dataBits);
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::SerialStopBitsParameter,
+                m_settingsDialog-&gt;settings().stopBits);
+        } else {
+            const QUrl url = QUrl::fromUserInput(ui-&gt;portEdit-&gt;text());
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::NetworkPortParameter, url.port());
+            modbusDevice-&gt;setConnectionParameter(QModbusDevice::NetworkAddressParameter, url.host());
+        }
+        modbusDevice-&gt;setServerAddress(ui-&gt;serverEdit-&gt;text().toInt());
+        if (!modbusDevice-&gt;connectDevice()) {
+            statusBar()-&gt;showMessage(tr(&quot;Connect failed: &quot;) + modbusDevice-&gt;errorString(), 5000);
+        } else {
+            ui-&gt;actionConnect-&gt;setEnabled(false);
+            ui-&gt;actionDisconnect-&gt;setEnabled(true);
+        }
+    } else {
+        modbusDevice-&gt;disconnectDevice();
+        ui-&gt;actionConnect-&gt;setEnabled(true);
+        ui-&gt;actionDisconnect-&gt;setEnabled(false);
+    }
+}
+
+void MainWindow::onStateChanged(int state)
+{
+    bool connected = (state != QModbusDevice::UnconnectedState);
+    ui-&gt;actionConnect-&gt;setEnabled(!connected);
+    ui-&gt;actionDisconnect-&gt;setEnabled(connected);
+
+    if (state == QModbusDevice::UnconnectedState)
+        ui-&gt;connectButton-&gt;setText(tr(&quot;Connect&quot;));
+    else if (state == QModbusDevice::ConnectedState)
+        ui-&gt;connectButton-&gt;setText(tr(&quot;Disconnect&quot;));
+}
+
+void MainWindow::coilChanged(int id)
+{
+    QAbstractButton *button = coilButtons.button(id);
+    bitChanged(id, QModbusDataUnit::Coils, button-&gt;isChecked());
+}
+
+void MainWindow::discreteInputChanged(int id)
+{
+    QAbstractButton *button = discreteButtons.button(id);
+    bitChanged(id, QModbusDataUnit::DiscreteInputs, button-&gt;isChecked());
+}
+
+void MainWindow::bitChanged(int id, QModbusDataUnit::RegisterType table, bool value)
+{
+    if (!modbusDevice)
+        return;
+
+    if (!modbusDevice-&gt;setData(table, id, value))
+        statusBar()-&gt;showMessage(tr(&quot;Could not set data: &quot;) + modbusDevice-&gt;errorString(), 5000);
+}
+
+void MainWindow::setRegister(const QString &amp;value)
+{
+    if (!modbusDevice)
+        return;
+
+    const QString objectName = QObject::sender()-&gt;objectName();
+    if (registers.contains(objectName)) {
+        bool ok = true;
+        const int id = QObject::sender()-&gt;property(&quot;ID&quot;).toInt();
+        if (objectName.startsWith(QStringLiteral(&quot;inReg&quot;)))
+            ok = modbusDevice-&gt;setData(QModbusDataUnit::InputRegisters, id, value.toInt(&amp;ok, 16));
+        else if (objectName.startsWith(QStringLiteral(&quot;holdReg&quot;)))
+            ok = modbusDevice-&gt;setData(QModbusDataUnit::HoldingRegisters, id, value.toInt(&amp;ok, 16));
+
+        if (!ok)
+            statusBar()-&gt;showMessage(tr(&quot;Could not set register: &quot;) + modbusDevice-&gt;errorString(),
+                                     5000);
+    }
+}
+
+void MainWindow::updateWidgets(QModbusDataUnit::RegisterType table, int address, int size)
+{
+    for (int i = 0; i &lt; size; ++i) {
+        quint16 value;
+        QString text;
+        switch (table) {
+        case QModbusDataUnit::Coils:
+            modbusDevice-&gt;data(QModbusDataUnit::Coils, address + i, &amp;value);
+            coilButtons.button(address + i)-&gt;setChecked(value);
+            break;
+        case QModbusDataUnit::HoldingRegisters:
+            modbusDevice-&gt;data(QModbusDataUnit::HoldingRegisters, address + i, &amp;value);
+            registers.value(QStringLiteral(&quot;holdReg_%1&quot;).arg(address + i))-&gt;setText(text
+                .setNum(value, 16));
+            break;
+        default:
+            break;
+        }
+    }
+}
+
+// -- private
+
+void MainWindow::setupDeviceData()
+{
+    if (!modbusDevice)
+        return;
+
+    for (int i = 0; i &lt; coilButtons.buttons().count(); ++i)
+        modbusDevice-&gt;setData(QModbusDataUnit::Coils, i, coilButtons.button(i)-&gt;isChecked());
+
+    for (int i = 0; i &lt; discreteButtons.buttons().count(); ++i) {
+        modbusDevice-&gt;setData(QModbusDataUnit::DiscreteInputs, i,
+            discreteButtons.button(i)-&gt;isChecked());
+    }
+
+    bool ok;
+    foreach (QLineEdit *widget, registers) {
+        if (widget-&gt;objectName().startsWith(QStringLiteral(&quot;inReg&quot;))) {
+            modbusDevice-&gt;setData(QModbusDataUnit::InputRegisters, widget-&gt;property(&quot;ID&quot;).toInt(),
+                widget-&gt;text().toInt(&amp;ok, 16));
+        } else if (widget-&gt;objectName().startsWith(QStringLiteral(&quot;holdReg&quot;))) {
+            modbusDevice-&gt;setData(QModbusDataUnit::HoldingRegisters, widget-&gt;property(&quot;ID&quot;).toInt(),
+                widget-&gt;text().toInt(&amp;ok, 16));
+        }
+    }
+}
+
+void MainWindow::setupWidgetContainers()
+{
+    coilButtons.setExclusive(false);
+    discreteButtons.setExclusive(false);
+
+    QRegularExpression regexp(QStringLiteral(&quot;coils_(?&lt;ID&gt;\\d+)&quot;));
+    const QList&lt;QCheckBox *&gt; coils = findChildren&lt;QCheckBox *&gt;(regexp);
+    foreach (QCheckBox *cbx, coils)
+        coilButtons.addButton(cbx, regexp.match(cbx-&gt;objectName()).captured(&quot;ID&quot;).toInt());
+    connect(&amp;coilButtons, SIGNAL(buttonClicked(int)), this, SLOT(coilChanged(int)));
+
+    regexp.setPattern(QStringLiteral(&quot;disc_(?&lt;ID&gt;\\d+)&quot;));
+    const QList&lt;QCheckBox *&gt; discs = findChildren&lt;QCheckBox *&gt;(regexp);
+    foreach (QCheckBox *cbx, discs)
+        discreteButtons.addButton(cbx, regexp.match(cbx-&gt;objectName()).captured(&quot;ID&quot;).toInt());
+    connect(&amp;discreteButtons, SIGNAL(buttonClicked(int)), this, SLOT(discreteInputChanged(int)));
+
+    regexp.setPattern(QLatin1String(&quot;(in|hold)Reg_(?&lt;ID&gt;\\d+)&quot;));
+    const QList&lt;QLineEdit *&gt; qle = findChildren&lt;QLineEdit *&gt;(regexp);
+    foreach (QLineEdit *lineEdit, qle) {
+        registers.insert(lineEdit-&gt;objectName(), lineEdit);
+        lineEdit-&gt;setProperty(&quot;ID&quot;, regexp.match(lineEdit-&gt;objectName()).captured(&quot;ID&quot;).toInt());
+        lineEdit-&gt;setValidator(new QRegExpValidator(QRegExp(QStringLiteral(&quot;[0-9a-f]{0,4}&quot;),
+            Qt::CaseInsensitive), this));
+        connect(lineEdit, &amp;QLineEdit::textChanged, this, &amp;MainWindow::setRegister);
+    }
+}
+
+</db:programlisting>
+</db:article>

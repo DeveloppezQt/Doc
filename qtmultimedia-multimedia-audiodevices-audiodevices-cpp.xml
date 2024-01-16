@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Audio Devices Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Testing the available audio devices and their configuration.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;audiodevices.h&quot;
+
+// Utility functions for converting QAudioFormat fields into text
+
+static QString toString(QAudioFormat::SampleType sampleType)
+{
+    QString result(&quot;Unknown&quot;);
+    switch (sampleType) {
+    case QAudioFormat::SignedInt:
+        result = &quot;SignedInt&quot;;
+        break;
+    case QAudioFormat::UnSignedInt:
+        result = &quot;UnSignedInt&quot;;
+        break;
+    case QAudioFormat::Float:
+        result = &quot;Float&quot;;
+        break;
+    case QAudioFormat::Unknown:
+        result = &quot;Unknown&quot;;
+    }
+    return result;
+}
+
+static QString toString(QAudioFormat::Endian endian)
+{
+    QString result(&quot;Unknown&quot;);
+    switch (endian) {
+    case QAudioFormat::LittleEndian:
+        result = &quot;LittleEndian&quot;;
+        break;
+    case QAudioFormat::BigEndian:
+        result = &quot;BigEndian&quot;;
+        break;
+    }
+    return result;
+}
+
+AudioDevicesBase::AudioDevicesBase(QWidget *parent)
+    : QMainWindow(parent)
+{
+    setupUi(this);
+}
+
+AudioDevicesBase::~AudioDevicesBase() {}
+
+AudioTest::AudioTest(QWidget *parent)
+    : AudioDevicesBase(parent)
+{
+    mode = QAudio::AudioOutput;
+
+    connect(testButton, SIGNAL(clicked()), SLOT(test()));
+    connect(modeBox, SIGNAL(activated(int)), SLOT(modeChanged(int)));
+    connect(deviceBox, SIGNAL(activated(int)), SLOT(deviceChanged(int)));
+    connect(sampleRateBox, SIGNAL(activated(int)), SLOT(sampleRateChanged(int)));
+    connect(channelsBox, SIGNAL(activated(int)), SLOT(channelChanged(int)));
+    connect(codecsBox, SIGNAL(activated(int)), SLOT(codecChanged(int)));
+    connect(sampleSizesBox, SIGNAL(activated(int)), SLOT(sampleSizeChanged(int)));
+    connect(sampleTypesBox, SIGNAL(activated(int)), SLOT(sampleTypeChanged(int)));
+    connect(endianBox, SIGNAL(activated(int)), SLOT(endianChanged(int)));
+    connect(populateTableButton, SIGNAL(clicked()), SLOT(populateTable()));
+
+    modeBox-&gt;setCurrentIndex(0);
+    modeChanged(0);
+    deviceBox-&gt;setCurrentIndex(0);
+    deviceChanged(0);
+}
+
+AudioTest::~AudioTest()
+{
+}
+
+void AudioTest::test()
+{
+    // tries to set all the settings picked.
+    testResult-&gt;clear();
+
+    if (!deviceInfo.isNull()) {
+        if (deviceInfo.isFormatSupported(settings)) {
+            testResult-&gt;setText(tr(&quot;Success&quot;));
+            nearestSampleRate-&gt;setText(&quot;&quot;);
+            nearestChannel-&gt;setText(&quot;&quot;);
+            nearestCodec-&gt;setText(&quot;&quot;);
+            nearestSampleSize-&gt;setText(&quot;&quot;);
+            nearestSampleType-&gt;setText(&quot;&quot;);
+            nearestEndian-&gt;setText(&quot;&quot;);
+        } else {
+            QAudioFormat nearest = deviceInfo.nearestFormat(settings);
+            testResult-&gt;setText(tr(&quot;Failed&quot;));
+            nearestSampleRate-&gt;setText(QString(&quot;%1&quot;).arg(nearest.sampleRate()));
+            nearestChannel-&gt;setText(QString(&quot;%1&quot;).arg(nearest.channelCount()));
+            nearestCodec-&gt;setText(nearest.codec());
+            nearestSampleSize-&gt;setText(QString(&quot;%1&quot;).arg(nearest.sampleSize()));
+            nearestSampleType-&gt;setText(toString(nearest.sampleType()));
+            nearestEndian-&gt;setText(toString(nearest.byteOrder()));
+        }
+    }
+    else
+        testResult-&gt;setText(tr(&quot;No Device&quot;));
+}
+
+void AudioTest::modeChanged(int idx)
+{
+    testResult-&gt;clear();
+
+    // mode has changed
+    if (idx == 0)
+        mode = QAudio::AudioInput;
+    else
+        mode = QAudio::AudioOutput;
+
+    deviceBox-&gt;clear();
+    foreach (const QAudioDeviceInfo &amp;deviceInfo, QAudioDeviceInfo::availableDevices(mode))
+        deviceBox-&gt;addItem(deviceInfo.deviceName(), qVariantFromValue(deviceInfo));
+
+    deviceBox-&gt;setCurrentIndex(0);
+    deviceChanged(0);
+}
+
+void AudioTest::deviceChanged(int idx)
+{
+    testResult-&gt;clear();
+
+    if (deviceBox-&gt;count() == 0)
+        return;
+
+    // device has changed
+    deviceInfo = deviceBox-&gt;itemData(idx).value&lt;QAudioDeviceInfo&gt;();
+
+    sampleRateBox-&gt;clear();
+    QList&lt;int&gt; sampleRatez = deviceInfo.supportedSampleRates();
+    for (int i = 0; i &lt; sampleRatez.size(); ++i)
+        sampleRateBox-&gt;addItem(QString(&quot;%1&quot;).arg(sampleRatez.at(i)));
+    if (sampleRatez.size())
+        settings.setSampleRate(sampleRatez.at(0));
+
+    channelsBox-&gt;clear();
+    QList&lt;int&gt; chz = deviceInfo.supportedChannelCounts();
+    for (int i = 0; i &lt; chz.size(); ++i)
+        channelsBox-&gt;addItem(QString(&quot;%1&quot;).arg(chz.at(i)));
+    if (chz.size())
+        settings.setChannelCount(chz.at(0));
+
+    codecsBox-&gt;clear();
+    QStringList codecs = deviceInfo.supportedCodecs();
+    for (int i = 0; i &lt; codecs.size(); ++i)
+        codecsBox-&gt;addItem(QString(&quot;%1&quot;).arg(codecs.at(i)));
+    if (codecs.size())
+        settings.setCodec(codecs.at(0));
+    // Add false to create failed condition!
+    codecsBox-&gt;addItem(&quot;audio/test&quot;);
+
+    sampleSizesBox-&gt;clear();
+    QList&lt;int&gt; sampleSizez = deviceInfo.supportedSampleSizes();
+    for (int i = 0; i &lt; sampleSizez.size(); ++i)
+        sampleSizesBox-&gt;addItem(QString(&quot;%1&quot;).arg(sampleSizez.at(i)));
+    if (sampleSizez.size())
+        settings.setSampleSize(sampleSizez.at(0));
+
+    sampleTypesBox-&gt;clear();
+    QList&lt;QAudioFormat::SampleType&gt; sampleTypez = deviceInfo.supportedSampleTypes();
+
+    for (int i = 0; i &lt; sampleTypez.size(); ++i)
+        sampleTypesBox-&gt;addItem(toString(sampleTypez.at(i)));
+    if (sampleTypez.size())
+        settings.setSampleType(sampleTypez.at(0));
+
+    endianBox-&gt;clear();
+    QList&lt;QAudioFormat::Endian&gt; endianz = deviceInfo.supportedByteOrders();
+    for (int i = 0; i &lt; endianz.size(); ++i)
+        endianBox-&gt;addItem(toString(endianz.at(i)));
+    if (endianz.size())
+        settings.setByteOrder(endianz.at(0));
+
+    allFormatsTable-&gt;clearContents();
+}
+
+void AudioTest::populateTable()
+{
+    int row = 0;
+
+    QAudioFormat format;
+    foreach (QString codec, deviceInfo.supportedCodecs()) {
+        format.setCodec(codec);
+        foreach (int sampleRate, deviceInfo.supportedSampleRates()) {
+            format.setSampleRate(sampleRate);
+            foreach (int channels, deviceInfo.supportedChannelCounts()) {
+                format.setChannelCount(channels);
+                foreach (QAudioFormat::SampleType sampleType, deviceInfo.supportedSampleTypes()) {
+                    format.setSampleType(sampleType);
+                    foreach (int sampleSize, deviceInfo.supportedSampleSizes()) {
+                        format.setSampleSize(sampleSize);
+                        foreach (QAudioFormat::Endian endian, deviceInfo.supportedByteOrders()) {
+                            format.setByteOrder(endian);
+                            if (deviceInfo.isFormatSupported(format)) {
+                                allFormatsTable-&gt;setRowCount(row + 1);
+
+                                QTableWidgetItem *codecItem = new QTableWidgetItem(format.codec());
+                                allFormatsTable-&gt;setItem(row, 0, codecItem);
+
+                                QTableWidgetItem *sampleRateItem = new QTableWidgetItem(QString(&quot;%1&quot;).arg(format.sampleRate()));
+                                allFormatsTable-&gt;setItem(row, 1, sampleRateItem);
+
+                                QTableWidgetItem *channelsItem = new QTableWidgetItem(QString(&quot;%1&quot;).arg(format.channelCount()));
+                                allFormatsTable-&gt;setItem(row, 2, channelsItem);
+
+                                QTableWidgetItem *sampleTypeItem = new QTableWidgetItem(toString(format.sampleType()));
+                                allFormatsTable-&gt;setItem(row, 3, sampleTypeItem);
+
+                                QTableWidgetItem *sampleSizeItem = new QTableWidgetItem(QString(&quot;%1&quot;).arg(format.sampleSize()));
+                                allFormatsTable-&gt;setItem(row, 4, sampleSizeItem);
+
+                                QTableWidgetItem *byteOrderItem = new QTableWidgetItem(toString(format.byteOrder()));
+                                allFormatsTable-&gt;setItem(row, 5, byteOrderItem);
+
+                                ++row;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void AudioTest::sampleRateChanged(int idx)
+{
+    // sample rate has changed
+    settings.setSampleRate(sampleRateBox-&gt;itemText(idx).toInt());
+}
+
+void AudioTest::channelChanged(int idx)
+{
+    settings.setChannelCount(channelsBox-&gt;itemText(idx).toInt());
+}
+
+void AudioTest::codecChanged(int idx)
+{
+    settings.setCodec(codecsBox-&gt;itemText(idx));
+}
+
+void AudioTest::sampleSizeChanged(int idx)
+{
+    settings.setSampleSize(sampleSizesBox-&gt;itemText(idx).toInt());
+}
+
+void AudioTest::sampleTypeChanged(int idx)
+{
+    switch (sampleTypesBox-&gt;itemText(idx).toInt()) {
+        case QAudioFormat::SignedInt:
+            settings.setSampleType(QAudioFormat::SignedInt);
+            break;
+        case QAudioFormat::UnSignedInt:
+            settings.setSampleType(QAudioFormat::UnSignedInt);
+            break;
+        case QAudioFormat::Float:
+            settings.setSampleType(QAudioFormat::Float);
+    }
+}
+
+void AudioTest::endianChanged(int idx)
+{
+    switch (endianBox-&gt;itemText(idx).toInt()) {
+        case QAudioFormat::LittleEndian:
+            settings.setByteOrder(QAudioFormat::LittleEndian);
+            break;
+        case QAudioFormat::BigEndian:
+            settings.setByteOrder(QAudioFormat::BigEndian);
+    }
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 2 Bars Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using <db:link xlink:href="qml-qtdatavisualization-bars3d.xml">Bars3D</db:link> in a QML application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+import QtQuick 2.1
+import QtQuick.Controls 1.0
+import QtQuick.Layouts 1.0
+import QtDataVisualization 1.1
+import QtQuick.Window 2.0
+import &quot;.&quot;
+
+Rectangle {
+    id: mainview
+    width: 1280
+    height: 1024
+
+    property int buttonLayoutHeight: 180;
+    state: Screen.width &lt; Screen.height ? &quot;portrait&quot; : &quot;landscape&quot;
+
+    Data {
+        id: graphData
+    }
+
+    Axes {
+        id: graphAxes
+    }
+
+    property Bar3DSeries selectedSeries
+    selectedSeries: barSeries
+
+    function handleSelectionChange(series, position) {
+        if (position != series.invalidSelectionPosition) {
+            selectedSeries = series
+        }
+
+        // Set tableView current row to selected bar
+        var rowRole = series.dataProxy.rowLabels[position.x];
+        var colRole
+        if (barGraph.columnAxis === graphAxes.total)
+            colRole = &quot;01&quot;;
+        else
+            colRole = series.dataProxy.columnLabels[position.y];
+        var checkTimestamp = rowRole + &quot;-&quot; + colRole
+        var currentRow = tableView.currentRow
+        if (currentRow === -1 || checkTimestamp !== graphData.model.get(currentRow).timestamp) {
+            var totalRows = tableView.rowCount;
+            for (var i = 0; i &lt; totalRows; i++) {
+                var modelTimestamp = graphData.model.get(i).timestamp
+                if (modelTimestamp === checkTimestamp) {
+                    tableView.currentRow = i
+                    // Workaround to 5.2 row selection issue
+                    if (typeof tableView.selection != &quot;undefined&quot;) {
+                        tableView.selection.clear()
+                        tableView.selection.select(i)
+                    }
+                    break
+                }
+            }
+        }
+    }
+
+    Item {
+        id: dataView
+        anchors.right: mainview.right;
+        anchors.bottom: mainview.bottom
+
+        Bars3D {
+            id: barGraph
+            width: dataView.width
+            height: dataView.height
+            shadowQuality: AbstractGraph3D.ShadowQualityMedium
+            selectionMode: AbstractGraph3D.SelectionItem
+            theme: Theme3D {
+                type: Theme3D.ThemeRetro
+                labelBorderEnabled: true
+                font.pointSize: 35
+                labelBackgroundEnabled: true
+                colorStyle: Theme3D.ColorStyleRangeGradient
+                singleHighlightGradient: customGradient
+
+                ColorGradient {
+                    id: customGradient
+                    ColorGradientStop { position: 1.0; color: &quot;#FFFF00&quot; }
+                    ColorGradientStop { position: 0.0; color: &quot;#808000&quot; }
+                }
+            }
+            barThickness: 0.7
+            barSpacing: Qt.size(0.5, 0.5)
+            barSpacingRelative: false
+            scene.activeCamera.cameraPreset: Camera3D.CameraPresetIsometricLeftHigh
+            columnAxis: graphAxes.column
+            rowAxis: graphAxes.row
+            valueAxis: graphAxes.value
+
+            Bar3DSeries {
+                id: secondarySeries
+                visible: false
+                itemLabelFormat: &quot;Expenses, @colLabel, @rowLabel: -@valueLabel&quot;
+                baseGradient: secondaryGradient
+
+                ItemModelBarDataProxy {
+                    id: secondaryProxy
+                    itemModel: graphData.model
+                    rowRole: &quot;timestamp&quot;
+                    columnRole: &quot;timestamp&quot;
+                    valueRole: &quot;expenses&quot;
+                    rowRolePattern: /^(\d\d\d\d).*$/
+                    columnRolePattern: /^.*-(\d\d)$/
+                    valueRolePattern: /-/
+                    rowRoleReplace: &quot;\\1&quot;
+                    columnRoleReplace: &quot;\\1&quot;
+                    multiMatchBehavior: ItemModelBarDataProxy.MMBCumulative
+                }
+
+                ColorGradient {
+                    id: secondaryGradient
+                    ColorGradientStop { position: 1.0; color: &quot;#FF0000&quot; }
+                    ColorGradientStop { position: 0.0; color: &quot;#600000&quot; }
+                }
+
+                onSelectedBarChanged: handleSelectionChange(secondarySeries, position)
+            }
+
+            Bar3DSeries {
+                id: barSeries
+                itemLabelFormat: &quot;Income, @colLabel, @rowLabel: @valueLabel&quot;
+                baseGradient: barGradient
+
+                ItemModelBarDataProxy {
+                    id: modelProxy
+                    itemModel: graphData.model
+                    rowRole: &quot;timestamp&quot;
+                    columnRole: &quot;timestamp&quot;
+                    valueRole: &quot;income&quot;
+                    rowRolePattern: /^(\d\d\d\d).*$/
+                    columnRolePattern: /^.*-(\d\d)$/
+                    rowRoleReplace: &quot;\\1&quot;
+                    columnRoleReplace: &quot;\\1&quot;
+                    multiMatchBehavior: ItemModelBarDataProxy.MMBCumulative
+                }
+
+                ColorGradient {
+                    id: barGradient
+                    ColorGradientStop { position: 1.0; color: &quot;#00FF00&quot; }
+                    ColorGradientStop { position: 0.0; color: &quot;#006000&quot; }
+                }
+
+                onSelectedBarChanged: handleSelectionChange(barSeries, position)
+            }
+        }
+    }
+
+    TableView {
+        id: tableView
+        anchors.top: parent.top
+        anchors.left: parent.left
+        TableViewColumn{ role: &quot;timestamp&quot; ; title: &quot;Month&quot; ; width: tableView.width / 2 }
+        TableViewColumn{ role: &quot;expenses&quot; ; title: &quot;Expenses&quot; ; width: tableView.width / 4 }
+        TableViewColumn{ role: &quot;income&quot; ; title: &quot;Income&quot; ; width: tableView.width / 4 }
+        itemDelegate: Item {
+            Text {
+                id: delegateText
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                anchors.leftMargin: 4
+                anchors.left: parent.left
+                anchors.right: parent.right
+                color: styleData.textColor
+                elide: styleData.elideMode
+                text: customText
+                horizontalAlignment: styleData.textAlignment
+
+                property string originalText: styleData.value
+                property string customText
+
+                onOriginalTextChanged: {
+                    if (styleData.column === 0) {
+                        if (delegateText.originalText !== &quot;&quot;) {
+                            var pattern = /(\d\d\d\d)-(\d\d)/
+                            var matches = pattern.exec(delegateText.originalText)
+                            var colIndex = parseInt(matches[2], 10) - 1
+                            delegateText.customText = matches[1] + &quot; - &quot; + graphAxes.column.labels[colIndex]
+                        }
+                    } else {
+                        delegateText.customText = originalText
+                    }
+                }
+            }
+        }
+
+        model: graphData.model
+
+        onCurrentRowChanged: {
+            var timestamp = graphData.model.get(currentRow).timestamp
+            var pattern = /(\d\d\d\d)-(\d\d)/
+            var matches = pattern.exec(timestamp)
+            var rowIndex = modelProxy.rowCategoryIndex(matches[1])
+            var colIndex
+            if (barGraph.columnAxis === graphAxes.total)
+                colIndex = 0 // Just one column when showing yearly totals
+            else
+                colIndex = modelProxy.columnCategoryIndex(matches[2])
+            if (selectedSeries.visible)
+                mainview.selectedSeries.selectedBar = Qt.point(rowIndex, colIndex)
+            else if (barSeries.visible)
+                barSeries.selectedBar = Qt.point(rowIndex, colIndex)
+            else
+                secondarySeries.selectedBar = Qt.point(rowIndex, colIndex)
+        }
+    }
+
+    ColumnLayout {
+        id: controlLayout
+        spacing: 0
+
+        Button {
+            id: changeDataButton
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            text: &quot;Show 2010 - 2012&quot;
+            clip: true
+            onClicked: {
+                if (text === &quot;Show yearly totals&quot;) {
+                    modelProxy.autoRowCategories = true
+                    secondaryProxy.autoRowCategories = true
+                    modelProxy.columnRolePattern = /^.*$/
+                    secondaryProxy.columnRolePattern = /^.*$/
+                    graphAxes.value.autoAdjustRange = true
+                    barGraph.columnAxis = graphAxes.total
+                    text = &quot;Show all years&quot;
+                } else if (text === &quot;Show all years&quot;) {
+                    modelProxy.autoRowCategories = true
+                    secondaryProxy.autoRowCategories = true
+                    modelProxy.columnRolePattern = /^.*-(\d\d)$/
+                    secondaryProxy.columnRolePattern = /^.*-(\d\d)$/
+                    graphAxes.value.min = 0
+                    graphAxes.value.max = 35
+                    barGraph.columnAxis = graphAxes.column
+                    text = &quot;Show 2010 - 2012&quot;
+                } else { // text === &quot;Show 2010 - 2012&quot;
+                    // Explicitly defining row categories, since we do not want to show data for
+                    // all years in the model, just for the selected ones.
+                    modelProxy.autoRowCategories = false
+                    secondaryProxy.autoRowCategories = false
+                    modelProxy.rowCategories = [&quot;2010&quot;, &quot;2011&quot;, &quot;2012&quot;]
+                    secondaryProxy.rowCategories = [&quot;2010&quot;, &quot;2011&quot;, &quot;2012&quot;]
+                    text = &quot;Show yearly totals&quot;
+                }
+            }
+        }
+
+        Button {
+            id: shadowToggle
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            text: barGraph.shadowsSupported ? &quot;Hide Shadows&quot; : &quot;Shadows not supported&quot;
+            clip: true
+            enabled: barGraph.shadowsSupported
+            onClicked: {
+                if (barGraph.shadowQuality == AbstractGraph3D.ShadowQualityNone) {
+                    barGraph.shadowQuality = AbstractGraph3D.ShadowQualityMedium;
+                    text = &quot;Hide Shadows&quot;
+                } else {
+                    barGraph.shadowQuality = AbstractGraph3D.ShadowQualityNone;
+                    text = &quot;Show Shadows&quot;
+                }
+            }
+        }
+
+        Button {
+            id: seriesToggle
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            text: &quot;Show Expenses&quot;
+            clip: true
+            onClicked: {
+                if (text === &quot;Show Expenses&quot;) {
+                    barSeries.visible = false
+                    secondarySeries.visible = true
+                    barGraph.valueAxis.labelFormat = &quot;-%.2f M\u20AC&quot;
+                    secondarySeries.itemLabelFormat = &quot;Expenses, @colLabel, @rowLabel: @valueLabel&quot;
+                    text = &quot;Show Both&quot;
+                } else if (text === &quot;Show Both&quot;) {
+                    barSeries.visible = true
+                    barGraph.valueAxis.labelFormat = &quot;%.2f M\u20AC&quot;
+                    secondarySeries.itemLabelFormat = &quot;Expenses, @colLabel, @rowLabel: -@valueLabel&quot;
+                    text = &quot;Show Income&quot;
+                } else { // text === &quot;Show Income&quot;
+                    secondarySeries.visible = false
+                    text = &quot;Show Expenses&quot;
+                }
+            }
+        }
+    }
+
+    states: [
+        State  {
+            name: &quot;landscape&quot;
+            PropertyChanges {
+                target: dataView
+                width: mainview.width / 4 * 3
+                height: mainview.height
+            }
+            PropertyChanges  {
+                target: tableView
+                height: mainview.height - buttonLayoutHeight
+                anchors.right: dataView.left
+                anchors.left: mainview.left
+                anchors.bottom: undefined
+            }
+            PropertyChanges  {
+                target: controlLayout
+                width: mainview.width / 4
+                height: buttonLayoutHeight
+                anchors.top: tableView.bottom
+                anchors.bottom: mainview.bottom
+                anchors.left: mainview.left
+                anchors.right: dataView.left
+            }
+        },
+        State  {
+            name: &quot;portrait&quot;
+            PropertyChanges {
+                target: dataView
+                width: mainview.height / 4 * 3
+                height: mainview.width
+            }
+            PropertyChanges  {
+                target: tableView
+                height: mainview.width
+                anchors.right: controlLayout.left
+                anchors.left: mainview.left
+                anchors.bottom: dataView.top
+            }
+            PropertyChanges  {
+                target: controlLayout
+                width: mainview.height / 4
+                height: mainview.width / 4
+                anchors.top: mainview.top
+                anchors.bottom: dataView.top
+                anchors.left: undefined
+                anchors.right: mainview.right
+            }
+        }
+    ]
+}
+
+</db:programlisting>
+</db:article>

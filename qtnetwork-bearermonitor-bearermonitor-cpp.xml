@@ -1,0 +1,442 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bearer Monitor Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Network Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;bearermonitor.h&quot;
+#include &quot;sessionwidget.h&quot;
+
+#include &lt;QtCore/QDebug&gt;
+
+#ifdef Q_OS_WIN
+#include &lt;winsock2.h&gt;
+#undef interface
+
+#ifndef NS_NLA
+#define NS_NLA 15
+#endif
+#endif
+
+BearerMonitor::BearerMonitor(QWidget *parent)
+:   QWidget(parent)
+{
+    setupUi(this);
+    delete tabWidget-&gt;currentWidget();
+    sessionGroup-&gt;hide();
+    updateConfigurations();
+    onlineStateChanged(!manager.allConfigurations(QNetworkConfiguration::Active).isEmpty());
+    QNetworkConfiguration defaultConfiguration = manager.defaultConfiguration();
+    for (int i = 0; i &lt; treeWidget-&gt;topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget-&gt;topLevelItem(i);
+
+        if (item-&gt;data(0, Qt::UserRole).toString() == defaultConfiguration.identifier()) {
+            treeWidget-&gt;setCurrentItem(item);
+            showConfigurationFor(item);
+            break;
+        }
+    }
+    connect(&amp;manager, SIGNAL(onlineStateChanged(bool)), this ,SLOT(onlineStateChanged(bool)));
+    connect(&amp;manager, SIGNAL(configurationAdded(const QNetworkConfiguration&amp;)),
+            this, SLOT(configurationAdded(const QNetworkConfiguration&amp;)));
+    connect(&amp;manager, SIGNAL(configurationRemoved(const QNetworkConfiguration&amp;)),
+            this, SLOT(configurationRemoved(const QNetworkConfiguration&amp;)));
+    connect(&amp;manager, SIGNAL(configurationChanged(const QNetworkConfiguration&amp;)),
+            this, SLOT(configurationChanged(const QNetworkConfiguration)));
+    connect(&amp;manager, SIGNAL(updateCompleted()), this, SLOT(updateConfigurations()));
+
+#if defined(Q_OS_WIN) &amp;&amp; !defined(Q_OS_WINRT)
+    connect(registerButton, SIGNAL(clicked()), this, SLOT(registerNetwork()));
+    connect(unregisterButton, SIGNAL(clicked()), this, SLOT(unregisterNetwork()));
+#else // Q_OS_WIN &amp;&amp; !Q_OS_WINRT
+    nlaGroup-&gt;hide();
+#endif
+
+    connect(treeWidget, SIGNAL(itemActivated(QTreeWidgetItem*,int)),
+            this, SLOT(createSessionFor(QTreeWidgetItem*)));
+
+    connect(treeWidget, SIGNAL(currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)),
+            this, SLOT(showConfigurationFor(QTreeWidgetItem*)));
+
+    connect(newSessionButton, SIGNAL(clicked()),
+            this, SLOT(createNewSession()));
+    connect(deleteSessionButton, SIGNAL(clicked()),
+            this, SLOT(deleteSession()));
+    connect(scanButton, SIGNAL(clicked()),
+            this, SLOT(performScan()));
+
+    // Just in case update all configurations so that all
+    // configurations are up to date.
+    manager.updateConfigurations();
+}
+
+BearerMonitor::~BearerMonitor()
+{
+}
+
+static void updateItem(QTreeWidgetItem *item, const QNetworkConfiguration &amp;config)
+{
+    item-&gt;setText(0, config.name());
+    item-&gt;setData(0, Qt::UserRole, config.identifier());
+
+    QFont font = item-&gt;font(1);
+    font.setBold((config.state() &amp; QNetworkConfiguration::Active) == QNetworkConfiguration::Active);
+    item-&gt;setFont(0, font);
+}
+
+void BearerMonitor::configurationAdded(const QNetworkConfiguration &amp;config, QTreeWidgetItem *parent)
+{
+    if (!config.isValid())
+        return;
+
+    QTreeWidgetItem *item = new QTreeWidgetItem;
+    updateItem(item, config);
+
+    if (parent)
+        parent-&gt;addChild(item);
+    else
+        treeWidget-&gt;addTopLevelItem(item);
+
+    if (config.type() == QNetworkConfiguration::ServiceNetwork) {
+        foreach (const QNetworkConfiguration &amp;child, config.children())
+            configurationAdded(child, item);
+    }
+}
+
+void BearerMonitor::configurationRemoved(const QNetworkConfiguration &amp;config)
+{
+    for (int i = 0; i &lt; treeWidget-&gt;topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget-&gt;topLevelItem(i);
+
+        if (item-&gt;data(0, Qt::UserRole).toString() == config.identifier()) {
+            delete item;
+            break;
+        }
+    }
+}
+
+void BearerMonitor::configurationChanged(const QNetworkConfiguration &amp;config)
+{
+    for (int i = 0; i &lt; treeWidget-&gt;topLevelItemCount(); ++i) {
+        QTreeWidgetItem *item = treeWidget-&gt;topLevelItem(i);
+
+        if (item-&gt;data(0, Qt::UserRole).toString() == config.identifier()) {
+            updateItem(item, config);
+
+            if (config.type() == QNetworkConfiguration::ServiceNetwork)
+                updateSnapConfiguration(item, config);
+
+            if (item == treeWidget-&gt;currentItem())
+                showConfigurationFor(item);
+
+            break;
+        }
+    }
+}
+
+void BearerMonitor::updateSnapConfiguration(QTreeWidgetItem *parent, const QNetworkConfiguration &amp;snap)
+{
+    QMap&lt;QString, QTreeWidgetItem *&gt; itemMap;
+    foreach (QTreeWidgetItem *item, parent-&gt;takeChildren())
+        itemMap.insert(item-&gt;data(0, Qt::UserRole).toString(), item);
+
+    QList&lt;QNetworkConfiguration&gt; allConfigurations = snap.children();
+
+    while (!allConfigurations.isEmpty()) {
+        QNetworkConfiguration config = allConfigurations.takeFirst();
+
+        QTreeWidgetItem *item = itemMap.take(config.identifier());
+        if (item) {
+            updateItem(item, config);
+
+            parent-&gt;addChild(item);
+
+            if (config.type() == QNetworkConfiguration::ServiceNetwork)
+                updateSnapConfiguration(item, config);
+        } else {
+            configurationAdded(config, parent);
+        }
+    }
+
+    qDeleteAll(itemMap);
+}
+
+void BearerMonitor::updateConfigurations()
+{
+    progressBar-&gt;hide();
+    scanButton-&gt;show();
+
+    // Just in case update online state, on Symbian platform
+    // WLAN scan needs to be triggered initially to have their true state.
+    onlineStateChanged(manager.isOnline());
+
+    QList&lt;QTreeWidgetItem *&gt; items = treeWidget-&gt;findItems(QLatin1String(&quot;*&quot;), Qt::MatchWildcard);
+    QMap&lt;QString, QTreeWidgetItem *&gt; itemMap;
+    while (!items.isEmpty()) {
+        QTreeWidgetItem *item = items.takeFirst();
+        itemMap.insert(item-&gt;data(0, Qt::UserRole).toString(), item);
+    }
+
+    QNetworkConfiguration defaultConfiguration = manager.defaultConfiguration();
+    QTreeWidgetItem *defaultItem = itemMap.take(defaultConfiguration.identifier());
+
+    if (defaultItem) {
+        updateItem(defaultItem, defaultConfiguration);
+
+        if (defaultConfiguration.type() == QNetworkConfiguration::ServiceNetwork)
+            updateSnapConfiguration(defaultItem, defaultConfiguration);
+    } else {
+        configurationAdded(defaultConfiguration);
+    }
+
+    QList&lt;QNetworkConfiguration&gt; allConfigurations = manager.allConfigurations();
+
+    while (!allConfigurations.isEmpty()) {
+        QNetworkConfiguration config = allConfigurations.takeFirst();
+
+        if (config.identifier() == defaultConfiguration.identifier())
+            continue;
+
+        QTreeWidgetItem *item = itemMap.take(config.identifier());
+        if (item) {
+            updateItem(item, config);
+
+            if (config.type() == QNetworkConfiguration::ServiceNetwork)
+                updateSnapConfiguration(item, config);
+        } else {
+            configurationAdded(config);
+        }
+    }
+
+    qDeleteAll(itemMap);
+}
+
+void BearerMonitor::onlineStateChanged(bool isOnline)
+{
+    if (isOnline)
+        onlineState-&gt;setText(tr(&quot;Online&quot;));
+    else
+        onlineState-&gt;setText(tr(&quot;Offline&quot;));
+}
+
+#if defined(Q_OS_WIN) &amp;&amp; !defined(Q_OS_WINRT)
+void BearerMonitor::registerNetwork()
+{
+    QTreeWidgetItem *item = treeWidget-&gt;currentItem();
+    if (!item) return;
+
+    QNetworkConfiguration configuration =
+        manager.configurationFromIdentifier(item-&gt;data(0, Qt::UserRole).toString());
+
+    const QString name = configuration.name();
+
+    qDebug() &lt;&lt; &quot;Registering&quot; &lt;&lt; name &lt;&lt; &quot;with system&quot;;
+
+    WSAQUERYSET networkInfo;
+    memset(&amp;networkInfo, 0, sizeof(networkInfo));
+    networkInfo.dwSize = sizeof(networkInfo);
+    networkInfo.lpszServiceInstanceName = (LPWSTR)name.utf16();
+    networkInfo.dwNameSpace = NS_NLA;
+
+    if (WSASetService(&amp;networkInfo, RNRSERVICE_REGISTER, 0) == SOCKET_ERROR)
+        qDebug() &lt;&lt; &quot;WSASetService(RNRSERVICE_REGISTER) returned&quot; &lt;&lt; WSAGetLastError();
+}
+
+void BearerMonitor::unregisterNetwork()
+{
+    QTreeWidgetItem *item = treeWidget-&gt;currentItem();
+    if (!item) return;
+
+    QNetworkConfiguration configuration =
+        manager.configurationFromIdentifier(item-&gt;data(0, Qt::UserRole).toString());
+
+    const QString name = configuration.name();
+
+    qDebug() &lt;&lt; &quot;Unregistering&quot; &lt;&lt; name &lt;&lt; &quot;with system&quot;;
+
+    WSAQUERYSET networkInfo;
+    memset(&amp;networkInfo, 0, sizeof(networkInfo));
+    networkInfo.dwSize = sizeof(networkInfo);
+    networkInfo.lpszServiceInstanceName = (LPWSTR)name.utf16();
+    networkInfo.dwNameSpace = NS_NLA;
+
+    if (WSASetService(&amp;networkInfo, RNRSERVICE_DELETE, 0) == SOCKET_ERROR)
+        qDebug() &lt;&lt; &quot;WSASetService(RNRSERVICE_DELETE) returned&quot; &lt;&lt; WSAGetLastError();
+}
+#endif // Q_OS_WIN &amp;&amp; !Q_OS_WINRT
+
+void BearerMonitor::showConfigurationFor(QTreeWidgetItem *item)
+{
+    QString identifier;
+
+    if (item)
+        identifier = item-&gt;data(0, Qt::UserRole).toString();
+
+    QNetworkConfiguration conf = manager.configurationFromIdentifier(identifier);
+
+    switch (conf.state()) {
+    case QNetworkConfiguration::Active:
+        configurationState-&gt;setText(tr(&quot;Active&quot;));
+        break;
+    case QNetworkConfiguration::Discovered:
+        configurationState-&gt;setText(tr(&quot;Discovered&quot;));
+        break;
+    case QNetworkConfiguration::Defined:
+        configurationState-&gt;setText(tr(&quot;Defined&quot;));
+        break;
+    case QNetworkConfiguration::Undefined:
+        configurationState-&gt;setText(tr(&quot;Undefined&quot;));
+        break;
+    default:
+        configurationState-&gt;setText(QString());
+    }
+
+    switch (conf.type()) {
+    case QNetworkConfiguration::InternetAccessPoint:
+        configurationType-&gt;setText(tr(&quot;Internet Access Point&quot;));
+        break;
+    case QNetworkConfiguration::ServiceNetwork:
+        configurationType-&gt;setText(tr(&quot;Service Network&quot;));
+        break;
+    case QNetworkConfiguration::UserChoice:
+        configurationType-&gt;setText(tr(&quot;User Choice&quot;));
+        break;
+    case QNetworkConfiguration::Invalid:
+        configurationType-&gt;setText(tr(&quot;Invalid&quot;));
+        break;
+    default:
+        configurationType-&gt;setText(QString());
+    }
+
+    switch (conf.purpose()) {
+    case QNetworkConfiguration::UnknownPurpose:
+        configurationPurpose-&gt;setText(tr(&quot;Unknown&quot;));
+        break;
+    case QNetworkConfiguration::PublicPurpose:
+        configurationPurpose-&gt;setText(tr(&quot;Public&quot;));
+        break;
+    case QNetworkConfiguration::PrivatePurpose:
+        configurationPurpose-&gt;setText(tr(&quot;Private&quot;));
+        break;
+    case QNetworkConfiguration::ServiceSpecificPurpose:
+        configurationPurpose-&gt;setText(tr(&quot;Service Specific&quot;));
+        break;
+    default:
+        configurationPurpose-&gt;setText(QString());
+    }
+
+    configurationIdentifier-&gt;setText(conf.identifier());
+
+    configurationRoaming-&gt;setText(conf.isRoamingAvailable() ? tr(&quot;Available&quot;) : tr(&quot;Not available&quot;));
+
+    configurationChildren-&gt;setText(QString::number(conf.children().count()));
+
+    configurationName-&gt;setText(conf.name());
+}
+
+void BearerMonitor::createSessionFor(QTreeWidgetItem *item)
+{
+    const QString identifier = item-&gt;data(0, Qt::UserRole).toString();
+
+    QNetworkConfiguration conf = manager.configurationFromIdentifier(identifier);
+
+    SessionWidget *session = new SessionWidget(conf);
+
+    tabWidget-&gt;addTab(session, conf.name());
+
+    sessionGroup-&gt;show();
+
+    sessionWidgets.append(session);
+}
+
+void BearerMonitor::createNewSession()
+{
+    QTreeWidgetItem *item = treeWidget-&gt;currentItem();
+    if (!item) return;
+
+    createSessionFor(item);
+}
+
+void BearerMonitor::deleteSession()
+{
+    SessionWidget *session = qobject_cast&lt;SessionWidget *&gt;(tabWidget-&gt;currentWidget());
+    if (session) {
+        sessionWidgets.removeAll(session);
+
+        delete session;
+
+        if (tabWidget-&gt;count() == 0)
+            sessionGroup-&gt;hide();
+    }
+}
+
+void BearerMonitor::performScan()
+{
+    scanButton-&gt;hide();
+    progressBar-&gt;show();
+    manager.updateConfigurations();
+}
+
+</db:programlisting>
+</db:article>

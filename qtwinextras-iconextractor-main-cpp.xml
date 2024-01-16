@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Icon Extractor</db:title>
+<db:productname>QtWinExtras</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Windows Extras Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates accessing icons contained in Windows binaries.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtWinExtras module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWin&gt;
+
+#include &lt;QCommandLineParser&gt;
+#include &lt;QCommandLineOption&gt;
+#include &lt;QDir&gt;
+#include &lt;QFileInfo&gt;
+#include &lt;QGuiApplication&gt;
+#include &lt;QImage&gt;
+#include &lt;QPixmap&gt;
+#include &lt;QScopedArrayPointer&gt;
+#include &lt;QStringList&gt;
+#include &lt;QSysInfo&gt;
+
+#include &lt;iostream&gt;
+
+#include &lt;shellapi.h&gt;
+#include &lt;comdef.h&gt;
+#include &lt;commctrl.h&gt;
+#include &lt;objbase.h&gt;
+#include &lt;commoncontrols.h&gt;
+
+/* This example demonstrates the Windows-specific image conversion
+ * functions. */
+
+struct PixmapEntry {
+    QString name;
+    QPixmap pixmap;
+};
+
+typedef QList&lt;PixmapEntry&gt; PixmapEntryList;
+
+static std::wostream &amp;operator&lt;&lt;(std::wostream &amp;str, const QString &amp;s)
+{
+#ifdef Q_OS_WIN
+    str &lt;&lt; reinterpret_cast&lt;const wchar_t *&gt;(s.utf16());
+#else
+    str &lt;&lt; s.toStdWString();
+#endif
+    return str;
+}
+
+static QString formatSize(const QSize &amp;size)
+{
+    return QString::number(size.width()) + QLatin1Char('x') + QString::number(size.height());
+}
+
+// Extract icons contained in executable or DLL using the Win32 API ExtractIconEx()
+static PixmapEntryList extractIcons(const QString &amp;sourceFile, bool large)
+{
+    const QString nativeName = QDir::toNativeSeparators(sourceFile);
+    const wchar_t *sourceFileC = reinterpret_cast&lt;const wchar_t *&gt;(nativeName.utf16());
+    const UINT iconCount = ExtractIconEx(sourceFileC, -1, 0, 0, 0);
+    if (!iconCount) {
+        std::wcerr &lt;&lt; sourceFile &lt;&lt; &quot; does not appear to contain icons.\n&quot;;
+        return PixmapEntryList();
+    }
+
+    QScopedArrayPointer&lt;HICON&gt; icons(new HICON[iconCount]);
+    const UINT extractedIconCount = large ?
+        ExtractIconEx(sourceFileC, 0, icons.data(), 0, iconCount) :
+        ExtractIconEx(sourceFileC, 0, 0, icons.data(), iconCount);
+    if (!extractedIconCount) {
+        qErrnoWarning(&quot;Failed to extract icons from %s&quot;, qPrintable(sourceFile));
+        return PixmapEntryList();
+    }
+
+    PixmapEntryList result;
+    result.reserve(int(extractedIconCount));
+
+    std::wcout &lt;&lt; sourceFile &lt;&lt; &quot; contains &quot; &lt;&lt; extractedIconCount &lt;&lt; &quot; icon(s).\n&quot;;
+
+    for (UINT i = 0; i &lt; extractedIconCount; ++i) {
+        PixmapEntry entry;
+        entry.pixmap = QtWin::fromHICON(icons[i]);
+        if (entry.pixmap.isNull()) {
+            std::wcerr &lt;&lt; &quot;Error converting icons.\n&quot;;
+            return PixmapEntryList();
+        }
+        entry.name = QString::fromLatin1(&quot;%1_%2x%3&quot;).arg(i, 3, 10, QLatin1Char('0'))
+            .arg(entry.pixmap.width()).arg(entry.pixmap.height());
+        result.append(entry);
+    }
+    return result;
+}
+
+// Helper for extracting large/jumbo icons available from Windows Vista onwards
+// via SHGetImageList().
+static QPixmap pixmapFromShellImageList(int iImageList, const SHFILEINFO &amp;info)
+{
+    QPixmap result;
+    // For MinGW:
+    static const IID iID_IImageList = {0x46eb5926, 0x582e, 0x4017, {0x9f, 0xdf, 0xe8, 0x99, 0x8d, 0xaa, 0x9, 0x50}};
+
+    IImageList *imageList = Q_NULLPTR;
+    if (FAILED(SHGetImageList(iImageList, iID_IImageList, reinterpret_cast&lt;void **&gt;(&amp;imageList))))
+        return result;
+
+    HICON hIcon = 0;
+    if (SUCCEEDED(imageList-&gt;GetIcon(info.iIcon, ILD_TRANSPARENT, &amp;hIcon))) {
+        result = QtWin::fromHICON(hIcon);
+        DestroyIcon(hIcon);
+    }
+    return result;
+}
+
+// Extract icons that would be  displayed by the Explorer (shell)
+static PixmapEntryList extractShellIcons(const QString &amp;sourceFile, bool addOverlays)
+{
+    enum { // Shell image list ids
+        sHIL_EXTRALARGE = 0x2, // 48x48 or user-defined
+        sHIL_JUMBO = 0x4 // 256x256 (Vista or later)
+    };
+
+    struct FlagEntry {
+        const char *name;
+        unsigned flags;
+    };
+
+    const FlagEntry modeEntries[] =
+    {
+        {&quot;&quot;,     0},
+        {&quot;open&quot;, SHGFI_OPENICON},
+        {&quot;sel&quot;,  SHGFI_SELECTED},
+    };
+    const FlagEntry standardSizeEntries[] =
+    {
+        {&quot;s&quot;,  SHGFI_SMALLICON},
+        {&quot;l&quot;,  SHGFI_LARGEICON},
+        {&quot;sh&quot;, SHGFI_SHELLICONSIZE},
+    };
+
+    const QString nativeName = QDir::toNativeSeparators(sourceFile);
+    const wchar_t *sourceFileC = reinterpret_cast&lt;const wchar_t *&gt;(nativeName.utf16());
+
+    SHFILEINFO info;
+    unsigned int baseFlags = SHGFI_ICON | SHGFI_SYSICONINDEX | SHGFI_ICONLOCATION;
+    if (addOverlays)
+        baseFlags |= SHGFI_ADDOVERLAYS | SHGFI_OVERLAYINDEX;
+    if (!QFileInfo(sourceFile).isDir())
+        baseFlags |= SHGFI_USEFILEATTRIBUTES;
+
+    const size_t modeEntryCount = sizeof(modeEntries) / sizeof(modeEntries[0]);
+    const size_t standardSizeEntryCount = sizeof(standardSizeEntries) / sizeof(standardSizeEntries[0]);
+    PixmapEntryList result;
+    for (size_t m = 0; m &lt; modeEntryCount; ++m) {
+        const unsigned modeFlags = baseFlags | modeEntries[m].flags;
+        QString modePrefix = QLatin1String(&quot;_shell_&quot;);
+        if (modeEntries[m].name[0])
+            modePrefix += QLatin1String(modeEntries[m].name) + QLatin1Char('_');
+        for (size_t s = 0; s &lt; standardSizeEntryCount; ++s) {
+            const unsigned flags = modeFlags | standardSizeEntries[s].flags;
+            const QString prefix = modePrefix + QLatin1String(standardSizeEntries[s].name)
+                + QLatin1Char('_');
+            ZeroMemory(&amp;info, sizeof(SHFILEINFO));
+            const HRESULT hr = SHGetFileInfo(sourceFileC, 0, &amp;info, sizeof(SHFILEINFO), flags);
+            if (FAILED(hr)) {
+                _com_error error(hr);
+                std::wcerr &lt;&lt; &quot;SHGetFileInfo() failed for \&quot;&quot; &lt;&lt; nativeName &lt;&lt; &quot;\&quot;, &quot;
+                    &lt;&lt; std::hex &lt;&lt; std::showbase &lt;&lt; flags &lt;&lt; std::dec &lt;&lt; std::noshowbase
+                    &lt;&lt; &quot; (&quot; &lt;&lt; prefix &lt;&lt; &quot;): &quot; &lt;&lt; error.ErrorMessage() &lt;&lt; '\n';
+                continue;
+            }
+
+            if (info.hIcon) {
+                PixmapEntry entry;
+                entry.pixmap = QtWin::fromHICON(info.hIcon);
+                DestroyIcon(info.hIcon);
+                if (entry.pixmap.isNull()) {
+                    std::wcerr &lt;&lt; &quot;Error converting icons.\n&quot;;
+                    return PixmapEntryList();
+                }
+                entry.name = prefix + formatSize(entry.pixmap.size());
+
+                const int iconIndex = info.iIcon &amp; 0xFFFFFF;
+                const int overlayIconIndex = info.iIcon &gt;&gt; 24;
+
+                std::wcout &lt;&lt; &quot;Obtained icon #&quot; &lt;&lt; iconIndex;
+                if (addOverlays)
+                    std::wcout &lt;&lt; &quot; (overlay #&quot; &lt;&lt; overlayIconIndex &lt;&lt; ')';
+                if (info.szDisplayName[0])
+                    std::wcout &lt;&lt; &quot; from &quot; &lt;&lt; QString::fromWCharArray(info.szDisplayName);
+                std::wcout &lt;&lt; &quot; (&quot; &lt;&lt; entry.pixmap.width() &lt;&lt; 'x'
+                    &lt;&lt; entry.pixmap.height() &lt;&lt; &quot;) for &quot; &lt;&lt; std::hex &lt;&lt; std::showbase &lt;&lt; flags
+                    &lt;&lt; std::dec &lt;&lt; std::noshowbase &lt;&lt; '\n';
+
+                result.append(entry);
+            }
+        } // for standardSizeEntryCount
+        // Windows Vista onwards: extract large/jumbo icons
+        if (QSysInfo::windowsVersion() &gt;= QSysInfo::WV_VISTA &amp;&amp; info.hIcon) {
+            const QPixmap extraLarge = pixmapFromShellImageList(sHIL_EXTRALARGE, info);
+            if (!extraLarge.isNull()) {
+                PixmapEntry entry;
+                entry.pixmap = extraLarge;
+                entry.name = modePrefix + QLatin1String(&quot;xl_&quot;) + formatSize(extraLarge.size());
+                result.append(entry);
+            }
+            const QPixmap jumbo = pixmapFromShellImageList(sHIL_JUMBO, info);
+            if (!jumbo.isNull()) {
+                PixmapEntry entry;
+                entry.pixmap = jumbo;
+                entry.name = modePrefix + QLatin1String(&quot;jumbo_&quot;) + formatSize(extraLarge.size());
+                result.append(entry);
+            }
+        }
+    } // for modes
+    return result;
+}
+
+static const char description[] =
+    &quot;\nExtracts Windows icons from executables, DLL or icon files and writes them\n&quot;
+    &quot;out as numbered .png-files.\n&quot;
+    &quot;When passing the --shell option, the icons displayed by Explorer are extracted.\n&quot;;
+
+int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+    QCoreApplication::setApplicationName(&quot;Icon Extractor&quot;);
+    QCoreApplication::setOrganizationName(&quot;QtProject&quot;);
+    QCoreApplication::setApplicationVersion(QT_VERSION_STR);
+    QCommandLineParser parser;
+    parser.setSingleDashWordOptionMode(QCommandLineParser::ParseAsCompactedShortOptions);
+    parser.setApplicationDescription(QLatin1String(description));
+    parser.addHelpOption();
+    parser.addVersionOption();
+    const QCommandLineOption largeIconOption(&quot;large&quot;, &quot;Extract large icons&quot;);
+    parser.addOption(largeIconOption);
+    const QCommandLineOption shellIconOption(&quot;shell&quot;, &quot;Extract shell icons using SHGetFileInfo()&quot;);
+    parser.addOption(shellIconOption);
+    const QCommandLineOption shellOverlayOption(&quot;overlay&quot;, &quot;Extract shell overlay icons&quot;);
+    parser.addOption(shellOverlayOption);
+    parser.addPositionalArgument(&quot;file&quot;, &quot;The file to open.&quot;);
+    parser.addPositionalArgument(&quot;image file folder&quot;, &quot;The folder to store the images.&quot;);
+    parser.process(app);
+    const QStringList &amp;positionalArguments = parser.positionalArguments();
+    if (positionalArguments.isEmpty())
+        parser.showHelp(0);
+
+    QString imageFileRoot = positionalArguments.size() &gt; 1 ? positionalArguments.at(1) : QDir::currentPath();
+    const QFileInfo imageFileRootInfo(imageFileRoot);
+    if (!imageFileRootInfo.isDir()) {
+        std::wcerr &lt;&lt; imageFileRoot &lt;&lt; &quot; is not a directory.\n&quot;;
+        return 1;
+    }
+    const QString &amp;sourceFile = positionalArguments.constFirst();
+    imageFileRoot = imageFileRootInfo.absoluteFilePath() + QLatin1Char('/') + QFileInfo(sourceFile).baseName();
+
+    const PixmapEntryList pixmaps = parser.isSet(shellIconOption)
+        ? extractShellIcons(sourceFile, parser.isSet(shellOverlayOption))
+        : extractIcons(sourceFile, parser.isSet(largeIconOption));
+
+    for (int i = 0, count = pixmaps.size(); i &lt; count; ++i) {
+        const QString fileName = imageFileRoot + pixmaps.at(i).name + QLatin1String(&quot;.png&quot;);
+        if (!pixmaps.at(i).pixmap.save(fileName)) {
+            std::wcerr &lt;&lt; &quot;Error writing image file &quot; &lt;&lt; fileName &lt;&lt; &quot;.\n&quot;;
+            return 1;
+        }
+        std::wcout &lt;&lt; &quot;Wrote &quot; &lt;&lt; QDir::toNativeSeparators(fileName) &lt;&lt; &quot;.\n&quot;;
+    }
+    return 0;
+}
+
+</db:programlisting>
+</db:article>

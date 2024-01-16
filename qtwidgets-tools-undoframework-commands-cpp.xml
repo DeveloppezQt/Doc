@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Undo Framework Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to implement undo/redo functionality with the Qt undo framework.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;commands.h&quot;
+#include &quot;diagramitem.h&quot;
+
+MoveCommand::MoveCommand(DiagramItem *diagramItem, const QPointF &amp;oldPos,
+                 QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    myDiagramItem = diagramItem;
+    newPos = diagramItem-&gt;pos();
+    myOldPos = oldPos;
+}
+
+bool MoveCommand::mergeWith(const QUndoCommand *command)
+{
+    const MoveCommand *moveCommand = static_cast&lt;const MoveCommand *&gt;(command);
+    DiagramItem *item = moveCommand-&gt;myDiagramItem;
+
+    if (myDiagramItem != item)
+    return false;
+
+    newPos = item-&gt;pos();
+    setText(QObject::tr(&quot;Move %1&quot;)
+        .arg(createCommandString(myDiagramItem, newPos)));
+
+    return true;
+}
+
+void MoveCommand::undo()
+{
+    myDiagramItem-&gt;setPos(myOldPos);
+    myDiagramItem-&gt;scene()-&gt;update();
+    setText(QObject::tr(&quot;Move %1&quot;)
+        .arg(createCommandString(myDiagramItem, newPos)));
+}
+
+void MoveCommand::redo()
+{
+    myDiagramItem-&gt;setPos(newPos);
+    setText(QObject::tr(&quot;Move %1&quot;)
+        .arg(createCommandString(myDiagramItem, newPos)));
+}
+
+DeleteCommand::DeleteCommand(QGraphicsScene *scene, QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    myGraphicsScene = scene;
+    QList&lt;QGraphicsItem *&gt; list = myGraphicsScene-&gt;selectedItems();
+    list.first()-&gt;setSelected(false);
+    myDiagramItem = static_cast&lt;DiagramItem *&gt;(list.first());
+    setText(QObject::tr(&quot;Delete %1&quot;)
+        .arg(createCommandString(myDiagramItem, myDiagramItem-&gt;pos())));
+}
+
+void DeleteCommand::undo()
+{
+    myGraphicsScene-&gt;addItem(myDiagramItem);
+    myGraphicsScene-&gt;update();
+}
+
+void DeleteCommand::redo()
+{
+    myGraphicsScene-&gt;removeItem(myDiagramItem);
+}
+
+AddCommand::AddCommand(DiagramItem::DiagramType addType,
+                       QGraphicsScene *scene, QUndoCommand *parent)
+    : QUndoCommand(parent)
+{
+    static int itemCount = 0;
+
+    myGraphicsScene = scene;
+    myDiagramItem = new DiagramItem(addType);
+    initialPosition = QPointF((itemCount * 15) % int(scene-&gt;width()),
+                              (itemCount * 15) % int(scene-&gt;height()));
+    scene-&gt;update();
+    ++itemCount;
+    setText(QObject::tr(&quot;Add %1&quot;)
+        .arg(createCommandString(myDiagramItem, initialPosition)));
+}
+
+AddCommand::~AddCommand()
+{
+    if (!myDiagramItem-&gt;scene())
+        delete myDiagramItem;
+}
+
+void AddCommand::undo()
+{
+    myGraphicsScene-&gt;removeItem(myDiagramItem);
+    myGraphicsScene-&gt;update();
+}
+
+void AddCommand::redo()
+{
+    myGraphicsScene-&gt;addItem(myDiagramItem);
+    myDiagramItem-&gt;setPos(initialPosition);
+    myGraphicsScene-&gt;clearSelection();
+    myGraphicsScene-&gt;update();
+}
+
+QString createCommandString(DiagramItem *item, const QPointF &amp;pos)
+{
+    return QObject::tr(&quot;%1 at (%2, %3)&quot;)
+        .arg(item-&gt;diagramType() == DiagramItem::Box ? &quot;Box&quot; : &quot;Triangle&quot;)
+        .arg(pos.x()).arg(pos.y());
+}
+
+</db:programlisting>
+</db:article>

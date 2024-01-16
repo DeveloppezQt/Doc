@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SSL Echo Server Example</db:title>
+<db:productname>QtWebSockets</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebSockets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use the <db:link xlink:href="qwebsocketserver.xml">QWebSocketServer</db:link> class for implementing a simple echo server over secure sockets (wss).</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 Kurt Pattyn &lt;pattyn.kurt@gmail.com&gt;.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtWebSockets module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+#include &quot;sslechoserver.h&quot;
+#include &quot;QtWebSockets/QWebSocketServer&quot;
+#include &quot;QtWebSockets/QWebSocket&quot;
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtCore/QFile&gt;
+#include &lt;QtNetwork/QSslCertificate&gt;
+#include &lt;QtNetwork/QSslKey&gt;
+
+QT_USE_NAMESPACE
+
+SslEchoServer::SslEchoServer(quint16 port, QObject *parent) :
+    QObject(parent),
+    m_pWebSocketServer(Q_NULLPTR)
+{
+    m_pWebSocketServer = new QWebSocketServer(QStringLiteral(&quot;SSL Echo Server&quot;),
+                                              QWebSocketServer::SecureMode,
+                                              this);
+    QSslConfiguration sslConfiguration;
+    QFile certFile(QStringLiteral(&quot;:/localhost.cert&quot;));
+    QFile keyFile(QStringLiteral(&quot;:/localhost.key&quot;));
+    certFile.open(QIODevice::ReadOnly);
+    keyFile.open(QIODevice::ReadOnly);
+    QSslCertificate certificate(&amp;certFile, QSsl::Pem);
+    QSslKey sslKey(&amp;keyFile, QSsl::Rsa, QSsl::Pem);
+    certFile.close();
+    keyFile.close();
+    sslConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+    sslConfiguration.setLocalCertificate(certificate);
+    sslConfiguration.setPrivateKey(sslKey);
+    sslConfiguration.setProtocol(QSsl::TlsV1SslV3);
+    m_pWebSocketServer-&gt;setSslConfiguration(sslConfiguration);
+
+    if (m_pWebSocketServer-&gt;listen(QHostAddress::Any, port))
+    {
+        qDebug() &lt;&lt; &quot;SSL Echo Server listening on port&quot; &lt;&lt; port;
+        connect(m_pWebSocketServer, &amp;QWebSocketServer::newConnection,
+                this, &amp;SslEchoServer::onNewConnection);
+        connect(m_pWebSocketServer, &amp;QWebSocketServer::sslErrors,
+                this, &amp;SslEchoServer::onSslErrors);
+    }
+}
+
+SslEchoServer::~SslEchoServer()
+{
+    m_pWebSocketServer-&gt;close();
+    qDeleteAll(m_clients.begin(), m_clients.end());
+}
+
+void SslEchoServer::onNewConnection()
+{
+    QWebSocket *pSocket = m_pWebSocketServer-&gt;nextPendingConnection();
+
+    qDebug() &lt;&lt; &quot;Client connected:&quot; &lt;&lt; pSocket-&gt;peerName() &lt;&lt; pSocket-&gt;origin();
+
+    connect(pSocket, &amp;QWebSocket::textMessageReceived, this, &amp;SslEchoServer::processTextMessage);
+    connect(pSocket, &amp;QWebSocket::binaryMessageReceived,
+            this, &amp;SslEchoServer::processBinaryMessage);
+    connect(pSocket, &amp;QWebSocket::disconnected, this, &amp;SslEchoServer::socketDisconnected);
+
+    m_clients &lt;&lt; pSocket;
+}
+
+void SslEchoServer::processTextMessage(QString message)
+{
+    QWebSocket *pClient = qobject_cast&lt;QWebSocket *&gt;(sender());
+    if (pClient)
+    {
+        pClient-&gt;sendTextMessage(message);
+    }
+}
+
+void SslEchoServer::processBinaryMessage(QByteArray message)
+{
+    QWebSocket *pClient = qobject_cast&lt;QWebSocket *&gt;(sender());
+    if (pClient)
+    {
+        pClient-&gt;sendBinaryMessage(message);
+    }
+}
+
+void SslEchoServer::socketDisconnected()
+{
+    qDebug() &lt;&lt; &quot;Client disconnected&quot;;
+    QWebSocket *pClient = qobject_cast&lt;QWebSocket *&gt;(sender());
+    if (pClient)
+    {
+        m_clients.removeAll(pClient);
+        pClient-&gt;deleteLater();
+    }
+}
+
+void SslEchoServer::onSslErrors(const QList&lt;QSslError&gt; &amp;)
+{
+    qDebug() &lt;&lt; &quot;Ssl errors occurred&quot;;
+}
+
+</db:programlisting>
+</db:article>

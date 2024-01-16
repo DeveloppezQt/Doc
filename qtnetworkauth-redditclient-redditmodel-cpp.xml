@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Reddit Example</db:title>
+<db:productname>QtNetworkAuth</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Authorization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates authenticating with OAuth 2 to access Reddit.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Network Auth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;redditmodel.h&quot;
+
+#include &lt;QtCore&gt;
+#include &lt;QtNetwork&gt;
+
+RedditModel::RedditModel(QObject *parent) : QAbstractTableModel(parent) {}
+
+RedditModel::RedditModel(const QString &amp;clientId, QObject *parent) :
+    QAbstractTableModel(parent),
+    redditWrapper(clientId)
+{
+    grant();
+}
+
+int RedditModel::rowCount(const QModelIndex &amp;parent) const
+{
+    Q_UNUSED(parent);
+    return threads.size();
+}
+
+int RedditModel::columnCount(const QModelIndex &amp;parent) const
+{
+    Q_UNUSED(parent);
+    return threads.size() ? 1 : 0;
+}
+
+QVariant RedditModel::data(const QModelIndex &amp;index, int role) const
+{
+    Q_UNUSED(role);
+    if (!index.isValid())
+        return QVariant();
+
+    if (role == Qt::DisplayRole) {
+        const auto childrenObject = threads.at(index.row());
+        Q_ASSERT(childrenObject.value(&quot;data&quot;).isObject());
+        const auto dataObject = childrenObject.value(&quot;data&quot;).toObject();
+        return dataObject.value(&quot;title&quot;).toString();
+    }
+    return QVariant();
+}
+
+void RedditModel::grant()
+{
+    redditWrapper.grant();
+    connect(&amp;redditWrapper, &amp;RedditWrapper::authenticated, this, &amp;RedditModel::update);
+}
+
+void RedditModel::update()
+{
+    auto reply = redditWrapper.requestHotThreads();
+
+    connect(reply, &amp;QNetworkReply::finished, [=]() {
+        if (reply-&gt;error() != QNetworkReply::NoError) {
+            emit error(reply-&gt;errorString());
+            return;
+        }
+        const auto json = reply-&gt;readAll();
+        const auto document = QJsonDocument::fromJson(json);
+        Q_ASSERT(document.isObject());
+        const auto rootObject = document.object();
+        Q_ASSERT(rootObject.value(&quot;kind&quot;).toString() == &quot;Listing&quot;);
+        const auto dataValue = rootObject.value(&quot;data&quot;);
+        Q_ASSERT(dataValue.isObject());
+        const auto dataObject = dataValue.toObject();
+        const auto childrenValue = dataObject.value(&quot;children&quot;);
+        Q_ASSERT(childrenValue.isArray());
+        const auto childrenArray = childrenValue.toArray();
+
+        if (childrenArray.isEmpty())
+            return;
+
+        beginInsertRows(QModelIndex(), threads.size(), childrenArray.size() + threads.size() - 1);
+        for (const auto childValue : qAsConst(childrenArray)) {
+            Q_ASSERT(childValue.isObject());
+            threads.append(childValue.toObject());
+        }
+        endInsertRows();
+    });
+}
+
+</db:programlisting>
+</db:article>

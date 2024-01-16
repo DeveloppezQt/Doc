@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt SCXML Sudoku Example</db:title>
+<db:productname>QtScxml</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Scxml Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Presents the use of SCXML in a sudoku game.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtScxml module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+
+#include &lt;QStringListModel&gt;
+#include &lt;QScxmlStateMachine&gt;
+#include &lt;QComboBox&gt;
+#include &lt;QToolButton&gt;
+#include &lt;QLabel&gt;
+#include &lt;QGridLayout&gt;
+#include &lt;QFile&gt;
+#include &lt;QDir&gt;
+#include &lt;QTextStream&gt;
+
+static int Size = 9;
+
+QT_USE_NAMESPACE
+
+static QVariantList emptyRow()
+{
+    QVariantList row;
+    for (int i = 0; i &lt; Size; i++)
+        row.append(QVariant(0));
+    return row;
+}
+
+static QVariantMap readSudoku(const QString &amp;fileName)
+{
+    QFile input(fileName);
+    input.open(QIODevice::ReadOnly | QIODevice::Text);
+    QTextStream str(&amp;input);
+    const QString data = str.readAll();
+
+    QVariantList initRowsVariant;
+    const QStringList rows = data.split(QLatin1Char('\n'));
+    for (int i = 0; i &lt; Size; i++) {
+        if (i &lt; rows.count()) {
+            QVariantList initRowVariant;
+            const QStringList row = rows.at(i).split(QLatin1Char(','));
+            for (int j = 0; j &lt; Size; j++) {
+                const int val = j &lt; row.count()
+                        ? row.at(j).toInt() % (Size + 1) : 0;
+                initRowVariant.append(val);
+            }
+            initRowsVariant.append(QVariant(initRowVariant));
+        } else {
+            initRowsVariant.append(QVariant(emptyRow()));
+        }
+    }
+
+    QVariantMap dataVariant;
+    dataVariant.insert(QStringLiteral(&quot;initState&quot;), initRowsVariant);
+
+    return dataVariant;
+}
+
+MainWindow::MainWindow(QScxmlStateMachine *machine, QWidget *parent) :
+    QWidget(parent),
+    m_machine(machine)
+{
+    const QVector&lt;QToolButton *&gt; initVector(Size, nullptr);
+    m_buttons = QVector&lt;QVector&lt;QToolButton *&gt; &gt;(Size, initVector);
+
+    QGridLayout *layout = new QGridLayout(this);
+
+    for (int i = 0; i &lt; Size; i++) {
+        for (int j = 0; j &lt; Size; j++) {
+            QToolButton *button = new QToolButton(this);
+            button-&gt;setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+            layout-&gt;addWidget(button, i + i / 3, j + j / 3);
+            m_buttons[i][j] = button;
+            connect(button, &amp;QToolButton::clicked, [this, i, j] () {
+                QVariantMap data;
+                data.insert(QStringLiteral(&quot;x&quot;), i);
+                data.insert(QStringLiteral(&quot;y&quot;), j);
+                m_machine-&gt;submitEvent(&quot;tap&quot;, data);
+            });
+        }
+    }
+
+    for (int i = 0; i &lt; 3; i++) {
+        for (int j = 0; j &lt; 2; j++) {
+            QFrame *hFrame = new QFrame(this);
+            hFrame-&gt;setFrameShape(QFrame::HLine);
+            layout-&gt;addWidget(hFrame, 4 * j + 3, 4 * i, 1, 3);
+
+            QFrame *vFrame = new QFrame(this);
+            vFrame-&gt;setFrameShape(QFrame::VLine);
+            layout-&gt;addWidget(vFrame, 4 * i, 4 * j + 3, 3, 1);
+        }
+    }
+
+    m_startButton = new QToolButton(this);
+    m_startButton-&gt;setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_startButton-&gt;setText(tr(&quot;Start&quot;));
+    layout-&gt;addWidget(m_startButton, Size + 3, 0, 1, 3);
+
+    connect(m_startButton, &amp;QAbstractButton::clicked,
+            [this] {
+        if (m_machine-&gt;isActive(&quot;playing&quot;))
+            m_machine-&gt;submitEvent(&quot;stop&quot;);
+        else
+            m_machine-&gt;submitEvent(&quot;start&quot;);
+    });
+
+    m_label = new QLabel(tr(&quot;unsolved&quot;));
+    m_label-&gt;setAlignment(Qt::AlignCenter);
+    layout-&gt;addWidget(m_label, Size + 3, 4, 1, 3);
+
+    m_undoButton = new QToolButton(this);
+    m_undoButton-&gt;setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    m_undoButton-&gt;setText(tr(&quot;Undo&quot;));
+    m_undoButton-&gt;setEnabled(false);
+    layout-&gt;addWidget(m_undoButton, Size + 3, 8, 1, 3);
+
+    connect(m_undoButton, &amp;QAbstractButton::clicked,
+            [this] {
+        m_machine-&gt;submitEvent(&quot;undo&quot;);
+    });
+
+    m_chooser = new QComboBox(this);
+    layout-&gt;addWidget(m_chooser, Size + 4, 0, 1, 11);
+
+    QDir dataDir(QLatin1String(&quot;:/data&quot;));
+    QFileInfoList sudokuFiles = dataDir.entryInfoList(QStringList() &lt;&lt; &quot;*.data&quot;);
+    foreach (const QFileInfo &amp;sudokuFile, sudokuFiles)
+        m_chooser-&gt;addItem(sudokuFile.completeBaseName(), sudokuFile.absoluteFilePath());
+
+    connect(m_chooser, static_cast&lt;void (QComboBox::*)(int)&gt;(&amp;QComboBox::currentIndexChanged),
+            [this] (int index) {
+        const QString sudokuFile = m_chooser-&gt;itemData(index).toString();
+        const QVariantMap initValues = readSudoku(sudokuFile);
+        m_machine-&gt;submitEvent(&quot;setup&quot;, initValues);
+    });
+
+    const QVariantMap initValues = readSudoku(m_chooser-&gt;itemData(0).toString());
+    m_machine-&gt;setInitialValues(initValues);
+
+    m_machine-&gt;connectToState(&quot;playing&quot;, [this] (bool playing) {
+        if (playing) {
+            m_startButton-&gt;setText(tr(&quot;Stop&quot;));
+            m_undoButton-&gt;setEnabled(true);
+            m_chooser-&gt;setEnabled(false);
+        } else {
+            m_startButton-&gt;setText(tr(&quot;Start&quot;));
+            m_undoButton-&gt;setEnabled(false);
+            m_chooser-&gt;setEnabled(true);
+        }
+    });
+
+    m_machine-&gt;connectToState(&quot;solved&quot;, [this] (bool solved) {
+        if (solved)
+            m_label-&gt;setText(tr(&quot;SOLVED !!!&quot;));
+        else
+            m_label-&gt;setText(tr(&quot;unsolved&quot;));
+    });
+
+    m_machine-&gt;connectToEvent(&quot;updateGUI&quot;, [this] (const QScxmlEvent &amp;event) {
+        const QVariant data = event.data();
+
+        const QVariantList currentRows = data.toMap().value(&quot;currentState&quot;).toList();
+        for (int i = 0; i &lt; currentRows.count(); i++) {
+            const QVariantList row = currentRows.at(i).toList();
+            for (int j = 0; j &lt; row.count(); j++) {
+                const int value = row.at(j).toInt();
+                const QString text = value ? QString::number(value) : QString();
+                m_buttons[i][j]-&gt;setText(text);
+            }
+        }
+
+        const bool active = m_machine-&gt;isActive(&quot;playing&quot;);
+
+        const QVariantList initRows = data.toMap().value(&quot;initState&quot;).toList();
+        for (int i = 0; i &lt; initRows.count(); i++) {
+            const QVariantList row = initRows.at(i).toList();
+            for (int j = 0; j &lt; row.count(); j++) {
+                const int value = row.at(j).toInt();
+                const bool enabled = !value &amp;&amp; active; // enable only zeroes from initState
+                m_buttons[i][j]-&gt;setEnabled(enabled);
+            }
+        }
+    });
+
+    setLayout(layout);
+}
+
+MainWindow::~MainWindow()
+{
+}
+
+</db:programlisting>
+</db:article>

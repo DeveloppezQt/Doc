@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>LegendMarkers Example</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to make use of legend markers.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Charts module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwidget.h&quot;
+#include &lt;QtCharts/QChart&gt;
+#include &lt;QtCharts/QChartView&gt;
+#include &lt;QtWidgets/QPushButton&gt;
+#include &lt;QtWidgets/QLabel&gt;
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtCharts/QLegend&gt;
+#include &lt;QtWidgets/QFormLayout&gt;
+#include &lt;QtCharts/QLegendMarker&gt;
+#include &lt;QtCharts/QLineSeries&gt;
+#include &lt;QtCharts/QXYLegendMarker&gt;
+#include &lt;QtCore/QtMath&gt;
+
+QT_CHARTS_USE_NAMESPACE
+
+MainWidget::MainWidget(QWidget *parent) :
+    QWidget(parent)
+{
+    // Create chart view with the chart
+    m_chart = new QChart();
+    m_chartView = new QChartView(m_chart, this);
+
+    // Create layout for grid and detached legend
+    m_mainLayout = new QGridLayout();
+    m_mainLayout-&gt;addWidget(m_chartView, 0, 1, 3, 1);
+    setLayout(m_mainLayout);
+
+    // Add few series
+    addSeries();
+    addSeries();
+    addSeries();
+    addSeries();
+
+    connectMarkers();
+
+    // Set the title and show legend
+    m_chart-&gt;setTitle(&quot;Legendmarker example (click on legend)&quot;);
+    m_chart-&gt;legend()-&gt;setVisible(true);
+    m_chart-&gt;legend()-&gt;setAlignment(Qt::AlignBottom);
+
+    m_chartView-&gt;setRenderHint(QPainter::Antialiasing);
+}
+
+void MainWidget::addSeries()
+{
+    QLineSeries *series = new QLineSeries();
+    m_series.append(series);
+
+    series-&gt;setName(QString(&quot;line &quot; + QString::number(m_series.count())));
+
+    // Make some sine wave for data
+    QList&lt;QPointF&gt; data;
+    int offset = m_chart-&gt;series().count();
+    for (int i = 0; i &lt; 360; i++) {
+        qreal x = offset * 20 + i;
+        data.append(QPointF(i, qSin(2.0 * 3.141592 * x / 360.0)));
+    }
+
+    series-&gt;append(data);
+    m_chart-&gt;addSeries(series);
+
+    if (m_series.count() == 1) {
+        m_chart-&gt;createDefaultAxes();
+    }
+}
+
+void MainWidget::removeSeries()
+{
+    // Remove last series from chart
+    if (m_series.count() &gt; 0) {
+        QLineSeries *series = m_series.last();
+        m_chart-&gt;removeSeries(series);
+        m_series.removeLast();
+        delete series;
+    }
+}
+
+void MainWidget::connectMarkers()
+{
+    // Connect all markers to handler
+    foreach (QLegendMarker* marker, m_chart-&gt;legend()-&gt;markers()) {
+        // Disconnect possible existing connection to avoid multiple connections
+        QObject::disconnect(marker, SIGNAL(clicked()), this, SLOT(handleMarkerClicked()));
+        QObject::connect(marker, SIGNAL(clicked()), this, SLOT(handleMarkerClicked()));
+    }
+}
+
+void MainWidget::disconnectMarkers()
+{
+    foreach (QLegendMarker* marker, m_chart-&gt;legend()-&gt;markers()) {
+        QObject::disconnect(marker, SIGNAL(clicked()), this, SLOT(handleMarkerClicked()));
+    }
+}
+
+void MainWidget::handleMarkerClicked()
+{
+    QLegendMarker* marker = qobject_cast&lt;QLegendMarker*&gt; (sender());
+    Q_ASSERT(marker);
+
+    switch (marker-&gt;type())
+    {
+        case QLegendMarker::LegendMarkerTypeXY:
+        {
+        // Toggle visibility of series
+        marker-&gt;series()-&gt;setVisible(!marker-&gt;series()-&gt;isVisible());
+
+        // Turn legend marker back to visible, since hiding series also hides the marker
+        // and we don't want it to happen now.
+        marker-&gt;setVisible(true);
+
+        // Dim the marker, if series is not visible
+        qreal alpha = 1.0;
+
+        if (!marker-&gt;series()-&gt;isVisible()) {
+            alpha = 0.5;
+        }
+
+        QColor color;
+        QBrush brush = marker-&gt;labelBrush();
+        color = brush.color();
+        color.setAlphaF(alpha);
+        brush.setColor(color);
+        marker-&gt;setLabelBrush(brush);
+
+        brush = marker-&gt;brush();
+        color = brush.color();
+        color.setAlphaF(alpha);
+        brush.setColor(color);
+        marker-&gt;setBrush(brush);
+
+        QPen pen = marker-&gt;pen();
+        color = pen.color();
+        color.setAlphaF(alpha);
+        pen.setColor(color);
+        marker-&gt;setPen(pen);
+
+        break;
+        }
+    default:
+        {
+        qDebug() &lt;&lt; &quot;Unknown marker type&quot;;
+        break;
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

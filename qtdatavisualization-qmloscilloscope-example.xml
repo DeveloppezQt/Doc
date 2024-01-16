@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 2 Oscilloscope Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt 5.8.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of a hybrid C++ and QML application.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Qt Quick 2 oscilloscope example shows how to combine C++ and QML in an application, as well as showing data that changes realtime.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmloscilloscope-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The interesting thing about this example is combining C++ and QML, so we'll concentrate on that and skip explaining the basic functionality - for more detailed QML example documentation, see <db:link xlink:href="qtdatavisualization-qmlscatter-example.xml">Qt Quick 2 Scatter Example</db:link>.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="data-source-in-c">
+<db:title>Data Source in C++</db:title>
+<db:para>The item model based proxies are good for simple and/or static graphs, but to achieve best performance when displaying data changing in realtime, the basic proxies should be used. Those are not supported in QML, as the data items they store are not <db:link xlink:href="qobject.xml">QObject</db:link>s and cannot therefore be directly manipulated from QML code. To overcome this limitation, we implement a simple <db:code>DataSource</db:code> class in C++ to populate the data proxy of the series.</db:para>
+<db:para>The <db:code>DataSource</db:code> class provides three methods that can be called from QML:</db:para>
+<db:programlisting language="cpp">public Q_SLOTS:
+void generateData(int cacheCount, int rowCount, int columnCount,
+                  float xMin, float xMax, float yMin, float yMax, float zMin, float zMax);
+
+void update(QSurface3DSeries *series);
+</db:programlisting>
+<db:para>The first method, <db:code>generateData()</db:code>, creates a cache of simulated oscilloscope data for us to display. The data is cached in a format accepted by QSurfaceDataProxy:</db:para>
+<db:programlisting language="cpp">void DataSource::generateData(int cacheCount, int rowCount, int columnCount,
+                              float xMin, float xMax, float yMin, float yMax,
+                              float zMin, float zMax)
+{
+    if (!cacheCount || !rowCount || !columnCount)
+        return;
+
+    clearData();
+    // Re-create the cache array
+    m_data.resize(cacheCount);
+    for (int i(0); i &lt; cacheCount; i++) {
+        QSurfaceDataArray &amp;array = m_data[i];
+        array.reserve(rowCount);
+        for (int j(0); j &lt; rowCount; j++)
+            array.append(new QSurfaceDataRow(columnCount));
+    }
+
+    float xRange = xMax - xMin;
+    float yRange = yMax - yMin;
+    float zRange = zMax - zMin;
+    int cacheIndexStep = columnCount / cacheCount;
+    float cacheStep = float(cacheIndexStep) * xRange / float(columnCount);
+
+    // Populate caches
+    for (int i(0); i &lt; cacheCount; i++) {
+        QSurfaceDataArray &amp;cache = m_data[i];
+        float cacheXAdjustment = cacheStep * i;
+        float cacheIndexAdjustment = cacheIndexStep * i;
+        for (int j(0); j &lt; rowCount; j++) {
+            QSurfaceDataRow &amp;row = *(cache[j]);
+            float rowMod = (float(j)) / float(rowCount);
+            float yRangeMod = yRange * rowMod;
+            float zRangeMod = zRange * rowMod;
+            float z = zRangeMod + zMin;
+            qreal rowColWaveAngleMul = M_PI * M_PI * rowMod;
+            float rowColWaveMul = yRangeMod * 0.2f;
+            for (int k(0); k &lt; columnCount; k++) {
+                float colMod = (float(k)) / float(columnCount);
+                float xRangeMod = xRange * colMod;
+                float x = xRangeMod + xMin + cacheXAdjustment;
+                float colWave = float(qSin((2.0 * M_PI * colMod) - (1.0 / 2.0 * M_PI)) + 1.0);
+                float y = (colWave * ((float(qSin(rowColWaveAngleMul * colMod) + 1.0))))
+                        * rowColWaveMul
+                        + (0.15f * float(qrand()) / float(RAND_MAX)) * yRangeMod;
+
+                int index = k + cacheIndexAdjustment;
+                if (index &gt;= columnCount) {
+                    // Wrap over
+                    index -= columnCount;
+                    x -= xRange;
+                }
+                row[index] = QVector3D(x, y, z);
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>The second method, <db:code>update()</db:code>, copies one set of the cached data into another array, which we set to the data proxy of the series by calling QSurfaceDataProxy::resetArray(). We reuse the same array if the array dimensions have not changed to minimize overhead:</db:para>
+<db:programlisting language="cpp">void DataSource::update(QSurface3DSeries *series)
+{
+    if (series &amp;&amp; m_data.size()) {
+        // Each iteration uses data from a different cached array
+        m_index++;
+        if (m_index &gt; m_data.count() - 1)
+            m_index = 0;
+
+        QSurfaceDataArray array = m_data.at(m_index);
+        int newRowCount = array.size();
+        int newColumnCount = array.at(0)-&gt;size();
+
+        // If the first time or the dimensions of the cache array have changed,
+        // reconstruct the reset array
+        if (m_resetArray || series-&gt;dataProxy()-&gt;rowCount() != newRowCount
+                || series-&gt;dataProxy()-&gt;columnCount() != newColumnCount) {
+            m_resetArray = new QSurfaceDataArray();
+            m_resetArray-&gt;reserve(newRowCount);
+            for (int i(0); i &lt; newRowCount; i++)
+                m_resetArray-&gt;append(new QSurfaceDataRow(newColumnCount));
+        }
+
+        // Copy items from our cache to the reset array
+        for (int i(0); i &lt; newRowCount; i++) {
+            const QSurfaceDataRow &amp;sourceRow = *(array.at(i));
+            QSurfaceDataRow &amp;row = *(*m_resetArray)[i];
+            for (int j(0); j &lt; newColumnCount; j++)
+                row[j].setPosition(sourceRow.at(j).position());
+        }
+
+        // Notify the proxy that data has changed
+        series-&gt;dataProxy()-&gt;resetArray(m_resetArray);
+    }
+}
+</db:programlisting>
+<db:note>
+<db:para>Even though we are operating on the array pointer we have previously set to the proxy we still need to call QSurfaceDataProxy::resetArray() after changing the data in it to prompt the graph to render the data.</db:para>
+</db:note>
+<db:para>To be able to access the <db:code>DataSource</db:code> methods from QML, we need to expose it. We do this by defining a context property in application main:</db:para>
+<db:programlisting language="cpp">DataSource dataSource;
+viewer.rootContext()-&gt;setContextProperty(&quot;dataSource&quot;, &amp;dataSource);
+</db:programlisting>
+<db:para>To make it possible to use QSurface3DSeries pointers as parameters on the <db:code>DataSource</db:code> class methods on all environments and builds, we need to make sure the meta type is registered:</db:para>
+<db:programlisting language="cpp">Q_DECLARE_METATYPE(QSurface3DSeries *)
+...
+qRegisterMetaType&lt;QSurface3DSeries *&gt;();
+</db:programlisting>
+</db:section>
+<db:section xml:id="qml">
+<db:title>QML</db:title>
+<db:para>In the QML codes, we define a <db:link xlink:href="qml-qtdatavisualization-surface3d.xml">Surface3D</db:link> graph normally and give it a <db:link xlink:href="qml-qtdatavisualization-surface3dseries.xml">Surface3DSeries</db:link>:</db:para>
+<db:programlisting language="qml">Surface3DSeries {
+    id: surfaceSeries
+    drawMode: Surface3DSeries.DrawSurface;
+    flatShadingEnabled: false;
+    meshSmooth: true
+    itemLabelFormat: &quot;@xLabel, @zLabel: @yLabel&quot;
+    itemLabelVisible: false
+
+    onItemLabelChanged: {
+        if (surfaceSeries.selectedPoint === surfaceSeries.invalidSelectionPosition)
+            selectionText.text = &quot;No selection&quot;
+        else
+            selectionText.text = surfaceSeries.itemLabel
+    }
+}
+</db:programlisting>
+<db:para>One interesting detail is that we don't specify a proxy for the <db:link xlink:href="qml-qtdatavisualization-surface3dseries.xml">Surface3DSeries</db:link> we attach to the graph. This makes the series to utilize the default QSurfaceDataProxy.</db:para>
+<db:para>We also hide the item label with <db:link xlink:href="qml-qtdatavisualization-abstract3dseries.xml#itemLabelVisible-prop">itemLabelVisible</db:link>, since we want to display the selected item information in a <db:code>Text</db:code> element instead of a floating label above the selection pointer. This is done because the selection pointer moves around a lot as the data changes, which makes the regular selection label difficult to read.</db:para>
+<db:para>We initialize the <db:code>DataSource</db:code> cache when the graph is complete by calling a helper function <db:code>generateData()</db:code>, which calls the method with the same name on the <db:code>DataSource</db:code>:</db:para>
+<db:programlisting language="qml">Component.onCompleted: mainView.generateData()
+    ...
+function generateData() {
+    dataSource.generateData(mainView.sampleCache, mainView.sampleRows,
+                            mainView.sampleColumns, surfaceGraph.axisX.min,
+                            surfaceGraph.axisX.max, surfaceGraph.axisY.min,
+                            surfaceGraph.axisY.max, surfaceGraph.axisZ.min,
+                            surfaceGraph.axisZ.max)
+}
+</db:programlisting>
+<db:para>To trigger the updates in data, we define a <db:code>Timer</db:code> item which calls the <db:code>update()</db:code> method on the <db:code>DataSource</db:code> at requested intervals. The label update is also triggered on each cycle:</db:para>
+<db:programlisting language="qml">Timer {
+    id: refreshTimer
+    interval: 1000 / frequencySlider.value
+    running: true
+    repeat: true
+    onTriggered: dataSource.update(surfaceSeries)
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="enabling-direct-rendering">
+<db:title>Enabling Direct Rendering</db:title>
+<db:para>Since this application potentially deals with a lot of rapidly changing data, we use direct rendering mode for performance. To enable antialiasing in this mode the surface format of the application window needs to be changed, as the default format used by <db:link xlink:href="qquickview.xml">QQuickView</db:link> doesn't support antialiasing. We use the utility function provided by Qt Data Visualization to change the surface format in <db:code>main.cpp</db:code>:</db:para>
+<db:programlisting language="cpp">viewer.setFormat(QtDataVisualization::qDefaultSurfaceFormat());
+...
+#include &lt;QtDataVisualization/qutils.h&gt;
+</db:programlisting>
+<db:para>On the QML side, direct rendering mode is enabled via <db:link xlink:href="qml-qtdatavisualization-abstractgraph3d.xml#renderingMode-prop">renderingMode</db:link> property:</db:para>
+<db:programlisting language="qml">renderingMode: AbstractGraph3D.RenderDirectToBackground
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/datasource.cpp">qmloscilloscope/datasource.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/datasource.h">qmloscilloscope/datasource.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/main.cpp">qmloscilloscope/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/qml/qmloscilloscope/NewButton.qml">qmloscilloscope/qml/qmloscilloscope/NewButton.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/qml/qmloscilloscope/main.qml">qmloscilloscope/qml/qmloscilloscope/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/qmloscilloscope.pro">qmloscilloscope/qmloscilloscope.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmloscilloscope/qmloscilloscope.qrc">qmloscilloscope/qmloscilloscope.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>
