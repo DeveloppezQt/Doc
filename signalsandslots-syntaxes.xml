@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Differences between String-Based and Functor-Based Connections</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Compares the two syntaxes for making signal-slot connections in C++.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>From Qt 5.0 onwards, Qt offers two different ways to write <db:link xlink:href="signalsandslots.xml">signal-slot connections</db:link> in C++: The <db:emphasis>string-based</db:emphasis> connection syntax and the <db:emphasis>functor-based</db:emphasis> connection syntax. There are pros and cons to both syntaxes. The table below summarizes their differences.</db:para>
+<db:informaltable style="generic">
+<db:thead>
+<db:tr>
+<db:th>
+</db:th>
+<db:th>
+<db:para>String-based</db:para>
+</db:th>
+<db:th>
+<db:para>Functor-based</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para>Type checking is done at...</db:para>
+</db:td>
+<db:td>
+<db:para>Run-time</db:para>
+</db:td>
+<db:td>
+<db:para>Compile-time</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>Can perform implicit type conversions</db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>Y</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>Can connect signals to lambda expressions</db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>Y</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>Can connect signals to slots which have more arguments than the signal (using default parameters)</db:para>
+</db:td>
+<db:td>
+<db:para>Y</db:para>
+</db:td>
+<db:td>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>Can connect C++ functions to QML functions</db:para>
+</db:td>
+<db:td>
+<db:para>Y</db:para>
+</db:td>
+<db:td>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The following sections explain these differences in detail and demonstrate how to use the features unique to each connection syntax.</db:para>
+<db:section xml:id="type-checking-and-implicit-type-conversions">
+<db:title>Type Checking and Implicit Type Conversions</db:title>
+<db:para>String-based connections type-check by comparing strings at run-time. There are three limitations with this approach:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Connection errors can only be detected after the program has started running.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Implicit conversions cannot be done between signals and slots.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Typedefs and namespaces cannot be resolved.</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>Limitations 2 and 3 exist because the string comparator does not have access to C++ type information, so it relies on exact string matching.</db:para>
+<db:para>In contrast, functor-based connections are checked by the compiler. The compiler catches errors at compile-time, enables implicit conversions between compatible types, and recognizes different names of the same type.</db:para>
+<db:para>For example, only the functor-based syntax can be used to connect a signal that carries an int to a slot that accepts a double. A <db:link xlink:href="qslider.xml">QSlider</db:link> holds an int value while a <db:link xlink:href="qdoublespinbox.xml">QDoubleSpinBox</db:link> holds a double value. The following snippet shows how to keep them in sync:</db:para>
+<db:programlisting language="cpp">    auto slider = new QSlider(this);
+    auto doubleSpinBox = new QDoubleSpinBox(this);
+
+    // OK: The compiler can convert an int into a double
+    connect(slider, &amp;amp;QSlider::valueChanged,
+            doubleSpinBox, &amp;amp;QDoubleSpinBox::setValue);
+
+    // ERROR: The string table doesn't contain conversion information
+    connect(slider, SIGNAL(valueChanged(int)),
+            doubleSpinBox, SLOT(setValue(double)));
+</db:programlisting>
+<db:para>The following example illustrates the lack of name resolution. QAudioInput::stateChanged() is declared with an argument of type &quot;QAudio::State&quot;. Thus, string-based connections must also specify &quot;QAudio::State&quot;, even if &quot;State&quot; is already visible. This issue does not apply to functor-based connections because argument types are not part of the connection.</db:para>
+<db:programlisting language="cpp">    auto audioInput = new QAudioInput(QAudioFormat(), this);
+    auto widget = new QWidget(this);
+
+    // OK
+    connect(audioInput, SIGNAL(stateChanged(QAudio::State)),
+            widget, SLOT(show()));
+
+    // ERROR: The strings &quot;State&quot; and &quot;QAudio::State&quot; don't match
+    using namespace QAudio;
+    connect(audioInput, SIGNAL(stateChanged(State)),
+            widget, SLOT(show()));
+
+    // ...
+</db:programlisting>
+</db:section>
+<db:section xml:id="making-connections-to-lambda-expressions">
+<db:title>Making Connections to Lambda Expressions</db:title>
+<db:para>The functor-based connection syntax can connect signals to C++11 lambda expressions, which are effectively inline slots. This feature is not available with the string-based syntax.</db:para>
+<db:para>In the following example, the TextSender class emits a textCompleted() signal which carries a <db:link xlink:href="qstring.xml">QString</db:link> parameter. Here is the class declaration:</db:para>
+<db:programlisting language="cpp">class TextSender : public QWidget {
+    Q_OBJECT
+
+    QLineEdit *lineEdit;
+    QPushButton *button;
+
+signals:
+    void textCompleted(const QString&amp;amp; text) const;
+
+public:
+    TextSender(QWidget *parent = nullptr);
+};
+</db:programlisting>
+<db:para>Here is the connection which emits TextSender::textCompleted() when the user clicks the button:</db:para>
+<db:programlisting language="cpp">TextSender::TextSender(QWidget *parent) : QWidget(parent) {
+    lineEdit = new QLineEdit(this);
+    button = new QPushButton(&quot;Send&quot;, this);
+
+    connect(button, &amp;amp;QPushButton::clicked, [=] {
+        emit textCompleted(lineEdit-&amp;gt;text());
+    });
+
+    // ...
+}
+</db:programlisting>
+<db:para>In this example, the lambda function made the connection simple even though <db:link xlink:href="qabstractbutton.xml#clicked">QPushButton::clicked</db:link>() and TextSender::textCompleted() have incompatible parameters. In contrast, a string-based implementation would require extra boilerplate code.</db:para>
+<db:note>
+<db:para>The functor-based connection syntax accepts pointers to all functions, including standalone functions and regular member functions. However, for the sake of readability, signals should only be connected to slots, lambda expressions, and other signals.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="connecting-c-objects-to-qml-objects">
+<db:title>Connecting C++ Objects to QML Objects</db:title>
+<db:para>The string-based syntax can connect C++ objects to QML objects, but the functor-based syntax cannot. This is because QML types are resolved at run-time, so they are not available to the C++ compiler.</db:para>
+<db:para>In the following example, clicking on the QML object makes the C++ object print a message, and vice-versa. Here is the QML type (in QmlGui.qml):</db:para>
+<db:programlisting language="qml">Rectangle {
+    width: 100; height: 100
+
+    signal qmlSignal(string sentMsg)
+    function qmlSlot(receivedMsg) {
+        console.log(&quot;QML received: &quot; + receivedMsg)
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked: qmlSignal(&quot;Hello from QML!&quot;)
+    }
+}
+</db:programlisting>
+<db:para>Here is the C++ class:</db:para>
+<db:programlisting language="cpp">class CppGui : public QWidget {
+    Q_OBJECT
+
+    QPushButton *button;
+
+signals:
+    void cppSignal(const QVariant&amp;amp; sentMsg) const;
+
+public slots:
+    void cppSlot(const QString&amp;amp; receivedMsg) const {
+        qDebug() &amp;lt;&amp;lt; &quot;C++ received:&quot; &amp;lt;&amp;lt; receivedMsg;
+    }
+
+public:
+    CppGui(QWidget *parent = nullptr) : QWidget(parent) {
+        button = new QPushButton(&quot;Click Me!&quot;, this);
+        connect(button, &amp;amp;QPushButton::clicked, [=] {
+            emit cppSignal(&quot;Hello from C++!&quot;);
+        });
+    }
+};
+</db:programlisting>
+<db:para>Here is the code that makes the signal-slot connections:</db:para>
+<db:programlisting language="cpp">    auto cppObj = new CppGui(this);
+    auto quickWidget = new QQuickWidget(QUrl(&quot;QmlGui.qml&quot;), this);
+    auto qmlObj = quickWidget-&amp;gt;rootObject();
+
+    // Connect QML signal to C++ slot
+    connect(qmlObj, SIGNAL(qmlSignal(QString)),
+            cppObj, SLOT(cppSlot(QString)));
+
+    // Connect C++ signal to QML slot
+    connect(cppObj, SIGNAL(cppSignal(QVariant)),
+            qmlObj, SLOT(qmlSlot(QVariant)));
+</db:programlisting>
+<db:note>
+<db:para>All JavaScript functions in QML take parameters of var type, which maps to the <db:link xlink:href="qvariant.xml">QVariant</db:link> type in C++, unless they use type annotations. See <db:link xlink:href="qtqml-cppintegration-interactqmlfromcpp.xml#invoking-qml-methods">Invoking QML Methods</db:link> for further details.</db:para>
+</db:note>
+<db:para>When the <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> is clicked, the console prints, <db:emphasis>'QML received: &quot;Hello from C++!&quot;'</db:emphasis>. Likewise, when the Rectangle is clicked, the console prints, <db:emphasis>'C++ received: &quot;Hello from QML!&quot;'</db:emphasis>.</db:para>
+<db:para>See <db:link xlink:href="qtqml-cppintegration-interactqmlfromcpp.xml">Interacting with QML Objects from C++</db:link> for other ways to let C++ objects interact with QML objects.</db:para>
+</db:section>
+<db:section xml:id="using-default-parameters-in-slots-to-connect-to-signals-with-fewer-parameters">
+<db:title>Using Default Parameters in Slots to Connect to Signals with Fewer Parameters</db:title>
+<db:para>Usually, a connection can only be made if the slot has the same number of arguments as the signal (or less), and if all the argument types are compatible.</db:para>
+<db:para>The string-based connection syntax provides a workaround for this rule: If the slot has default parameters, those parameters can be omitted from the signal. When the signal is emitted with fewer arguments than the slot, Qt runs the slot using default parameter values.</db:para>
+<db:para>Functor-based connections do not support this feature.</db:para>
+<db:para>Suppose there is a class called DemoWidget with a slot printNumber() that has a default argument:</db:para>
+<db:programlisting language="cpp">public slots:
+    void printNumber(int number = 42) {
+        qDebug() &amp;lt;&amp;lt; &quot;Lucky number&quot; &amp;lt;&amp;lt; number;
+    }
+</db:programlisting>
+<db:para>Using a string-based connection, DemoWidget::printNumber() can be connected to <db:link xlink:href="qcoreapplication.xml#aboutToQuit">QApplication::aboutToQuit</db:link>(), even though the latter has no arguments. The functor-based connection will produce a compile-time error:</db:para>
+<db:programlisting language="cpp">DemoWidget::DemoWidget(QWidget *parent) : QWidget(parent) {
+
+    // OK: printNumber() will be called with a default value of 42
+    connect(qApp, SIGNAL(aboutToQuit()),
+            this, SLOT(printNumber()));
+
+    // ERROR: Compiler requires compatible arguments
+    connect(qApp, &amp;amp;QCoreApplication::aboutToQuit,
+            this, &amp;amp;DemoWidget::printNumber);
+}
+</db:programlisting>
+<db:para>To work around this limitation with the functor-based syntax, connect the signal to a lambda function that calls the slot. See the section above, <db:link xlink:href="signalsandslots-syntaxes.xml#making-connections-to-lambda-expressions">Making Connections to Lambda Expressions</db:link>.</db:para>
+</db:section>
+<db:section xml:id="selecting-overloaded-signals-and-slots">
+<db:title>Selecting Overloaded Signals and Slots</db:title>
+<db:para>With the string-based syntax, parameter types are explicitly specified. As a result, the desired instance of an overloaded signal or slot is unambiguous.</db:para>
+<db:para>In contrast, with the functor-based syntax, an overloaded signal or slot must be casted to tell the compiler which instance to use.</db:para>
+<db:para>For example, <db:link xlink:href="qlcdnumber.xml">QLCDNumber</db:link> has three versions of the display() slot:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>QLCDNumber::display(int)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QLCDNumber::display(double)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QLCDNumber::display(QString)</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>To connect the int version to <db:link xlink:href="qabstractslider.xml#valueChanged">QSlider::valueChanged</db:link>(), the two syntaxes are:</db:para>
+<db:programlisting language="cpp">    auto slider = new QSlider(this);
+    auto lcd = new QLCDNumber(this);
+
+    // String-based syntax
+    connect(slider, SIGNAL(valueChanged(int)),
+            lcd, SLOT(display(int)));
+
+    // Functor-based syntax
+    connect(slider, &amp;amp;QSlider::valueChanged,
+            lcd, qOverload&amp;lt;int&amp;gt;(&amp;amp;QLCDNumber::display));
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtglobal.xml#qOverload">qOverload</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>
