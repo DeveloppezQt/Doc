@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>NDEF Editor Example</db:title>
+<db:productname>QtNfc</db:productname>
+<db:edition>Qt 5.15.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt NFC Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An example about reading and writing NFC Data Exchange Format (NDEF) messages to NFC Forum Tags.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The NDEF Editor example reads and writes NFC Data Exchange Format (NDEF) messages to NFC Forum Tags. NDEF messages can be composed by adding records of supported types. Additionally, NDEF messages can be loaded/saved from/into a file located in the file system of the machine where the application is running.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/ndefeditor.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="nfc-tag-detection">
+<db:title>NFC Tag detection</db:title>
+<db:para>The MainWindow class is able to detect if a NFC Tag is in the range for read/write operations. It can also detect if connectivity has been lost. This is achieved by connecting the MainWindow class private handlers to the signals <db:link xlink:href="qnearfieldmanager.xml#targetDetected">QNearFieldManager::targetDetected</db:link> and <db:link xlink:href="qnearfieldmanager.xml#targetLost">QNearFieldManager::targetLost</db:link>.</db:para>
+<db:programlisting language="cpp">m_manager = new QNearFieldManager(this);
+connect(m_manager, &amp;amp;QNearFieldManager::targetDetected,
+        this, &amp;amp;MainWindow::targetDetected);
+connect(m_manager, &amp;amp;QNearFieldManager::targetLost,
+        this, &amp;amp;MainWindow::targetLost);
+</db:programlisting>
+<db:para>Through the UI a user requests when to start the detection of a NFC Tag by calling the method <db:link xlink:href="qnearfieldmanager.xml#startTargetDetection">QNearFieldManager::startTargetDetection</db:link>.</db:para>
+<db:programlisting language="cpp">m_manager-&amp;gt;startTargetDetection();
+</db:programlisting>
+<db:para>Once the target is detected the MainWindow connects the following signals to its internal private slots: <db:link xlink:href="qnearfieldtarget.xml#ndefMessageRead">QNearFieldTarget::ndefMessageRead</db:link>, <db:link xlink:href="qnearfieldtarget.xml#Error-enum">QNearFieldTarget::NdefReadError</db:link>, <db:link xlink:href="qnearfieldtarget.xml#ndefMessagesWritten">QNearFieldTarget::ndefMessagesWritten</db:link>, <db:link xlink:href="qnearfieldtarget.xml#Error-enum">QNearFieldTarget::NdefWriteError</db:link> and <db:link xlink:href="qnearfieldtarget.xml#error">QNearFieldTarget::error</db:link></db:para>
+<db:programlisting language="cpp">void MainWindow::targetDetected(QNearFieldTarget *target)
+{
+    switch (m_touchAction) {
+    case NoAction:
+        break;
+    case ReadNdef:
+        connect(target, &amp;amp;QNearFieldTarget::ndefMessageRead, this, &amp;amp;MainWindow::ndefMessageRead);
+        connect(target, &amp;amp;QNearFieldTarget::error, this, &amp;amp;MainWindow::targetError);
+
+        m_request = target-&amp;gt;readNdefMessages();
+        if (!m_request.isValid()) // cannot read messages
+            targetError(QNearFieldTarget::NdefReadError, m_request);
+        break;
+    case WriteNdef:
+        connect(target, &amp;amp;QNearFieldTarget::ndefMessagesWritten, this, &amp;amp;MainWindow::ndefMessageWritten);
+        connect(target, &amp;amp;QNearFieldTarget::error, this, &amp;amp;MainWindow::targetError);
+
+        m_request = target-&amp;gt;writeNdefMessages(QList&amp;lt;QNdefMessage&amp;gt;() &amp;lt;&amp;lt; ndefMessage());
+        if (!m_request.isValid()) // cannot write messages
+            targetError(QNearFieldTarget::NdefWriteError, m_request);
+        break;
+    }
+}
+</db:programlisting>
+<db:para>If during the process of reading or writing to a NFC Tag the connection is lost, the MainWindow reacts to this event by scheduling the target deletion (<db:link xlink:href="qobject.xml#deleteLater">QObject::deleteLater</db:link>).</db:para>
+<db:programlisting language="cpp">void MainWindow::targetLost(QNearFieldTarget *target)
+{
+    target-&amp;gt;deleteLater();
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="record-creation">
+<db:title>Record creation</db:title>
+<db:para>The main window of the ndefeditor example manages the composition and creation of NFC records. The UI contains a <db:link xlink:href="qscrollarea.xml">QScrollArea</db:link> where RecordEditors are added dynamically on a user requests basis. The following methods of the MainWindow class provide an interface towards each of the record editing classes managing the different types of records.</db:para>
+<db:programlisting language="cpp">void addNfcTextRecord();
+void addNfcUriRecord();
+void addMimeImageRecord();
+void addEmptyRecord();
+</db:programlisting>
+<db:para>The following sections explain each of the record editing classes.</db:para>
+</db:section>
+<db:section xml:id="record-editing-classes">
+<db:title>Record editing classes</db:title>
+<db:section xml:id="textrecordeditor">
+<db:title>TextRecordEditor</db:title>
+<db:para>The TextRecordEditor is a <db:link xlink:href="qwidget.xml">QWidget</db:link> that can handle editing the values of text record that has been requested by the user. For each text record, there is a new instance of this class.</db:para>
+<db:programlisting language="cpp">class TextRecordEditor : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit TextRecordEditor(QWidget *parent = 0);
+    ~TextRecordEditor();
+
+    void setRecord(const QNdefNfcTextRecord &amp;amp;textRecord);
+    QNdefNfcTextRecord record() const;
+
+private:
+    Ui::TextRecordEditor *ui;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="urirecordeditor">
+<db:title>UriRecordEditor</db:title>
+<db:para>The UriRecordEditor is a <db:link xlink:href="qwidget.xml">QWidget</db:link> that can handle editing the values of Uri record that has been requested by the user. For each new Uri record there is a new instance of this class.</db:para>
+<db:programlisting language="cpp">class UriRecordEditor : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit UriRecordEditor(QWidget *parent = 0);
+    ~UriRecordEditor();
+
+    void setRecord(const QNdefNfcUriRecord &amp;amp;uriRecord);
+    QNdefNfcUriRecord record() const;
+
+private:
+    Ui::UriRecordEditor *ui;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="mimeimagerecordeditor">
+<db:title>MimeImageRecordEditor</db:title>
+<db:para>The UriRecordEditor is a <db:link xlink:href="qwidget.xml">QWidget</db:link> that can handle editing the values of a Mime Image record that has been requested by the user. For each Mime Image record there is a new instance of this class.</db:para>
+<db:programlisting language="cpp">class MimeImageRecordEditor : public QWidget
+{
+    Q_OBJECT
+
+public:
+    explicit MimeImageRecordEditor(QWidget *parent = 0);
+    ~MimeImageRecordEditor();
+
+    void setRecord(const QNdefRecord &amp;amp;record);
+    QNdefRecord record() const;
+
+private:
+    Ui::MimeImageRecordEditor *ui;
+    QNdefRecord m_record;
+
+private slots:
+    void on_mimeImageOpen_clicked();
+};
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtconnectivity.git/tree/examples/nfc/ndefeditor?h=5.15">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtnfc-index.xml">Qt NFC</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

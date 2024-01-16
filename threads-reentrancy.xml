@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Reentrancy and Thread-Safety</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 5.15.0 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="threads-synchronizing.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Synchronizing Threads"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="threads-qobject.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Threads and QObjects"/></db:extendedlink>
+<db:abstract>
+<db:para>Qt Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Throughout the documentation, the terms <db:emphasis>reentrant</db:emphasis> and <db:emphasis>thread-safe</db:emphasis> are used to mark classes and functions to indicate how they can be used in multithread applications:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A <db:emphasis>thread-safe</db:emphasis> function can be called simultaneously from multiple threads, even when the invocations use shared data, because all references to the shared data are serialized.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:emphasis>reentrant</db:emphasis> function can also be called simultaneously from multiple threads, but only if each invocation uses its own data.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Hence, a <db:emphasis>thread-safe</db:emphasis> function is always <db:emphasis>reentrant</db:emphasis>, but a <db:emphasis>reentrant</db:emphasis> function is not always <db:emphasis>thread-safe</db:emphasis>.</db:para>
+<db:para>By extension, a class is said to be <db:emphasis>reentrant</db:emphasis> if its member functions can be called safely from multiple threads, as long as each thread uses a <db:emphasis>different</db:emphasis> instance of the class. The class is <db:emphasis>thread-safe</db:emphasis> if its member functions can be called safely from multiple threads, even if all the threads use the <db:emphasis>same</db:emphasis> instance of the class.</db:para>
+<db:note>
+<db:para>Qt classes are only documented as <db:emphasis>thread-safe</db:emphasis> if they are intended to be used by multiple threads. If a function is not marked as thread-safe or reentrant, it should not be used from different threads. If a class is not marked as thread-safe or reentrant then a specific instance of that class should not be accessed from different threads.</db:para>
+</db:note>
+<db:section xml:id="reentrancy">
+<db:title>Reentrancy</db:title>
+<db:para>C++ classes are often reentrant, simply because they only access their own member data. Any thread can call a member function on an instance of a reentrant class, as long as no other thread can call a member function on the <db:emphasis>same</db:emphasis> instance of the class at the same time. For example, the <db:code>Counter</db:code> class below is reentrant:</db:para>
+<db:programlisting language="cpp">class Counter
+{
+public:
+    Counter() { n = 0; }
+
+    void increment() { ++n; }
+    void decrement() { --n; }
+    int value() const { return n; }
+
+private:
+    int n;
+};
+</db:programlisting>
+<db:para>The class isn't thread-safe, because if multiple threads try to modify the data member <db:code>n</db:code>, the result is undefined. This is because the <db:code>++</db:code> and <db:code>--</db:code> operators aren't always atomic. Indeed, they usually expand to three machine instructions:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Load the variable's value in a register.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Increment or decrement the register's value.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Store the register's value back into main memory.</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>If thread A and thread B load the variable's old value simultaneously, increment their register, and store it back, they end up overwriting each other, and the variable is incremented only once!</db:para>
+</db:section>
+<db:section xml:id="thread-safety">
+<db:title>Thread-Safety</db:title>
+<db:para>Clearly, the access must be serialized: Thread A must perform steps 1, 2, 3 without interruption (atomically) before thread B can perform the same steps; or vice versa. An easy way to make the class thread-safe is to protect all access to the data members with a <db:link xlink:href="qmutex.xml">QMutex</db:link>:</db:para>
+<db:programlisting language="cpp">class Counter
+{
+public:
+    Counter() { n = 0; }
+
+    void increment() { QMutexLocker locker(&amp;amp;mutex); ++n; }
+    void decrement() { QMutexLocker locker(&amp;amp;mutex); --n; }
+    int value() const { QMutexLocker locker(&amp;amp;mutex); return n; }
+
+private:
+    mutable QMutex mutex;
+    int n;
+};
+</db:programlisting>
+<db:para>The <db:link xlink:href="qmutexlocker.xml">QMutexLocker</db:link> class automatically locks the mutex in its constructor and unlocks it when the destructor is invoked, at the end of the function. Locking the mutex ensures that access from different threads will be serialized. The <db:code>mutex</db:code> data member is declared with the <db:code>mutable</db:code> qualifier because we need to lock and unlock the mutex in <db:code>value()</db:code>, which is a const function.</db:para>
+</db:section>
+<db:section xml:id="notes-on-qt-classes">
+<db:title>Notes on Qt Classes</db:title>
+<db:para>Many Qt classes are <db:emphasis>reentrant</db:emphasis>, but they are not made <db:emphasis>thread-safe</db:emphasis>, because making them thread-safe would incur the extra overhead of repeatedly locking and unlocking a <db:link xlink:href="qmutex.xml">QMutex</db:link>. For example, <db:link xlink:href="qstring.xml">QString</db:link> is reentrant but not thread-safe. You can safely access <db:emphasis>different</db:emphasis> instances of <db:link xlink:href="qstring.xml">QString</db:link> from multiple threads simultaneously, but you can't safely access the <db:emphasis>same</db:emphasis> instance of <db:link xlink:href="qstring.xml">QString</db:link> from multiple threads simultaneously (unless you protect the accesses yourself with a <db:link xlink:href="qmutex.xml">QMutex</db:link>).</db:para>
+<db:para>Some Qt classes and functions are thread-safe. These are mainly the thread-related classes (e.g. <db:link xlink:href="qmutex.xml">QMutex</db:link>) and fundamental functions (e.g. <db:link xlink:href="qcoreapplication.xml#postEvent">QCoreApplication::postEvent</db:link>()).</db:para>
+<db:note>
+<db:para>Terminology in the multithreading domain isn't entirely standardized. POSIX uses definitions of reentrant and thread-safe that are somewhat different for its C APIs. When using other object-oriented C++ class libraries with Qt, be sure the definitions are understood.</db:para>
+</db:note>
+</db:section>
+</db:article>
