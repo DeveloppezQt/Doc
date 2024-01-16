@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QML Dynamic View Ordering Tutorial 4 - Sorting Items</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.0.4 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qtquick-tutorials-dynamicview-dynamicview3-example.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="QML Dynamic View Ordering Tutorial 3 - Moving Dragged Items"/></db:extendedlink>
+<db:abstract>
+<db:para>Qt Quick Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Drag and drop isn't the only way items in a view can be re-ordered, using a <db:link xlink:href="qml-qtqml-models-delegatemodel.xml">DelegateModel</db:link> it is also possible to sort items based on model data. To do that we extend our <db:link xlink:href="qml-qtqml-models-delegatemodel.xml">DelegateModel</db:link> instance like this:</db:para>
+<db:programlisting language="qml">    DelegateModel {
+        id: visualModel
+        property var lessThan: [
+            function(left, right) { return left.name &amp;lt; right.name },
+            function(left, right) { return left.type &amp;lt; right.type },
+            function(left, right) { return left.age &amp;lt; right.age },
+            function(left, right) {
+                if (left.size == &quot;Small&quot;)
+                    return true
+                else if (right.size == &quot;Small&quot;)
+                    return false
+                else if (left.size == &quot;Medium&quot;)
+                    return true
+                else
+                    return false
+            }
+        ]
+
+        property int sortOrder: orderSelector.selectedIndex
+        onSortOrderChanged: items.setGroups(0, items.count, &quot;unsorted&quot;)
+
+        function insertPosition(lessThan, item) {
+            var lower = 0
+            var upper = items.count
+            while (lower &amp;lt; upper) {
+                var middle = Math.floor(lower + (upper - lower) / 2)
+                var result = lessThan(item.model, items.get(middle).model);
+                if (result) {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+
+        function sort(lessThan) {
+            while (unsortedItems.count &amp;gt; 0) {
+                var item = unsortedItems.get(0)
+                var index = insertPosition(lessThan, item)
+
+                item.groups = &quot;items&quot;
+                items.move(item.itemsIndex, index)
+            }
+        }
+
+        items.includeByDefault: false
+        groups: DelegateModelGroup {
+            id: unsortedItems
+            name: &quot;unsorted&quot;
+
+            includeByDefault: true
+            onChanged: {
+                if (visualModel.sortOrder == visualModel.lessThan.length)
+                    setGroups(0, count, &quot;items&quot;)
+                else
+                    visualModel.sort(visualModel.lessThan[visualModel.sortOrder])
+            }
+        }
+        model: PetsModel {}
+        delegate: dragDelegate
+    }
+</db:programlisting>
+<db:section xml:id="walkthrough">
+<db:title>Walkthrough</db:title>
+<db:para>Items in a <db:link xlink:href="qml-qtqml-models-delegatemodel.xml">DelegateModel</db:link> are filtered into groups represented by the <db:link xlink:href="qml-qtqml-models-delegatemodelgroup.xml">DelegateModelGroup</db:link> type, normally all items in the model belong to a default <db:link xlink:href="qml-qtqml-models-delegatemodel.xml#items-prop">items</db:link> group but this default can be changed with the includeByDefault property. To implement our sorting we want items to first be added to an unsorted group from where we can transfer them to a sorted position in the items group. To do that we clear includeByDefault on the items group and set it on a new group name 'unsorted'.</db:para>
+<db:programlisting language="qml">        items.includeByDefault: false
+        groups: DelegateModelGroup {
+            id: unsortedItems
+            name: &quot;unsorted&quot;
+
+            includeByDefault: true
+        }
+</db:programlisting>
+<db:para>We sort the items by first finding the position in the items group to insert the first unsorted item and then transfer the item to the items group before moving it to the pre-determined index and repeat until the unsorted group is empty.</db:para>
+<db:para>To find the insert position for an item we request a handle for the item from the unsorted group with the <db:link xlink:href="qml-qtqml-models-delegatemodelgroup.xml#get-method">get</db:link>() function. Through the model property on this handle we can access the same model data that is available in a delegate instance of that item and compare against other items to determine relative position.</db:para>
+<db:programlisting language="qml">        function insertPosition(lessThan, item) {
+            var lower = 0
+            var upper = items.count
+            while (lower &amp;lt; upper) {
+                var middle = Math.floor(lower + (upper - lower) / 2)
+                var result = lessThan(item.model, items.get(middle).model);
+                if (result) {
+                    upper = middle
+                } else {
+                    lower = middle + 1
+                }
+            }
+            return lower
+        }
+
+        function sort(lessThan) {
+            while (unsortedItems.count &amp;gt; 0) {
+                var item = unsortedItems.get(0)
+                var index = insertPosition(lessThan, item)
+
+                item.groups = &quot;items&quot;
+                items.move(item.itemsIndex, index)
+            }
+        }
+</db:programlisting>
+<db:para>The lessThan argument to the sort function is a comparsion function which will determine the order of the list. In this example it can be one of the following:</db:para>
+<db:programlisting language="qml">        property var lessThan: [
+            function(left, right) { return left.name &amp;lt; right.name },
+            function(left, right) { return left.type &amp;lt; right.type },
+            function(left, right) { return left.age &amp;lt; right.age },
+            function(left, right) {
+                if (left.size == &quot;Small&quot;)
+                    return true
+                else if (right.size == &quot;Small&quot;)
+                    return false
+                else if (left.size == &quot;Medium&quot;)
+                    return true
+                else
+                    return false
+            }
+        ]
+</db:programlisting>
+<db:para>A sort is triggered whenever new items are added to the unsorted <db:link xlink:href="qml-qtqml-models-delegatemodel.xml">DelegateModel</db:link> which we are notified of by the <db:link xlink:href="qml-qtqml-models-delegatemodelgroup.xml">DelegateModelGroup</db:link> <db:code>onChanged</db:code> handler. If no sort function is currently selected we simply transfer all items from the unsorted group to the items group, otherwise we call sort with the selected sort function.</db:para>
+<db:programlisting language="qml">        groups: DelegateModelGroup {
+            id: unsortedItems
+            name: &quot;unsorted&quot;
+
+            includeByDefault: true
+            onChanged: {
+                if (visualModel.sortOrder == visualModel.lessThan.length)
+                    setGroups(0, count, &quot;items&quot;)
+                else
+                    visualModel.sort(visualModel.lessThan[visualModel.sortOrder])
+            }
+        }
+</db:programlisting>
+<db:para>Finally when the selected sort order changes we can trigger a full re-sort of the list by moving all items from the items group to the unsorted group, which will trigger the <db:link xlink:href="qml-qtqml-models-delegatemodelgroup.xml">DelegateModelGroup</db:link> <db:code>onChanged</db:code> handler and transfer the items back to the items group in correct order. Note that the <db:link xlink:href="qml-qtqml-models-delegatemodelgroup.xml">DelegateModelGroup</db:link> <db:code>onChanged</db:code> handler will not be invoked recursively so there's no issue with it being invoked during a sort.</db:para>
+<db:programlisting language="qml">        property int sortOrder: orderSelector.selectedIndex
+        onSortOrderChanged: items.setGroups(0, items.count, &quot;unsorted&quot;)
+
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/tutorials/dynamicview/dynamicview4?h=6.0">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Part 7 - Additional Features</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.0.4 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Describes how to export data in VCard format.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This part covers some additional features that make the address book more convenient for the frequent user.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-tutorial-part7-screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Although our address book is useful in isolation, it would be better if we could exchange contact data with other applications. The vCard format is a popular file format that can be used for this purpose. Here we extend our address book client to allow contacts to be exported to vCard .vcf files.</db:para>
+<db:section xml:id="defining-the-addressbook-class">
+<db:title>Defining the AddressBook Class</db:title>
+<db:para>We add a <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> object, exportButton, and a corresponding public slot, exportAsVCard() to our AddressBook class in the addressbook.h file.</db:para>
+<db:programlisting language="cpp">    void exportAsVCard();
+    ...
+    QPushButton *exportButton;
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-the-addressbook-class">
+<db:title>Implementing the AddressBook Class</db:title>
+<db:para>Within the AddressBook constructor, we connect exportButton's <db:link xlink:href="qabstractbutton.xml#clicked">clicked</db:link>() signal to exportAsVCard(). We also add this button to our buttonLayout1, the layout responsible for our panel of buttons on the right.</db:para>
+<db:para>In our exportAsVCard() function, we start by extracting the contact's name into name. We declare firstName, lastName and nameList. Next, we look for the index of the first white space in name. If there is a white space, we split the contact's name into firstName and lastName. Then, we replace the space with an underscore (&quot;_&quot;). Alternately, if there is no white space, we assume that the contact only has a first name.</db:para>
+<db:programlisting language="cpp">void AddressBook::exportAsVCard()
+{
+    QString name = nameLine-&amp;gt;text();
+    QString address = addressText-&amp;gt;toPlainText();
+    QString firstName;
+    QString lastName;
+    QStringList nameList;
+
+    int index = name.indexOf(&quot; &quot;);
+
+    if (index != -1) {
+        nameList = name.split(QRegularExpression(&quot;\\s+&quot;), Qt::SkipEmptyParts);
+        firstName = nameList.first();
+        lastName = nameList.last();
+    } else {
+        firstName = name;
+        lastName = &quot;&quot;;
+    }
+
+    QString fileName = QFileDialog::getSaveFileName(this,
+        tr(&quot;Export Contact&quot;), &quot;&quot;,
+        tr(&quot;vCard Files (*.vcf);;All Files (*)&quot;));
+
+    if (fileName.isEmpty())
+        return;
+
+    QFile file(fileName);
+</db:programlisting>
+<db:para>As with the saveToFile() function, we open a file dialog to let the user choose a location for the file. Using the file name chosen, we create an instance of <db:link xlink:href="qfile.xml">QFile</db:link> to write to.</db:para>
+<db:para>We attempt to open the file in <db:link xlink:href="qiodevicebase.xml#OpenModeFlag-enum">WriteOnly</db:link> mode. If this process fails, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to inform the user about the problem and return. Otherwise, we pass the file as a parameter to a <db:link xlink:href="qtextstream.xml">QTextStream</db:link> object, out. Like <db:link xlink:href="qdatastream.xml">QDataStream</db:link>, the <db:link xlink:href="qtextstream.xml">QTextStream</db:link> class provides functionality to read and write plain text to files. As a result, the .vcf file generated can be opened for editing in a text editor.</db:para>
+<db:programlisting language="cpp">    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+            file.errorString());
+        return;
+    }
+
+    QTextStream out(&amp;amp;file);
+</db:programlisting>
+<db:para>We then write out a vCard file with the BEGIN:VCARD tag, followed by the VERSION:2.1 tag. The contact's name is written with the N: tag. For the FN: tag, which fills in the &quot;File as&quot; property of a vCard, we have to check whether the contact has a last name or not. If the contact does, we use the details in nameList to fill it. Otherwise, we write firstName only.</db:para>
+<db:programlisting language="cpp">    out &amp;lt;&amp;lt; &quot;BEGIN:VCARD&quot; &amp;lt;&amp;lt; '\n';
+    out &amp;lt;&amp;lt; &quot;VERSION:2.1&quot; &amp;lt;&amp;lt; '\n';
+    out &amp;lt;&amp;lt; &quot;N:&quot; &amp;lt;&amp;lt; lastName &amp;lt;&amp;lt; ';' &amp;lt;&amp;lt; firstName &amp;lt;&amp;lt; '\n';
+
+    if (!nameList.isEmpty())
+       out &amp;lt;&amp;lt; &quot;FN:&quot; &amp;lt;&amp;lt; nameList.join(' ') &amp;lt;&amp;lt; '\n';
+    else
+       out &amp;lt;&amp;lt; &quot;FN:&quot; &amp;lt;&amp;lt; firstName &amp;lt;&amp;lt; '\n';
+</db:programlisting>
+<db:para>We proceed to write the contact's address. The semicolons in the address are escaped with &quot;\&quot;, the newlines are replaced with semicolons, and the commas are replaced with spaces. Lastly, we write the ADR;HOME:; tag, followed by address and then the END:VCARD tag.</db:para>
+<db:programlisting language="cpp">    address.replace(&quot;;&quot;, &quot;\\;&quot;, Qt::CaseInsensitive);
+    address.replace('\n', &quot;;&quot;, Qt::CaseInsensitive);
+    address.replace(&quot;,&quot;, &quot; &quot;, Qt::CaseInsensitive);
+
+    out &amp;lt;&amp;lt; &quot;ADR;HOME:;&quot; &amp;lt;&amp;lt; address &amp;lt;&amp;lt; '\n';
+    out &amp;lt;&amp;lt; &quot;END:VCARD&quot; &amp;lt;&amp;lt; '\n';
+
+    QMessageBox::information(this, tr(&quot;Export Successful&quot;),
+        tr(&quot;\&quot;%1\&quot; has been exported as a vCard.&quot;).arg(name));
+}
+</db:programlisting>
+<db:para>In the end, a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> is displayed to inform the user that the vCard has been successfully exported.</db:para>
+<db:para><db:emphasis>vCard is a trademark of the <db:link xlink:href="http://www.imc.org">Internet Mail Consortium</db:link></db:emphasis>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/tutorials/addressbook/part7?h=6.0">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

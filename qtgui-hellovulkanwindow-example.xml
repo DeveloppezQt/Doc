@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Hello Vulkan Window Example</db:title>
+<db:productname>QtGui</db:productname>
+<db:edition>Qt 6.0.4 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GUI Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows the basics of using <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The <db:emphasis>Hello Vulkan Window Example</db:emphasis> shows the basics of using <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> in order to display rendering with the Vulkan graphics API on systems that support this.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/hellovulkanwindow.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In this example there will be no actual rendering: it simply begins and ends a render pass, which results in clearing the buffers to a fixed value. The color buffer clear value changes on every frame.</db:para>
+<db:section xml:id="startup">
+<db:title>Startup</db:title>
+<db:para>Each Qt application using Vulkan will have to have a <db:code>Vulkan instance</db:code> which encapsulates application-level state and initializes a Vulkan library.</db:para>
+<db:para>A <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> must always be associated with a <db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link> and hence the example performs instance creation before the window. The <db:link xlink:href="qvulkaninstance.xml">QVulkanInstance</db:link> object must also outlive the window.</db:para>
+<db:programlisting language="cpp">    QVulkanInstance inst;
+
+#ifndef Q_OS_ANDROID
+    inst.setLayers(QByteArrayList() &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_standard_validation&quot;);
+#else
+    inst.setLayers(QByteArrayList()
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_GOOGLE_threading&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_parameter_validation&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_object_tracker&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_core_validation&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_image&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_LUNARG_swapchain&quot;
+                   &amp;lt;&amp;lt; &quot;VK_LAYER_GOOGLE_unique_objects&quot;);
+#endif
+
+    if (!inst.create())
+        qFatal(&quot;Failed to create Vulkan instance: %d&quot;, inst.errorCode());
+</db:programlisting>
+<db:para>The example enables validation layers, when supported. When the requested layers are not present, the request will be ignored. Additional layers and extensions can be enabled in a similar manner.</db:para>
+<db:programlisting language="cpp">    VulkanWindow w;
+    w.setVulkanInstance(&amp;amp;inst);
+
+    w.resize(1024, 768);
+    w.show();
+</db:programlisting>
+<db:para>Once the instance is ready, it is time to create a window. Note that <db:code>w</db:code> lives on the stack and is declared after <db:code>inst</db:code>.</db:para>
+</db:section>
+<db:section xml:id="the-qvulkanwindow-subclass">
+<db:title>The QVulkanWindow Subclass</db:title>
+<db:para>To add custom functionality to a <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link>, subclassing is used. This follows the existing patterns from <db:link xlink:href="qopenglwindow.xml">QOpenGLWindow</db:link> and <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link>. However, <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> utilizes a separate <db:link xlink:href="qvulkanwindowrenderer.xml">QVulkanWindowRenderer</db:link> object. This resembles <db:link xlink:href="qquickframebufferobject.xml">QQuickFramebufferObject</db:link>, and allows better separation of the functions that are supposed to be reimplemented.</db:para>
+<db:programlisting language="cpp">class VulkanRenderer : public QVulkanWindowRenderer
+{
+public:
+    VulkanRenderer(QVulkanWindow *w);
+
+    void initResources() override;
+    void initSwapChainResources() override;
+    void releaseSwapChainResources() override;
+    void releaseResources() override;
+
+    void startNextFrame() override;
+
+private:
+    QVulkanWindow *m_window;
+    QVulkanDeviceFunctions *m_devFuncs;
+    float m_green = 0;
+};
+
+class VulkanWindow : public QVulkanWindow
+{
+public:
+    QVulkanWindowRenderer *createRenderer() override;
+};
+</db:programlisting>
+<db:para>The <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> subclass reimplements the factory function <db:link xlink:href="qvulkanwindow.xml#createRenderer">QVulkanWindow::createRenderer</db:link>(). This simply returns a new instance of the <db:link xlink:href="qvulkanwindowrenderer.xml">QVulkanWindowRenderer</db:link> subclass. In order to be able to access various Vulkan resources via the window object, a pointer to the window is passed and stored via the constructor.</db:para>
+<db:programlisting language="cpp">QVulkanWindowRenderer *VulkanWindow::createRenderer()
+{
+    return new VulkanRenderer(this);
+}
+
+VulkanRenderer::VulkanRenderer(QVulkanWindow *w)
+    : m_window(w)
+{
+}
+</db:programlisting>
+<db:para>Graphics resource creation and destruction is typically done in one of the init - resource functions.</db:para>
+<db:programlisting language="cpp">void VulkanRenderer::initResources()
+{
+    qDebug(&quot;initResources&quot;);
+
+    m_devFuncs = m_window-&amp;gt;vulkanInstance()-&amp;gt;deviceFunctions(m_window-&amp;gt;device());
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-actual-rendering">
+<db:title>The Actual Rendering</db:title>
+<db:para><db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> subclasses queue their draw calls in their reimplementation of <db:link xlink:href="qvulkanwindowrenderer.xml#startNextFrame">QVulkanWindowRenderer::startNextFrame</db:link>(). Once done, they are required to call back <db:link xlink:href="qvulkanwindow.xml#frameReady">QVulkanWindow::frameReady</db:link>(). The example has no asynchronous command generation, so the frameReady() call is made directly from startNextFrame().</db:para>
+<db:programlisting language="cpp">void VulkanRenderer::startNextFrame()
+{
+    m_green += 0.005f;
+    if (m_green &amp;gt; 1.0f)
+        m_green = 0.0f;
+
+    VkClearColorValue clearColor = {{ 0.0f, m_green, 0.0f, 1.0f }};
+    VkClearDepthStencilValue clearDS = { 1.0f, 0 };
+    VkClearValue clearValues[2];
+    memset(clearValues, 0, sizeof(clearValues));
+    clearValues[0].color = clearColor;
+    clearValues[1].depthStencil = clearDS;
+
+    VkRenderPassBeginInfo rpBeginInfo;
+    memset(&amp;amp;rpBeginInfo, 0, sizeof(rpBeginInfo));
+    rpBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+    rpBeginInfo.renderPass = m_window-&amp;gt;defaultRenderPass();
+    rpBeginInfo.framebuffer = m_window-&amp;gt;currentFramebuffer();
+    const QSize sz = m_window-&amp;gt;swapChainImageSize();
+    rpBeginInfo.renderArea.extent.width = sz.width();
+    rpBeginInfo.renderArea.extent.height = sz.height();
+    rpBeginInfo.clearValueCount = 2;
+    rpBeginInfo.pClearValues = clearValues;
+    VkCommandBuffer cmdBuf = m_window-&amp;gt;currentCommandBuffer();
+    m_devFuncs-&amp;gt;vkCmdBeginRenderPass(cmdBuf, &amp;amp;rpBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+    // Do nothing else. We will just clear to green, changing the component on
+    // every invocation. This also helps verifying the rate to which the thread
+    // is throttled to. (The elapsed time between startNextFrame calls should
+    // typically be around 16 ms. Note that rendering is 2 frames ahead of what
+    // is displayed.)
+
+    m_devFuncs-&amp;gt;vkCmdEndRenderPass(cmdBuf);
+
+    m_window-&amp;gt;frameReady();
+    m_window-&amp;gt;requestUpdate(); // render continuously, throttled by the presentation rate
+}
+</db:programlisting>
+<db:para>To get continuous updates, the example simply invokes <db:link xlink:href="qwindow.xml#requestUpdate">QWindow::requestUpdate</db:link>() in order to schedule a repaint.</db:para>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/gui/hellovulkanwindow?h=6.0">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
