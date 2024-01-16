@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Shared Memory</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Overview of the techniques for sharing memory between processes.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Qt provides two techniques to share memory with other processes in the same system: <db:link xlink:href="qsharedmemory.xml">QSharedMemory</db:link> and memory-mapped files using <db:link xlink:href="qfile.xml">QFile</db:link>. Memory that is shared with other processes is often referred to as a &quot;segment&quot;, and although it may have been implemented as specific segments on processors with segmented memory models in the past, this is not the case in any modern operating system. Shared memory segments are simply regions of memory that the operating system will ensure are available to all processes participating.</db:para>
+<db:note>
+<db:para>The address at which the segment is located in memory will almost always be different for each process that is participating in the sharing. Therefore, applications must take care to share only position-independent data, such as primitive C++ types or arrays of such types.</db:para>
+</db:note>
+<db:section xml:id="sharing-memory-using-qsharedmemory">
+<db:title>Sharing memory using QSharedMemory</db:title>
+<db:para><db:link xlink:href="qsharedmemory.xml">QSharedMemory</db:link> provides a simple API to create a shared memory segment of a given size or attach to one that was created by another process. Additionally, it provides a pair of methods to <db:link xlink:href="qsharedmemory.xml#lock">lock</db:link> and <db:link xlink:href="qsharedmemory.xml#unlock">unlock</db:link> the whole segment, using an internal <db:link xlink:href="qsystemsemaphore.xml">QSystemSemaphore</db:link>.</db:para>
+<db:para>Shared memory segments and system semaphores are globally identified in the system through a &quot;key&quot;, which in Qt is represented by the <db:link xlink:href="qnativeipckey.xml">QNativeIpcKey</db:link> class. Additionally, depending on the OS, Qt may support multiple different backends for sharing memory; see the <db:link xlink:href="native-ipc-keys.xml">Native IPC Keys</db:link> documentation for more information and limitations.</db:para>
+<db:para><db:link xlink:href="qsharedmemory.xml">QSharedMemory</db:link> is designed to share memory only within the same privilege level (that is, not with untrusted other processes, such as those started by other users). For backends that support it, <db:link xlink:href="qsharedmemory.xml">QSharedMemory</db:link> will create segments such that only processes with the same privilege level can attach.</db:para>
+</db:section>
+<db:section xml:id="sharing-memory-via-memory-mapped-files">
+<db:title>Sharing memory via memory-mapped files</db:title>
+<db:para>Most files can be mapped to memory using <db:link xlink:href="qfiledevice.xml#map">QFile::map</db:link>() and, if the <db:link xlink:href="qfiledevice.xml#MemoryMapFlag-enum">MapPrivateOption</db:link> option is not specified, any writes to the mapped segment will be observed by all other processes that have mapped the same file. Exceptions to files that can be mapped to memory include remote files found in network shares or those located in certain filesystems. Even if the operating system does allow mapping remote files to memory, I/O operations on the file will likely be cached and delayed, thus making true memory sharing impossible.</db:para>
+<db:para>This solution has the major advantages of being independent of any backend API and of being simpler to interoperate with from non-Qt applications. Since <db:link xlink:href="qtemporaryfile.xml">QTemporaryFile</db:link> is a <db:link xlink:href="qfile.xml">QFile</db:link>, applications can use that class to achieve clean-up semantics and to create unique shared memory segments too.</db:para>
+<db:para>To achieve locking of the shared memory segment, applications will need to deploy their own mechanisms. One way may be to use <db:link xlink:href="qlockfile.xml">QLockFile</db:link>. Another and less costly solution is to use QBasicAtomicInteger or std::atomic in a pre-determined offset in the segment itself. Higher-level locking primitives may be available on some operating systems; for example, on Linux, applications can set the &quot;pshared&quot; flag in the mutex attribute passed to pthread_mutex_create() to indicate that the mutex resides in a shared memory segment.</db:para>
+<db:para>Be aware that the operating system will likely attempt to commit to permanent storage any writes made to the shared memory. This may be desired or it may be a performance penalty if the file itself was meant to be temporary. In that case, applications should locate a RAM-backed filesystem, such as tmpfs on Linux (see <db:link xlink:href="qstorageinfo.xml#fileSystemType">QStorageInfo::fileSystemType</db:link>()), or pass a flag to the native file-opening function to inform the OS to avoid committing the contents to storage.</db:para>
+<db:para>It is possible to use file-backed shared memory to communicate with untrusted processes, in which case the application should exercise great care. The files may be truncated/shrunk and cause applications accessing memory beyond the file's size to crash.</db:para>
+<db:section xml:id="linux-hints-on-memory-mapped-files">
+<db:title>Linux hints on memory-mapped files</db:title>
+<db:para>On modern Linux systems, while the /tmp directory is often a tmpfs mount point, that is not a requirement. However, the /dev/shm directory is required to be a tmpfs and exists for the very purpose of sharing memory. Do note that it is world-readable and writable (like /tmp and /var/tmp), so applications must be careful of the contents revealed there. Another alternative is to use the XDG Runtime Directory (see <db:link xlink:href="qstandardpaths.xml#writableLocation">QStandardPaths::writableLocation</db:link>() and <db:link xlink:href="qstandardpaths.xml#StandardLocation-enum">QStandardPaths::RuntimeLocation</db:link>), which on Linux systems using systemd is a user-specific tmpfs.</db:para>
+<db:para>An even more secure solution is to create a &quot;memfd&quot; using memfd_create(2) and use interprocess communication to pass the file descriptor, like QDBusUnixFileDescriptor or by letting the child process of a <db:link xlink:href="qprocess.xml">QProcess</db:link> inherit it. &quot;memfds&quot; can also be sealed against being shrunk, so they are safe to be used when communicating with processes with a different privilege level.</db:para>
+</db:section>
+<db:section xml:id="freebsd-hints-on-memory-mapped-files">
+<db:title>FreeBSD hints on memory-mapped files</db:title>
+<db:para>FreeBSD also has memfd_create(2) and can pass file descriptors to other processes using the same techniques as Linux. It does not have temporary filesystems mounted by default.</db:para>
+</db:section>
+<db:section xml:id="windows-hints-on-memory-mapped-files">
+<db:title>Windows hints on memory-mapped files</db:title>
+<db:para>On Windows, the application can request the operating system avoid saving the file's contents on permanent storage. This request is performed by passing the FILE_ATTRIBUTE_TEMPORARY flag in the dwFlagsAndAttributes parameter to the CreateFile Win32 function, the _O_SHORT_LIVED flag to _open() low-level function, or by including the modifier &quot;T&quot; to the fopen() C runtime function.</db:para>
+<db:para>There's also a flag to inform the operating system to delete the file when the last handle to it is closed (FILE_FLAG_DELETE_ON_CLOSE, _O_TEMPORARY, and the &quot;D&quot; modifier), but do note that all processes attempting to open the file must agree on using this flag or not using it. A mismatch will likely cause a sharing violation and failure to open the file.</db:para>
+</db:section>
+</db:section>
+</db:article>

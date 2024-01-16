@@ -1,0 +1,290 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>DOM Bookmarks Application</db:title>
+<db:productname>QtXml</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Provides a reader for XML Bookmark Exchange Language files.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The DOM Bookmarks Application provides a reader for XML Bookmark Exchange Language (XBEL) files that uses Qt's DOM-based XML API to read and parse the files. The <db:link xlink:href="qtcore-serialization-streambookmarks-example.xml">QXmlStream Bookmarks Example</db:link> provides an alternative way to read this type of file.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="the-xbeltree-class-definition">
+<db:title>The XbelTree Class Definition</db:title>
+<db:para>The XbelTree class has functions for reading and writing to the filesystem. It inherits from the <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> class, contains the model for the displaying of the bookmarks, and allows it to be edited.</db:para>
+<db:programlisting language="cpp">class XbelTree : public QTreeWidget
+{
+    Q_OBJECT
+
+public:
+    explicit XbelTree(QWidget *parent = nullptr);
+
+    bool read(QIODevice *device);
+    bool write(QIODevice *device) const;
+
+protected:
+#if QT_CONFIG(clipboard) &amp;&amp; QT_CONFIG(contextmenu)
+    void contextMenuEvent(QContextMenuEvent *event) override;
+#endif
+
+private slots:
+    void updateDomElement(const QTreeWidgetItem *item, int column);
+
+private:
+    void parseFolderElement(const QDomElement &amp;element,
+                            QTreeWidgetItem *parentItem = nullptr);
+    QTreeWidgetItem *createItem(const QDomElement &amp;element,
+                                QTreeWidgetItem *parentItem = nullptr);
+
+    QDomDocument domDocument;
+    QIcon folderIcon;
+    QIcon bookmarkIcon;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-xbeltree-class-implementation">
+<db:title>The XbelTree Class Implementation</db:title>
+<db:para>The XbelTree constructor accepts a <db:link xlink:href="qwidget.xml">QWidget</db:link> within which it is placed. The folderIcon is set to <db:link xlink:href="qicon.xml#Mode-enum">QIcon::Normal</db:link> mode where the pixmap is only displayed when the user is not interacting with the icon. The <db:link xlink:href="qstyle.xml#StandardPixmap-enum">QStyle::SP_DirClosedIcon</db:link>, <db:link xlink:href="qstyle.xml#StandardPixmap-enum">QStyle::SP_DirOpenIcon</db:link>, and <db:link xlink:href="qstyle.xml#StandardPixmap-enum">QStyle::SP_FileIcon</db:link> correspond to standard pixmaps that follow the style of your GUI.</db:para>
+<db:programlisting language="cpp">XbelTree::XbelTree(QWidget *parent)
+    : QTreeWidget(parent)
+{
+    header()-&gt;setSectionResizeMode(QHeaderView::Stretch);
+    setHeaderLabels({tr(&quot;Title&quot;), tr(&quot;Location&quot;)});
+
+    folderIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_DirClosedIcon),
+                         QIcon::Normal, QIcon::Off);
+    folderIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_DirOpenIcon),
+                         QIcon::Normal, QIcon::On);
+    bookmarkIcon.addPixmap(style()-&gt;standardPixmap(QStyle::SP_FileIcon));
+}
+</db:programlisting>
+<db:para>The read() function opens the given <db:link xlink:href="qiodevice.xml">QIODevice</db:link> using <db:link xlink:href="qdomdocument.xml#setContent">QDomDocument::setContent</db:link>. If it succeeds opening the file and the top level headers are verified, the contents of the class is cleared before the file contents is parsed by iterating all the top level XML nodes and calling parseFolderElement() on each of them.</db:para>
+<db:programlisting language="cpp">bool XbelTree::read(QIODevice *device)
+{
+    QDomDocument::ParseResult result =
+            domDocument.setContent(device, QDomDocument::ParseOption::UseNamespaceProcessing);
+    if (!result) {
+        QMessageBox::information(window(), tr(&quot;DOM Bookmarks&quot;),
+                                 tr(&quot;Parse error at line %1, column %2:\n%3&quot;)
+                                         .arg(result.errorLine)
+                                         .arg(result.errorColumn)
+                                         .arg(result.errorMessage));
+        return false;
+    }
+
+    QDomElement root = domDocument.documentElement();
+    if (root.tagName() != &quot;xbel&quot;) {
+        QMessageBox::information(window(), tr(&quot;DOM Bookmarks&quot;),
+                                 tr(&quot;The file is not an XBEL file.&quot;));
+        return false;
+    } else if (root.hasAttribute(versionAttribute)
+               &amp;&amp; root.attribute(versionAttribute) != &quot;1.0&quot;_L1) {
+        QMessageBox::information(window(), tr(&quot;DOM Bookmarks&quot;),
+                                 tr(&quot;The file is not an XBEL version 1.0 &quot;
+                                    &quot;file.&quot;));
+        return false;
+    }
+
+    clear();
+
+    disconnect(this, &amp;QTreeWidget::itemChanged, this, &amp;XbelTree::updateDomElement);
+
+    QDomElement child = root.firstChildElement(folderElement);
+    while (!child.isNull()) {
+        parseFolderElement(child);
+        child = child.nextSiblingElement(folderElement);
+    }
+
+    connect(this, &amp;QTreeWidget::itemChanged, this, &amp;XbelTree::updateDomElement);
+
+    return true;
+}
+</db:programlisting>
+<db:para>The parseFolderElement() function handles the different element types and calls itself recursively if the element is a subfolder.</db:para>
+<db:programlisting language="cpp">void XbelTree::parseFolderElement(const QDomElement &amp;element,
+                                  QTreeWidgetItem *parentItem)
+{
+    QTreeWidgetItem *item = createItem(element, parentItem);
+
+    QString title = element.firstChildElement(titleElement).text();
+    if (title.isEmpty())
+        title = tr(&quot;Folder&quot;);
+
+    item-&gt;setFlags(item-&gt;flags() | Qt::ItemIsEditable);
+    item-&gt;setIcon(0, folderIcon);
+    item-&gt;setText(0, title);
+
+    bool folded = (element.attribute(foldedAttribute) != &quot;no&quot;_L1);
+    item-&gt;setExpanded(!folded);
+
+    constexpr char16_t midDot = u'\xB7';
+    static const QString dots = QString(30, midDot);
+    QDomElement child = element.firstChildElement();
+    while (!child.isNull()) {
+        if (child.tagName() == folderElement) {
+            parseFolderElement(child, item);
+        } else if (child.tagName() == bookmarkElement) {
+            QTreeWidgetItem *childItem = createItem(child, item);
+
+            QString title = child.firstChildElement(titleElement).text();
+            if (title.isEmpty())
+                title = tr(&quot;Folder&quot;);
+
+            childItem-&gt;setFlags(item-&gt;flags() | Qt::ItemIsEditable);
+            childItem-&gt;setIcon(0, bookmarkIcon);
+            childItem-&gt;setText(0, title);
+            childItem-&gt;setText(1, child.attribute(hrefAttribute));
+        } else if (child.tagName() == &quot;separator&quot;_L1) {
+            QTreeWidgetItem *childItem = createItem(child, item);
+            childItem-&gt;setFlags(item-&gt;flags() &amp; ~(Qt::ItemIsSelectable | Qt::ItemIsEditable));
+            childItem-&gt;setText(0, dots);
+        }
+        child = child.nextSiblingElement();
+    }
+}
+</db:programlisting>
+<db:para>The write() function saves the domDocument to the given <db:link xlink:href="qiodevice.xml">QIODevice</db:link> using QDomDocument::save.</db:para>
+<db:programlisting language="cpp">bool XbelTree::write(QIODevice *device) const
+{
+    const int IndentSize = 4;
+
+    QTextStream out(device);
+    domDocument.save(out, IndentSize);
+    return true;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-mainwindow-class-definition">
+<db:title>The MainWindow Class Definition</db:title>
+<db:para>The MainWindow class is a subclass of <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link>, with a File menu and a Help menu.</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow();
+
+public slots:
+    void open();
+    void saveAs();
+    void about();
+
+private:
+    void createMenus();
+
+    XbelTree *xbelTree;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-mainwindow-class-implementation">
+<db:title>The MainWindow Class Implementation</db:title>
+<db:para>The MainWindow constructor instantiates the member XbelTree object, and sets its header with a <db:link xlink:href="qstringlist.xml">QStringList</db:link> object, labels. The constructor also invokes createMenus() to set up the menus. The statusBar() is used to display the message &quot;Ready&quot;.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow()
+{
+    xbelTree = new XbelTree;
+    setCentralWidget(xbelTree);
+
+    createMenus();
+
+    statusBar()-&gt;showMessage(tr(&quot;Ready&quot;));
+
+    setWindowTitle(tr(&quot;DOM Bookmarks&quot;));
+    const QSize availableSize = screen()-&gt;availableGeometry().size();
+    resize(availableSize.width() / 2, availableSize.height() / 3);
+}
+</db:programlisting>
+<db:para>The createMenus() function populates the menus and sets keyboard shortcuts.</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    QAction *openAct = fileMenu-&gt;addAction(tr(&quot;&amp;Open...&quot;), this, &amp;MainWindow::open);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+
+    QAction *saveAsAct = fileMenu-&gt;addAction(tr(&quot;&amp;Save As...&quot;), this, &amp;MainWindow::saveAs);
+    saveAsAct-&gt;setShortcuts(QKeySequence::SaveAs);
+
+    QAction *exitAct = fileMenu-&gt;addAction(tr(&quot;E&amp;xit&quot;), this, &amp;QWidget::close);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+
+    menuBar()-&gt;addSeparator();
+
+    QMenu *helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    helpMenu-&gt;addAction(tr(&quot;&amp;About&quot;), this, &amp;MainWindow::about);
+    helpMenu-&gt;addAction(tr(&quot;About &amp;Qt&quot;), qApp, &amp;QApplication::aboutQt);
+}
+</db:programlisting>
+<db:para>The open() function enables the user to open an XBEL file using <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link>. A warning message is displayed along with the fileName and errorString if the file cannot be read or if there is a parse error. If it succeeds it calls XbelTree::read().</db:para>
+<db:programlisting language="cpp">void MainWindow::open()
+{
+    QFileDialog fileDialog(this, tr(&quot;Open Bookmark File&quot;), QDir::currentPath());
+    fileDialog.setMimeTypeFilters({&quot;application/x-xbel&quot;_L1});
+    if (fileDialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString fileName = fileDialog.selectedFiles().constFirst();
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;DOM Bookmarks&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  file.errorString()));
+        return;
+    }
+
+    if (xbelTree-&gt;read(&amp;file))
+        statusBar()-&gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+}
+</db:programlisting>
+<db:para>The saveAs() function displays a <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link>, prompting the user for a fileName. Similar to the open() function, this function also displays a warning message if the file cannot be written to. If this succeeds it calls XbelTree::write().</db:para>
+<db:programlisting language="cpp">void MainWindow::saveAs()
+{
+    QFileDialog fileDialog(this, tr(&quot;Save Bookmark File&quot;), QDir::currentPath());
+    fileDialog.setAcceptMode(QFileDialog::AcceptSave);
+    fileDialog.setDefaultSuffix(&quot;xbel&quot;_L1);
+    fileDialog.setMimeTypeFilters({&quot;application/x-xbel&quot;_L1});
+    if (fileDialog.exec() != QDialog::Accepted)
+        return;
+
+    const QString fileName = fileDialog.selectedFiles().constFirst();
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;DOM Bookmarks&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  file.errorString()));
+        return;
+    }
+
+    if (xbelTree-&gt;write(&amp;file))
+        statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+</db:programlisting>
+<db:para>The about() function displays a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> with a brief description of the example.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About DOM Bookmarks&quot;),
+                      tr(&quot;The &lt;b&gt;DOM Bookmarks&lt;/b&gt; example demonstrates how to &quot;
+                         &quot;use Qt's DOM classes to read and write XML &quot;
+                         &quot;documents.&quot;));
+}
+</db:programlisting>
+<db:para>See the <db:link xlink:href="http://pyxml.sourceforge.net/topics/xbel/">XML Bookmark Exchange Language Resource Page</db:link> for more information about XBEL files.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/xml/dombookmarks?h=6.8">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

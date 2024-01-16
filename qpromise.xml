@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QPromise Class</db:title>
+<db:subtitle>template &lt;typename T&gt; class QPromise</db:subtitle>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.8.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:link xlink:href="qpromise.xml">QPromise</db:link> class provides a way to store computation results to be accessed by <db:link xlink:href="qfuture.xml">QFuture</db:link>.</db:para>
+<db:para>This class was introduced in Qt 6.0.</db:para>
+<db:note>
+<db:para>All functions in this class are <db:link xlink:href="">thread-safe</db:link>.</db:para>
+</db:note>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>QPromise</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Since</db:term>
+<db:listitem>
+<db:para>Qt 6.0</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>CMake</db:term>
+<db:listitem>
+<db:para>find_package(Qt6 REQUIRED COMPONENTS Core)</db:para>
+<db:para>target_link_libraries(mytarget PRIVATE Qt6::Core)</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += core</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Group</db:term>
+<db:listitem>
+<db:para>QPromise is part of <db:simplelist><db:member>thread</db:member></db:simplelist>
+</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para><db:link xlink:href="qpromise.xml">QPromise</db:link> provides a simple way to communicate progress and results of the user-defined computation to <db:link xlink:href="qfuture.xml">QFuture</db:link> in an asynchronous fashion. For the communication to work, <db:link xlink:href="qfuture.xml">QFuture</db:link> must be constructed by <db:link xlink:href="qpromise.xml">QPromise</db:link>.</db:para>
+<db:para>You can use <db:link xlink:href="qpromise.xml">QPromise</db:link> based workloads as an alternative to <db:link xlink:href="qtconcurrent-index.xml">Qt Concurrent</db:link> framework when fine-grained control is needed or high-level communication primitive to accompany <db:link xlink:href="qfuture.xml">QFuture</db:link> is sufficient.</db:para>
+<db:para>The simplest case of promise and future collaboration would be a single result communication:</db:para>
+<db:programlisting language="cpp">    QPromise&lt;int&gt; promise;
+    QFuture&lt;int&gt; future = promise.future();
+
+    const std::unique_ptr&lt;QThread&gt; thread(QThread::create([] (QPromise&lt;int&gt; promise) {
+        promise.start();   // notifies QFuture that the computation is started
+        promise.addResult(42);
+        promise.finish();  // notifies QFuture that the computation is finished
+    }, std::move(promise)));
+    thread-&gt;start();
+
+    future.waitForFinished();  // blocks until QPromise::finish is called
+    future.result();  // returns 42
+</db:programlisting>
+<db:para>By design, <db:link xlink:href="qpromise.xml">QPromise</db:link> is a move-only object. This behavior helps to ensure that whenever the promise is destroyed, the associated future object is notified and will not wait forever for the results to become available. However, this is inconvenient if one wants to use the same promise to report results from different threads. There is no specific way to do that at the moment, but known mechanisms exist, such as the use of smart pointers or raw pointers/references. <db:link xlink:href="qsharedpointer.xml">QSharedPointer</db:link> is a good default choice if you want to copy your promise and use it in multiple places simultaneously. Raw pointers or references are, in a sense, easier, and probably perform better (since there is no need to do a resource management) but may lead to dangling.</db:para>
+<db:para>Here is an example of how a promise can be used in multiple threads:</db:para>
+<db:programlisting language="cpp">    const auto sharedPromise = std::make_shared&lt;QPromise&lt;int&gt;&gt;();
+    QFuture&lt;int&gt; future = sharedPromise-&gt;future();
+
+    // ...
+
+    sharedPromise-&gt;start();
+
+    // here, QPromise is shared between threads via a smart pointer
+    const std::unique_ptr&lt;QThread&gt; threads[] = {
+        std::unique_ptr&lt;QThread&gt;(QThread::create([] (auto sharedPromise) {
+            sharedPromise-&gt;addResult(0, 0);  // adds value 0 by index 0
+        }, sharedPromise)),
+        std::unique_ptr&lt;QThread&gt;(QThread::create([] (auto sharedPromise) {
+            sharedPromise-&gt;addResult(-1, 1);  // adds value -1 by index 1
+        }, sharedPromise)),
+        std::unique_ptr&lt;QThread&gt;(QThread::create([] (auto sharedPromise) {
+            sharedPromise-&gt;addResult(-2, 2);  // adds value -2 by index 2
+        }, sharedPromise)),
+        // ...
+    };
+    // start all threads
+    for (auto&amp; t : threads)
+        t-&gt;start();
+
+    // ...
+
+    future.resultAt(0);  // waits until result at index 0 becomes available. returns value  0
+    future.resultAt(1);  // waits until result at index 1 becomes available. returns value -1
+    future.resultAt(2);  // waits until result at index 2 becomes available. returns value -2
+
+    sharedPromise-&gt;finish();
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml">QFuture</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="addResult">
+<db:title>bool QPromise::addResult(T &amp;&amp;<db:emphasis>result</db:emphasis>, int <db:emphasis>index</db:emphasis> = -1)</db:title>
+<db:bridgehead renderas="sect2" xml:id="addResult-1">bool QPromise::addResult(const T &amp;<db:emphasis>result</db:emphasis>, int <db:emphasis>index</db:emphasis> = -1)</db:bridgehead>
+<db:para>Same as</db:para>
+<db:programlisting language="cpp">emplaceResultAt(index, result);            // first overload
+emplaceResultAt(index, std::move(result)); // second overload
+</db:programlisting>
+<db:para>or, if index == -1 (the default)</db:para>
+<db:programlisting language="cpp">emplaceResult(result);            // first overload
+emplaceResult(std::move(result)); // second overload
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qpromise.xml#emplaceResultAt">emplaceResultAt</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#emplaceResult">emplaceResult</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#addResults">addResults</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="emplaceResult">
+<db:title>[since 6.6] bool QPromise::emplaceResult(Args &amp;&amp;... <db:emphasis>args</db:emphasis>)</db:title>
+<db:bridgehead renderas="sect2" xml:id="emplaceResultAt">[since 6.6] bool QPromise::emplaceResultAt(int <db:emphasis>index</db:emphasis>, Args &amp;&amp;... <db:emphasis>args</db:emphasis>)</db:bridgehead>
+<db:para>Adds a result constructed from <db:code role="parameter">args...</db:code> to the internal result collection at <db:code role="parameter">index</db:code> position (<db:link xlink:href="qpromise.xml#emplaceResultAt">emplaceResultAt</db:link>()) or the end of of the collection (<db:link xlink:href="qpromise.xml#emplaceResult">emplaceResult</db:link>()).</db:para>
+<db:para>Returns true when the result was added to the collection.</db:para>
+<db:para>Returns false when this promise is in canceled or finished state or when the result was rejected. <db:link xlink:href="qpromise.xml#addResult">addResult</db:link>() rejects to add a result if there's already another result in the collection stored at the same index.</db:para>
+<db:para>These functions only participate in overload resolutions if T is constructible from <db:code role="parameter">args....</db:code></db:para>
+<db:para>You can get a result at a specific index by calling <db:link xlink:href="qfuture.xml#resultAt">QFuture::resultAt</db:link>().</db:para>
+<db:note>
+<db:para>It is possible to specify an arbitrary index and request result at that index. However, some <db:link xlink:href="qfuture.xml">QFuture</db:link> methods operate with continuous results. For instance, iterative approaches that use <db:link xlink:href="qfuture.xml#resultCount">QFuture::resultCount</db:link>() or <db:link xlink:href="qfuture-const-iterator.xml">QFuture::const_iterator</db:link>. In order to get all available results without thinking if there are index gaps or not, use <db:link xlink:href="qfuture.xml#results">QFuture::results</db:link>().</db:para>
+</db:note>
+<db:para>This function was introduced in Qt 6.6.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qpromise.xml#addResult">addResult</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#addResults">addResults</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="QPromise">
+<db:title>QPromise::QPromise()</db:title>
+<db:para>Constructs a <db:link xlink:href="qpromise.xml">QPromise</db:link> with a default state.</db:para>
+</db:section>
+<db:section xml:id="QPromise-1">
+<db:title>QPromise::QPromise(QPromise&lt;T&gt; &amp;&amp;<db:emphasis>other</db:emphasis>)</db:title>
+<db:para>Move constructs a new <db:link xlink:href="qpromise.xml">QPromise</db:link> from <db:code role="parameter">other</db:code>.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qpromise.xml#operator-eq">operator=</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="dtor.QPromise">
+<db:title>QPromise::~QPromise()</db:title>
+<db:para>Destroys the promise.</db:para>
+<db:note>
+<db:para>The promise implicitly transitions to a canceled state on destruction unless <db:link xlink:href="qpromise.xml#finish">finish</db:link>() is called beforehand by the user.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="addResults">
+<db:title>[since 6.6] bool QPromise::addResults(const QList&lt;T&gt; &amp;<db:emphasis>results</db:emphasis>)</db:title>
+<db:para>Adds <db:code role="parameter">results</db:code> at the end of the internal result collection.</db:para>
+<db:para>Returns true when <db:code role="parameter">results</db:code> are added to the collection.</db:para>
+<db:para>Returns false when this promise is in canceled or finished state.</db:para>
+<db:para>This is more efficient than looping over <db:link xlink:href="qpromise.xml#addResult">addResult</db:link>(), because associated futures will be notified only once per addResults() call, instead of once per element contained in <db:code role="parameter">results</db:code>, as would be the case with individual <db:link xlink:href="qpromise.xml#addResult">addResult</db:link>() calls. But if the calculation of each element takes time, then the code on the receiving end (future) cannot make progress until all results are reported, so use this function only if the calculation of consecutive elements is relatively fast.</db:para>
+<db:para>This function was introduced in Qt 6.6.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qpromise.xml#addResult">addResult</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="finish">
+<db:title>void QPromise::finish()</db:title>
+<db:para>Reports that the computation is finished. Once finished, no new results will be added when calling <db:link xlink:href="qpromise.xml#addResult">addResult</db:link>(). This method accompanies <db:link xlink:href="qpromise.xml#start">start</db:link>().</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#isFinished">QFuture::isFinished</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#waitForFinished">QFuture::waitForFinished</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#start">start</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="future">
+<db:title>QFuture&lt;T&gt; QPromise::future() const</db:title>
+<db:para>Returns a future associated with this promise.</db:para>
+</db:section>
+<db:section xml:id="isCanceled">
+<db:title>bool QPromise::isCanceled() const</db:title>
+<db:para>Returns whether the computation has been canceled with the <db:link xlink:href="qfuture.xml#cancel">QFuture::cancel</db:link>() function. The returned value true indicates that the computation should be finished and <db:link xlink:href="qpromise.xml#finish">finish</db:link>() called.</db:para>
+<db:note>
+<db:para>After cancellation, results currently available may still be accessed by a future, but new results will not be added when calling <db:link xlink:href="qpromise.xml#addResult">addResult</db:link>().</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="setException">
+<db:title>void QPromise::setException(const QException &amp;<db:emphasis>e</db:emphasis>)</db:title>
+<db:para>Sets exception <db:code role="parameter">e</db:code> to be the result of the computation.</db:para>
+<db:note>
+<db:para>You can set at most one exception throughout the computation execution.</db:para>
+</db:note>
+<db:note>
+<db:para>This method has no effect after <db:link xlink:href="qfuture.xml#cancel">QFuture::cancel</db:link>() or <db:link xlink:href="qpromise.xml#finish">finish</db:link>().</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qpromise.xml#isCanceled">isCanceled</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setException-1">
+<db:title>void QPromise::setException(std::__exception_ptr::exception_ptr <db:emphasis>e</db:emphasis>)</db:title>
+<db:para>This is an overloaded function.</db:para>
+</db:section>
+<db:section xml:id="setProgressRange">
+<db:title>void QPromise::setProgressRange(int <db:emphasis>minimum</db:emphasis>, int <db:emphasis>maximum</db:emphasis>)</db:title>
+<db:para>Sets the progress range of the computation to be between <db:code role="parameter">minimum</db:code> and <db:code role="parameter">maximum</db:code>.</db:para>
+<db:para>If <db:code role="parameter">maximum</db:code> is smaller than <db:code role="parameter">minimum</db:code>, <db:code role="parameter">minimum</db:code> becomes the only legal value.</db:para>
+<db:para>The progress value is reset to be <db:code role="parameter">minimum</db:code>.</db:para>
+<db:para>The progress range usage can be disabled by using setProgressRange(0, 0). In this case progress value is also reset to 0.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#progressMinimum">QFuture::progressMinimum</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#progressMaximum">QFuture::progressMaximum</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#progressValue">QFuture::progressValue</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setProgressValue">
+<db:title>void QPromise::setProgressValue(int <db:emphasis>progressValue</db:emphasis>)</db:title>
+<db:para>Sets the progress value of the computation to <db:code role="parameter">progressValue</db:code>. It is possible to only increment the progress value. This is a convenience method for calling <db:link xlink:href="qpromise.xml#setProgressValueAndText">setProgressValueAndText</db:link>(progressValue, QString()).</db:para>
+<db:para>In case of the <db:code role="parameter">progressValue</db:code> falling out of the progress range, this method has no effect.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#progressValue">QFuture::progressValue</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#setProgressRange">setProgressRange</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setProgressValueAndText">
+<db:title>void QPromise::setProgressValueAndText(int <db:emphasis>progressValue</db:emphasis>, const QString &amp;<db:emphasis>progressText</db:emphasis>)</db:title>
+<db:para>Sets the progress value and the progress text of the computation to <db:code role="parameter">progressValue</db:code> and <db:code role="parameter">progressText</db:code> respectively. It is possible to only increment the progress value.</db:para>
+<db:note>
+<db:para>This function has no effect if the promise is in canceled or finished state.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#progressValue">QFuture::progressValue</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#progressText">QFuture::progressText</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#cancel">QFuture::cancel</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#finish">finish</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="start">
+<db:title>void QPromise::start()</db:title>
+<db:para>Reports that the computation is started. Calling this method is important to state the beginning of the computation as <db:link xlink:href="qfuture.xml">QFuture</db:link> methods rely on this information.</db:para>
+<db:note>
+<db:para>Extra attention is required when start() is called from a newly created thread. In such case, the call might naturally be delayed due to the implementation details of the thread scheduling.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#isStarted">QFuture::isStarted</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#waitForFinished">QFuture::waitForFinished</db:link>()</db:member>
+<db:member><db:link xlink:href="qpromise.xml#finish">finish</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="suspendIfRequested">
+<db:title>void QPromise::suspendIfRequested()</db:title>
+<db:para>Conditionally suspends current thread of execution and waits until resumed or canceled by the corresponding methods of <db:link xlink:href="qfuture.xml">QFuture</db:link>. This method does not block unless the computation is requested to be suspended by <db:link xlink:href="qfuture.xml#suspend">QFuture::suspend</db:link>() or another related method. If you want to check that the execution has been suspended, use <db:link xlink:href="qfuture.xml#isSuspended">QFuture::isSuspended</db:link>().</db:para>
+<db:note>
+<db:para>When using the same promise in multiple threads, <db:link xlink:href="qfuture.xml#isSuspended">QFuture::isSuspended</db:link>() becomes true as soon as at least one thread with the promise suspends.</db:para>
+</db:note>
+<db:para>The following code snippets show the usage of suspension mechanism:</db:para>
+<db:programlisting language="cpp">    // Create promise and future
+    QPromise&lt;int&gt; promise;
+    QFuture&lt;int&gt; future = promise.future();
+
+    promise.start();
+    // Start a computation thread that supports suspension and cancellation
+    const std::unique_ptr&lt;QThread&gt; thread(QThread::create([] (QPromise&lt;int&gt; promise) {
+        for (int i = 0; i &lt; 100; ++i) {
+            promise.addResult(i);
+            promise.suspendIfRequested();   // support suspension
+            if (promise.isCanceled())       // support cancellation
+                break;
+        }
+        promise.finish();
+    }, std::move(promise)));
+    thread-&gt;start();
+</db:programlisting>
+<db:para><db:link xlink:href="qfuture.xml#suspend">QFuture::suspend</db:link>() requests the associated promise to suspend:</db:para>
+<db:programlisting language="cpp">    future.suspend();
+</db:programlisting>
+<db:para>After <db:link xlink:href="qfuture.xml#isSuspended">QFuture::isSuspended</db:link>() becomes true, you can get intermediate results:</db:para>
+<db:programlisting language="cpp">    future.resultCount();  // returns some number between 0 and 100
+    for (int i = 0; i &lt; future.resultCount(); ++i) {
+        // process results available before suspension
+    }
+</db:programlisting>
+<db:para>When suspended, you can resume or cancel the awaiting computation:</db:para>
+<db:programlisting language="cpp">    future.resume();  // resumes computation, this call will unblock the promise
+    // alternatively, call future.cancel() to stop the computation
+
+    future.waitForFinished();
+    future.results();  // returns all computation results - array of values from 0 to 99
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qfuture.xml#resume">QFuture::resume</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#cancel">QFuture::cancel</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#setSuspended">QFuture::setSuspended</db:link>()</db:member>
+<db:member><db:link xlink:href="qfuture.xml#toggleSuspended">QFuture::toggleSuspended</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="swap">
+<db:title>[noexcept] void QPromise::swap(QPromise&lt;T&gt; &amp;<db:emphasis>other</db:emphasis>)</db:title>
+<db:para>Swaps this promise with <db:code role="parameter">other</db:code>. This operation is very fast and never fails.</db:para>
+</db:section>
+<db:section xml:id="operator-eq">
+<db:title>[noexcept] QPromise&lt;T&gt; &amp;QPromise::operator=(QPromise&lt;T&gt; &amp;&amp;<db:emphasis>other</db:emphasis>)</db:title>
+<db:para>Move assigns <db:code role="parameter">other</db:code> to this promise and returns a reference to this promise.</db:para>
+</db:section>
+</db:section>
+</db:article>
