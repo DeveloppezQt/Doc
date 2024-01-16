@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Places Backend</db:title>
+<db:productname>QtLocation</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Location Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Places backend is responsible for managing a places datastore whether it is located remotely or locally.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>The <db:link xlink:href="qplacemanager.xml">QPlaceManager</db:link> interface, provided to clients to allow access to place information, depends directly on an implementation of <db:link xlink:href="qplacemanagerengine.xml">QPlaceManagerEngine</db:link>. The engine provides the backend function implementations which are called by the manager.</db:para>
+<db:para>A places backend implementer needs to derive from <db:link xlink:href="qplacemanagerengine.xml">QPlaceManagerEngine</db:link> and provide implementations for the virtual functions relevant for their backend. Most of these functions are asynchronous and so implementers will also need to derive the appropriate <db:link xlink:href="location-places-cpp.xml#places-reply-classes">reply classes</db:link>. The reply objects are responsible for managing an asynchronous request; they are used to notify when a request is complete and hold the results of that request. <db:link xlink:href="qplacemanagerengine.xml">QPlaceManagerEngine</db:link> provides a default implementation for all virtual functions. The default implementations for the asynchronous functions return a reply that will emit the errorOccurred() and finished() signals at the next iteration through the event loop.</db:para>
+</db:section>
+<db:section xml:id="implementing-inheriting-reply-objects">
+<db:title>Implementing/Inheriting Reply Objects</db:title>
+<db:para>A reply object would be inherited as follows:</db:para>
+<db:programlisting language="cpp">class SearchReply : public QPlaceSearchReply
+{
+public:
+    explicit SearchReply(ManagerEngine *engine)
+        : QPlaceSearchReply(engine), m_engine(engine){}
+
+    ~SearchReply();
+    void setResults(const QList&amp;lt;QPlaceSearchResult&amp;gt; &amp;amp;results);
+    void setRequest(const QPlaceSearchRequest &amp;amp;request);
+    ...
+    void triggerDone(QPlaceReply::Error error = QPlaceReply::NoError,
+                     const QString &amp;amp;errorString = QString());
+
+    ManagerEngine *m_engine;
+};
+</db:programlisting>
+<db:para>The implementation of a <db:link xlink:href="qplacemanagerengine.xml">QPlaceManagerEngine</db:link> must ensure that any signals emitted by the reply objects are delayed until the request functions have returned and the application code has a chance to connect those signals to slots. The typical approach is to use <db:link xlink:href="qmetaobject.xml#invokeMethod">QMetaObject::invokeMethod</db:link>() with a <db:link xlink:href="qt.xml#ConnectionType-enum">Qt::QueuedConnection</db:link> to emit the signals.</db:para>
+<db:programlisting language="cpp">void SearchSuggestionReply::triggerDone(QPlaceReply::Error error,
+                         const QString &amp;amp;errorString)
+{
+    if (error != QPlaceReply::NoError) {
+        this-&amp;gt;setError(error,errorString);
+        QMetaObject::invokeMethod(m_engine, &quot;errorOccurred&quot;, Qt::QueuedConnection,
+                                  Q_ARG(QPlaceReply *,this),
+                                  Q_ARG(QPlaceReply::Error, error),
+                                  Q_ARG(QString, errorString));
+        QMetaObject::invokeMethod(this, &quot;errorOccurred&quot;, Qt::QueuedConnection,
+                                  Q_ARG(QPlaceReply::Error, error),
+                                  Q_ARG(QString, errorString));
+    }
+
+    this-&amp;gt;setFinished(true);
+    QMetaObject::invokeMethod(m_engine, &quot;finished&quot;, Qt::QueuedConnection,
+                              Q_ARG(QPlaceReply *,this));
+    QMetaObject::invokeMethod(this, &quot;finished&quot;, Qt::QueuedConnection);
+}
+</db:programlisting>
+<db:para>Note that the finished signals should always be emitted when a reply is complete, even if an error has been encountered, that is, if there is an error, both the error and finished signals should be emitted while if there is no error, only the finished signals are emitted.</db:para>
+<db:para>The protected functions of <db:link xlink:href="qplacesearchreply.xml#setResults">QPlaceSearchReply::setResults</db:link>() and <db:link xlink:href="qplacesearchreply.xml#setRequest">QPlaceSearchReply::setRequest</db:link>() are made publicly accessible so the plugin can assign results and requests. Because these functions are not publicly exported, accessibility is not so much of an issue. An alternative would have been to declare a friend class in SearchReply.</db:para>
+<db:para>Typically the engine instance would be made the parent of the reply. If the developer fails to discard the replies when finished, the engine can clean those upon destruction. Commonly, the reply also has a pointer reference back to the engine, which may be used to emit the <db:link xlink:href="qplacemanagerengine.xml#finished">QPlaceManagerEngine::finished</db:link>() and QPlaceManagerEngine::error() signals. This is just one of many ways the reply could be implemented.</db:para>
+</db:section>
+<db:section xml:id="icon-urls">
+<db:title>Icon URLs</db:title>
+<db:para>Icon URLs are provided through the <db:link xlink:href="qplacemanagerengine.xml#constructIconUrl">QPlaceManagerEngine::constructIconUrl</db:link>() function. The expected behaviour is that the engine will use the <db:link xlink:href="qplaceicon.xml#parameters">QPlaceIcon::parameters</db:link>() in order to construct an appropriate URL. When a <db:link xlink:href="qplace.xml">QPlace</db:link> object is returned from the manager either from a search or a query to get place details, it is expected the engine will correctly populate the parameters as necessary.</db:para>
+<db:para>The backend is free to choose what the parameter key and values are, however if a backend only ever has one URL per icon it is recommended that the <db:link xlink:href="qplaceicon.xml#SingleUrl-var">QPlaceIcon::SingleUrl</db:link> be used as the key.</db:para>
+</db:section>
+<db:section xml:id="categories">
+<db:title>Categories</db:title>
+<db:para>The categories of a manager engine are relatively static entities; for engines accessing remote place datastores it may be desirable to cache the category structure rather than querying a server every time <db:link xlink:href="qplacemanagerengine.xml#initializeCategories">QPlaceManagerEngine::initializeCategories</db:link>() is called. Depending on how dynamic the categories are, always downloading the freshest set of categories may be more appropriate.</db:para>
+</db:section>
+<db:section xml:id="saving-places-to-the-manager">
+<db:title>Saving Places to the Manager</db:title>
+<db:para>A place generally cannot be saved directly between managers as is because it contains manager specific data such as icons and categories. In order to facilitate saving to one's own manager, engine implementers should implement the <db:link xlink:href="qplacemanagerengine.xml#compatiblePlace">QPlaceManagerEngine::compatiblePlace</db:link>() function. This function returns a copy of the input place with properties pruned or modified as necessary such that the copy can be saved into manager.</db:para>
+<db:para>Construction of a compatible place may involve ignoring certain properties from the original place, for example if contact details are not supported, these are left out of the compatible place. Other times it may involve modifying certain properties, for example modifying the icon parameters to facilitate copying or downloading of the original place's icon to a location that the backend can access.</db:para>
+</db:section>
+<db:section xml:id="cross-referencing-places-between-managers">
+<db:title>Cross-Referencing Places Between Managers</db:title>
+<db:para>Sometimes a situation may arise where we wish to cross-reference and match places between managers. Such a situation may arise where one manager provides read-only access to places (origin manager), while another second r/w manager (destination manager) is used to save selected favorites from the first. During a search of the origin manager, we may want to know which ones have been 'favorited' into the destination manager and perhaps display the customized favorite name rather than the original name.</db:para>
+<db:section xml:id="alternative-identifier-cross-referencing">
+<db:title>Alternative Identifier Cross-Referencing</db:title>
+<db:para>In order to accomplish cross-referencing, there needs to be a link between the original place and the favorited place and this is typically handled via an alternative identifier attribute. The favorited place contains an alternative identifier attribute which has the identifier of the original place.</db:para>
+<db:programlisting language="cpp">origin R/O manager(here)       destination R/W manager (places_jsondb)
+                        Save
+Place id: ae246         ---&amp;gt;    Place id: 0001
+Attribute type: x_provider      Attribute type: x_id_here
+Attribute value: here           Attribute text value: ae246
+</db:programlisting>
+<db:para>There are 3 prerequisites for implementing cross-referencing by alternative identifier. The first is that the origin manager must provide the x_provider attribute with the value being the name of the manager's <db:link xlink:href="qgeoserviceprovider.xml">QGeoServiceProvider</db:link>. The attribute label should be kept empty, indicating the attribute should not be displayed to users.</db:para>
+<db:note>
+<db:para>It is generally expected that all managers should set the x_provider attribute.</db:para>
+</db:note>
+<db:para>The second is that <db:link xlink:href="qplacemanager.xml#compatiblePlace">QPlaceManager::compatiblePlace</db:link>() of the destination manager use the x_provider attribute of the initial place and set an alternative identifier attribute of the place to be saved. The key of the alternative identifier attribute is x_id_&lt;provider name&gt; and the text value is the identifier of the initial place. The x_provider attribute should not be passed to the compatible place. When it is saved, the x_provider of the saved place is considered to be the destination manager.</db:para>
+<db:para>The third is that <db:link xlink:href="qplacemanager.xml#matchingPlaces">QPlaceManager::matchingPlaces</db:link>() of the destination manager accept the <db:link xlink:href="qplacematchrequest.xml#AlternativeId-var">QPlaceMatchRequest::AlternativeId</db:link> as a parameter key and the alternative identifier attribute key as the value, in this case x_id_&lt;provider name&gt; would be the expected value. This indicates that the identifiers of places in the <db:link xlink:href="qplacematchrequest.xml">QPlaceMatchRequest</db:link> should be matched against the x_id_&lt;provider name&gt; alternative identifier attributes.</db:para>
+<db:para>Note that if the destination manager is to facilitate saving and cross-referencing from any arbitrary manager, it internally must accommodate saving of arbitrary key value pairs since we cannot know the provider names before hand, nor can we know what structure the ids will be.</db:para>
+<db:section xml:id="other-methods-of-linking">
+<db:title>Other Methods of Linking</db:title>
+<db:para>If an origin manager does not supply a place id, it may be necessary to provide some other means of cross-referencing/matching. One approach might be to do so via the place coordinates, if the coordinate of a place in the origin manager is identical or close to a place in the destination manager, there is a high likelihood that they are the same place. In this case, the manager might implement <db:link xlink:href="qplacemanager.xml#matchingPlaces">QPlaceManager::matchingPlaces</db:link>() to accept a <db:link xlink:href="qplacematchrequest.xml">QPlaceMatchRequest</db:link> with a parameter key of 'proximity' and a parameter value of the distance two places must be in order to detect a match. for example if an origin place and destination place are within 50m of each other, they can be considered the same place.</db:para>
+<db:para>Generally however it is recommended that cross referencing be implemented via alternative identifiers as mentioned above.</db:para>
+</db:section>
+<db:section xml:id="user-readable-vs-non-user-readable-extended-attributes">
+<db:title>User Readable vs Non-User Readable Extended Attributes</db:title>
+<db:para>If an attribute is not intended to be readable by end users, the label field should be kept empty as an indicator of this fact.</db:para>
+</db:section>
+</db:section>
+</db:section>
+</db:article>

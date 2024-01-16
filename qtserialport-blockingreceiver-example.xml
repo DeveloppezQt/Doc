@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Blocking Receiver</db:title>
+<db:productname>QtSerialPort</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Port Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use the synchronous API of <db:link xlink:href="qserialport.xml">QSerialPort</db:link> in a non-GUI thread.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis>Blocking Receiver</db:emphasis> shows how to create an application for a serial interface using <db:link xlink:href="qserialport.xml">QSerialPort</db:link>'s synchronous API in a non-GUI thread.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/blockingreceiver-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:link xlink:href="qserialport.xml">QSerialPort</db:link> supports two general programming approaches:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:emphasis>The asynchronous (non-blocking) approach.</db:emphasis> Operations are scheduled and performed when the control returns to Qt's event loop. <db:link xlink:href="qserialport.xml">QSerialPort</db:link> emits a signal when the operation is finished. For example, <db:link xlink:href="qiodevice.xml#write">QSerialPort::write</db:link>() returns immediately. When the data is sent to the serial port, <db:link xlink:href="qserialport.xml">QSerialPort</db:link> emits <db:link xlink:href="qiodevice.xml#bytesWritten">bytesWritten</db:link>().</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>The synchronous (blocking) approach.</db:emphasis> In non-GUI and multithreaded applications, the <db:code>waitFor...()</db:code> functions can be called (i.e. <db:link xlink:href="qserialport.xml#waitForReadyRead">QSerialPort::waitForReadyRead</db:link>()) to suspend the calling thread until the operation has completed.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>In this example, the synchronous approach is demonstrated. The <db:link xlink:href="qtserialport-terminal-example.xml">Terminal</db:link> example illustrates the asynchronous approach.</db:para>
+<db:para>The purpose of this example is to demonstrate a pattern that you can use to simplify your serial programming code, without losing responsiveness in your user interface. Use of Qt's blocking serial programming API often leads to simpler code, but because of its blocking behavior, it should only be used in non-GUI threads to prevent the user interface from freezing. But contrary to what many think, using threads with <db:link xlink:href="qthread.xml">QThread</db:link> does not necessarily add unmanageable complexity to your application.</db:para>
+<db:para>This application is a Receiver, that demonstrate the work paired with the sender application <db:link xlink:href="qtserialport-blockingsender-example.xml">Blocking Sender example</db:link>.</db:para>
+<db:para>The Receiver application receives the request via serial port from the Sender application and send a response to it.</db:para>
+<db:para>We will start with the ReceiverThread class, which handles the serial programming code.</db:para>
+<db:programlisting language="cpp">class ReceiverThread : public QThread
+{
+    Q_OBJECT
+
+public:
+    explicit ReceiverThread(QObject *parent = nullptr);
+    ~ReceiverThread();
+
+    void startReceiver(const QString &amp;amp;portName, int waitTimeout, const QString &amp;amp;response);
+
+signals:
+    void request(const QString &amp;amp;s);
+    void error(const QString &amp;amp;s);
+    void timeout(const QString &amp;amp;s);
+
+private:
+    void run() override;
+
+    QString m_portName;
+    QString m_response;
+    int m_waitTimeout = 0;
+    QMutex m_mutex;
+    bool m_quit = false;
+};
+</db:programlisting>
+<db:para>ReceiverThread is a <db:link xlink:href="qthread.xml">QThread</db:link> subclass that provides an API for receive requests from Sender, and it has signals for delivering responses and reporting errors.</db:para>
+<db:para>You should call startReceiver() to startup Receiver application. This method transfers to the ReceiverThread desired parameters for configure and startup the serial interface. When ReceiverThread received from Sender any request then emitted the request() signal. If any error occurs, the error() or timeout() signals is emitted.</db:para>
+<db:para>It's important to notice that startReceiver() is called from the main, GUI thread, but the response data and other parameters will be accessed from ReceiverThread's thread. ReceiverThread's data members are read and written from different threads concurrently, so it is advisable to use <db:link xlink:href="qmutex.xml">QMutex</db:link> to synchronize access.</db:para>
+<db:programlisting language="cpp">void ReceiverThread::startReceiver(const QString &amp;amp;portName, int waitTimeout, const QString &amp;amp;response)
+{
+    const QMutexLocker locker(&amp;amp;m_mutex);
+    m_portName = portName;
+    m_waitTimeout = waitTimeout;
+    m_response = response;
+    if (!isRunning())
+        start();
+}
+</db:programlisting>
+<db:para>The startReceiver() function stores the serial port name, timeout and response data, and <db:link xlink:href="qmutexlocker.xml">QMutexLocker</db:link> locks the mutex to protect these data. We then start the thread, unless it is already running. <db:link xlink:href="qwaitcondition.xml#wakeOne">QWaitCondition::wakeOne</db:link>() will be discussed later.</db:para>
+<db:programlisting language="cpp">void ReceiverThread::run()
+{
+    bool currentPortNameChanged = false;
+
+    m_mutex.lock();
+    QString currentPortName;
+    if (currentPortName != m_portName) {
+        currentPortName = m_portName;
+        currentPortNameChanged = true;
+    }
+
+    int currentWaitTimeout = m_waitTimeout;
+    QString currentRespone = m_response;
+    m_mutex.unlock();
+</db:programlisting>
+<db:para>In the run() function, start by acquiring the mutex lock, fetch the serial port name, timeout and response data from the member data, and then release the lock again. Under no circumstance should the method <db:code>startReceiver()</db:code> be called simultaneously with a process fetching these data. <db:link xlink:href="qstring.xml">QString</db:link> is reentrant but not thread-safe, and it is not recommended to read the serial port name from one startup, call and timeout or response data of another. ReceiverThread can only handle one startup at a time.</db:para>
+<db:para>The <db:link xlink:href="qserialport.xml">QSerialPort</db:link> object we construct on stack into run() function before loop enter:</db:para>
+<db:programlisting language="cpp">    QSerialPort serial;
+
+    while (!m_quit) {
+</db:programlisting>
+<db:para>This allows us once to create an object, while running loop, and also means that all the methods of the object will be executed in the context of the run() thread.</db:para>
+<db:para>In the loop, check whether the name of the serial port for the current startup has changed or not. If it has, re-open and reconfigure the serial port.</db:para>
+<db:programlisting language="cpp">        if (currentPortName.isEmpty()) {
+            emit error(tr(&quot;Port not set&quot;));
+            return;
+        } else if (currentPortNameChanged) {
+            serial.close();
+            serial.setPortName(currentPortName);
+
+            if (!serial.open(QIODevice::ReadWrite)) {
+                emit error(tr(&quot;Can't open %1, error code %2&quot;)
+                           .arg(m_portName).arg(serial.error()));
+                return;
+            }
+        }
+
+        if (serial.waitForReadyRead(currentWaitTimeout)) {
+</db:programlisting>
+<db:para>The loop will continue waiting for request data:</db:para>
+<db:programlisting language="cpp">            // read request
+            QByteArray requestData = serial.readAll();
+            while (serial.waitForReadyRead(10))
+                requestData += serial.readAll();
+</db:programlisting>
+<db:warning>
+<db:para>The method waitForReadyRead() should be used before each read() call for the blocking approach, because it processes all the I/O routines instead of Qt event-loop.</db:para>
+</db:warning>
+<db:para>The timeout() signal is emitted if an error occurs when reading data.</db:para>
+<db:programlisting language="cpp">        } else {
+            emit timeout(tr(&quot;Wait read request timeout %1&quot;)
+                         .arg(QTime::currentTime().toString()));
+        }
+</db:programlisting>
+<db:para>After a successful read, try to send a response and wait for completion of the transfer:</db:para>
+<db:programlisting language="cpp">            // write response
+            const QByteArray responseData = currentRespone.toUtf8();
+            serial.write(responseData);
+            if (serial.waitForBytesWritten(m_waitTimeout)) {
+                const QString request = QString::fromUtf8(requestData);
+                emit this-&amp;gt;request(request);
+</db:programlisting>
+<db:warning>
+<db:para>The method waitForBytesWritten() should be used after each write() call for the blocking approach, because it processes all the I/O routines instead of Qt event-loop.</db:para>
+</db:warning>
+<db:para>The timeout() signal is emitted if an error occurs when writing data.</db:para>
+<db:programlisting language="cpp">            } else {
+                emit timeout(tr(&quot;Wait write response timeout %1&quot;)
+                             .arg(QTime::currentTime().toString()));
+            }
+</db:programlisting>
+<db:para>After a successful writing is emitted, request() signal containing the data received from the Sender application:</db:para>
+<db:programlisting language="cpp">                emit this-&amp;gt;request(request);
+</db:programlisting>
+<db:para>Next, the thread switches to reading the current parameters for the serial interface, because they can already have been updated, and run the loop from the beginning.</db:para>
+<db:programlisting language="cpp">        m_mutex.lock();
+        if (currentPortName != m_portName) {
+            currentPortName = m_portName;
+            currentPortNameChanged = true;
+        } else {
+            currentPortNameChanged = false;
+        }
+        currentWaitTimeout = m_waitTimeout;
+        currentRespone = m_response;
+        m_mutex.unlock();
+    }
+</db:programlisting>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtserialport.git/tree/examples/serialport/blockingreceiver?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtserialport-terminal-example.xml">Serial Terminal</db:link></db:member>
+<db:member><db:link xlink:href="qtserialport-blockingsender-example.xml">Blocking Sender</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

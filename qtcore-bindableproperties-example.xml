@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bindable Properties</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how the usage of bindable properties can simplify your C++ code.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>In this example we will demonstrate two approaches for expressing the relationships between different objects depending on each other: signal/slot connection-based and bindable property-based. For this purpose we will consider a subscription service model to calculate the cost of the subscription.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/bindable_properties_example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="modeling-subscription-system-with-signal-slot-approach">
+<db:title>Modeling Subscription System with Signal/Slot Approach</db:title>
+<db:para>Let's first consider the usual pre-Qt 6 implementation. To model the subscription service the Subscription class is used:</db:para>
+<db:programlisting language="cpp">class Subscription : public QObject
+{
+    Q_OBJECT
+public:
+    enum Duration { Monthly = 1, Quarterly = 3, Yearly = 12 };
+
+    Subscription(User *user);
+
+    void calculatePrice();
+    int price() const { return m_price; }
+
+    Duration duration() const { return m_duration; }
+    void setDuration(Duration newDuration);
+
+    bool isValid() const { return m_isValid; }
+    void updateValidity();
+
+signals:
+    void priceChanged();
+    void durationChanged();
+    void isValidChanged();
+
+private:
+    double calculateDiscount() const;
+    int basePrice() const;
+
+    QPointer&amp;lt;User&amp;gt; m_user;
+    Duration m_duration = Monthly;
+    int m_price = 0;
+    bool m_isValid = false;
+};
+</db:programlisting>
+<db:para>It stores the information about the subscription and provides corresponding getters, setters, and notifier signals for informing the listeners about the subscription information changes. It also keeps a pointer to an instance of the User class.</db:para>
+<db:para>The price of the subscription is calculated based on the duration of the subscription:</db:para>
+<db:programlisting language="cpp">double Subscription::calculateDiscount() const
+{
+    switch (m_duration) {
+    case Monthly:
+        return 1;
+    case Quarterly:
+        return 0.9;
+    case Yearly:
+        return 0.6;
+    }
+    Q_ASSERT(false);
+    return -1;
+}
+</db:programlisting>
+<db:para>And user's location:</db:para>
+<db:programlisting language="cpp">int Subscription::basePrice() const
+{
+    if (m_user-&amp;gt;country() == User::Country::AnyTerritory)
+        return 0;
+
+    return (m_user-&amp;gt;country() == User::Country::Norway) ? 100 : 80;
+}
+</db:programlisting>
+<db:para>When the price changes, the priceChanged() signal is emitted, to notify the listeners about the change:</db:para>
+<db:programlisting language="cpp">void Subscription::calculatePrice()
+{
+    const auto oldPrice = m_price;
+
+    m_price = qRound(calculateDiscount() * int(m_duration) * basePrice());
+    if (m_price != oldPrice)
+        emit priceChanged();
+}
+</db:programlisting>
+<db:para>Similarly, when the duration of the subscription changes, the durationChanged() signal is emitted.</db:para>
+<db:programlisting language="cpp">void Subscription::setDuration(Duration newDuration)
+{
+    if (newDuration != m_duration) {
+        m_duration = newDuration;
+        calculatePrice();
+        emit durationChanged();
+    }
+}
+</db:programlisting>
+<db:note>
+<db:para>Both methods need to check if the data is actually changed and only then emit the signals. setDuration() also needs to recalculate the price when the duration has changed.</db:para>
+</db:note>
+<db:para>The Subscription is not valid unless the user has a valid country and age, so the validity is updated in the following way:</db:para>
+<db:programlisting language="cpp">void Subscription::updateValidity()
+{
+    bool isValid = m_isValid;
+    m_isValid = m_user-&amp;gt;country() != User::Country::AnyTerritory &amp;amp;&amp;amp; m_user-&amp;gt;age() &amp;gt; 12;
+
+    if (m_isValid != isValid)
+        emit isValidChanged();
+}
+</db:programlisting>
+<db:para>The User class is simple: it stores country and age of the user and provides the corresponding getters, setters, and notifier signals:</db:para>
+<db:programlisting language="cpp">class User : public QObject
+{
+    Q_OBJECT
+
+public:
+    using Country = QLocale::Territory;
+
+public:
+    Country country() const { return m_country; }
+    void setCountry(Country country);
+
+    int age() const { return m_age; }
+    void setAge(int age);
+
+signals:
+    void countryChanged();
+    void ageChanged();
+
+private:
+    Country m_country { QLocale::AnyTerritory };
+    int m_age { 0 };
+};
+
+void User::setCountry(Country country)
+{
+    if (m_country != country) {
+        m_country = country;
+        emit countryChanged();
+    }
+}
+
+void User::setAge(int age)
+{
+    if (m_age != age) {
+        m_age = age;
+        emit ageChanged();
+    }
+}
+</db:programlisting>
+<db:para>In the main() function we initialize instances of User and Subscription:</db:para>
+<db:programlisting language="cpp">    User user;
+    Subscription subscription(&amp;amp;user);
+</db:programlisting>
+<db:para>And do the proper signal-slot connections to update the user and subscription data when UI elements change. That is straightforward, so we will skip this part.</db:para>
+<db:para>Next, we connect to Subscription::priceChanged() to update the price in the UI when the price changes.</db:para>
+<db:programlisting language="cpp">    QObject::connect(&amp;amp;subscription, &amp;amp;Subscription::priceChanged, priceDisplay, [&amp;amp;] {
+        QLocale lc{QLocale::AnyLanguage, user.country()};
+        priceDisplay-&amp;gt;setText(lc.toCurrencyString(subscription.price() / subscription.duration()));
+    });
+</db:programlisting>
+<db:para>We also connect to Subscription::isValidChanged() to disable the price display if the subscription isn't valid.</db:para>
+<db:programlisting language="cpp">    QObject::connect(&amp;amp;subscription, &amp;amp;Subscription::isValidChanged, priceDisplay, [&amp;amp;] {
+        priceDisplay-&amp;gt;setEnabled(subscription.isValid());
+    });
+</db:programlisting>
+<db:para>Because the subscription price and validity also depend on the user's country and age, we also need to connect to the User::countryChanged() and User::ageChanged() signals and update subscription accordingly.</db:para>
+<db:programlisting language="cpp">    QObject::connect(&amp;amp;user, &amp;amp;User::countryChanged, &amp;amp;subscription, [&amp;amp;] {
+        subscription.calculatePrice();
+        subscription.updateValidity();
+    });
+
+    QObject::connect(&amp;amp;user, &amp;amp;User::ageChanged, &amp;amp;subscription, [&amp;amp;] {
+        subscription.updateValidity();
+    });
+</db:programlisting>
+<db:para>This works, but there are some problems:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>There's a lot of boilerplate code for the signal-slot connections in order to properly track changes to both user and subscription. If any of the dependencies of the price changes, we need to remember to emit the corresponding notifier signals, recalculate the price, and update it in the UI.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If more dependencies for price calculation are added in the future, we'll need to add more signal-slot connections and make sure all the dependencies are properly updated whenever any of them changes. The overall complexity will grow, and the code will become harder to maintain.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The Subscription and User classes depend on the metaobject system to be able to use the signal/slot mechanism.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Can we do better?</db:para>
+</db:section>
+<db:section xml:id="modeling-subscription-system-with-bindbable-properties">
+<db:title>Modeling Subscription System with Bindbable Properties</db:title>
+<db:para>Now let's see how the <db:link xlink:href="bindableproperties.xml">Qt Bindable Properties</db:link> can help to solve the same problem. First, let's have a look at the BindableSubscription class, which is similar to the Subscription class, but is implemented using bindable properties:</db:para>
+<db:programlisting language="cpp">class BindableSubscription
+{
+public:
+    enum Duration { Monthly = 1, Quarterly = 3, Yearly = 12 };
+
+    BindableSubscription(BindableUser *user);
+    BindableSubscription(const BindableSubscription &amp;amp;) = delete;
+
+    int price() const { return m_price; }
+    QBindable&amp;lt;int&amp;gt; bindablePrice() { return &amp;amp;m_price; }
+
+    Duration duration() const { return m_duration; }
+    void setDuration(Duration newDuration);
+    QBindable&amp;lt;Duration&amp;gt; bindableDuration() { return &amp;amp;m_duration; }
+
+    bool isValid() const { return m_isValid; }
+    QBindable&amp;lt;bool&amp;gt; bindableIsValid() { return &amp;amp;m_isValid; }
+
+private:
+    double calculateDiscount() const;
+    int basePrice() const;
+
+    BindableUser *m_user;
+    QProperty&amp;lt;Duration&amp;gt; m_duration { Monthly };
+    QProperty&amp;lt;int&amp;gt; m_price { 0 };
+    QProperty&amp;lt;bool&amp;gt; m_isValid { false };
+};
+</db:programlisting>
+<db:para>The first difference we can notice, is that the data fields are now wrapped inside <db:link xlink:href="qproperty.xml">QProperty</db:link> classes, and the notifier signals (and as a consequence the dependency from the metaobject system) are gone, and new methods returning a <db:link xlink:href="qbindable.xml">QBindable</db:link> for each <db:link xlink:href="qproperty.xml">QProperty</db:link> are added instead. The calculatePrice() and updateValidty() methods are also removed. We'll see below why they aren't needed anymore.</db:para>
+<db:para>The BindableUser class differs from the User class in a similar way:</db:para>
+<db:programlisting language="cpp">class BindableUser
+{
+public:
+    using Country = QLocale::Territory;
+
+public:
+    BindableUser() = default;
+    BindableUser(const BindableUser &amp;amp;) = delete;
+
+    Country country() const { return m_country; }
+    void setCountry(Country country);
+    QBindable&amp;lt;Country&amp;gt; bindableCountry() { return &amp;amp;m_country; }
+
+    int age() const { return m_age; }
+    void setAge(int age);
+    QBindable&amp;lt;int&amp;gt; bindableAge() { return &amp;amp;m_age; }
+
+private:
+    QProperty&amp;lt;Country&amp;gt; m_country { QLocale::AnyTerritory };
+    QProperty&amp;lt;int&amp;gt; m_age { 0 };
+};
+</db:programlisting>
+<db:para>The second difference is in the implementation of these classes. First of all, the dependencies between subscription and user are now tracked via binding expressions:</db:para>
+<db:programlisting language="cpp">BindableSubscription::BindableSubscription(BindableUser *user) : m_user(user)
+{
+    Q_ASSERT(user);
+
+    m_price.setBinding(
+            [this] { return qRound(calculateDiscount() * int(m_duration) * basePrice()); });
+
+    m_isValid.setBinding([this] {
+        return m_user-&amp;gt;country() != BindableUser::Country::AnyCountry &amp;amp;&amp;amp; m_user-&amp;gt;age() &amp;gt; 12;
+    });
+}
+</db:programlisting>
+<db:para>Behind the scenes the bindable properties track the dependency changes and update the property's value whenever a change is detected. So if, for example, user's country or age is changed, subscription's price and validity will be updated automatically.</db:para>
+<db:para>Another difference is that the setters are now trivial:</db:para>
+<db:programlisting language="cpp">void BindableSubscription::setDuration(Duration newDuration)
+{
+    m_duration = newDuration;
+}
+
+void BindableUser::setCountry(Country country)
+{
+    m_country = country;
+}
+
+void BindableUser::setAge(int age)
+{
+    m_age = age;
+}
+</db:programlisting>
+<db:para>There's no need to check inside the setters if the property's value has actually changed, <db:link xlink:href="qproperty.xml">QProperty</db:link> already does that. The dependent properties will be notified about the change only if the value has actually changed.</db:para>
+<db:para>The code for updating the information about the price in the UI is also simplified:</db:para>
+<db:programlisting language="cpp">    auto priceChangeHandler = subscription.bindablePrice().subscribe([&amp;amp;] {
+        QLocale lc{QLocale::AnyLanguage, user.country()};
+        priceDisplay-&amp;gt;setText(lc.toCurrencyString(subscription.price() / subscription.duration()));
+    });
+
+    auto priceValidHandler = subscription.bindableIsValid().subscribe([&amp;amp;] {
+        priceDisplay-&amp;gt;setEnabled(subscription.isValid());
+    });
+</db:programlisting>
+<db:para>We subscribe to changes via bindablePrice() and bindableIsValid() and update the price display accordingly when any of these properties changes the value. The subscriptions will stay alive as long as the corresponding handlers are alive.</db:para>
+<db:para>Also note that the copy constructors of both BindableSubscription and BindableUser are disabled, since it's not defined what should happen with their bindings when copying.</db:para>
+<db:para>As you can see, the code became much simpler, and the problems mentioned above are solved:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The boilerplate code for the signal-slot connections is removed, the dependencies are now tracked automatically.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The code is easier to maintain. Adding more dependencies in the future will only require adding the corresponding bindable properties and setting the binding expressions that reflect the relationships between each other.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The Subscription and User classes don't depend on the metaobject system anymore. Of course, you can still expose them to the metaobject system and add <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>s if you need, and have the advantages of bindable properties both in C++ and QML code. You can use the <db:link xlink:href="qobjectbindableproperty.xml">QObjectBindableProperty</db:link> class for that.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/bindableproperties?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

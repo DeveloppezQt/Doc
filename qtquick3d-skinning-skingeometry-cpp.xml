@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Simple Skinning Example</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to render a simple skinning animation in Qt Quick 3D.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2020 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;skingeometry.h&quot;
+
+#include &amp;lt;qmath.h&amp;gt;
+
+struct Vertex {
+    QVector3D position;
+    qint32 joints[4];
+    float weights[4];
+
+    float pad;
+};
+
+static const int s_vertexSize = sizeof(Vertex);
+Q_STATIC_ASSERT(s_vertexSize == 48);
+
+SkinGeometry::SkinGeometry(QQuick3DObject *parent)
+    : QQuick3DGeometry(parent)
+{
+    addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0,
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+    addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0,
+                 QQuick3DGeometry::Attribute::ComponentType::U32Type);
+    addAttribute(QQuick3DGeometry::Attribute::JointSemantic, offsetof(Vertex, joints[0]),
+                 QQuick3DGeometry::Attribute::ComponentType::I32Type);
+    addAttribute(QQuick3DGeometry::Attribute::WeightSemantic, offsetof(Vertex, weights[0]),
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+}
+
+QList&amp;lt;QVector3D&amp;gt; SkinGeometry::positions() const
+{
+    return m_positions;
+}
+
+QList&amp;lt;qint32&amp;gt; SkinGeometry::joints() const
+{
+    return m_joints;
+}
+
+QList&amp;lt;float&amp;gt; SkinGeometry::weights() const
+{
+    return m_weights;
+}
+
+QList&amp;lt;quint32&amp;gt; SkinGeometry::indexes() const
+{
+    return m_indexes;
+}
+
+void SkinGeometry::setPositions(const QList&amp;lt;QVector3D&amp;gt; &amp;amp;positions)
+{
+    if (positions == m_positions)
+        return;
+    m_positions = positions;
+    emit positionsChanged();
+    m_vertexDirty = true;
+}
+
+void SkinGeometry::setJoints(const QList&amp;lt;qint32&amp;gt; &amp;amp;joints)
+{
+    if (joints == m_joints)
+        return;
+    m_joints = joints;
+    emit jointsChanged();
+    m_vertexDirty = true;
+}
+
+void SkinGeometry::setWeights(const QList&amp;lt;float&amp;gt; &amp;amp;weights)
+{
+    if (weights == m_weights)
+        return;
+    m_weights = weights;
+    emit weightsChanged();
+    m_vertexDirty = true;
+}
+
+void SkinGeometry::setIndexes(const QList&amp;lt;quint32&amp;gt; &amp;amp;indexes)
+{
+    if (indexes == m_indexes)
+        return;
+    m_indexes = indexes;
+    emit indexesChanged();
+    m_indexDirty = true;
+}
+
+QSSGRenderGraphObject *SkinGeometry::updateSpatialNode(QSSGRenderGraphObject *node)
+{
+    if (m_vertexDirty) {
+        m_vertexDirty = false;
+
+        constexpr float maxFloat = std::numeric_limits&amp;lt;float&amp;gt;::max();
+        auto boundsMin = QVector3D(maxFloat, maxFloat, maxFloat);
+        auto boundsMax = QVector3D(-maxFloat, -maxFloat, -maxFloat);
+
+        const int numVertexes = m_positions.size();
+        m_vertexBuffer.resize(numVertexes * s_vertexSize);
+        Vertex *vert = reinterpret_cast&amp;lt;Vertex *&amp;gt;(m_vertexBuffer.data());
+
+        for (int i = 0; i &amp;lt; numVertexes; ++i) {
+            Vertex &amp;amp;v = vert[i];
+            v.position = m_positions[i];
+            if (m_joints.size() &amp;gt;= 4 * (i + 1))
+                memcpy(v.joints, m_joints.constData() + 4 * i, 4 * sizeof(qint32));
+            else
+                v.joints[0] = v.joints[1] = v.joints[2] = v.joints[3] = 0;
+            if (m_weights.size() &amp;gt;= 4 * (i + 1))
+                memcpy(v.weights, m_weights.constData() + 4 * i, 4 * sizeof(float));
+            else
+                v.weights[0] = v.weights[1] = v.weights[2] = v.weights[3] = 0.0f;
+
+            boundsMin.setX(std::min(boundsMin.x(), v.position.x()));
+            boundsMin.setY(std::min(boundsMin.y(), v.position.y()));
+            boundsMin.setZ(std::min(boundsMin.z(), v.position.z()));
+
+            boundsMax.setX(std::max(boundsMax.x(), v.position.x()));
+            boundsMax.setY(std::max(boundsMax.y(), v.position.y()));
+            boundsMax.setZ(std::max(boundsMax.z(), v.position.z()));
+        }
+
+        setStride(s_vertexSize);
+        setVertexData(m_vertexBuffer);
+        setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
+        setBounds(boundsMin, boundsMax);
+    }
+
+    if (m_indexDirty) {
+        m_indexDirty = false;
+        m_indexBuffer = QByteArray(reinterpret_cast&amp;lt;char *&amp;gt;(m_indexes.data()), m_indexes.size() * sizeof(quint32));
+        setIndexData(m_indexBuffer);
+    }
+
+    node = QQuick3DGeometry::updateSpatialNode(node);
+    return node;
+}
+
+</db:programlisting>
+</db:article>

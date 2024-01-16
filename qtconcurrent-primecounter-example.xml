@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Prime Counter</db:title>
+<db:productname>QtConcurrent</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Concurrent Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to monitor the progress of concurrent operations.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The following example demonstrates how to create an interactive and non-blocking <db:link xlink:href="qtwidgets-module.xml">QtWidgets</db:link> application using the <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> class and the <db:link xlink:href="qtconcurrentfilter.xml#concurrent-filter-reduce">filteredReduced</db:link> functions from <db:link xlink:href="qtconcurrent-index.xml">Qt Concurrent</db:link>. With this example, the user can create a <db:link xlink:href="qlist.xml">QList</db:link> of integers that can be resized. The list will be automatically filled with natural numbers starting from 1 up to n. The program will then check for prime numbers within the list and display the total count of prime numbers found.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/primecounter.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="setting-up-the-connections">
+<db:title>Setting up the connections</db:title>
+<db:para>The <db:link xlink:href="qtconcurrent-index.xml">Qt Concurrent</db:link> library provides the <db:link xlink:href="qtconcurrentfilter.xml#concurrent-filter-reduce">filteredReduced</db:link> functions, which can operate in two modes: <db:link xlink:href="qtconcurrent.xml#ReduceOption-enum">OrderedReduce and UnorderedReduce</db:link>. In <db:code>OrderedReduce</db:code> mode, the reducing function is called in the order of the original sequence, whereas in <db:code>UnorderedReduce</db:code> mode, the elements are accessed randomly.</db:para>
+<db:para>After configuring the UI with the desired elements, it is necessary to connect them to the signals of the concurrent operations using the Qt <db:link xlink:href="signalsandslots.xml">Signals &amp; Slots</db:link> mechanism. In this example, we use the <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> class to monitor the progress of the concurrent operations and provide the signals required to implement the interactive GUI.</db:para>
+<db:programlisting language="cpp">    ...
+connect(ui-&amp;gt;pushButton, &amp;amp;QPushButton::clicked,
+        this, [this] { start(); });
+connect(&amp;amp;watcher, &amp;amp;QFutureWatcher&amp;lt;Element&amp;gt;::finished,
+        this, [this] { finish(); });
+connect(&amp;amp;watcher, &amp;amp;QFutureWatcher&amp;lt;Element&amp;gt;::progressRangeChanged,
+        ui-&amp;gt;progressBar, &amp;amp;QProgressBar::setRange);
+connect(&amp;amp;watcher, &amp;amp;QFutureWatcher&amp;lt;Element&amp;gt;::progressValueChanged,
+        ui-&amp;gt;progressBar, &amp;amp;QProgressBar::setValue);
+    ...
+</db:programlisting>
+<db:para>The <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> class plays a vital role in this example as it provides the signals required to update the UI in response to changes in the concurrent operations.</db:para>
+</db:section>
+<db:section xml:id="starting-the-concurrent-operation">
+<db:title>Starting the concurrent operation</db:title>
+<db:para>After connecting all the <db:link xlink:href="signalsandslots.xml">Signals &amp; Slots</db:link>, and when the user presses the <db:link xlink:href="qpushbutton.xml">QPushButton</db:link>, the <db:code>start()</db:code> function is called.</db:para>
+<db:para>In the <db:code>start()</db:code> function, we call the <db:link xlink:href="qtconcurrentfilter.xml#concurrent-filter-reduce">filteredReduced</db:link> function from Qt Concurrent and set the future on the <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> member. To ensure that this operation runs truly concurrently, we specify a separate <db:link xlink:href="qthreadpool.xml">QThreadPool</db:link> as the first parameter. This approach also avoids any possible blocking in the global thread pool. We pass the <db:link xlink:href="qlist.xml">QList</db:link> of integers as the container, a static filter and reduce function, and finally the <db:link xlink:href="qtconcurrent.xml#ReduceOption-enum">ReduceOption</db:link> flag.</db:para>
+<db:programlisting language="cpp">    ...
+void PrimeCounter::start()
+{
+    if (ui-&amp;gt;pushButton-&amp;gt;isChecked()) {
+        ui-&amp;gt;comboBox-&amp;gt;setEnabled(false);
+        ui-&amp;gt;pushButton-&amp;gt;setText(tr(&quot;Cancel&quot;));
+        ui-&amp;gt;labelResult-&amp;gt;setText(tr(&quot;Calculating ...&quot;));
+        ui-&amp;gt;labelFilter-&amp;gt;setText(tr(&quot;Selected Reduce Option: %1&quot;).arg(ui-&amp;gt;comboBox-&amp;gt;currentText()));
+        fillElementList(ui-&amp;gt;horizontalSlider-&amp;gt;value() * stepSize);
+
+        timer.start();
+        watcher.setFuture(
+            QtConcurrent::filteredReduced(
+                &amp;amp;pool,
+                elementList,
+                filterFunction,
+                reduceFunction,
+                currentReduceOpt | QtConcurrent::SequentialReduce));
+    ...
+</db:programlisting>
+<db:para>Let's examine the filter and reduce functions. These functions are declared static in this example since they do not depend on any member variable. However, they could easily be specified as lambdas or member functions.</db:para>
+<db:para>The filter function marks elements for subsequent reduction with the reduce function. This implementation is a simple prime filter. As this function takes a const reference as an argument, it allows thread-safe operation on the container it operates on.</db:para>
+<db:programlisting language="cpp">    ...
+bool PrimeCounter::filterFunction(const Element &amp;amp;element)
+{
+    // Filter for primes
+    if (element &amp;lt;= 1)
+        return false;
+    for (Element i = 2; i*i &amp;lt;= element; ++i) {
+        if (element % i == 0)
+            return false;
+    }
+    return true;
+}
+    ...
+</db:programlisting>
+<db:para>The reduce function takes a modifiable reference of the same type as the container it operates on as its first parameter. The second parameter is the previously filtered element from the filter function. In this example, we count the number of primes.</db:para>
+<db:programlisting language="cpp">    ...
+void PrimeCounter::reduceFunction(Element &amp;amp;out, const Element &amp;amp;value)
+{
+    // Count the amount of primes.
+    Q_UNUSED(value);
+    ++out;
+}
+    ...
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/qtconcurrent/primecounter?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

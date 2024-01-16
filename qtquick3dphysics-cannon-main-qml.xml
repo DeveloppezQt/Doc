@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D Physics - Cannon Example</db:title>
+<db:productname>QtQuick3DPhysics</db:productname>
+<db:edition>Qt Quick 3D Physics | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Physics Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to spawn physical objects.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+import QtQuick
+import QtQuick3D
+import QtQuick3D.Physics
+import QtQuick3D.Helpers
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Window {
+    id: appWindow
+    width: 800
+    height: 600
+    visible: true
+    title: qsTr(&quot;Qt Quick 3D Physics - Cannon&quot;)
+
+    PhysicsWorld {
+        scene: viewport.scene
+    }
+
+    View3D {
+        id: viewport
+        width: parent.width
+        height: parent.height
+        focus: true
+
+        environment: SceneEnvironment {
+            antialiasingMode: SceneEnvironment.MSAA
+            backgroundMode: SceneEnvironment.Color
+            clearColor: &quot;#f0f0f0&quot;
+        }
+
+        PerspectiveCamera {
+            id: camera
+            position: Qt.vector3d(-4000, 5000, 10000)
+            eulerRotation: Qt.vector3d(-20, -20, 0)
+            clipFar: 500000
+            clipNear: 100
+        }
+
+        DirectionalLight {
+            eulerRotation: Qt.vector3d(-45, 45, 0)
+            castsShadow: true
+            brightness: 1
+            shadowMapQuality: Light.ShadowMapQualityVeryHigh
+            shadowFactor: 100
+        }
+
+        StaticRigidBody {
+            eulerRotation: Qt.vector3d(-90, 0, 0)
+            collisionShapes: PlaneShape {}
+            Model {
+                source: &quot;#Rectangle&quot;
+                scale: Qt.vector3d(2000, 2000, 1)
+                materials: PrincipledMaterial {
+                    baseColor: &quot;green&quot;
+                }
+                castsShadows: false
+                receivesShadows: true
+            }
+        }
+
+        Node {
+            id: shapeSpawner
+            property var instancesBoxes: []
+            property var instancesSpheres: []
+            property int stackCount: 0
+            property var boxComponent: Qt.createComponent(&quot;Box.qml&quot;)
+            property var sphereComponent: Qt.createComponent(&quot;Sphere.qml&quot;)
+
+            function createStack(stackZ, numStacks) {
+                let size = 10
+                let extents = 400
+
+                for (var i = 0; i &amp;lt; size; i++) {
+                    for (var j = 0; j &amp;lt; size - i; j++) {
+                        let x = j * 2 - size + i
+                        let y = i * 2 + 1
+                        let z = 5 * (stackZ - numStacks)
+                        let center = Qt.vector3d(x, y, z).times(0.5 * extents)
+                        let box = boxComponent.incubateObject(shapeSpawner, {
+                                                                  &quot;position&quot;: center,
+                                                                  &quot;xyzExtents&quot;: extents
+                                                              })
+                        instancesBoxes.push(box)
+                    }
+                }
+            }
+
+            function createBall(position, forward) {
+                var diameter = 600
+                var speed = 20000
+                let settings = {
+                    &quot;position&quot;: position,
+                    &quot;sphereDiameter&quot;: diameter
+                }
+                let sphere = sphereComponent.createObject(shapeSpawner, settings)
+                sphere.setLinearVelocity(forward.times(speed))
+                instancesSpheres.push(sphere)
+
+                if (sphere === null) {
+                    console.log(&quot;Error creating object&quot;)
+                }
+            }
+
+            function reset() {
+                // Only run method if previous stack has been created fully
+                for (var i = 0; i &amp;lt; instancesBoxes.length; i++)
+                    if (!instancesBoxes[i].object)
+                        return
+
+                instancesSpheres.forEach(sphere =&amp;gt; {
+                                             sphere.collisionShapes = []
+                                             sphere.destroy()
+                                         })
+                instancesBoxes.forEach(box =&amp;gt; {
+                                           box.object.collisionShapes = []
+                                           box.object.destroy()
+                                       })
+                instancesSpheres = []
+                instancesBoxes = []
+
+                for (var stackI = 0; stackI &amp;lt; stackSlider.value; stackI++) {
+                    shapeSpawner.createStack(stackI, stackSlider.value)
+                }
+            }
+        }
+        Crosshair {
+            id: crossHair
+            anchors.centerIn: parent
+        }
+    }
+
+    Component.onCompleted: {
+        shapeSpawner.reset()
+    }
+
+    WasdController {
+        speed: 100
+        controlledObject: camera
+        Keys.onPressed: event =&amp;gt; {
+                            handleKeyPress(event)
+                            if (event.key === Qt.Key_Space) {
+                                shapeSpawner.createBall(camera.position,
+                                                        camera.forward)
+                            }
+                        }
+        Keys.onReleased: event =&amp;gt; {
+                             handleKeyRelease(event)
+                         }
+    }
+
+    Frame {
+        background: Rectangle {
+            color: &quot;#c0c0c0&quot;
+            border.color: &quot;#202020&quot;
+        }
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.margins: 10
+
+        ColumnLayout {
+            Label {
+                text: &quot;No. Stacks: &quot; + stackSlider.value.toFixed(0)
+            }
+            Slider {
+                id: stackSlider
+                focusPolicy: Qt.NoFocus
+                from: 1
+                to: 9
+                value: 4
+                stepSize: 1
+                snapMode: Slider.SnapOnRelease
+            }
+            Button {
+                id: resetButton
+                Layout.alignment: Qt.AlignHCenter
+                text: &quot;Reset scene&quot;
+                onClicked: shapeSpawner.reset()
+            }
+            Button {
+                id: fireButton
+                Layout.alignment: Qt.AlignHCenter
+                text: &quot;Fire!&quot;
+                onClicked: shapeSpawner.createBall(camera.position,
+                                                   camera.forward)
+            }
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

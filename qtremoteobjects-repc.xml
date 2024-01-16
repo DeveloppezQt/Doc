@@ -1,0 +1,327 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Remote Objects Compiler</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Qt Remote Objects Compiler creates <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> and <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> header files .</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="repc-overview">
+<db:title>REPC Overview</db:title>
+<db:para>The <db:emphasis role="underline">Rep</db:emphasis>lica <db:emphasis role="underline">C</db:emphasis>ompiler (repc) generates <db:link xlink:href="qobject.xml">QObject</db:link> header files based on an API definition file. The file (called a &quot;rep&quot; file) uses a specific (text) syntax to describe the API. By convention, these files are given a .rep file extension, short for Replica. When these files are processed by repc, repc generates both <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> and <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> header files.</db:para>
+<db:para>The Qt Remote Objects module also includes <db:link xlink:href="qtremoteobjects-repc.xml#cmake-functions">CMake functions</db:link> and <db:link xlink:href="qtremoteobjects-repc.xml#qmake-variables">qmake variables</db:link> that can be added to your project file to automatically run repc, and add the resulting files to the list of files processed by <db:link xlink:href="moc.xml">Meta Object Compiler</db:link> during the build process, making use of Qt Remote Objects in your projects simple.</db:para>
+<db:para>While Qt Remote Objects supports sharing any <db:link xlink:href="qobject.xml">QObject</db:link> over the network (using enableRemoting on the Source side and acquireDynamic on the Replica side), there are a couple of advantages to letting repc define your objects. First of all, while <db:link xlink:href="qremoteobjectdynamicreplica.xml">DynamicReplicas</db:link> are useful, they are more cumbersome to work with. The API is not known until the object is initialized, and using the API from C++ requires string lookups through <db:link xlink:href="qmetaobject.xml">QMetaObject</db:link>'s methods. Secondly, having the interface known at compile time finds any issues at compile vs. at runtime. Thirdly, the rep format supports default values, which can be handy if you are unable to ensure the Source is available when the Replica is instantiated.</db:para>
+<db:para>See the documentation <db:link xlink:href="qtremoteobjects-source.xml#source">here</db:link> for information on using the generated files in your code. Here we will focus on the repc format and options.</db:para>
+</db:section>
+<db:section xml:id="the-rep-file-format">
+<db:title>The rep file format</db:title>
+<db:para>The rep file format is a simple <db:link xlink:href="https://en.wikipedia.org/wiki/Domain-specific_language">Domain Specific Language (DSL)</db:link> for describing an interface supported over Qt Remote Objects (QtRO). Since QtRO is an object based system, these interfaces are defined by APIs available through objects, that is, classes with properties, signals, and slots.</db:para>
+<db:section xml:id="the-class-type">
+<db:title>The class type</db:title>
+<db:para>Each class defined in a rep file becomes a <db:link xlink:href="qobject.xml">QObject</db:link> in the generated header files, with the described API generated for you.</db:para>
+<db:para>To define a class use the <db:code>class</db:code> keyword, followed by the name you want for your type, and then enclose your API in brackets like so</db:para>
+<db:programlisting language="cpp">class MyType
+{
+    //PROP/CLASS/MODEL/SIGNAL/SLOT/ENUM declarations to define your API
+};
+</db:programlisting>
+<db:para>When using the generated header files inside a library, it might be needed to define class attributes to set the symbol visibility. This can be done similar to C++ by defining the attribute after the <db:code>class</db:code> keyword. In the following example the <db:code>MYSHAREDLIB_EXPORT</db:code> macro is used, which is defined in <db:code>&quot;mysharedlib_global.h&quot;</db:code>. See <db:link xlink:href="sharedlibrary.xml">Creating Shared Libraries</db:link> for more information how this works.</db:para>
+<db:programlisting language="cpp">#include &quot;mysharedlib_global.h&quot;
+class MYSHAREDLIB_EXPORT MyType
+{
+    ...
+};
+</db:programlisting>
+<db:section xml:id="prop">
+<db:title>PROP</db:title>
+<db:para><db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> elements are created by using the PROP keyword in the rep file. The syntax is the <db:code>PROP</db:code> keyword followed by the definition enclosed in parentheses, where the definition is the type, the name, and (optionally) a default value or attributes.</db:para>
+<db:programlisting language="cpp">PROP(bool simpleBool)                // boolean named simpleBool
+PROP(bool defaultFalseBool=false)    // boolean named defaultFalseBool, with false
+                                     // as the default value
+
+PROP(int lifeUniverseEverything=42)  // int value that defaults to 42
+PROP(QByteArray myBinaryInfo)        // Qt types are fine, may need #include
+                                     // additional headers in your rep file
+
+PROP(QString name CONSTANT)          // Property with the CONSTANT attribute
+PROP(QString setable READWRITE)      // Property with the READWRITE attribute
+                                     // note: Properties default to READPUSH
+                                     // (see description below)
+
+PROP(SomeOtherType myCustomType)     // Custom types work. Needs #include for the
+                                     // appropriate header for your type, make
+                                     // sure your type is known to the metabject
+                                     // system, and make sure it supports Queued
+                                     // Connections (see Q_DECLARE_METATYPE and
+                                     // qRegisterMetaType)
+</db:programlisting>
+<db:para>More information about creating custom types can be found <db:link xlink:href="custom-types.xml">here</db:link>.</db:para>
+<db:para>By default, properties will have getters and a &quot;push&quot; slot defined, as well as a notify signal emitted when the value is changed. Qt Remote Objects requires the notify signal on the Source object to trigger sending updates to the attached Replicas. In earlier versions of QtRO, properties defaulted to being read/write, that is, having getters and setters. However, due to the asynchronous nature of QtRO, this led to unintuitive behavior at times. Setting the READWRITE attribute on the PROP will provide the old (getter and setter) behavior.</db:para>
+<db:programlisting language="cpp">// In .rep file, old (setter) behavior
+PROP(int myVal READWRITE)             // Old behavior with setMyVal(int myVal) method
+
+// In code...  Assume myVal is initially set to 0 in Source
+int originalValue = rep-&amp;gt;myVal();     // Will be 0
+rep-&amp;gt;setMyVal(10);                    // Call setter, expecting a blocking/
+                                      // non-asynchronous return
+
+if (rep-&amp;gt;myVal() == 10) ...           // Test will usually fail
+</db:programlisting>
+<db:para>If it is necessary to block until the value is changed, something like the following is necessary.</db:para>
+<db:programlisting language="cpp">// In .rep file, old (setter) behavior
+PROP(int myVal READWRITE)             // Old behavior with setMyVal(int myVal) method
+
+// In code...  Assume myVal is initially set to 0 in Source
+bool originalValue = rep-&amp;gt;myVal();    // Will be 0
+
+// We can wait for the change using \l QSignalSpy
+QSignalSpy spy(rep, SIGNAL(myValChanged(int)));
+
+rep-&amp;gt;setMyVal(10);                    // Call setter, expecting a blocking/
+                                      // non-asynchronous return
+
+spy.wait();                           // spy.wait() blocks until changed signal
+                                      // is received
+if (rep-&amp;gt;myVal() == 10) ...           // Test will succeed assuming
+                                      // 1. Source object is connected
+                                      // 2. Nobody else (Source or other Replica)
+                                      //    sets the myVal to something else (race
+                                      //    condition)
+// Rather than use QSignalSpy, the event-driven practice would be to connect the
+// myValChanged notify signal to a slot that responds to the changes.
+</db:programlisting>
+<db:para>QtRO now defaults to READPUSH, which provides an automatically generated slot for requesting a property change.</db:para>
+<db:programlisting language="cpp">// In .rep file, defaults to READPUSH
+PROP(bool myVal)                      // No setMyVal(int myVal) on Replica, has
+                                      // pushMyVal(int myVal) instead
+
+// In code...  Assume myVal is initially set to 0 in Source
+bool originalValue = rep-&amp;gt;myVal();    // Will be 0
+
+// We can wait for the change using \l QSignalSpy
+QSignalSpy spy(rep, SIGNAL(myValChanged(int)));
+
+rep-&amp;gt;pushMyVal(10);                   // Call push method, no expectation that change
+                                      // is applied upon method completion.
+
+// Some way of waiting for change to be received by the Replica is still necessary,
+// but hopefully not a surprise with the new pushMyVal() Slot.
+spy.wait();                           // spy.wait() blocks until changed signal
+                                      // is received
+if (rep-&amp;gt;myVal() == 10) ...           // Test will succeed assuming
+                                      // 1. Source object is connected
+                                      // 2. Nobody else (Source or other Replica)
+                                      //    set the myVal to something else (race
+                                      //    condition)
+</db:programlisting>
+<db:para>You can also use the <db:code>CONSTANT</db:code>, <db:code>READONLY</db:code>, <db:code>PERSISTED</db:code>, <db:code>READWRITE</db:code>, <db:code>READPUSH</db:code>, or <db:code>SOURCEONLYSETTER</db:code> keywords in the PROP declaration, which affects how the property is implemented. READPUSH is the default value if no value used.</db:para>
+<db:programlisting language="cpp">PROP(int lifeUniverseEverything=42 CONSTANT)
+PROP(QString name READONLY)
+</db:programlisting>
+<db:para>Please note there are some subtleties here. A CONSTANT PROP has a <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> declared as CONSTANT on the SOURCE side. However, replicas cannot know the correct value until they are initialized, which means the property value has to be allowed to change during initialization. For READONLY, the source will have neither a setter nor a push slot, and the replica side will not have a push slot generated. Adding the PERSISTED trait to a PROP will have the PROP use the <db:link xlink:href="qremoteobjectabstractpersistedstore.xml">QRemoteObjectAbstractPersistedStore</db:link> instance set on a Node (if any) to save/restore PROP values.</db:para>
+<db:para>Another nuanced value is SOURCEONLYSETTER, which provides another way of specifying asymmetric behavior, where the <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> (specifically the helper class, <db:code>SimpleSource</db:code>) will have a public getter and setter for the property, but it will be ReadOnly (with a notify signal) on the <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> side. Thus the property can be fully controlled from the <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> side, but only observed from the <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> side. SOURCEONLYSETTER is the mode used by repc for MODEL and CLASS instances, meaning the <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> can change the pointed to object, but the <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> can not provide a new object, as no set&lt;Prop&gt; or push&lt;Prop&gt; method is generated. Note, this does not impact the behavior of the pointed to type's properties, just the ability to change the pointer itself.</db:para>
+</db:section>
+<db:section xml:id="class">
+<db:title>CLASS</db:title>
+<db:para>The CLASS keyword generates special <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> elements for objects derived from <db:link xlink:href="qobject.xml">QObject</db:link>. These properties have the same semantics as SOURCEONLYSETTER. The syntax is the <db:code>CLASS</db:code> keyword followed by the property name and then the type of subobject enclosed in parentheses.</db:para>
+<db:programlisting language="cpp">// In .rep file
+class OtherClass
+{
+    PROP(int value)
+}
+
+class MainClass
+{
+    CLASS subObject(OtherClass)
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="model">
+<db:title>MODEL</db:title>
+<db:para>The MODEL keyword generates special <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> elements for objects derived from <db:link xlink:href="qabstractitemmodel.xml">QAbstractItemModel</db:link>. These properties have the same semantics as SOURCEONLYSETTER. The syntax is the <db:code>MODEL</db:code> keyword followed by the property name and then parentheses enclosing the (comma-separated) roles that should be exposed to the replica.</db:para>
+<db:programlisting language="cpp">// In .rep file
+class CdClass
+{
+    PROP(QString title READONLY)
+    MODEL tracks(title, artist, length)
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="signal">
+<db:title>SIGNAL</db:title>
+<db:para><db:link xlink:href="signalsandslots.xml#signals">Signal</db:link> methods are created by using the SIGNAL keyword in the rep file.</db:para>
+<db:para>Usage is to declare <db:code>SIGNAL</db:code> followed by the desired signature wrapped in parentheses. The void return value should be skipped.</db:para>
+<db:programlisting language="cpp">SIGNAL(test())
+SIGNAL(test(QString foo, int bar))
+SIGNAL(test(QMap&amp;lt;QString,int&amp;gt; foo))
+SIGNAL(test(const QString &amp;amp;foo))
+SIGNAL(test(QString &amp;amp;foo))
+</db:programlisting>
+<db:para>Just like in Qt <db:link xlink:href="qt.xml#ConnectionType-enum">queued connections</db:link>, parameters in signals that are references will be copied when being passed to replicas.</db:para>
+</db:section>
+<db:section xml:id="slot">
+<db:title>SLOT</db:title>
+<db:para><db:link xlink:href="signalsandslots.xml#slots">Slot</db:link> methods are created by using the SLOT keyword in the rep file.</db:para>
+<db:para>Usage is to declare <db:code>SLOT</db:code> followed by the desired signature wrapped in parentheses. The return value can be included in the declaration. If the return value is skipped, void will be used in the generated files.</db:para>
+<db:programlisting language="cpp">SLOT(test())
+SLOT(void test(QString foo, int bar))
+SLOT(test(QMap&amp;lt;QString,int&amp;gt; foo))
+SLOT(test(QMap&amp;lt;QString,int&amp;gt; foo, QMap&amp;lt;QString,int&amp;gt; bar))
+SLOT(test(QMap&amp;lt;QList&amp;lt;QString&amp;gt;,int&amp;gt; foo))
+SLOT(test(const QString &amp;amp;foo))
+SLOT(test(QString &amp;amp;foo))
+SLOT(test(const QMap&amp;lt;QList&amp;lt;QString&amp;gt;,int&amp;gt; &amp;amp;foo))
+SLOT(test(const QString &amp;amp;foo, int bar))
+</db:programlisting>
+<db:para>Just like in Qt <db:link xlink:href="qt.xml#ConnectionType-enum">queued connections</db:link> and QtRO SIGNALS, parameters in slots that are references will be copied when being passed to Replicas.</db:para>
+</db:section>
+<db:section xml:id="enum">
+<db:title>ENUM</db:title>
+<db:para>Enumerations (which use a combination of C++ enum and Qt's <db:link xlink:href="qobject.xml#Q_ENUM">Q_ENUM</db:link> in QtRO) are described using the ENUM keyword.</db:para>
+<db:programlisting language="cpp">ENUM MyEnum {Foo}
+ENUM MyEnum {Foo, Bar}
+ENUM MyEnum {Foo, Bar = -1}
+ENUM MyEnum {Foo=-1, Bar}
+ENUM MyEnum {Foo=0xf, Bar}
+ENUM MyEnum {Foo=1, Bar=3, Bas=5}
+</db:programlisting>
+<db:para>Related topics: <db:link xlink:href="qtremoteobjects-repc.xml#the-enum-type">The ENUM type</db:link>, <db:link xlink:href="qtremoteobjects-repc.xml#use-enum-keyword">USE_ENUM keyword</db:link></db:para>
+</db:section>
+</db:section>
+<db:section xml:id="the-pod-type">
+<db:title>The POD type</db:title>
+<db:para>Plain Old Data (POD) is a term to describe a simple data collection, along the lines of a C++ struct. For example, if you have an API for a phonebook, you may want to use the concept of an &quot;address&quot; in its interface (where address might include street, city, state, country, and postal code). You can use the POD keyword to define objects like this, which can then be used by in PROP/SIGNAL/SLOT definitions in your class definitions.</db:para>
+<db:para>Usage is to declare <db:code>POD</db:code> followed by the name for the generated type, followed by type and name pairs separated by commas, where the type/name pairs are wrapped in parentheses.</db:para>
+<db:programlisting language="cpp">POD Foo(int bar)
+POD Foo(int bar, double bas)
+POD Foo(QMap&amp;lt;QString,int&amp;gt; bar)
+POD Foo(QList&amp;lt;QString&amp;gt; bar)
+POD Foo(QMap&amp;lt;QString,int&amp;gt; bar, QMap&amp;lt;double,int&amp;gt; bas)
+</db:programlisting>
+<db:para>A full example would look like this</db:para>
+<db:programlisting language="cpp">POD Foo(QList&amp;lt;QString&amp;gt; bar)
+class MyType
+{
+    SIGNAL(sendCustom(Foo foo));
+};
+</db:programlisting>
+<db:para>The code generated by repc creates a <db:link xlink:href="qobject.xml#Q_GADGET">Q_GADGET</db:link> class for each POD, with corresponding <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> members for each type defined for the POD.</db:para>
+<db:para>When using the generated header files inside a library, it might be needed to define class attributes to set the symbol visibility. This can be done by defining the attribute after the <db:code>POD</db:code> keyword. In the following example the <db:code>MYSHAREDLIB_EXPORT</db:code> macro is used, which is defined in <db:code>&quot;mysharedlib_global.h&quot;</db:code>. See <db:link xlink:href="sharedlibrary.xml">Creating Shared Libraries</db:link> for more information how this works.</db:para>
+<db:programlisting language="cpp">#include &quot;mysharedlib_global.h&quot;
+POD MYSHAREDLIB_EXPORT Foo(int bar)
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-enum-type">
+<db:title>The ENUM type</db:title>
+<db:para>It is often easier and cleaner to define an ENUM inside a class (see <db:link xlink:href="qtremoteobjects-repc.xml#enum">ENUM</db:link>), but if you need a standalone enum type, using the ENUM keyword outside of a class definition can be helpful. This will generate a new class in your header files that handles marshalling, etc.. The syntax is identical to <db:link xlink:href="qtremoteobjects-repc.xml#enum">ENUM</db:link>, with the exception that the declaration in this case is not contained in a <db:code>class</db:code> declaration.</db:para>
+<db:para>Related topics: <db:link xlink:href="qtremoteobjects-repc.xml#enum">ENUM</db:link>, <db:link xlink:href="qtremoteobjects-repc.xml#use-enum-keyword">USE_ENUM keyword</db:link></db:para>
+</db:section>
+<db:section xml:id="use-enum-keyword">
+<db:title>USE_ENUM keyword</db:title>
+<db:para>The USE_ENUM keyword was implemented before autogeneration via the ENUM keyword was added. It is kept for backwards compatibility.</db:para>
+<db:para>Related topics: <db:link xlink:href="qtremoteobjects-repc.xml#enum">ENUM</db:link>, <db:link xlink:href="qtremoteobjects-repc.xml#the-enum-type">The ENUM type</db:link></db:para>
+</db:section>
+<db:section xml:id="directives">
+<db:title>Directives</db:title>
+<db:para>The rep file defines an interface, but interfaces often require external elements. In order to support this, repc will include any (single line) directives at the top of the generated files. This allows you to, for instance, use #include or #define directives that support the logic or datatypes needed.</db:para>
+<db:para>The repc tool currently ignores everything from the &quot;#&quot; symbol to the end-of-line and adds that to the generated files. So multi-line #if/#else/#endif statements and multi-line macros are not supported.</db:para>
+<db:section xml:id="header-and-footer-directives">
+<db:title>#HEADER and #FOOTER Directives</db:title>
+<db:para>There are two special directives, <db:code>#HEADER</db:code> and <db:code>#FOOTER</db:code>. Those directives can be used to define content which should be put as-is into the generated code, either before (HEADER) or after (FOOTER) the interfaces declaration. The leading <db:code>#HEADER</db:code> and <db:code>#FOOTER</db:code> tokens plus one white-space character are stripped.</db:para>
+<db:para>In the following example, the generated repc classes are put inside a namespace.</db:para>
+<db:programlisting language="cpp">#HEADER namespace MyNamespace {
+class MyType
+{
+    ...
+};
+#FOOTER } // namespace MyNamespace
+</db:programlisting>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="cmake-functions">
+<db:title>CMake functions</db:title>
+<db:para>The CMake functions for generating source and replica types are listed below.</db:para>
+<db:variablelist role="cmake-macros-qtremoteobjects">
+<db:varlistentry>
+<db:term><db:link xlink:href="qtremoteobjects-cmake-qt-add-repc-merged.xml" xlink:role="page">qt_add_repc_merged</db:link></db:term>
+<db:listitem>
+<db:para>Creates C++ header files for source and replica types from the Qt Remote Objects .rep files.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qtremoteobjects-cmake-qt-add-repc-replicas.xml" xlink:role="page">qt_add_repc_replicas</db:link></db:term>
+<db:listitem>
+<db:para>Creates C++ header files for replica types from the Qt Remote Objects .rep files.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qtremoteobjects-cmake-qt-add-repc-sources.xml" xlink:role="page">qt_add_repc_sources</db:link></db:term>
+<db:listitem>
+<db:para>Creates C++ header files for source types from the Qt Remote Objects .rep files.</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term><db:link xlink:href="qtremoteobjects-cmake-qt-rep-from-headers.xml" xlink:role="page">qt_reps_from_headers</db:link></db:term>
+<db:listitem>
+<db:para>Creates .rep files from the QObject header files.</db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+</db:section>
+<db:section xml:id="qmake-variables">
+<db:title>qmake variables</db:title>
+<db:section xml:id="repc-replica">
+<db:title>REPC_REPLICA</db:title>
+<db:para>Specifies the names of all rep files in the project that should be used to generate replica header files.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">REPC_REPLICA = media.rep \
+               location.rep
+</db:programlisting>
+<db:para>The generated file(s) will be of the form <db:code>rep_&lt;replica file base&gt;_replica.h</db:code>.</db:para>
+</db:section>
+<db:section xml:id="repc-source">
+<db:title>REPC_SOURCE</db:title>
+<db:para>Specifies the names of all rep files in the project that should be used to generate source header files.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">REPC_SOURCE = media.rep \
+              location.rep
+</db:programlisting>
+<db:para>The generated file(s) will be of the form <db:code>rep_&lt;replica file base&gt;_source.h</db:code>.</db:para>
+</db:section>
+<db:section xml:id="repc-merged">
+<db:title>REPC_MERGED</db:title>
+<db:para>Specifies the names of all rep files in the project that should be used to generate combined (source and replica) header files.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">REPC_MERGED = media.rep \
+              location.rep
+</db:programlisting>
+<db:para>The generated file(s) will be of the form <db:code>rep_&lt;replica file base&gt;_merged.h</db:code>.</db:para>
+<db:note>
+<db:para>Typically sources and replicas live in separate processes or devices, so this variable is not commonly used.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="qobject-rep">
+<db:title>QOBJECT_REP</db:title>
+<db:para>Specifies the names of existing <db:link xlink:href="qobject.xml">QObject</db:link> header files that should be used to generate corresponding .rep files.</db:para>
+</db:section>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qremoteobjectabstractpersistedstore.xml">QRemoteObjectAbstractPersistedStore</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

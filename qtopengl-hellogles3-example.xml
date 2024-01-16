@@ -1,0 +1,353 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Hello GLES3 Example</db:title>
+<db:productname>QtOpenGL</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>QtOpenGL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates OpenGL ES 3.0 functions via <db:link xlink:href="qopenglextrafunctions.xml">QOpenGLExtraFunctions</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/hellogles3-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>This example demonstrates easy, cross-platform usage of OpenGL ES 3.0 functions via <db:link xlink:href="qopenglextrafunctions.xml">QOpenGLExtraFunctions</db:link> in an application that works identically on desktop platforms with OpenGL 3.3 and mobile/embedded devices with OpenGL ES 3.0.</db:para>
+<db:para>This example has no <db:link xlink:href="qwidget.xml">QWidget</db:link> dependencies, it uses <db:link xlink:href="qopenglwindow.xml">QOpenGLWindow</db:link>, a convenience subclass of <db:link xlink:href="qwindow.xml">QWindow</db:link> that allows easy implementation of windows that contain OpenGL-rendered content. In this sense it complements the <db:link xlink:href="qtopengl-openglwindow-example.xml">OpenGL Window Example</db:link>, which shows the implementation of an OpenGL-based <db:link xlink:href="qwindow.xml">QWindow</db:link> without using the convenience subclass.</db:para>
+<db:para>The Qt logo shape implementation is included from the <db:link xlink:href="qtopengl-hellogl2-example.xml">Hello GL2 Example</db:link>.</db:para>
+<db:para>In other aspects pertaining to using OpenGL there are the following differences.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The OpenGL context creation has to have a sufficiently high version number for the features that are in use.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The shader's version directive is different.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="setting-up-in-main-cpp">
+<db:title>Setting up in main.cpp</db:title>
+<db:para>Here we instantiate our <db:link xlink:href="qguiapplication.xml">QGuiApplication</db:link>, QSurfaceformat and set its <db:link xlink:href="qsurfaceformat.xml#depthBufferSize">depth buffer size</db:link>:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QGuiApplication app(argc, argv);
+
+    QSurfaceFormat fmt;
+    fmt.setDepthBufferSize(24);
+</db:programlisting>
+<db:para>We request an OpenGL 3.3 core or OpenGL ES 3.0 context, depending on <db:link xlink:href="qopenglcontext.xml#openGLModuleType">QOpenGLContext::openGLModuleType</db:link>():</db:para>
+<db:programlisting language="cpp">    if (QOpenGLContext::openGLModuleType() == QOpenGLContext::LibGL) {
+        qDebug(&quot;Requesting 3.3 core context&quot;);
+        fmt.setVersion(3, 3);
+        fmt.setProfile(QSurfaceFormat::CoreProfile);
+    } else {
+        qDebug(&quot;Requesting 3.0 context&quot;);
+        fmt.setVersion(3, 0);
+    }
+
+    QSurfaceFormat::setDefaultFormat(fmt);
+</db:programlisting>
+<db:para>We set the default surface format and instantiate our GLWindow <db:code>glWindow</db:code>.</db:para>
+</db:section>
+<db:section xml:id="implementing-glwindow">
+<db:title>Implementing GLWindow</db:title>
+<db:para>This class delivers the features of the example application.</db:para>
+<db:para>To start, <db:code>GLWindow</db:code> is declared by implementing a subclass of <db:link xlink:href="qopenglwindow.xml">QOpenGLWindow</db:link>:</db:para>
+<db:programlisting language="cpp">class GLWindow : public QOpenGLWindow
+</db:programlisting>
+<db:para>The following properties are declared using <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>:</db:para>
+<db:programlisting language="cpp">{
+    Q_OBJECT
+    Q_PROPERTY(float z READ z WRITE setZ)
+    Q_PROPERTY(float r READ r WRITE setR)
+    Q_PROPERTY(float r2 READ r2 WRITE setR2)
+</db:programlisting>
+<db:para>The following public functions are declared:</db:para>
+<db:programlisting language="cpp">public:
+    GLWindow();
+    ~GLWindow();
+
+    void initializeGL();
+    void resizeGL(int w, int h);
+    void paintGL();
+
+    float z() const { return m_eye.z(); }
+    void setZ(float v);
+
+    float r() const { return m_r; }
+    void setR(float v);
+    float r2() const { return m_r2; }
+    void setR2(float v);
+</db:programlisting>
+<db:para>The following private objects are declared:</db:para>
+<db:programlisting language="cpp">private slots:
+    void startSecondStage();
+private:
+    QOpenGLTexture *m_texture = nullptr;
+    QOpenGLShaderProgram *m_program = nullptr;
+    QOpenGLBuffer *m_vbo = nullptr;
+    QOpenGLVertexArrayObject *m_vao = nullptr;
+    Logo m_logo;
+    int m_projMatrixLoc = 0;
+    int m_camMatrixLoc = 0;
+    int m_worldMatrixLoc = 0;
+    int m_myMatrixLoc = 0;
+    int m_lightPosLoc = 0;
+    QMatrix4x4 m_proj;
+    QMatrix4x4 m_world;
+    QVector3D m_eye;
+</db:programlisting>
+<db:para>On the implementation side, those functions that are not declared inline are implemented (or re-implemented) in <db:code>glwindow.cpp</db:code>. The following selections will cover implementation particulars pertaining to the use of OpenGL ES 3.0.</db:para>
+<db:section xml:id="animations">
+<db:title>Animations</db:title>
+<db:para>The following code pertains to the animations, and won't be explored here:</db:para>
+<db:programlisting language="cpp">GLWindow::GLWindow()
+{
+    m_world.setToIdentity();
+    m_world.translate(0, 0, -1);
+    m_world.rotate(180, 1, 0, 0);
+
+    QSequentialAnimationGroup *animGroup = new QSequentialAnimationGroup(this);
+    animGroup-&amp;gt;setLoopCount(-1);
+    QPropertyAnimation *zAnim0 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim0-&amp;gt;setStartValue(1.5f);
+    zAnim0-&amp;gt;setEndValue(10.0f);
+    zAnim0-&amp;gt;setDuration(2000);
+    animGroup-&amp;gt;addAnimation(zAnim0);
+    QPropertyAnimation *zAnim1 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim1-&amp;gt;setStartValue(10.0f);
+    zAnim1-&amp;gt;setEndValue(50.0f);
+    zAnim1-&amp;gt;setDuration(4000);
+    zAnim1-&amp;gt;setEasingCurve(QEasingCurve::OutElastic);
+    animGroup-&amp;gt;addAnimation(zAnim1);
+    QPropertyAnimation *zAnim2 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim2-&amp;gt;setStartValue(50.0f);
+    zAnim2-&amp;gt;setEndValue(1.5f);
+    zAnim2-&amp;gt;setDuration(2000);
+    animGroup-&amp;gt;addAnimation(zAnim2);
+    animGroup-&amp;gt;start();
+
+    QPropertyAnimation* rAnim = new QPropertyAnimation(this, QByteArrayLiteral(&quot;r&quot;));
+    rAnim-&amp;gt;setStartValue(0.0f);
+    rAnim-&amp;gt;setEndValue(360.0f);
+    rAnim-&amp;gt;setDuration(2000);
+    rAnim-&amp;gt;setLoopCount(-1);
+    rAnim-&amp;gt;start();
+
+    QTimer::singleShot(4000, this, &amp;amp;GLWindow::startSecondStage);
+}
+
+GLWindow::~GLWindow()
+{
+    makeCurrent();
+    delete m_texture;
+    delete m_program;
+    delete m_vbo;
+    delete m_vao;
+}
+
+void GLWindow::startSecondStage()
+{
+    QPropertyAnimation* r2Anim = new QPropertyAnimation(this, QByteArrayLiteral(&quot;r2&quot;));
+    r2Anim-&amp;gt;setStartValue(0.0f);
+    r2Anim-&amp;gt;setEndValue(360.0f);
+    r2Anim-&amp;gt;setDuration(20000);
+    r2Anim-&amp;gt;setLoopCount(-1);
+    r2Anim-&amp;gt;start();
+}
+
+void GLWindow::setZ(float v)
+{
+    m_eye.setZ(v);
+    m_uniformsDirty = true;
+    update();
+}
+
+void GLWindow::setR(float v)
+{
+    m_r = v;
+    m_uniformsDirty = true;
+    update();
+}
+
+void GLWindow::setR2(float v)
+{
+    m_r2 = v;
+    m_uniformsDirty = true;
+    update();
+}
+</db:programlisting>
+<db:para>For more information see the documentation for <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link>, <db:link xlink:href="qsequentialanimationgroup.xml">QSequentialAnimationGroup</db:link>.</db:para>
+</db:section>
+<db:section xml:id="shaders">
+<db:title>Shaders</db:title>
+<db:para>The shaders are defined like so:</db:para>
+<db:programlisting language="cpp">static const char *vertexShaderSource =
+    &quot;layout(location = 0) in vec4 vertex;\n&quot;
+    &quot;layout(location = 1) in vec3 normal;\n&quot;
+    &quot;out vec3 vert;\n&quot;
+    &quot;out vec3 vertNormal;\n&quot;
+    &quot;out vec3 color;\n&quot;
+    &quot;uniform mat4 projMatrix;\n&quot;
+    &quot;uniform mat4 camMatrix;\n&quot;
+    &quot;uniform mat4 worldMatrix;\n&quot;
+    &quot;uniform mat4 myMatrix;\n&quot;
+    &quot;uniform sampler2D sampler;\n&quot;
+    &quot;void main() {\n&quot;
+    &quot;   ivec2 pos = ivec2(gl_InstanceID % 32, gl_InstanceID / 32);\n&quot;
+    &quot;   vec2 t = vec2(float(-16 + pos.x) * 0.8, float(-18 + pos.y) * 0.6);\n&quot;
+    &quot;   float val = 2.0 * length(texelFetch(sampler, pos, 0).rgb);\n&quot;
+    &quot;   mat4 wm = myMatrix * mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t.x, t.y, val, 1) * worldMatrix;\n&quot;
+    &quot;   color = texelFetch(sampler, pos, 0).rgb * vec3(0.4, 1.0, 0.0);\n&quot;
+    &quot;   vert = vec3(wm * vertex);\n&quot;
+    &quot;   vertNormal = mat3(transpose(inverse(wm))) * normal;\n&quot;
+    &quot;   gl_Position = projMatrix * camMatrix * wm * vertex;\n&quot;
+    &quot;}\n&quot;;
+
+static const char *fragmentShaderSource =
+    &quot;in highp vec3 vert;\n&quot;
+    &quot;in highp vec3 vertNormal;\n&quot;
+    &quot;in highp vec3 color;\n&quot;
+    &quot;out highp vec4 fragColor;\n&quot;
+    &quot;uniform highp vec3 lightPos;\n&quot;
+    &quot;void main() {\n&quot;
+    &quot;   highp vec3 L = normalize(lightPos - vert);\n&quot;
+    &quot;   highp float NL = max(dot(normalize(vertNormal), L), 0.0);\n&quot;
+    &quot;   highp vec3 col = clamp(color * 0.2 + color * 0.8 * NL, 0.0, 1.0);\n&quot;
+    &quot;   fragColor = vec4(col, 1.0);\n&quot;
+    &quot;}\n&quot;;
+</db:programlisting>
+<db:note>
+<db:para>These are OpenGL version agnostic. We take this and append the version like so:</db:para>
+</db:note>
+<db:programlisting language="cpp">QByteArray versionedShaderCode(const char *src)
+{
+    QByteArray versionedSrc;
+
+    if (QOpenGLContext::currentContext()-&amp;gt;isOpenGLES())
+        versionedSrc.append(QByteArrayLiteral(&quot;#version 300 es\n&quot;));
+    else
+        versionedSrc.append(QByteArrayLiteral(&quot;#version 330\n&quot;));
+
+    versionedSrc.append(src);
+    return versionedSrc;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="initializing-opengl">
+<db:title>Initializing OpenGL</db:title>
+<db:para>Initializing the shader program in handled by <db:code>initializeGL()</db:code>:</db:para>
+<db:programlisting language="cpp">void GLWindow::initializeGL()
+{
+    QOpenGLFunctions *f = QOpenGLContext::currentContext()-&amp;gt;functions();
+
+    QImage img(&quot;:/qtlogo.png&quot;);
+    Q_ASSERT(!img.isNull());
+    delete m_texture;
+    m_texture = new QOpenGLTexture(img.scaled(32, 36).mirrored());
+
+    delete m_program;
+    m_program = new QOpenGLShaderProgram;
+</db:programlisting>
+<db:para>Now the OpenGL version is prepended and the various matrices and light position is set:</db:para>
+<db:programlisting language="cpp">    m_program-&amp;gt;addShaderFromSourceCode(QOpenGLShader::Vertex, versionedShaderCode(vertexShaderSource));
+    m_program-&amp;gt;addShaderFromSourceCode(QOpenGLShader::Fragment, versionedShaderCode(fragmentShaderSource));
+    m_program-&amp;gt;link();
+
+    m_projMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;projMatrix&quot;);
+    m_camMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;camMatrix&quot;);
+    m_worldMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;worldMatrix&quot;);
+    m_myMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;myMatrix&quot;);
+    m_lightPosLoc = m_program-&amp;gt;uniformLocation(&quot;lightPos&quot;);
+</db:programlisting>
+<db:para>While not strictly required for ES 3, a vertex array object is created.</db:para>
+<db:programlisting language="cpp">    delete m_vao;
+    m_vao = new QOpenGLVertexArrayObject;
+    if (m_vao-&amp;gt;create())
+        m_vao-&amp;gt;bind();
+
+    m_program-&amp;gt;bind();
+    delete m_vbo;
+    m_vbo = new QOpenGLBuffer;
+    m_vbo-&amp;gt;create();
+    m_vbo-&amp;gt;bind();
+    m_vbo-&amp;gt;allocate(m_logo.constData(), m_logo.count() * sizeof(GLfloat));
+    f-&amp;gt;glEnableVertexAttribArray(0);
+    f-&amp;gt;glEnableVertexAttribArray(1);
+    f-&amp;gt;glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat),
+                             nullptr);
+    f-&amp;gt;glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat),
+                             reinterpret_cast&amp;lt;void *&amp;gt;(3 * sizeof(GLfloat)));
+    m_vbo-&amp;gt;release();
+
+    f-&amp;gt;glEnable(GL_DEPTH_TEST);
+    f-&amp;gt;glEnable(GL_CULL_FACE);
+</db:programlisting>
+</db:section>
+<db:section xml:id="resizing-the-window">
+<db:title>Resizing the window</db:title>
+<db:para>The perspective needs to be aligned with the new window size as so:</db:para>
+<db:programlisting language="cpp">void GLWindow::resizeGL(int w, int h)
+{
+    m_proj.setToIdentity();
+    m_proj.perspective(45.0f, GLfloat(w) / h, 0.01f, 100.0f);
+    m_uniformsDirty = true;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="painting">
+<db:title>Painting</db:title>
+<db:para>We use <db:link xlink:href="qopenglextrafunctions.xml">QOpenGLExtraFunctions</db:link> instead of <db:link xlink:href="qopenglfunctions.xml">QOpenGLFunctions</db:link> as we want to do more than what GL(ES) 2.0 offers:</db:para>
+<db:programlisting language="cpp">void GLWindow::paintGL()
+{
+    // Now use QOpenGLExtraFunctions instead of QOpenGLFunctions as we want to
+    // do more than what GL(ES) 2.0 offers.
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()-&amp;gt;extraFunctions();
+</db:programlisting>
+<db:para>We clear the screen and buffers and bind our shader program and texture:</db:para>
+<db:programlisting language="cpp">    f-&amp;gt;glClearColor(0, 0, 0, 1);
+    f-&amp;gt;glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    m_program-&amp;gt;bind();
+    m_texture-&amp;gt;bind();
+</db:programlisting>
+<db:para>Logic for handling an initial <db:code>paintGL()</db:code> call or a call after a <db:code>resizeGL()</db:code> call is implemented like so:</db:para>
+<db:programlisting language="cpp">    if (m_uniformsDirty) {
+        m_uniformsDirty = false;
+        QMatrix4x4 camera;
+        camera.lookAt(m_eye, m_eye + m_target, QVector3D(0, 1, 0));
+        m_program-&amp;gt;setUniformValue(m_projMatrixLoc, m_proj);
+        m_program-&amp;gt;setUniformValue(m_camMatrixLoc, camera);
+        QMatrix4x4 wm = m_world;
+        wm.rotate(m_r, 1, 1, 0);
+        m_program-&amp;gt;setUniformValue(m_worldMatrixLoc, wm);
+        QMatrix4x4 mm;
+        mm.setToIdentity();
+        mm.rotate(-m_r2, 1, 0, 0);
+        m_program-&amp;gt;setUniformValue(m_myMatrixLoc, mm);
+        m_program-&amp;gt;setUniformValue(m_lightPosLoc, QVector3D(0, 0, 70));
+    }
+</db:programlisting>
+<db:para>Last, we demonstrate a function introduced in OpenGL 3.1 or OpenGL ES 3.0:</db:para>
+<db:programlisting language="cpp">    f-&amp;gt;glDrawArraysInstanced(GL_TRIANGLES, 0, m_logo.vertexCount(), 32 * 36);
+}
+</db:programlisting>
+<db:para>This works because we earlier requested 3.3 or 3.0 context.</db:para>
+</db:section>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/opengl/hellogles3?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

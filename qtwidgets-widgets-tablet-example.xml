@@ -1,0 +1,596 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Tablet Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to use a Wacom tablet in Qt applications.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/tabletexample.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>When you use a tablet with Qt applications, <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link>s are generated. You need to reimplement the <db:link xlink:href="qwidget.xml#tabletEvent">tabletEvent</db:link>() event handler if you want to handle tablet events. Events are generated when the tool (stylus) used for drawing enters and leaves the proximity of the tablet (i.e., when it is closed but not pressed down on it), when the tool is pressed down and released from it, when the tool is moved across the tablet, and when one of the buttons on the tool is pressed or released.</db:para>
+<db:para>The information available in <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> depends on the device used. This example can handle a tablet with up to three different drawing tools: a stylus, an airbrush, and an art pen. For any of these the event will contain the position of the tool, pressure on the tablet, button status, vertical tilt, and horizontal tilt (i.e, the angle between the device and the perpendicular of the tablet, if the tablet hardware can provide it). The airbrush has a finger wheel; the position of this is also available in the tablet event. The art pen provides rotation around the axis perpendicular to the tablet surface, so that it can be used for calligraphy.</db:para>
+<db:para>In this example we implement a drawing program. You can use the stylus to draw on the tablet as you use a pencil on paper. When you draw with the airbrush you get a spray of virtual paint; the finger wheel is used to change the density of the spray. When you draw with the art pen, you get a line whose width and endpoint angle depend on the rotation of the pen. The pressure and tilt can also be assigned to change the alpha and saturation values of the color and the width of the stroke.</db:para>
+<db:para>The example consists of the following:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The MainWindow class inherits <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link>, creates the menus, and connects their slots and signals.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The TabletCanvas class inherits <db:link xlink:href="qwidget.xml">QWidget</db:link> and receives tablet events. It uses the events to paint onto an offscreen pixmap, and then renders it.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The TabletApplication class inherits <db:link xlink:href="qapplication.xml">QApplication</db:link>. This class handles tablet proximity events.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The main() function creates a MainWindow and shows it as a top level window.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The MainWindow creates a TabletCanvas and sets it as its center widget.</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(TabletCanvas *canvas);
+
+private slots:
+    void setBrushColor();
+    void setAlphaValuator(QAction *action);
+    void setLineWidthValuator(QAction *action);
+    void setSaturationValuator(QAction *action);
+    void setEventCompression(bool compress);
+    bool save();
+    void load();
+    void clear();
+    void about();
+
+private:
+    void createMenus();
+
+    TabletCanvas *m_canvas;
+    QColorDialog *m_colorDialog = nullptr;
+};
+</db:programlisting>
+<db:para>createMenus() sets up the menus with the actions. We have one <db:link xlink:href="qactiongroup.xml">QActionGroup</db:link> for the actions that alter the alpha channel, color saturation and line width respectively. The action groups are connected to the setAlphaValuator(), setSaturationValuator(), and setLineWidthValuator() slots, which call functions in TabletCanvas.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>We start with a look at the constructor MainWindow():</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(TabletCanvas *canvas)
+    : m_canvas(canvas)
+{
+    createMenus();
+    setWindowTitle(tr(&quot;Tablet Example&quot;));
+    setCentralWidget(m_canvas);
+    QCoreApplication::setAttribute(Qt::AA_CompressHighFrequencyEvents);
+}
+</db:programlisting>
+<db:para>In the constructor we call createMenus() to create all the actions and menus, and set the canvas as the center widget.</db:para>
+<db:programlisting language="cpp">void MainWindow::createMenus()
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Open...&quot;), QKeySequence::Open, this, &amp;amp;MainWindow::load);
+    fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Save As...&quot;), QKeySequence::SaveAs, this, &amp;amp;MainWindow::save);
+    fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;New&quot;), QKeySequence::New, this, &amp;amp;MainWindow::clear);
+    fileMenu-&amp;gt;addAction(tr(&quot;E&amp;amp;xit&quot;), QKeySequence::Quit, this, &amp;amp;MainWindow::close);
+
+    QMenu *brushMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Brush&quot;));
+    brushMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Brush Color...&quot;), tr(&quot;Ctrl+B&quot;), this, &amp;amp;MainWindow::setBrushColor);
+</db:programlisting>
+<db:para>At the beginning of createMenus() we populate the <db:emphasis role="bold">File</db:emphasis> menu. We use an overload of <db:link xlink:href="qmenu.xml#addAction" role="deprecated">addAction</db:link>(), introduced in Qt 5.6, to create a menu item with a shortcut (and optionally an icon), add it to its menu, and connect it to a slot, all with one line of code. We use <db:link xlink:href="qkeysequence.xml">QKeySequence</db:link> to get the platform-specific standard key shortcuts for these common menu items.</db:para>
+<db:para>We also populate the <db:emphasis role="bold">Brush</db:emphasis> menu. The command to change a brush does not normally have a standard shortcut, so we use <db:link xlink:href="qobject.xml#tr">tr</db:link>() to enable translating the shortcut along with the language translation of the application.</db:para>
+<db:para>Now we will look at the creation of one group of mutually-exclusive actions in a submenu of the <db:emphasis role="bold">Tablet</db:emphasis> menu, for selecting which property of each <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> will be used to vary the translucency (alpha channel) of the line being drawn or color being airbrushed.</db:para>
+<db:programlisting language="cpp">    QMenu *alphaChannelMenu = tabletMenu-&amp;gt;addMenu(tr(&quot;&amp;amp;Alpha Channel&quot;));
+    QAction *alphaChannelPressureAction = alphaChannelMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Pressure&quot;));
+    alphaChannelPressureAction-&amp;gt;setData(TabletCanvas::PressureValuator);
+    alphaChannelPressureAction-&amp;gt;setCheckable(true);
+
+    QAction *alphaChannelTangentialPressureAction = alphaChannelMenu-&amp;gt;addAction(tr(&quot;T&amp;amp;angential Pressure&quot;));
+    alphaChannelTangentialPressureAction-&amp;gt;setData(TabletCanvas::TangentialPressureValuator);
+    alphaChannelTangentialPressureAction-&amp;gt;setCheckable(true);
+    alphaChannelTangentialPressureAction-&amp;gt;setChecked(true);
+
+    QAction *alphaChannelTiltAction = alphaChannelMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Tilt&quot;));
+    alphaChannelTiltAction-&amp;gt;setData(TabletCanvas::TiltValuator);
+    alphaChannelTiltAction-&amp;gt;setCheckable(true);
+
+    QAction *noAlphaChannelAction = alphaChannelMenu-&amp;gt;addAction(tr(&quot;No Alpha Channel&quot;));
+    noAlphaChannelAction-&amp;gt;setData(TabletCanvas::NoValuator);
+    noAlphaChannelAction-&amp;gt;setCheckable(true);
+
+    QActionGroup *alphaChannelGroup = new QActionGroup(this);
+    alphaChannelGroup-&amp;gt;addAction(alphaChannelPressureAction);
+    alphaChannelGroup-&amp;gt;addAction(alphaChannelTangentialPressureAction);
+    alphaChannelGroup-&amp;gt;addAction(alphaChannelTiltAction);
+    alphaChannelGroup-&amp;gt;addAction(noAlphaChannelAction);
+    connect(alphaChannelGroup, &amp;amp;QActionGroup::triggered,
+            this, &amp;amp;MainWindow::setAlphaValuator);
+</db:programlisting>
+<db:para>We want the user to be able to choose whether the drawing color's alpha component should be modulated by the tablet pressure, tilt, or the position of the thumbwheel on the airbrush tool. We have one action for each choice, and an additional action to choose not to change the alpha, that is, to keep the color opaque. We make the actions checkable; the alphaChannelGroup will then ensure that only one of the actions are checked at any time. The triggered() signal is emitted from the group when an action is checked, so we connect that to MainWindow::setAlphaValuator(). It will need to know which property (valuator) of the <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> to pay attention to from now on, so we use the <db:link xlink:href="qaction.xml#data">QAction::data</db:link> property to pass this information along. (In order for this to be possible, the enum Valuator must be a registered metatype, so that it can be inserted into a <db:link xlink:href="qvariant.xml">QVariant</db:link>. That is accomplished by the Q_ENUM declaration in tabletcanvas.h.)</db:para>
+<db:para>Here is the implementation of setAlphaValuator():</db:para>
+<db:programlisting language="cpp">void MainWindow::setAlphaValuator(QAction *action)
+{
+    m_canvas-&amp;gt;setAlphaChannelValuator(qvariant_cast&amp;lt;TabletCanvas::Valuator&amp;gt;(action-&amp;gt;data()));
+}
+</db:programlisting>
+<db:para>It simply needs to retrieve the Valuator enum from <db:link xlink:href="qaction.xml#data">QAction::data</db:link>(), and pass that to TabletCanvas::setAlphaChannelValuator(). If we were not using the data property, we would instead need to compare the <db:link xlink:href="qaction.xml">QAction</db:link> pointer itself, for example in a switch statement. But that would require keeping pointers to each <db:link xlink:href="qaction.xml">QAction</db:link> in class variables, for comparison purposes.</db:para>
+<db:para>Here is the implementation of setBrushColor():</db:para>
+<db:programlisting language="cpp">void MainWindow::setBrushColor()
+{
+    if (!m_colorDialog) {
+        m_colorDialog = new QColorDialog(this);
+        m_colorDialog-&amp;gt;setModal(false);
+        m_colorDialog-&amp;gt;setCurrentColor(m_canvas-&amp;gt;color());
+        connect(m_colorDialog, &amp;amp;QColorDialog::colorSelected, m_canvas, &amp;amp;TabletCanvas::setColor);
+    }
+    m_colorDialog-&amp;gt;setVisible(true);
+}
+</db:programlisting>
+<db:para>We do lazy initialization of a <db:link xlink:href="qcolordialog.xml">QColorDialog</db:link> the first time the user chooses <db:emphasis role="bold">Brush color...</db:emphasis> from the menu or via the action shortcut. While the dialog is open, each time the user chooses a different color, TabletCanvas::setColor() will be called to change the drawing color. Because it is a non-modal dialog, the user is free to leave the color dialog open, so as to be able to conveniently and frequently change colors, or close it and re-open it later.</db:para>
+<db:para>Here is the implementation of save():</db:para>
+<db:programlisting language="cpp">bool MainWindow::save()
+{
+    QString path = QDir::currentPath() + &quot;/untitled.png&quot;;
+    QString fileName = QFileDialog::getSaveFileName(this, tr(&quot;Save Picture&quot;),
+                             path);
+    bool success = m_canvas-&amp;gt;saveImage(fileName);
+    if (!success)
+        QMessageBox::information(this, &quot;Error Saving Picture&quot;,
+                                 &quot;Could not save the image&quot;);
+    return success;
+}
+</db:programlisting>
+<db:para>We use the <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link> to let the user select a file to save the drawing, and then call TabletCanvas::saveImage() to actually write it to the file.</db:para>
+<db:para>Here is the implementation of load():</db:para>
+<db:programlisting language="cpp">void MainWindow::load()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr(&quot;Open Picture&quot;),
+                                                    QDir::currentPath());
+
+    if (!m_canvas-&amp;gt;loadImage(fileName))
+        QMessageBox::information(this, &quot;Error Opening Picture&quot;,
+                                 &quot;Could not open picture&quot;);
+}
+</db:programlisting>
+<db:para>We let the user select the image file to be opened with a <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link>; we then ask the canvas to load the image with loadImage().</db:para>
+<db:para>Here is the implementation of about():</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About Tablet Example&quot;),
+                       tr(&quot;This example shows how to use a graphics drawing tablet in Qt.&quot;));
+}
+</db:programlisting>
+<db:para>We show a message box with a short description of the example.</db:para>
+</db:section>
+<db:section xml:id="tabletcanvas-class-definition">
+<db:title>TabletCanvas Class Definition</db:title>
+<db:para>The TabletCanvas class provides a surface on which the user can draw with a tablet.</db:para>
+<db:programlisting language="cpp">class TabletCanvas : public QWidget
+{
+    Q_OBJECT
+
+public:
+    enum Valuator { PressureValuator, TangentialPressureValuator,
+                    TiltValuator, VTiltValuator, HTiltValuator, NoValuator };
+    Q_ENUM(Valuator)
+
+    TabletCanvas();
+
+    bool saveImage(const QString &amp;amp;file);
+    bool loadImage(const QString &amp;amp;file);
+    void clear();
+    void setAlphaChannelValuator(Valuator type)
+        { m_alphaChannelValuator = type; }
+    void setColorSaturationValuator(Valuator type)
+        { m_colorSaturationValuator = type; }
+    void setLineWidthType(Valuator type)
+        { m_lineWidthValuator = type; }
+    void setColor(const QColor &amp;amp;c)
+        { if (c.isValid()) m_color = c; }
+    QColor color() const
+        { return m_color; }
+    void setTabletDevice(QTabletEvent *event)
+        { updateCursor(event); }
+
+protected:
+    void tabletEvent(QTabletEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+
+private:
+    void initPixmap();
+    void paintPixmap(QPainter &amp;amp;painter, QTabletEvent *event);
+    Qt::BrushStyle brushPattern(qreal value);
+    static qreal pressureToWidth(qreal pressure);
+    void updateBrush(const QTabletEvent *event);
+    void updateCursor(const QTabletEvent *event);
+
+    Valuator m_alphaChannelValuator = TangentialPressureValuator;
+    Valuator m_colorSaturationValuator = NoValuator;
+    Valuator m_lineWidthValuator = PressureValuator;
+    QColor m_color = Qt::red;
+    QPixmap m_pixmap;
+    QBrush m_brush;
+    QPen m_pen;
+    bool m_deviceDown = false;
+
+    struct Point {
+        QPointF pos;
+        qreal pressure = 0;
+        qreal rotation = 0;
+    } lastPoint;
+};
+</db:programlisting>
+<db:para>The canvas can change the alpha channel, color saturation, and line width of the stroke. We have an enum listing the <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> properties with which it is possible to modulate them. We keep a private variable for each: m_alphaChannelValuator, m_colorSaturationValuator and m_lineWidthValuator, and we provide accessor functions for them.</db:para>
+<db:para>We draw on a <db:link xlink:href="qpixmap.xml">QPixmap</db:link> with m_pen and m_brush using m_color. Each time a <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> is received, the stroke is drawn from lastPoint to the point given in the current <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link>, and then the position and rotation are saved in lastPoint for next time. The saveImage() and loadImage() functions save and load the <db:link xlink:href="qpixmap.xml">QPixmap</db:link> to disk. The pixmap is drawn on the widget in paintEvent().</db:para>
+<db:para>The interpretation of events from the tablet is done in tabletEvent(), and paintPixmap(), updateBrush(), and updateCursor() are helper functions used by tabletEvent().</db:para>
+</db:section>
+<db:section xml:id="tabletcanvas-class-implementation">
+<db:title>TabletCanvas Class Implementation</db:title>
+<db:para>We start with a look at the constructor:</db:para>
+<db:programlisting language="cpp">TabletCanvas::TabletCanvas()
+    : QWidget(nullptr), m_brush(m_color)
+    , m_pen(m_brush, 1.0, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin)
+{
+    resize(500, 500);
+    setAutoFillBackground(true);
+    setAttribute(Qt::WA_TabletTracking);
+}
+</db:programlisting>
+<db:para>In the constructor we initialize most of our class variables.</db:para>
+<db:para>Here is the implementation of saveImage():</db:para>
+<db:programlisting language="cpp">bool TabletCanvas::saveImage(const QString &amp;amp;file)
+{
+    return m_pixmap.save(file);
+}
+</db:programlisting>
+<db:para><db:link xlink:href="qpixmap.xml">QPixmap</db:link> implements functionality to save itself to disk, so we simply call <db:link xlink:href="qpixmap.xml#save">save</db:link>().</db:para>
+<db:para>Here is the implementation of loadImage():</db:para>
+<db:programlisting language="cpp">bool TabletCanvas::loadImage(const QString &amp;amp;file)
+{
+    bool success = m_pixmap.load(file);
+
+    if (success) {
+        update();
+        return true;
+    }
+    return false;
+}
+</db:programlisting>
+<db:para>We simply call <db:link xlink:href="qpixmap.xml#load">load</db:link>(), which loads the image from <db:code role="parameter">file</db:code>.</db:para>
+<db:para>Here is the implementation of tabletEvent():</db:para>
+<db:programlisting language="cpp">void TabletCanvas::tabletEvent(QTabletEvent *event)
+{
+    switch (event-&amp;gt;type()) {
+        case QEvent::TabletPress:
+            if (!m_deviceDown) {
+                m_deviceDown = true;
+                lastPoint.pos = event-&amp;gt;position();
+                lastPoint.pressure = event-&amp;gt;pressure();
+                lastPoint.rotation = event-&amp;gt;rotation();
+            }
+            break;
+        case QEvent::TabletMove:
+#ifndef Q_OS_IOS
+            if (event-&amp;gt;pointingDevice() &amp;amp;&amp;amp; event-&amp;gt;pointingDevice()-&amp;gt;capabilities().testFlag(QPointingDevice::Capability::Rotation))
+                updateCursor(event);
+#endif
+            if (m_deviceDown) {
+                updateBrush(event);
+                QPainter painter(&amp;amp;m_pixmap);
+                paintPixmap(painter, event);
+                lastPoint.pos = event-&amp;gt;position();
+                lastPoint.pressure = event-&amp;gt;pressure();
+                lastPoint.rotation = event-&amp;gt;rotation();
+            }
+            break;
+        case QEvent::TabletRelease:
+            if (m_deviceDown &amp;amp;&amp;amp; event-&amp;gt;buttons() == Qt::NoButton)
+                m_deviceDown = false;
+            update();
+            break;
+        default:
+            break;
+    }
+    event-&amp;gt;accept();
+}
+</db:programlisting>
+<db:para>We get three kind of events to this function: TabletPress, TabletRelease, and TabletMove, which are generated when a drawing tool is pressed down on, lifed up from, or moved across the tablet. We set m_deviceDown to true when a device is pressed down on the tablet; we then know that we should draw when we receive move events. We have implemented updateBrush() to update m_brush and m_pen depending on which of the tablet event properties the user has chosen to pay attention to. The updateCursor() function selects a cursor to represent the drawing tool in use, so that as you hover with the tool in proximity of the tablet, you can see what kind of stroke you are about to make.</db:para>
+<db:programlisting language="cpp">void TabletCanvas::updateCursor(const QTabletEvent *event)
+{
+    QCursor cursor;
+    if (event-&amp;gt;type() != QEvent::TabletLeaveProximity) {
+        if (event-&amp;gt;pointerType() == QPointingDevice::PointerType::Eraser) {
+            cursor = QCursor(QPixmap(&quot;:/images/cursor-eraser.png&quot;), 3, 28);
+        } else {
+            switch (event-&amp;gt;deviceType()) {
+            case QInputDevice::DeviceType::Stylus:
+                if (event-&amp;gt;pointingDevice()-&amp;gt;capabilities().testFlag(QPointingDevice::Capability::Rotation)) {
+                    QImage origImg(QLatin1String(&quot;:/images/cursor-felt-marker.png&quot;));
+                    QImage img(32, 32, QImage::Format_ARGB32);
+                    QColor solid = m_color;
+                    solid.setAlpha(255);
+                    img.fill(solid);
+                    QPainter painter(&amp;amp;img);
+                    QTransform transform = painter.transform();
+                    transform.translate(16, 16);
+                    transform.rotate(event-&amp;gt;rotation());
+                    painter.setTransform(transform);
+                    painter.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+                    painter.drawImage(-24, -24, origImg);
+                    painter.setCompositionMode(QPainter::CompositionMode_HardLight);
+                    painter.drawImage(-24, -24, origImg);
+                    painter.end();
+                    cursor = QCursor(QPixmap::fromImage(img), 16, 16);
+                } else {
+                    cursor = QCursor(QPixmap(&quot;:/images/cursor-pencil.png&quot;), 0, 0);
+                }
+                break;
+            case QInputDevice::DeviceType::Airbrush:
+                cursor = QCursor(QPixmap(&quot;:/images/cursor-airbrush.png&quot;), 3, 4);
+                break;
+            default:
+                break;
+            }
+        }
+    }
+    setCursor(cursor);
+}
+</db:programlisting>
+<db:para>If an art pen (RotationStylus) is in use, updateCursor() is also called for each TabletMove event, and renders a rotated cursor so that you can see the angle of the pen tip.</db:para>
+<db:para>Here is the implementation of paintEvent():</db:para>
+<db:programlisting language="cpp">void TabletCanvas::initPixmap()
+{
+    qreal dpr = devicePixelRatio();
+    QPixmap newPixmap = QPixmap(qRound(width() * dpr), qRound(height() * dpr));
+    newPixmap.setDevicePixelRatio(dpr);
+    newPixmap.fill(Qt::white);
+    QPainter painter(&amp;amp;newPixmap);
+    if (!m_pixmap.isNull())
+        painter.drawPixmap(0, 0, m_pixmap);
+    painter.end();
+    m_pixmap = newPixmap;
+}
+
+void TabletCanvas::paintEvent(QPaintEvent *event)
+{
+    if (m_pixmap.isNull())
+        initPixmap();
+    QPainter painter(this);
+    QRect pixmapPortion = QRect(event-&amp;gt;rect().topLeft() * devicePixelRatio(),
+                                event-&amp;gt;rect().size() * devicePixelRatio());
+    painter.drawPixmap(event-&amp;gt;rect().topLeft(), m_pixmap, pixmapPortion);
+}
+</db:programlisting>
+<db:para>The first time Qt calls paintEvent(), m_pixmap is default-constructed, so <db:link xlink:href="qpixmap.xml#isNull">QPixmap::isNull</db:link>() returns true. Now that we know which screen we will be rendering to, we can create a pixmap with the appropriate resolution. The size of the pixmap with which we fill the window depends on the screen resolution, as the example does not support zoom; and it may be that one screen is <db:link xlink:href="highdpi.xml">high DPI</db:link> while another is not. We need to draw the background too, as the default is gray.</db:para>
+<db:para>After that, we simply draw the pixmap to the top left of the widget.</db:para>
+<db:para>Here is the implementation of paintPixmap():</db:para>
+<db:programlisting language="cpp">void TabletCanvas::paintPixmap(QPainter &amp;amp;painter, QTabletEvent *event)
+{
+    static qreal maxPenRadius = pressureToWidth(1.0);
+    painter.setRenderHint(QPainter::Antialiasing);
+
+    switch (event-&amp;gt;deviceType()) {
+        case QInputDevice::DeviceType::Airbrush:
+            {
+                painter.setPen(Qt::NoPen);
+                QRadialGradient grad(lastPoint.pos, m_pen.widthF() * 10.0);
+                QColor color = m_brush.color();
+                color.setAlphaF(color.alphaF() * 0.25);
+                grad.setColorAt(0, m_brush.color());
+                grad.setColorAt(0.5, Qt::transparent);
+                painter.setBrush(grad);
+                qreal radius = grad.radius();
+                painter.drawEllipse(event-&amp;gt;position(), radius, radius);
+                update(QRect(event-&amp;gt;position().toPoint() - QPoint(radius, radius), QSize(radius * 2, radius * 2)));
+            }
+            break;
+        case QInputDevice::DeviceType::Puck:
+        case QInputDevice::DeviceType::Mouse:
+            {
+                const QString error(tr(&quot;This input device is not supported by the example.&quot;));
+#if QT_CONFIG(statustip)
+                QStatusTipEvent status(error);
+                QCoreApplication::sendEvent(this, &amp;amp;status);
+#else
+                qWarning() &amp;lt;&amp;lt; error;
+#endif
+            }
+            break;
+        default:
+            {
+                const QString error(tr(&quot;Unknown tablet device - treating as stylus&quot;));
+#if QT_CONFIG(statustip)
+                QStatusTipEvent status(error);
+                QCoreApplication::sendEvent(this, &amp;amp;status);
+#else
+                qWarning() &amp;lt;&amp;lt; error;
+#endif
+            }
+            Q_FALLTHROUGH();
+        case QInputDevice::DeviceType::Stylus:
+            if (event-&amp;gt;pointingDevice()-&amp;gt;capabilities().testFlag(QPointingDevice::Capability::Rotation)) {
+                m_brush.setStyle(Qt::SolidPattern);
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(m_brush);
+                QPolygonF poly;
+                qreal halfWidth = pressureToWidth(lastPoint.pressure);
+                QPointF brushAdjust(qSin(qDegreesToRadians(-lastPoint.rotation)) * halfWidth,
+                                    qCos(qDegreesToRadians(-lastPoint.rotation)) * halfWidth);
+                poly &amp;lt;&amp;lt; lastPoint.pos + brushAdjust;
+                poly &amp;lt;&amp;lt; lastPoint.pos - brushAdjust;
+                halfWidth = m_pen.widthF();
+                brushAdjust = QPointF(qSin(qDegreesToRadians(-event-&amp;gt;rotation())) * halfWidth,
+                                      qCos(qDegreesToRadians(-event-&amp;gt;rotation())) * halfWidth);
+                poly &amp;lt;&amp;lt; event-&amp;gt;position() - brushAdjust;
+                poly &amp;lt;&amp;lt; event-&amp;gt;position() + brushAdjust;
+                painter.drawConvexPolygon(poly);
+                update(poly.boundingRect().toRect());
+            } else {
+                painter.setPen(m_pen);
+                painter.drawLine(lastPoint.pos, event-&amp;gt;position());
+                update(QRect(lastPoint.pos.toPoint(), event-&amp;gt;position().toPoint()).normalized()
+                       .adjusted(-maxPenRadius, -maxPenRadius, maxPenRadius, maxPenRadius));
+            }
+            break;
+    }
+}
+</db:programlisting>
+<db:para>In this function we draw on the pixmap based on the movement of the tool. If the tool used on the tablet is a stylus, we want to draw a line from the last-known position to the current position. We also assume that this is a reasonable handling of any unknown device, but update the status bar with a warning. If it is an airbrush, we want to draw a circle filled with a soft gradient, whose density can depend on various event parameters. By default it depends on the tangential pressure, which is the position of the finger wheel on the airbrush. If the tool is a rotation stylus, we simulate a felt marker by drawing trapezoidal stroke segments.</db:para>
+<db:programlisting language="cpp">        case QInputDevice::DeviceType::Airbrush:
+            {
+                painter.setPen(Qt::NoPen);
+                QRadialGradient grad(lastPoint.pos, m_pen.widthF() * 10.0);
+                QColor color = m_brush.color();
+                color.setAlphaF(color.alphaF() * 0.25);
+                grad.setColorAt(0, m_brush.color());
+                grad.setColorAt(0.5, Qt::transparent);
+                painter.setBrush(grad);
+                qreal radius = grad.radius();
+                painter.drawEllipse(event-&amp;gt;position(), radius, radius);
+                update(QRect(event-&amp;gt;position().toPoint() - QPoint(radius, radius), QSize(radius * 2, radius * 2)));
+            }
+            break;
+</db:programlisting>
+<db:para>In updateBrush() we set the pen and brush used for drawing to match m_alphaChannelValuator, m_lineWidthValuator, m_colorSaturationValuator, and m_color. We will examine the code to set up m_brush and m_pen for each of these variables:</db:para>
+<db:programlisting language="cpp">void TabletCanvas::updateBrush(const QTabletEvent *event)
+{
+    int hue, saturation, value, alpha;
+    m_color.getHsv(&amp;amp;hue, &amp;amp;saturation, &amp;amp;value, &amp;amp;alpha);
+
+    int vValue = int(((event-&amp;gt;yTilt() + 60.0) / 120.0) * 255);
+    int hValue = int(((event-&amp;gt;xTilt() + 60.0) / 120.0) * 255);
+</db:programlisting>
+<db:para>We fetch the current drawingcolor's hue, saturation, value, and alpha values. hValue and vValue are set to the horizontal and vertical tilt as a number from 0 to 255. The original values are in degrees from -60 to 60, i.e., 0 equals -60, 127 equals 0, and 255 equals 60 degrees. The angle measured is between the device and the perpendicular of the tablet (see <db:link xlink:href="qtabletevent.xml">QTabletEvent</db:link> for an illustration).</db:para>
+<db:programlisting language="cpp">    switch (m_alphaChannelValuator) {
+        case PressureValuator:
+            m_color.setAlphaF(event-&amp;gt;pressure());
+            break;
+        case TangentialPressureValuator:
+            if (event-&amp;gt;deviceType() == QInputDevice::DeviceType::Airbrush)
+                m_color.setAlphaF(qMax(0.01, (event-&amp;gt;tangentialPressure() + 1.0) / 2.0));
+            else
+                m_color.setAlpha(255);
+            break;
+        case TiltValuator:
+            m_color.setAlpha(std::max(std::abs(vValue - 127),
+                                      std::abs(hValue - 127)));
+            break;
+        default:
+            m_color.setAlpha(255);
+    }
+</db:programlisting>
+<db:para>The alpha channel of <db:link xlink:href="qcolor.xml">QColor</db:link> is given as a number between 0 and 255 where 0 is transparent and 255 is opaque, or as a floating-point number where 0 is transparent and 1.0 is opaque. <db:link xlink:href="qtabletevent.xml#pressure">pressure</db:link>() returns the pressure as a qreal between 0.0 and 1.0. We get the smallest alpha values (i.e., the color is most transparent) when the pen is perpendicular to the tablet. We select the largest of the vertical and horizontal tilt values.</db:para>
+<db:programlisting language="cpp">    switch (m_colorSaturationValuator) {
+        case VTiltValuator:
+            m_color.setHsv(hue, vValue, value, alpha);
+            break;
+        case HTiltValuator:
+            m_color.setHsv(hue, hValue, value, alpha);
+            break;
+        case PressureValuator:
+            m_color.setHsv(hue, int(event-&amp;gt;pressure() * 255.0), value, alpha);
+            break;
+        default:
+            ;
+    }
+</db:programlisting>
+<db:para>The color saturation in the HSV color model can be given as an integer between 0 and 255 or as a floating-point value between 0 and 1. We chose to represent alpha as an integer, so we call <db:link xlink:href="qcolor.xml#setHsv">setHsv</db:link>() with integer values. That means we need to multiply the pressure to a number between 0 and 255.</db:para>
+<db:programlisting language="cpp">    switch (m_lineWidthValuator) {
+        case PressureValuator:
+            m_pen.setWidthF(pressureToWidth(event-&amp;gt;pressure()));
+            break;
+        case TiltValuator:
+            m_pen.setWidthF(std::max(std::abs(vValue - 127),
+                                     std::abs(hValue - 127)) / 12);
+            break;
+        default:
+            m_pen.setWidthF(1);
+    }
+</db:programlisting>
+<db:para>The width of the pen stroke can increase with pressure, if so chosen. But when the pen width is controlled by tilt, we let the width increase with the angle between the tool and the perpendicular of the tablet.</db:para>
+<db:programlisting language="cpp">    if (event-&amp;gt;pointerType() == QPointingDevice::PointerType::Eraser) {
+        m_brush.setColor(Qt::white);
+        m_pen.setColor(Qt::white);
+        m_pen.setWidthF(event-&amp;gt;pressure() * 10 + 1);
+    } else {
+        m_brush.setColor(m_color);
+        m_pen.setColor(m_color);
+    }
+}
+</db:programlisting>
+<db:para>We finally check whether the pointer is the stylus or the eraser. If it is the eraser, we set the color to the background color of the pixmap and let the pressure decide the pen width, else we set the colors we have decided previously in the function.</db:para>
+</db:section>
+<db:section xml:id="tabletapplication-class-definition">
+<db:title>TabletApplication Class Definition</db:title>
+<db:para>We inherit <db:link xlink:href="qapplication.xml">QApplication</db:link> in this class because we want to reimplement the <db:link xlink:href="qapplication.xml#event">event</db:link>() function.</db:para>
+<db:programlisting language="cpp">class TabletApplication : public QApplication
+{
+    Q_OBJECT
+
+public:
+    using QApplication::QApplication;
+
+    bool event(QEvent *event) override;
+    void setCanvas(TabletCanvas *canvas)
+        { m_canvas = canvas; }
+
+private:
+    TabletCanvas *m_canvas = nullptr;
+};
+</db:programlisting>
+<db:para>TabletApplication exists as a subclass of <db:link xlink:href="qapplication.xml">QApplication</db:link> in order to receive tablet proximity events and forward them to TabletCanvas. The TabletEnterProximity and TabletLeaveProximity events are sent to the <db:link xlink:href="qapplication.xml">QApplication</db:link> object, while other tablet events are sent to the <db:link xlink:href="qwidget.xml">QWidget</db:link>'s event() handler, which sends them on to <db:link xlink:href="qwidget.xml#tabletEvent">tabletEvent</db:link>().</db:para>
+</db:section>
+<db:section xml:id="tabletapplication-class-implementation">
+<db:title>TabletApplication Class Implementation</db:title>
+<db:para>Here is the implementation of event():</db:para>
+<db:programlisting language="cpp">bool TabletApplication::event(QEvent *event)
+{
+    if (event-&amp;gt;type() == QEvent::TabletEnterProximity ||
+        event-&amp;gt;type() == QEvent::TabletLeaveProximity) {
+        m_canvas-&amp;gt;setTabletDevice(static_cast&amp;lt;QTabletEvent *&amp;gt;(event));
+        return true;
+    }
+    return QApplication::event(event);
+}
+</db:programlisting>
+<db:para>We use this function to handle the TabletEnterProximity and TabletLeaveProximity events, which are generated when a drawing tool enters or leaves the proximity of the tablet. Here we call TabletCanvas::setTabletDevice(), which then calls updateCursor(), which will set an appropriate cursor. This is the only reason we need the proximity events; for the purpose of correct drawing, it is enough for TabletCanvas to observe the <db:link xlink:href="qinputevent.xml#device">device</db:link>() and <db:link xlink:href="qpointerevent.xml#pointerType">pointerType</db:link>() in each event that it receives.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() function</db:title>
+<db:para>Here is the example's main() function:</db:para>
+<db:programlisting language="cpp">int main(int argv, char *args[])
+{
+    TabletApplication app(argv, args);
+    TabletCanvas *canvas = new TabletCanvas;
+    app.setCanvas(canvas);
+
+    MainWindow mainWindow(canvas);
+    mainWindow.resize(500, 500);
+    mainWindow.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>Here we create a MainWindow and display it as a top level window. We use the TabletApplication class. We need to set the canvas after the application is created. We cannot use classes that implement event handling before an <db:link xlink:href="qapplication.xml">QApplication</db:link> object is instantiated.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/widgets/tablet?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

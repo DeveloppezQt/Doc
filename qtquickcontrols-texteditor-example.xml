@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick Controls - Text Editor</db:title>
+<db:productname>QtQuickControls</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Controls Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A rich-text editor app using Qt Quick Controls.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The <db:emphasis>Text Editor Example</db:emphasis> allows WYSIWYG editing of an HTML, Markdown or plain text file. The application comes with two user interfaces: one for larger screens, and a simplified UI for small touch-based devices. Both are &quot;pure&quot; QML. <db:code>texteditor.cpp</db:code> contains the <db:code>main()</db:code> function, which calls <db:link xlink:href="qfontdatabase.xml#addApplicationFont">QFontDatabase::addApplicationFont</db:link>() to add an icon font. (<db:link xlink:href="qml-qtquick-fontloader.xml">FontLoader</db:link> would be an alternative way to achieve the same result.)</db:para>
+<db:section xml:id="desktop-user-interface">
+<db:title>Desktop User Interface</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qtquickcontrols-texteditor-desktop.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The desktop version is a complete text editor with capabilities for formatting text, and opening and saving HTML, Markdown and plain text files.</db:para>
+<db:para>In the <db:link xlink:href="https://en.wikipedia.org/wiki/Model%E2%80%93view%E2%80%93controller">model-view-control (MVC)</db:link> design pattern, the <db:emphasis>control</db:emphasis> layer includes the set of operations that can be performed. In Qt Quick Controls, the <db:link xlink:href="qml-qtquick-controls-action.xml">Action</db:link> type is used to encapsulate a single operation or command. Accordingly, we begin with a set of Action objects:</db:para>
+<db:programlisting language="cpp">    Action {
+        id: openAction
+        shortcut: StandardKey.Open
+        onTriggered: {
+            if (textArea.textDocument.modified)
+                discardDialog.open()
+            else
+                openDialog.open()
+        }
+    }
+</db:programlisting>
+<db:para>The <db:link xlink:href="qml-qtquick-controls-action.xml">Action</db:link> for opening a file must first prompt the user if the existing document has been changed, to avoid losing the user's changes. Otherwise it simply opens the <db:link xlink:href="qml-qtquick-dialogs-filedialog.xml">FileDialog</db:link> which is declared further below.</db:para>
+<db:para>The <db:link xlink:href="qml-qtquick-controls-action.xml">Action</db:link> for saving the file is enabled only if there are changes to save:</db:para>
+<db:programlisting language="cpp">    Action {
+        id: saveAction
+        shortcut: StandardKey.Save
+        enabled: textArea.textDocument.modified
+        onTriggered: textArea.textDocument.save()
+    }
+</db:programlisting>
+<db:para>The <db:link xlink:href="qml-qtquick-controls-action.xml">Action</db:link> for copying selected text is enabled only if some text is selected:</db:para>
+<db:programlisting language="cpp">    Action {
+        id: copyAction
+        shortcut: StandardKey.Copy
+        enabled: textArea.selectedText
+        onTriggered: textArea.copy()
+    }
+</db:programlisting>
+<db:para>Each Action to change text formatting (such as bold, italic and alignment) is <db:link xlink:href="qml-qtquick-controls-action.xml#checkable-prop">checkable</db:link>, and its boolean <db:code>checked</db:code> state is in sync with the relevant property in the <db:link xlink:href="qml-qtquick-textedit.xml#selectedText-prop">selected text</db:link>. Since declarative bidirectional synchronization is difficult, we use an <db:code>onTriggered</db:code> script to change the property when the Action is activated. The <db:link xlink:href="qml-qtquick-textedit.xml#cursorSelection-prop">cursorSelection</db:link> property is new in Qt 6.7 and makes this much easier than it was.</db:para>
+<db:programlisting language="cpp">    Action {
+        id: boldAction
+        shortcut: StandardKey.Bold
+        checkable: true
+        checked: textArea.cursorSelection.font.bold
+        onTriggered: textArea.cursorSelection.font = Qt.font({ bold: checked })
+    }
+
+    Action {
+        id: alignCenterAction
+        shortcut: &quot;Ctrl+|&quot;
+        checkable: true
+        checked: textArea.cursorSelection.alignment === Qt.AlignCenter
+        onTriggered: textArea.cursorSelection.alignment = Qt.AlignCenter
+    }
+</db:programlisting>
+<db:para>We have a <db:link xlink:href="qml-qt-labs-platform-menubar.xml">MenuBar</db:link> containing the hierarchy of <db:link xlink:href="qml-qt-labs-platform-menu.xml">Menus</db:link> and MenuItems. <db:code>Platform.MenuItem</db:code> does not have an <db:code>action</db:code> property, so at minimum we need to set <db:code>text</db:code> and implement <db:code>onTriggered</db:code>.</db:para>
+<db:note>
+<db:para>In Qt Quick Controls, each <db:link xlink:href="qml-qtquick-controls-menuitem.xml">MenuItem</db:link> could simply bind the relevant <db:link xlink:href="qml-qtquick-controls-abstractbutton.xml#action-prop">action</db:link>. In a near-future version of Qt, <db:code>Qt.labs.platform</db:code> will be obsolete, and <db:link xlink:href="qml-qtquick-controls-menubar.xml">MenuBar</db:link> will be suitable on every platform. Unless you need a native menu bar (only on platforms that provide one) in Qt 6.7 and older versions, you should avoid importing <db:code>Qt.labs.platform</db:code>. <db:code>QtQuick.Controls</db:code> is more portable.</db:para>
+</db:note>
+<db:programlisting language="cpp">    Platform.MenuBar {
+        Platform.Menu {
+            title: qsTr(&quot;&amp;amp;File&quot;)
+
+            Platform.MenuItem {
+                text: qsTr(&quot;&amp;amp;Open&quot;)
+                onTriggered: openAction.trigger()
+            }
+            Platform.MenuItem {
+                text: qsTr(&quot;&amp;amp;Save…&quot;)
+                onTriggered: saveAction.trigger()
+            }
+            Platform.MenuItem {
+                text: qsTr(&quot;Save &amp;amp;As…&quot;)
+                onTriggered: saveAsAction.trigger()
+            }
+            Platform.MenuItem {
+                text: qsTr(&quot;&amp;amp;Quit&quot;)
+                onTriggered: quitAction.trigger()
+            }
+        }
+
+        Platform.Menu {
+            title: qsTr(&quot;&amp;amp;Edit&quot;)
+
+            Platform.MenuItem {
+                text: qsTr(&quot;&amp;amp;Copy&quot;)
+                enabled: copyAction.enabled
+                onTriggered: copyAction.trigger()
+            }
+        ...
+</db:programlisting>
+<db:para>The existing <db:link xlink:href="qml-qtquick-controls-action.xml">Action</db:link> objects are reused in the <db:link xlink:href="qml-qtquick-controls-toolbar.xml">ToolBar</db:link>; but here we override each Action's <db:link xlink:href="qml-qtquick-controls-abstractbutton.xml#text-prop">text</db:link> property to choose a textual icon from our icon font:</db:para>
+<db:programlisting language="cpp">    header: ToolBar {
+        leftPadding: 8
+
+        Flow {
+            id: flow
+            width: parent.width
+
+            Row {
+                id: fileRow
+                ToolButton {
+                    id: openButton
+                    text: &quot;\uF115&quot; // icon-folder-open-empty
+                    font.family: &quot;fontello&quot;
+                    action: openAction
+                    focusPolicy: Qt.TabFocus
+                }
+                ToolButton {
+                    id: saveButton
+                    text: &quot;\uE80A&quot; // icon-floppy-disk
+                    font.family: &quot;fontello&quot;
+                    action: saveAction
+                    focusPolicy: Qt.TabFocus
+                }
+                ToolSeparator {
+                    contentItem.visible: fileRow.y === editRow.y
+                }
+            }
+
+            Row {
+                id: editRow
+                ToolButton {
+                    id: copyButton
+                    text: &quot;\uF0C5&quot; // icon-docs
+                    font.family: &quot;fontello&quot;
+                    focusPolicy: Qt.TabFocus
+                    action: copyAction
+                }
+            ...
+</db:programlisting>
+<db:para>The main part of the text editor is a <db:link xlink:href="qml-qtquick-controls-textarea.xml">TextArea</db:link> inside a <db:link xlink:href="qml-qtquick-flickable.xml">Flickable</db:link>:</db:para>
+<db:programlisting language="cpp">    Flickable {
+        id: flickable
+        flickableDirection: Flickable.VerticalFlick
+        anchors.fill: parent
+
+        ScrollBar.vertical: ScrollBar {}
+
+        TextArea.flickable: TextArea {
+            id: textArea
+            textFormat: Qt.AutoText
+            wrapMode: TextArea.Wrap
+            focus: true
+            selectByMouse: true
+            persistentSelection: true
+            ...
+</db:programlisting>
+<db:para>A <db:link xlink:href="qml-qtquick-controls-scrollbar.xml">ScrollBar</db:link> is attached to the vertical axis. Since word-wrapping is enabled via <db:link xlink:href="qml-qtquick-textedit.xml#wrapMode-prop">wrapMode</db:link>, we don't need a horizontal <db:link xlink:href="qml-qtquick-controls-scrollbar.xml">ScrollBar</db:link>.</db:para>
+<db:para>The <db:link xlink:href="qml-qtquick-controls-textarea.xml#flickable-attached-prop">TextArea.flickable</db:link> attached property is used so that when the text cursor is moved out of the viewport (for example via arrow keys, or by typing a lot of text), <db:link xlink:href="qml-qtquick-controls-textarea.xml">TextArea</db:link> scrolls the <db:link xlink:href="qml-qtquick-flickable.xml">Flickable</db:link> to keep the cursor visible.</db:para>
+<db:para>There is a context menu; we use a <db:link xlink:href="qml-qtquick-taphandler.xml">TapHandler</db:link> to detect a right-click and open it:</db:para>
+<db:programlisting language="cpp">            TapHandler {
+                acceptedButtons: Qt.RightButton
+                onTapped: contextMenu.open()
+            }
+</db:programlisting>
+<db:para>The context <db:link xlink:href="qml-qt-labs-platform-menu.xml">Menu</db:link> contains <db:link xlink:href="qml-qt-labs-platform-menuitem.xml">MenuItems</db:link>.</db:para>
+<db:programlisting language="cpp">    Platform.Menu {
+        id: contextMenu
+
+        Platform.MenuItem {
+            text: qsTr(&quot;Copy&quot;)
+            enabled: copyAction.enabled
+            onTriggered: copyAction.trigger()
+        }
+        ...
+</db:programlisting>
+<db:para>We consistently use the qsTr function to enable translation of UI text, so that the application will make sense regardless of the end user's native language.</db:para>
+<db:para>We use several kinds of <db:link xlink:href="qtquick-dialogs-qmlmodule.xml">dialogs</db:link>:</db:para>
+<db:programlisting language="cpp">    FileDialog {
+        id: openDialog
+        fileMode: FileDialog.OpenFile
+        selectedNameFilter.index: 1
+        nameFilters: [&quot;Text files (*.txt)&quot;, &quot;HTML files (*.html *.htm)&quot;, &quot;Markdown files (*.md *.markdown)&quot;]
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: {
+            textArea.textDocument.modified = false // we asked earlier, if necessary
+            textArea.textDocument.source = selectedFile
+        }
+    }
+
+    FileDialog {
+        id: saveDialog
+        fileMode: FileDialog.SaveFile
+        nameFilters: openDialog.nameFilters
+        currentFolder: StandardPaths.writableLocation(StandardPaths.DocumentsLocation)
+        onAccepted: textArea.textDocument.saveAs(selectedFile)
+    }
+
+    FontDialog {
+        id: fontDialog
+        onAccepted: textArea.cursorSelection.font = selectedFont
+    }
+
+    ColorDialog {
+        id: colorDialog
+        selectedColor: &quot;black&quot;
+        onAccepted: textArea.cursorSelection.color = selectedColor
+    }
+
+    MessageDialog {
+        title: qsTr(&quot;Error&quot;)
+        id: errorDialog
+    }
+
+    MessageDialog {
+        id : quitDialog
+        title: qsTr(&quot;Quit?&quot;)
+        text: qsTr(&quot;The file has been modified. Quit anyway?&quot;)
+        buttons: MessageDialog.Yes | MessageDialog.No
+        onButtonClicked: function (button, role) {
+            if (role === MessageDialog.YesRole) {
+                textArea.textDocument.modified = false
+                Qt.quit()
+            }
+        }
+    }
+
+    MessageDialog {
+        id : discardDialog
+        title: qsTr(&quot;Discard changes?&quot;)
+        text: qsTr(&quot;The file has been modified. Open a new file anyway?&quot;)
+        buttons: MessageDialog.Yes | MessageDialog.No
+        onButtonClicked: function (button, role) {
+            if (role === MessageDialog.YesRole)
+                openDialog.open()
+        }
+    }
+</db:programlisting>
+<db:para>It's generally easier to declare separate instances for each purpose. We have two instances of <db:link xlink:href="qml-qtquick-dialogs-filedialog.xml">FileDialog</db:link>, for opening and saving files respectively. This became easier in Qt 6.7, with new features in <db:link xlink:href="qml-qtquick-textdocument.xml">TextDocument</db:link>.</db:para>
+<db:para>A <db:link xlink:href="qml-qtquick-dialogs-fontdialog.xml">FontDialog</db:link> and a <db:link xlink:href="qml-qtquick-dialogs-colordialog.xml">ColorDialog</db:link> allow changing text formatting. (In Markdown format, there's no syntax to represent specific font and color choices; but font characteristics such as bold, italic and monospace are saved. In HTML format, all formatting is saved.)</db:para>
+<db:para>We have a <db:link xlink:href="qml-qtquick-dialogs-messagedialog.xml">MessageDialog</db:link> to show error messages, and two more for prompting the user what to do when a file has been modified.</db:para>
+</db:section>
+<db:section xml:id="touch-user-interface">
+<db:title>Touch User Interface</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qtquickcontrols-texteditor-touch.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The touch user interface is a simplified version of the text editor. It is suitable for touch devices with limited screen size. The example uses <db:link xlink:href="qtquickcontrols-fileselectors.xml">file selectors</db:link> to load the appropriate user interface automatically.</db:para>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quickcontrols/texteditor?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
