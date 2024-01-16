@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Exposing State from C++ to QML</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how to expose global state from C++ to QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>It is often desirable to expose some properties from C++ to all QML elements in a particular component, all QML elements in a module, or even all QML elements overall. You can do this by introducing singletons or by adding properties to the root objects of select components.</db:para>
+<db:section xml:id="using-singletons">
+<db:title>Using Singletons</db:title>
+<db:para>If you want to expose a number of global properties to all elements in a module or all elements overall, you can define a singleton in C++. To do this, add the <db:link xlink:href="qqmlengine.xml#QML_ELEMENT">QML_ELEMENT</db:link> or <db:link xlink:href="qqmlengine.xml#QML_NAMED_ELEMENT">QML_NAMED_ELEMENT</db:link> macros and the <db:link xlink:href="qqmlengine.xml#QML_SINGLETON">QML_SINGLETON</db:link> macro to a class containing the properties you want to expose as <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> declarations:</db:para>
+<db:programlisting language="cpp">// Singleton.h
+class Singleton : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int thing READ thing WRITE setThing NOTIFY thingChanged FINAL)
+    QML_ELEMENT
+    QML_SINGLETON
+
+public:
+    Singleton(QObject *parent = nullptr) : QObject(parent) {}
+
+    int thing() const { return m_value; }
+    void setThing(int v)
+    {
+        if (v != m_value) {
+            m_value = v;
+            emit thingChanged();
+        }
+    }
+
+signals:
+    void thingChanged();
+
+private:
+    int m_value = 12;
+};
+</db:programlisting>
+<db:para>Now you can access the <db:emphasis>thing</db:emphasis> property of the singleton from any QML code that imports this module:</db:para>
+<db:programlisting language="qml">import QtQml
+
+QtObject {
+    objectName: &quot;The thing is &quot; + Singleton.thing
+}
+</db:programlisting>
+<db:para>If you have placed your QML files in the same directory as the module (which is highly recommended), the singleton is available from the implicit import within your module. You don't need to import anything explicitly. If not, or if you want to access the <db:emphasis>thing</db:emphasis> property from other modules, you do need to import the module the singleton belongs to.</db:para>
+<db:para>In order to set the value of the property from C++, you may need to retrieve the singleton instance. For this purpose you may use <db:link xlink:href="qqmlengine.xml#singletonInstance">QQmlEngine::singletonInstance</db:link>. The preferred way to do this is by giving a module and type name as parameters:</db:para>
+<db:programlisting language="cpp">    Singleton *singleton
+            = engine-&amp;gt;singletonInstance&amp;lt;Singleton *&amp;gt;(&quot;MyModule&quot;, &quot;Singleton&quot;);
+    singleton-&amp;gt;setThing(77);
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-object-properties">
+<db:title>Using Object Properties</db:title>
+<db:para>If you want to expose some properties to only the QML elements in a specific component, you can add them as regular properties to the root object of the component. In order to make sure they are actually set in all cases, you can make them <db:link xlink:href="qtqml-syntax-objectattributes.xml#required-properties">Required Properties</db:link>. You might write your QML component as follows:</db:para>
+<db:programlisting language="qml">pragma ComponentBehavior: Bound
+
+import QtQuick
+
+Window {
+    id: root
+    visible: true
+
+    required property int thing
+
+    Text {
+        anchors.fill: parent
+        text: &quot;The thing is &quot; + root.thing
+    }
+
+    component Inner: QtObject {
+        objectName: &quot;I can see &quot; + root.thing + &quot; because I'm bound.&quot;
+    }
+}
+</db:programlisting>
+<db:para>We use an ID for the root element of the component and reference the property by ID and name from any inner objects. In order to safely make the ID of the root element available to any nested components, we use <db:link xlink:href="qtqml-documents-definetypes.xml#componentbehavior">ComponentBehavior</db:link>.</db:para>
+<db:para>Then, in C++, when you create an object from such a component, you need to make sure to call the <db:link xlink:href="qqmlcomponent.xml#createWithInitialProperties">QQmlComponent::createWithInitialProperties</db:link>, <db:link xlink:href="qqmlapplicationengine.xml#setInitialProperties">QQmlApplicationEngine::setInitialProperties</db:link>, or <db:link xlink:href="qquickview.xml#setInitialProperties">QQuickView::setInitialProperties</db:link> in order to initialize the properties. For example:</db:para>
+<db:programlisting language="cpp">    QQmlEngine engine;
+
+    QQmlComponent component(&amp;amp;engine, &quot;MyModule&quot;, &quot;RequiredProperties&quot;);
+    QScopedPointer&amp;lt;QObject&amp;gt; o(component.createWithInitialProperties({
+            {&quot;thing&quot;, 11}
+    }));
+</db:programlisting>
+<db:para>This is assuming your module URI is <db:emphasis>MyModule</db:emphasis> and the module is available in the QML import path.</db:para>
+</db:section>
+</db:article>

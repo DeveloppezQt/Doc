@@ -1,0 +1,291 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Camera Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to capture a still image or record video. or video.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/camera-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The Camera Example demonstrates how you can use <db:link xlink:href="qtmultimedia-index.xml">Qt Multimedia</db:link> to implement some basic Camera functionality to take still images and record video clips with audio.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+<db:para>The example implements a <db:code>Camera</db:code> class that acts as our camera interface. It has a user interface, control functions, setting values and a means of defining the location where the image or video clip is to be saved. It will also store the image and video settings.</db:para>
+<db:para>The Camera class uses:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>An instance of <db:link xlink:href="qcamera.xml">QCamera</db:link>, the API class interface to the hardware.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An instance of <db:link xlink:href="qimagecapture.xml">QImageCapture</db:link> to take still images.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An instance of <db:link xlink:href="qmediarecorder.xml">QMediaRecorder</db:link> to record video. It also contains the user interface object.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="the-camera-constructor">
+<db:title>The Camera constructor</db:title>
+<db:para>The Camera constructor does some basic initialization of the user interface including disabling all buttons by default.</db:para>
+<db:programlisting language="cpp">Camera::Camera() : ui(new Ui::Camera)
+{
+    ui-&amp;gt;setupUi(this);
+
+    m_audioInput.reset(new QAudioInput);
+    m_captureSession.setAudioInput(m_audioInput.get());
+
+    // Camera devices:
+
+    videoDevicesGroup = new QActionGroup(this);
+    videoDevicesGroup-&amp;gt;setExclusive(true);
+    updateCameras();
+    connect(&amp;amp;m_devices, &amp;amp;QMediaDevices::videoInputsChanged, this, &amp;amp;Camera::updateCameras);
+
+    connect(videoDevicesGroup, &amp;amp;QActionGroup::triggered, this, &amp;amp;Camera::updateCameraDevice);
+    connect(ui-&amp;gt;captureWidget, &amp;amp;QTabWidget::currentChanged, this, &amp;amp;Camera::updateCaptureMode);
+
+    connect(ui-&amp;gt;metaDataButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Camera::showMetaDataDialog);
+    connect(ui-&amp;gt;exposureCompensation, &amp;amp;QAbstractSlider::valueChanged, this,
+            &amp;amp;Camera::setExposureCompensation);
+
+    setCamera(QMediaDevices::defaultVideoInput());
+}
+
+void Camera::setCamera(const QCameraDevice &amp;amp;cameraDevice)
+{
+    m_camera.reset(new QCamera(cameraDevice));
+    m_captureSession.setCamera(m_camera.data());
+
+    connect(m_camera.data(), &amp;amp;QCamera::activeChanged, this, &amp;amp;Camera::updateCameraActive);
+    connect(m_camera.data(), &amp;amp;QCamera::errorOccurred, this, &amp;amp;Camera::displayCameraError);
+
+    if (!m_mediaRecorder) {
+        m_mediaRecorder.reset(new QMediaRecorder);
+        m_captureSession.setRecorder(m_mediaRecorder.data());
+        connect(m_mediaRecorder.data(), &amp;amp;QMediaRecorder::recorderStateChanged, this,
+                &amp;amp;Camera::updateRecorderState);
+        connect(m_mediaRecorder.data(), &amp;amp;QMediaRecorder::durationChanged, this,
+                &amp;amp;Camera::updateRecordTime);
+        connect(m_mediaRecorder.data(), &amp;amp;QMediaRecorder::errorChanged, this,
+                &amp;amp;Camera::displayRecorderError);
+    }
+
+    if (!m_imageCapture) {
+        m_imageCapture.reset(new QImageCapture);
+        m_captureSession.setImageCapture(m_imageCapture.get());
+        connect(m_imageCapture.get(), &amp;amp;QImageCapture::readyForCaptureChanged, this,
+                &amp;amp;Camera::readyForCapture);
+        connect(m_imageCapture.get(), &amp;amp;QImageCapture::imageCaptured, this,
+                &amp;amp;Camera::processCapturedImage);
+        connect(m_imageCapture.get(), &amp;amp;QImageCapture::imageSaved, this, &amp;amp;Camera::imageSaved);
+        connect(m_imageCapture.get(), &amp;amp;QImageCapture::errorOccurred, this,
+                &amp;amp;Camera::displayCaptureError);
+    }
+
+    m_captureSession.setVideoOutput(ui-&amp;gt;viewfinder);
+
+    updateCameraActive(m_camera-&amp;gt;isActive());
+    updateRecorderState(m_mediaRecorder-&amp;gt;recorderState());
+    readyForCapture(m_imageCapture-&amp;gt;isReadyForCapture());
+
+    updateCaptureMode();
+
+    m_camera-&amp;gt;start();
+}
+
+void Camera::keyPressEvent(QKeyEvent *event)
+{
+    if (event-&amp;gt;isAutoRepeat())
+        return;
+
+    switch (event-&amp;gt;key()) {
+    case Qt::Key_CameraFocus:
+        displayViewfinder();
+        event-&amp;gt;accept();
+        break;
+    case Qt::Key_Camera:
+        if (m_doImageCapture) {
+            takeImage();
+        } else {
+            if (m_mediaRecorder-&amp;gt;recorderState() == QMediaRecorder::RecordingState)
+                stop();
+            else
+                record();
+        }
+        event-&amp;gt;accept();
+        break;
+    default:
+        QMainWindow::keyPressEvent(event);
+    }
+}
+
+void Camera::updateRecordTime()
+{
+    QString str = tr(&quot;Recorded %1 sec&quot;).arg(m_mediaRecorder-&amp;gt;duration() / 1000);
+    ui-&amp;gt;statusbar-&amp;gt;showMessage(str);
+}
+
+void Camera::processCapturedImage(int requestId, const QImage &amp;amp;img)
+{
+    Q_UNUSED(requestId);
+    QImage scaledImage =
+            img.scaled(ui-&amp;gt;viewfinder-&amp;gt;size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+
+    ui-&amp;gt;lastImagePreviewLabel-&amp;gt;setPixmap(QPixmap::fromImage(scaledImage));
+
+    // Display captured image for 4 seconds.
+    displayCapturedImage();
+    QTimer::singleShot(4000, this, &amp;amp;Camera::displayViewfinder);
+}
+
+void Camera::configureCaptureSettings()
+{
+    if (m_doImageCapture)
+        configureImageSettings();
+    else
+        configureVideoSettings();
+}
+
+void Camera::configureVideoSettings()
+{
+    VideoSettings settingsDialog(m_mediaRecorder.data());
+
+    if (settingsDialog.exec())
+        settingsDialog.applySettings();
+}
+
+void Camera::configureImageSettings()
+{
+    ImageSettings settingsDialog(m_imageCapture.get());
+
+    if (settingsDialog.exec() == QDialog::Accepted)
+        settingsDialog.applyImageSettings();
+}
+
+void Camera::record()
+{
+    m_mediaRecorder-&amp;gt;record();
+    updateRecordTime();
+}
+
+void Camera::pause()
+{
+    m_mediaRecorder-&amp;gt;pause();
+}
+
+void Camera::stop()
+{
+    m_mediaRecorder-&amp;gt;stop();
+}
+
+void Camera::setMuted(bool muted)
+{
+    m_captureSession.audioInput()-&amp;gt;setMuted(muted);
+}
+
+void Camera::takeImage()
+{
+    m_isCapturingImage = true;
+    m_imageCapture-&amp;gt;captureToFile();
+}
+
+void Camera::displayCaptureError(int id, const QImageCapture::Error error,
+                                 const QString &amp;amp;errorString)
+{
+    Q_UNUSED(id);
+    Q_UNUSED(error);
+    QMessageBox::warning(this, tr(&quot;Image Capture Error&quot;), errorString);
+    m_isCapturingImage = false;
+}
+
+void Camera::startCamera()
+{
+    m_camera-&amp;gt;start();
+}
+
+void Camera::stopCamera()
+{
+    m_camera-&amp;gt;stop();
+}
+
+void Camera::updateCaptureMode()
+{
+    int tabIndex = ui-&amp;gt;captureWidget-&amp;gt;currentIndex();
+    m_doImageCapture = (tabIndex == 0);
+}
+
+void Camera::updateCameraActive(bool active)
+{
+    if (active) {
+        ui-&amp;gt;actionStartCamera-&amp;gt;setEnabled(false);
+        ui-&amp;gt;actionStopCamera-&amp;gt;setEnabled(true);
+        ui-&amp;gt;captureWidget-&amp;gt;setEnabled(true);
+        ui-&amp;gt;actionSettings-&amp;gt;setEnabled(true);
+    } else {
+        ui-&amp;gt;actionStartCamera-&amp;gt;setEnabled(true);
+        ui-&amp;gt;actionStopCamera-&amp;gt;setEnabled(false);
+        ui-&amp;gt;captureWidget-&amp;gt;setEnabled(false);
+        ui-&amp;gt;actionSettings-&amp;gt;setEnabled(false);
+    }
+}
+
+void Camera::updateRecorderState(QMediaRecorder::RecorderState state)
+{
+    switch (state) {
+    case QMediaRecorder::StoppedState:
+        ui-&amp;gt;recordButton-&amp;gt;setEnabled(true);
+        ui-&amp;gt;pauseButton-&amp;gt;setEnabled(true);
+        ui-&amp;gt;stopButton-&amp;gt;setEnabled(false);
+        ui-&amp;gt;metaDataButton-&amp;gt;setEnabled(true);
+        break;
+    case QMediaRecorder::PausedState:
+        ui-&amp;gt;recordButton-&amp;gt;setEnabled(true);
+        ui-&amp;gt;pauseButton-&amp;gt;setEnabled(false);
+        ui-&amp;gt;stopButton-&amp;gt;setEnabled(true);
+        ui-&amp;gt;metaDataButton-&amp;gt;setEnabled(false);
+</db:programlisting>
+<db:para>It seeks permissions for input device access:</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>Inputs are assigned:</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>UI signals are connected to slots that react to the triggering event:</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>However, most of the work is done when the <db:emphasis>setCamera()</db:emphasis> function is called, passing in a <db:link xlink:href="qcameradevice.xml">QCameraDevice</db:link>.</db:para>
+</db:section>
+<db:section xml:id="setcamera">
+<db:title>setCamera()</db:title>
+<db:para><db:code>setCamera()</db:code> sets up various connections between the user interface and the functionality of the Camera class using signals and slots. It also instantiates and initializes the <db:link xlink:href="qcamera.xml">QCamera</db:link>, <db:link xlink:href="qimagecapture.xml">QImageCapture</db:link>, and <db:link xlink:href="qmediarecorder.xml">QMediaRecorder</db:link> objects.</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>The still and video recording visual tabs are enabled:</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>Finally the <db:link xlink:href="qcamera.xml#start">start</db:link>() function of the <db:link xlink:href="qcamera.xml">QCamera</db:link> object is called.</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+</db:section>
+<db:section xml:id="triggering-capturing">
+<db:title>Triggering capturing</db:title>
+<db:para>Now that the camera is ready for user commands it waits for a suitable event. Such an event can be a key press of either the <db:link xlink:href="qt.xml#Key-enum">Qt::Key_CameraFocus</db:link> or <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Camera</db:link> buttons on the application window.</db:para>
+<db:para>Key_CameraFocus will simply display the preview and lock the camera settings.</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para><db:code>Key_Camera</db:code> will either call <db:emphasis>takeImage()</db:emphasis> if doing an image capture, or call <db:code>record()</db:code> or <db:code>stop()</db:code> (if already recording) on the <db:link xlink:href="qmediarecorder.xml">QMediaRecorder</db:link> instance when recording video.</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtmultimedia.git/tree/examples/multimedia/camera?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

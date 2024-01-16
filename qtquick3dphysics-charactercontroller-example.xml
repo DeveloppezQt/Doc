@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D Physics - CharacterController Example</db:title>
+<db:productname>QtQuick3DPhysics</db:productname>
+<db:edition>Qt Quick 3D Physics | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Physics Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates the <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml">CharacterController</db:link> type.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/charactercontroller-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example shows how to use a <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml">CharacterController</db:link> to move the camera in a scene, giving a first-person view. The character controller represents the viewpoint of the user as an entity that is constrained by the physical geometry of the scene, walks on the ground, climbs up/down stairs, and interacts with triggers.</db:para>
+<db:section xml:id="the-scene">
+<db:title>The scene</db:title>
+<db:para>The scene consists of a simple building which is defined in Building.qml, and will not be explained in detail. (The mesh <db:code>building.mesh</db:code> was made using Blender. It can be recreated from building.gltf using the <db:emphasis>balsam</db:emphasis> tool.)</db:para>
+<db:para>The building contains three triggers:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A trigger that opens the door. Implemented internally in Building.qml</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A &quot;gravityField&quot; trigger that sets a property <db:code>inGravityField</db:code> when something is inside it.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A &quot;teleport&quot; trigger that emits a signal <db:code>teleporterTriggered</db:code> when something enters it.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="the-character-controller">
+<db:title>The character controller</db:title>
+<db:para>The complete character controller logic is as follows:</db:para>
+<db:programlisting language="qml">CharacterController {
+    id: character
+    property vector3d startPos: Qt.vector3d(800, 175, -850)
+    position: startPos
+    function teleportHome() {
+        character.teleport(character.startPos)
+        wasd.cameraRotation.x = 180
+    }
+
+    collisionShapes: CapsuleShape {
+        id: capsuleShape
+        diameter: 50
+        height: wasd.crouchActive ? 0 : 100
+        Behavior on height {
+            NumberAnimation { duration: 300 }
+        }
+    }
+    property real characterHeight: capsuleShape.height + capsuleShape.diameter
+
+    sendTriggerReports: true
+
+    movement: Qt.vector3d(wasd.sideSpeed, 0, wasd.forwardSpeed)
+    Behavior on movement {
+        PropertyAnimation { duration: 200 }
+    }
+
+    gravity: building.inGravityField ? Qt.vector3d(0, 100, 0) : physicsWorld.gravity
+
+    eulerRotation.y: wasd.cameraRotation.x
+    PerspectiveCamera {
+        id: camera
+        position: Qt.vector3d(0, character.characterHeight / 2 - 10, 0)
+        eulerRotation.x: wasd.cameraRotation.y
+        clipFar: 10000
+        clipNear: 10
+    }
+}
+</db:programlisting>
+<db:para>The character controller needs a shape. Only <db:link xlink:href="qml-qtquick3d-physics-capsuleshape.xml">CapsuleShape</db:link> is supported. Note that the <db:emphasis>height</db:emphasis> property refers to the height of the cylinder part of the capsule: the total height of the character is calculated by adding the height of the bottom and top hemispheres:</db:para>
+<db:programlisting language="qml">collisionShapes: CapsuleShape {
+    id: capsuleShape
+    diameter: 50
+    height: wasd.crouchActive ? 0 : 100
+    Behavior on height {
+        NumberAnimation { duration: 300 }
+    }
+}
+property real characterHeight: capsuleShape.height + capsuleShape.diameter
+</db:programlisting>
+<db:para>In order to trigger a <db:link xlink:href="qml-qtquick3d-physics-triggerbody.xml">TriggerBody</db:link>, the character controller must have the <db:link xlink:href="qml-qtquick3d-physics-physicsnode.xml#sendTriggerReports-prop">sendTriggerReports</db:link> property set to <db:code>true</db:code>:</db:para>
+<db:programlisting language="qml">sendTriggerReports: true
+</db:programlisting>
+<db:para><db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml">CharacterController</db:link> has its own <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml#gravity-prop">gravity</db:link> property, independent of <db:link xlink:href="qml-qtquick3d-physics-physicsworld.xml">PhysicsWorld</db:link>. The common use case is to switch between walking and flying. In this example, we implement an antigravity field by changing the <db:code>gravity</db:code> property to point upwards when the character is inside the &quot;gravityField&quot; trigger:</db:para>
+<db:programlisting language="qml">gravity: building.inGravityField ? Qt.vector3d(0, 100, 0) : physicsWorld.gravity
+</db:programlisting>
+<db:section xml:id="position-and-movement">
+<db:title>Position and movement</db:title>
+<db:para>When the <db:code>teleporterTriggered</db:code> signal is emitted, we change the position and orientation of the character back to its initial position. Note that the <db:link xlink:href="qml-qtquick3d-node.xml#position-prop">position</db:link> property should not be changed while the simulation is running. Use the <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml#teleport-method">teleport</db:link> function instead:</db:para>
+<db:programlisting language="qml">property vector3d startPos: Qt.vector3d(800, 175, -850)
+position: startPos
+function teleportHome() {
+    character.teleport(character.startPos)
+    wasd.cameraRotation.x = 180
+}
+</db:programlisting>
+<db:para>The motion of the character is defined by setting the <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml#movement-prop">movement</db:link> property to a velocity. The character will then try to move with that velocity, relative to the forward vector. The character may end up moving at a different speed, since it may be blocked by a wall, or be in free fall. Mouse/keyboard input comes from the <db:code>wasd</db:code> object, which is a stripped-down version of <db:link xlink:href="qml-qtquick3d-helpers-wasdcontroller.xml">WasdController</db:link>.</db:para>
+<db:programlisting language="qml">movement: Qt.vector3d(wasd.sideSpeed, 0, wasd.forwardSpeed)
+Behavior on movement {
+    PropertyAnimation { duration: 200 }
+}
+</db:programlisting>
+<db:para>The two rotational axes are handled differently, in order to follow common practice for WASD movement when walking on the ground:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Vertical rotation changes the view direction, but does <db:emphasis>not</db:emphasis> make the character fly up into the air or dig down into the ground.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Horizontal rotation changes the forward direction of the character. (This is an exeption to the rule that transformations should not be changed when the physics simulation is running: It is safe to change the rotation of the character controller, since that doesn't change the state of the physics engine: it only changes the interpretation of the <db:link xlink:href="qml-qtquick3d-physics-charactercontroller.xml#movement-prop">movement</db:link> vector.)</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:programlisting language="qml">eulerRotation.y: wasd.cameraRotation.x
+PerspectiveCamera {
+    id: camera
+    position: Qt.vector3d(0, character.characterHeight / 2 - 10, 0)
+    eulerRotation.x: wasd.cameraRotation.y
+    clipFar: 10000
+    clipNear: 10
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/Building.qml">charactercontroller/Building.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/CMakeLists.txt">charactercontroller/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/Wasd.qml">charactercontroller/Wasd.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/charactercontroller.pro">charactercontroller/charactercontroller.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/main.cpp">charactercontroller/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/main.qml">charactercontroller/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/qml.qrc">charactercontroller/qml.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tape001_1K_Color.jpg">charactercontroller/maps/Tape001_1K_Color.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tape001_1K_NormalGL.jpg">charactercontroller/maps/Tape001_1K_NormalGL.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tape001_1K_Roughness.jpg">charactercontroller/maps/Tape001_1K_Roughness.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tiles107_1K_Color.jpg">charactercontroller/maps/Tiles107_1K_Color.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tiles107_1K_NormalGL.jpg">charactercontroller/maps/Tiles107_1K_NormalGL.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tiles107_1K_Roughness.jpg">charactercontroller/maps/Tiles107_1K_Roughness.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/Tiles108_1K_Color.jpg">charactercontroller/maps/Tiles108_1K_Color.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/sign.png">charactercontroller/maps/sign.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="charactercontroller/maps/sphere.png">charactercontroller/maps/sphere.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

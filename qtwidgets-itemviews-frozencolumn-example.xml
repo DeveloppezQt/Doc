@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Frozen Column Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example demonstrates how to freeze a column within a <db:link xlink:href="qtableview.xml">QTableView</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>&quot;Screenshot of the example&quot;</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/frozencolumn-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>We use Qt's model/view framework to implement a table with its first column frozen. This technique can be applied to several columns or rows, as long as they are on the edge of the table.</db:para>
+<db:para>The model/view framework allows for one model to be displayed in different ways using multiple views. For this example, we use two views on the same model - two <db:link xlink:href="qtableview.xml">table views</db:link> sharing one model. The frozen column is a child of the main tableview, and we provide the desired visual effect using an overlay technique which will be described step by step in the coming sections.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/frozencolumn-tableview.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="freezetablewidget-class-definition">
+<db:title>FreezeTableWidget Class Definition</db:title>
+<db:para>The FreezeTableWidget class has a constructor and a destructor. Also, it has two private members: the table view that we will use as an overlay, and the shared model for both table views. Two slots are added to help keep the section sizes in sync, as well as a function to readjust the frozen column's geometry. In addition, we reimplement two functions: <db:link xlink:href="qabstractitemview.xml#resizeEvent">resizeEvent</db:link>() and <db:link xlink:href="qtableview.xml#moveCursor">moveCursor</db:link>().</db:para>
+<db:programlisting language="cpp">class FreezeTableWidget : public QTableView {
+     Q_OBJECT
+
+public:
+      FreezeTableWidget(QAbstractItemModel * model);
+      ~FreezeTableWidget();
+
+protected:
+      void resizeEvent(QResizeEvent *event) override;
+      QModelIndex moveCursor(CursorAction cursorAction, Qt::KeyboardModifiers modifiers) override;
+      void scrollTo (const QModelIndex &amp;amp; index, ScrollHint hint = EnsureVisible) override;
+
+private:
+      QTableView *frozenTableView;
+      void init();
+      void updateFrozenTableGeometry();
+
+private slots:
+      void updateSectionWidth(int logicalIndex, int oldSize, int newSize);
+      void updateSectionHeight(int logicalIndex, int oldSize, int newSize);
+
+};
+</db:programlisting>
+<db:note>
+<db:para><db:link xlink:href="qabstractitemview.xml">QAbstractItemView</db:link> is <db:link xlink:href="qtableview.xml">QTableView</db:link>'s ancestor.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="freezetablewidget-class-implementation">
+<db:title>FreezeTableWidget Class Implementation</db:title>
+<db:para>The constructor takes <db:code role="parameter">model</db:code> as an argument and creates a table view that we will use to display the frozen column. Then, within the constructor, we invoke the init() function to set up the frozen column. Finally, we connect the <db:link xlink:href="qheaderview.xml#sectionResized">QHeaderView::sectionResized</db:link>() signals (for horizontal and vertical headers) to the appropriate slots. This ensures that our frozen column's sections are in sync with the headers. We also connect the vertical scrollbars together so that the frozen column scrolls vertically with the rest of our table.</db:para>
+<db:programlisting language="cpp">FreezeTableWidget::FreezeTableWidget(QAbstractItemModel * model)
+{
+      setModel(model);
+      frozenTableView = new QTableView(this);
+
+      init();
+
+      //connect the headers and scrollbars of both tableviews together
+      connect(horizontalHeader(),&amp;amp;QHeaderView::sectionResized, this,
+              &amp;amp;FreezeTableWidget::updateSectionWidth);
+      connect(verticalHeader(),&amp;amp;QHeaderView::sectionResized, this,
+              &amp;amp;FreezeTableWidget::updateSectionHeight);
+
+      connect(frozenTableView-&amp;gt;verticalScrollBar(), &amp;amp;QAbstractSlider::valueChanged,
+              verticalScrollBar(), &amp;amp;QAbstractSlider::setValue);
+      connect(verticalScrollBar(), &amp;amp;QAbstractSlider::valueChanged,
+              frozenTableView-&amp;gt;verticalScrollBar(), &amp;amp;QAbstractSlider::setValue);
+
+}
+</db:programlisting>
+<db:para>In the init() function, we ensure that the overlay table view responsible for displaying the frozen column, is set up properly. This means that this table view, frozenTableView, has to have the same model as the main table view. However, the difference here is: frozenTableView's only visible column is its first column; we hide the others using <db:link xlink:href="qtableview.xml#setColumnHidden">setColumnHidden</db:link>()</db:para>
+<db:programlisting language="cpp">void FreezeTableWidget::init()
+{
+      frozenTableView-&amp;gt;setModel(model());
+      frozenTableView-&amp;gt;setFocusPolicy(Qt::NoFocus);
+      frozenTableView-&amp;gt;verticalHeader()-&amp;gt;hide();
+      frozenTableView-&amp;gt;horizontalHeader()-&amp;gt;setSectionResizeMode(QHeaderView::Fixed);
+
+      viewport()-&amp;gt;stackUnder(frozenTableView);
+</db:programlisting>
+<db:para>In terms of the frozen column's z-order, we stack it on top of the viewport. This is achieved by calling <db:link xlink:href="qwidget.xml#stackUnder">stackUnder</db:link>() on the viewport. For appearance's sake, we prevent the column from stealing focus from the main tableview. Also, we make sure that both views share the same selection model, so only one cell can be selected at a time. A few other tweaks are done to make our application look good and behave consistently with the main tableview. Note that we called updateFrozenTableGeometry() to make the column occupy the correct spot.</db:para>
+<db:programlisting language="cpp">      frozenTableView-&amp;gt;setStyleSheet(&quot;QTableView { border: none;&quot;
+                                     &quot;background-color: #8EDE21;&quot;
+                                     &quot;selection-background-color: #999}&quot;); //for demo purposes
+      frozenTableView-&amp;gt;setSelectionModel(selectionModel());
+      for (int col = 1; col &amp;lt; model()-&amp;gt;columnCount(); ++col)
+            frozenTableView-&amp;gt;setColumnHidden(col, true);
+
+      frozenTableView-&amp;gt;setColumnWidth(0, columnWidth(0) );
+
+      frozenTableView-&amp;gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+      frozenTableView-&amp;gt;setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+      frozenTableView-&amp;gt;show();
+
+      updateFrozenTableGeometry();
+
+      setHorizontalScrollMode(ScrollPerPixel);
+      setVerticalScrollMode(ScrollPerPixel);
+      frozenTableView-&amp;gt;setVerticalScrollMode(ScrollPerPixel);
+}
+</db:programlisting>
+<db:para>When you resize the frozen column, the same column on the main table view must resize accordingly, to provide seamless integration. This is accomplished by getting the new size of the column from the newSize value from the <db:link xlink:href="qheaderview.xml#sectionResized">sectionResized</db:link>() signal, emitted by both the horizontal and vertical header.</db:para>
+<db:programlisting language="cpp">void FreezeTableWidget::updateSectionWidth(int logicalIndex, int /* oldSize */, int newSize)
+{
+      if (logicalIndex == 0){
+            frozenTableView-&amp;gt;setColumnWidth(0, newSize);
+            updateFrozenTableGeometry();
+      }
+}
+
+void FreezeTableWidget::updateSectionHeight(int logicalIndex, int /* oldSize */, int newSize)
+{
+      frozenTableView-&amp;gt;setRowHeight(logicalIndex, newSize);
+}
+</db:programlisting>
+<db:para>Since the width of the frozen column is modified, we adjust the geometry of the widget accordingly by invoking updateFrozenTableGeometry(). This function is further explained below.</db:para>
+<db:para>In our reimplementation of <db:link xlink:href="qabstractitemview.xml#resizeEvent">QTableView::resizeEvent</db:link>(), we call updateFrozenTableGeometry() after invoking the base class implementation.</db:para>
+<db:programlisting language="cpp">void FreezeTableWidget::resizeEvent(QResizeEvent * event)
+{
+      QTableView::resizeEvent(event);
+      updateFrozenTableGeometry();
+ }
+</db:programlisting>
+<db:para>When navigating around the table with the keyboard, we need to ensure that the current selection does not disappear behind the frozen column. To synchronize this, we reimplement <db:link xlink:href="qtableview.xml#moveCursor">QTableView::moveCursor</db:link>() and adjust the scrollbar positions if needed, after calling the base class implementation.</db:para>
+<db:programlisting language="cpp">QModelIndex FreezeTableWidget::moveCursor(CursorAction cursorAction,
+                                          Qt::KeyboardModifiers modifiers)
+{
+      QModelIndex current = QTableView::moveCursor(cursorAction, modifiers);
+
+      if (cursorAction == MoveLeft &amp;amp;&amp;amp; current.column() &amp;gt; 0
+              &amp;amp;&amp;amp; visualRect(current).topLeft().x() &amp;lt; frozenTableView-&amp;gt;columnWidth(0) ){
+            const int newValue = horizontalScrollBar()-&amp;gt;value() + visualRect(current).topLeft().x()
+                                 - frozenTableView-&amp;gt;columnWidth(0);
+            horizontalScrollBar()-&amp;gt;setValue(newValue);
+      }
+      return current;
+}
+</db:programlisting>
+<db:para>The frozen column's geometry calculation is based on the geometry of the table underneath, so it always appears in the right place. Using the <db:link xlink:href="qframe.xml#frameWidth-prop">QFrame::frameWidth</db:link>() function helps to calculate this geometry correctly, no matter which style is used. We rely on the geometry of the viewport and headers to set the boundaries for the frozen column.</db:para>
+<db:programlisting language="cpp">void FreezeTableWidget::updateFrozenTableGeometry()
+{
+      frozenTableView-&amp;gt;setGeometry(verticalHeader()-&amp;gt;width() + frameWidth(),
+                                   frameWidth(), columnWidth(0),
+                                   viewport()-&amp;gt;height()+horizontalHeader()-&amp;gt;height());
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/itemviews/frozencolumn?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

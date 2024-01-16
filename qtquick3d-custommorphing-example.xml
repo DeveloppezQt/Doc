@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Custom Morphing Animation</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates writing C++ custom geometry with a morph target.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/custommorphing.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example shows how to define a complex custom geometry in C++ that contains a base shape and a morph target, with normal vectors for both.</db:para>
+<db:section xml:id="custom-geometry">
+<db:title>Custom geometry</db:title>
+<db:para>The main part of this example is creating a custom geometry with a morph target. We do this by subclassing <db:link xlink:href="qquick3dgeometry.xml">QQuick3DGeometry</db:link>:</db:para>
+<db:programlisting language="cpp">class MorphGeometry : public QQuick3DGeometry
+{
+    Q_OBJECT
+    QML_NAMED_ELEMENT(MorphGeometry)
+    Q_PROPERTY(int gridSize READ gridSize WRITE setGridSize NOTIFY gridSizeChanged)
+
+public:
+    MorphGeometry(QQuick3DObject *parent = nullptr);
+
+    int gridSize() { return m_gridSize; }
+    void setGridSize(int gridSize);
+
+signals:
+    void gridSizeChanged();
+
+private:
+    void calculateGeometry();
+    void updateData();
+
+    QList&amp;lt;QVector3D&amp;gt; m_positions;
+    QList&amp;lt;QVector3D&amp;gt; m_normals;
+
+    QList&amp;lt;QVector3D&amp;gt; m_targetPositions;
+    QList&amp;lt;QVector3D&amp;gt; m_targetNormals;
+
+    QList&amp;lt;quint32&amp;gt; m_indexes;
+
+    QByteArray m_vertexBuffer;
+    QByteArray m_indexBuffer;
+
+    int m_gridSize = 50;
+    QVector3D boundsMin;
+    QVector3D boundsMax;
+};
+</db:programlisting>
+<db:para>The constructor defines the layout of the mesh data:</db:para>
+<db:programlisting language="cpp">MorphGeometry::MorphGeometry(QQuick3DObject *parent)
+    : QQuick3DGeometry(parent)
+{
+    updateData();
+}
+</db:programlisting>
+<db:para>The function <db:code>updateData</db:code> performs the actual uploading of the mesh geometry:</db:para>
+<db:programlisting language="cpp">void MorphGeometry::updateData()
+{
+    clear();
+    calculateGeometry();
+
+    addAttribute(QQuick3DGeometry::Attribute::PositionSemantic, 0,
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+    addAttribute(QQuick3DGeometry::Attribute::NormalSemantic, 3 * sizeof(float),
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+
+    addAttribute(QQuick3DGeometry::Attribute::TargetPositionSemantic, 6 * sizeof(float),
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+    addAttribute(QQuick3DGeometry::Attribute::TargetNormalSemantic, 9 * sizeof(float),
+                 QQuick3DGeometry::Attribute::ComponentType::F32Type);
+
+    addAttribute(QQuick3DGeometry::Attribute::IndexSemantic, 0,
+                 QQuick3DGeometry::Attribute::ComponentType::U32Type);
+
+    const int numVertexes = m_positions.size();
+    m_vertexBuffer.resize(numVertexes * sizeof(Vertex));
+    Vertex *vert = reinterpret_cast&amp;lt;Vertex *&amp;gt;(m_vertexBuffer.data());
+
+    for (int i = 0; i &amp;lt; numVertexes; ++i) {
+        Vertex &amp;amp;v = vert[i];
+        v.position = m_positions[i];
+        v.normal = m_normals[i];
+        v.targetPosition = m_targetPositions[i];
+        v.targetNormal = m_targetNormals[i];
+    }
+
+    setStride(sizeof(Vertex));
+    setVertexData(m_vertexBuffer);
+    setPrimitiveType(QQuick3DGeometry::PrimitiveType::Triangles);
+    setBounds(boundsMin, boundsMax);
+
+    m_indexBuffer = QByteArray(reinterpret_cast&amp;lt;char *&amp;gt;(m_indexes.data()), m_indexes.size() * sizeof(quint32));
+    setIndexData(m_indexBuffer);
+}
+</db:programlisting>
+<db:para>We call <db:code>updateData</db:code> from the constructor, and when a property has changed.</db:para>
+<db:para>The function <db:code>calculateGeometry</db:code> contains all the tedious mathematics to calculate the shapes and normal vectors. It is specific to this example, and the code will not be explained in detail. In general: to implement smooth shading, it's necessary to calculate the normal vector for each vertex. Mathematically, the normal vector can be calculated from the partial derivatives of the function describing the plane:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/partialderivatives.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In this example, we make it simple by using a cosine wave for the base shape, knowing that its derivative is a sine function.</db:para>
+<db:para>In practice, normal vectors can often be determined by geometric reasoning. For the morph target, we use the fact that any vector from the center of a sphere to the surface will be normal to the sphere at that point. Note that normal vectors in <db:link xlink:href="qtquick3d-qmlmodule.xml">QtQuick3D</db:link> must have unit length, which can be done by using <db:link xlink:href="qvector3d.xml#normalized">QVector3D::normalized</db:link>().</db:para>
+</db:section>
+<db:section xml:id="qml-part">
+<db:title>QML part</db:title>
+<db:para>We define a morph target that corresponds to the one we created in the custom geometry, and do an animation on the weight, so it will cycle between the two shapes:</db:para>
+<db:programlisting language="qml">MorphTarget {
+    id: morphtarget
+    attributes: MorphTarget.Position | MorphTarget.Normal
+    SequentialAnimation on weight {
+        PauseAnimation { duration: 1000 }
+        NumberAnimation { from: 0; to: 1; duration: 4000 }
+        PauseAnimation { duration: 1000 }
+        NumberAnimation { from: 1; to: 0; duration: 4000 }
+        loops: Animation.Infinite
+    }
+}
+</db:programlisting>
+<db:para>Finally, we create a model using our custom geometry, and apply the morph target to it:</db:para>
+<db:programlisting language="qml">Model {
+    y: -1
+    geometry: MorphGeometry {}
+    morphTargets: [ morphtarget ]
+    materials: material
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/CMakeLists.txt">custommorphing/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/custommorphing.pro">custommorphing/custommorphing.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/main.cpp">custommorphing/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/main.qml">custommorphing/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/morphgeometry.cpp">custommorphing/morphgeometry.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/morphgeometry.h">custommorphing/morphgeometry.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custommorphing/qml.qrc">custommorphing/qml.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>
