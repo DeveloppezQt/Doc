@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Quick CoAP Multicast Discovery Example</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using the CoAP client for a multicast resource discovery with a Qt Quick user interface.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/quickmulticastclient.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The <db:emphasis>Quick CoAP Multicast Discovery Example</db:emphasis> demonstrates how to register QCoapClient as a QML type and use it in a Qt Quick application for CoAP multicast resource discovery.</db:para>
+<db:note>
+<db:para>Qt CoAP does not provide a QML API in its current version. However, you can make the C++ classes of the module available to QML as shown in this example.</db:para>
+</db:note>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example application, you first need to set up and start at least one CoAP server supporting multicast resource discovery. You have the following options:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Manually build and run CoAP servers using <db:link xlink:href="https://github.com/obgm/libcoap">libcoap</db:link>, <db:link xlink:href="https://github.com/eclipse/californium/">Californium</db:link>, or any other CoAP server implementation, which supports multicast and resource discovery features.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Use the ready Docker image available at Docker Hub, which builds and starts CoAP server based on Californium's <db:link xlink:href="https://github.com/eclipse/californium/tree/2.0.x/demo-apps/cf-helloworld-server">multicast server example</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="using-the-docker-based-test-server">
+<db:title>Using the Docker-based Test Server</db:title>
+<db:para>The following command pulls the docker container for the CoAP server from the Docker Hub and starts it:</db:para>
+<db:programlisting language="cpp" role="bad">docker run --name coap-multicast-server -d --rm --net=host sokurazy/coap-multicast-test-server:californium.2.0.x
+</db:programlisting>
+<db:note>
+<db:para>You can run more than one multicast CoAP servers (on the same host or other hosts in the network) by passing a different <db:code>--name</db:code> to the command above.</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="creating-a-client-and-using-it-with-qml">
+<db:title>Creating a Client and Using It with QML</db:title>
+<db:para>We create the <db:code>QmlCoapMulticastClient</db:code> class with the QCoapClient class as a base class:</db:para>
+<db:programlisting language="cpp">class QmlCoapMulticastClient : public QCoapClient
+{
+    Q_OBJECT
+
+public:
+    QmlCoapMulticastClient(QObject *parent = nullptr);
+
+    Q_INVOKABLE void discover(const QString &amp;amp;host, int port, const QString &amp;amp;discoveryPath);
+    Q_INVOKABLE void discover(QtCoap::MulticastGroup group, int port, const QString &amp;amp;discoveryPath);
+
+Q_SIGNALS:
+    void discovered(const QmlCoapResource &amp;amp;resource);
+    void finished(int error);
+
+public slots:
+    void onDiscovered(QCoapResourceDiscoveryReply *reply, const QList&amp;lt;QCoapResource&amp;gt; &amp;amp;resources);
+};
+</db:programlisting>
+<db:para>In the main.cpp file, we register the <db:code>QmlCoapMulticastClient</db:code> class as a QML type:</db:para>
+<db:programlisting language="cpp">    qmlRegisterType&amp;lt;QmlCoapMulticastClient&amp;gt;(&quot;CoapMulticastClient&quot;, 1, 0, &quot;CoapMulticastClient&quot;);
+</db:programlisting>
+<db:para>We also register the <db:link xlink:href="qtcoap-module.xml">QtCoap</db:link> namespace, to be able to use it in QML code:</db:para>
+<db:programlisting language="cpp">    qmlRegisterUncreatableMetaObject(QtCoap::staticMetaObject, &quot;qtcoap.example.namespace&quot;, 1, 0,
+                                     &quot;QtCoap&quot;, &quot;Access to enums is read-only&quot;);
+</db:programlisting>
+<db:para>Now in the QML code, we can import and use these types:</db:para>
+<db:programlisting language="cpp">    ...
+import CoapMulticastClient 1.0
+import qtcoap.example.namespace 1.0
+    ...
+    CoapMulticastClient {
+        id: client
+        onDiscovered: addResource(resource)
+
+        onFinished: {
+            statusLabel.text = (error === QtCoap.Error.Ok)
+                    ? qsTr(&quot;Finished resource discovery.&quot;)
+                    : qsTr(&quot;Resource discovery failed with error code: %1&quot;).arg(error)
+        }
+
+        onError:
+            statusLabel.text = qsTr(&quot;Resource discovery failed with error code: %1&quot;).arg(error)
+    }
+    ...
+</db:programlisting>
+<db:para>The <db:code>QCoapClient::error()</db:code> signal triggers the <db:code>onError</db:code> signal handler of <db:code>CoapMulticastClient</db:code>, and the <db:code>QmlCoapMulticastClient::finished()</db:code> signal triggers the <db:code>onFinished</db:code> signal handler, to show the request's status in the UI. Note that we are not using the <db:code>QCoapClient::finished()</db:code> signal directly, because it takes a <db:code>QCoapReply</db:code> as a parameter (which is not a QML type), and we are interested only in the error code.</db:para>
+<db:para>In the <db:code>QmlCoapMulticastClient</db:code>'s constructor, we arrange for the <db:code>QCoapClient::finished()</db:code> signal to be forwarded to the <db:code>QmlCoapMulticastClient::finished()</db:code> signal:</db:para>
+<db:programlisting language="cpp">QmlCoapMulticastClient::QmlCoapMulticastClient(QObject *parent)
+    : QCoapClient(QtCoap::SecurityMode::NoSecurity, parent)
+{
+    connect(this, &amp;amp;QCoapClient::finished, this,
+            [this](QCoapReply *reply) {
+                    if (reply)
+                        emit finished(static_cast&amp;lt;int&amp;gt;(reply-&amp;gt;errorReceived()));
+                    else
+                        qCWarning(lcCoapClient, &quot;Something went wrong, received a null reply&quot;);
+            });
+}
+</db:programlisting>
+<db:para>When the <db:guilabel>Discover</db:guilabel> button is pressed, we invoke one of the overloaded <db:code>discover()</db:code> methods, based on the selected multicast group:</db:para>
+<db:programlisting language="cpp">    ...
+        Button {
+            id: discoverButton
+            text: qsTr(&quot;Discover&quot;)
+            Layout.columnSpan: 2
+
+            onClicked: {
+                var currentGroup = groupComboBox.model.get(groupComboBox.currentIndex).value;
+
+                var path = &quot;&quot;;
+                if (currentGroup !== - 1) {
+                    client.discover(currentGroup, parseInt(portField.text),
+                                    discoveryPathField.text);
+                    path = groupComboBox.currentText;
+                } else {
+                    client.discover(customGroupField.text, parseInt(portField.text),
+                                    discoveryPathField.text);
+                    path = customGroupField.text + discoveryPathField.text;
+                }
+                statusLabel.text = qsTr(&quot;Discovering resources at %1...&quot;).arg(path);
+            }
+        }
+    ...
+</db:programlisting>
+<db:para>This overload is called when a custom multicast group or a host address is selected:</db:para>
+<db:programlisting language="cpp">void QmlCoapMulticastClient::discover(const QString &amp;amp;host, int port, const QString &amp;amp;discoveryPath)
+{
+    QUrl url;
+    url.setHost(host);
+    url.setPort(port);
+
+    QCoapResourceDiscoveryReply *discoverReply = QCoapClient::discover(url, discoveryPath);
+    if (discoverReply) {
+        connect(discoverReply, &amp;amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;amp;QmlCoapMulticastClient::onDiscovered);
+    } else {
+        qCWarning(lcCoapClient, &quot;Discovery request failed.&quot;);
+    }
+}
+</db:programlisting>
+<db:para>And this overload is called when one of the suggested multicast groups is selected in the UI:</db:para>
+<db:programlisting language="cpp">void QmlCoapMulticastClient::discover(QtCoap::MulticastGroup group, int port,
+                                      const QString &amp;amp;discoveryPath)
+{
+    QCoapResourceDiscoveryReply *discoverReply = QCoapClient::discover(group, port, discoveryPath);
+    if (discoverReply) {
+        connect(discoverReply, &amp;amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;amp;QmlCoapMulticastClient::onDiscovered);
+    } else {
+        qCWarning(lcCoapClient, &quot;Discovery request failed.&quot;);
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>QCoapClient::discovered()</db:code> signal delivers a list of <db:code>QCoapResources</db:code>, which is not a QML type. To make the resources available in QML, we forward each resource in the list to the <db:code>QmlCoapMulticastClient::discovered()</db:code> signal, which takes a <db:code>QmlCoapResource</db:code> instead:</db:para>
+<db:programlisting language="cpp">void QmlCoapMulticastClient::onDiscovered(QCoapResourceDiscoveryReply *reply,
+                                          const QList&amp;lt;QCoapResource&amp;gt; &amp;amp;resources)
+{
+    Q_UNUSED(reply)
+    for (auto resource : resources)
+        emit discovered(resource);
+}
+</db:programlisting>
+<db:para><db:code>QmlCoapResource</db:code> is a wrapper around QCoapResource, to make some of its properties available in QML:</db:para>
+<db:programlisting language="cpp">class QmlCoapResource : public QCoapResource
+{
+    Q_GADGET
+    Q_PROPERTY(QString title READ title)
+    Q_PROPERTY(QString host READ hostStr)
+    Q_PROPERTY(QString path READ path)
+
+public:
+    QmlCoapResource() : QCoapResource() {}
+    QmlCoapResource(const QCoapResource &amp;amp;resource)
+        : QCoapResource(resource) {}
+
+    QString hostStr() const { return host().toString(); }
+};
+</db:programlisting>
+<db:para>The discovered resources are added to the <db:code>resourceModel</db:code> of the list view in the UI:</db:para>
+<db:programlisting language="cpp">    ...
+    function addResource(resource) {
+        resourceModel.insert(0, {&quot;host&quot; : resource.host,
+                                 &quot;path&quot; : resource.path,
+                                 &quot;title&quot; : resource.title})
+    }
+    ...
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/CMakeLists.txt">quickmulticastclient/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/main.cpp">quickmulticastclient/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/main.qml">quickmulticastclient/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/qml.qrc">quickmulticastclient/qml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/qmlcoapmulticastclient.cpp">quickmulticastclient/qmlcoapmulticastclient.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/qmlcoapmulticastclient.h">quickmulticastclient/qmlcoapmulticastclient.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickmulticastclient/quickmulticastclient.pro">quickmulticastclient/quickmulticastclient.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

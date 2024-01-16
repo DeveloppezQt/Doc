@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Quick Secure CoAP Client Example</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Securing the CoAP client and using it with a Qt Quick user interface.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/quicksecureclient.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Quick Secure CoAP Client</db:emphasis> demonstrates how to create a secure CoAP client and use it in a Qt Quick application.</db:para>
+<db:note>
+<db:para>Qt CoAP does not provide a QML API in its current version. However, you can make the C++ classes of the module available to QML as it is shown in the example.</db:para>
+</db:note>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example application, you first need to set up a secure CoAP server. You can run the example with any secure CoAP server supporting one of the <db:emphasis>pre-shared key (PSK)</db:emphasis> or <db:emphasis>certificate</db:emphasis> authentication modes. For more information about setting up a secure CoAP server, see <db:link xlink:href="qtcoap-quicksecureclient-example.xml#setting-up-a-secure-coap-server">Setting Up a Secure CoAP Server</db:link>.</db:para>
+</db:section>
+<db:section xml:id="creating-a-client-and-linking-it-with-qml">
+<db:title>Creating a Client and Linking It with QML</db:title>
+<db:para><db:code>QmlCoapSecureClient</db:code> wraps the functionality of QCoapClient to make it available to QML. It also holds the selected security mode and security configuration parameters.</db:para>
+<db:programlisting language="cpp">class QmlCoapSecureClient : public QObject
+{
+    Q_OBJECT
+
+public:
+    QmlCoapSecureClient(QObject *parent = nullptr);
+    ~QmlCoapSecureClient() override;
+
+    Q_INVOKABLE void setSecurityMode(QtCoap::SecurityMode mode);
+    Q_INVOKABLE void sendGetRequest(const QString &amp;amp;host, const QString &amp;amp;path, int port);
+    Q_INVOKABLE void setSecurityConfiguration(const QString &amp;amp;preSharedKey, const QString &amp;amp;identity);
+    Q_INVOKABLE void setSecurityConfiguration(const QString &amp;amp;localCertificatePath,
+                                              const QString &amp;amp;caCertificatePath,
+                                              const QString &amp;amp;privateKeyPath);
+    Q_INVOKABLE void disconnect();
+
+Q_SIGNALS:
+    void finished(const QString &amp;amp;result);
+
+private:
+    QCoapClient *m_coapClient;
+    QCoapSecurityConfiguration m_configuration;
+    QtCoap::SecurityMode m_securityMode;
+};
+</db:programlisting>
+<db:para>In the main.cpp file, we register the <db:code>QmlCoapSecureClient</db:code> class as a QML type:</db:para>
+<db:programlisting language="cpp">    qmlRegisterType&amp;lt;QmlCoapSecureClient&amp;gt;(&quot;CoapSecureClient&quot;, 1, 0, &quot;CoapSecureClient&quot;);
+</db:programlisting>
+<db:para>We also register the <db:link xlink:href="qtcoap-module.xml">QtCoap</db:link> namespace, to be able to use it in QML code:</db:para>
+<db:programlisting language="cpp">    qmlRegisterUncreatableMetaObject(QtCoap::staticMetaObject, &quot;qtcoap.example.namespace&quot;, 1, 0,
+                                     &quot;QtCoap&quot;, &quot;Access to enums is read-only&quot;);
+</db:programlisting>
+<db:para>The instance of QCoapClient is created when the user selects or changes the security mode in the UI. The <db:code>QmlCoapSecureClient::setSecurityMode()</db:code> method is invoked from the QML code, when one of the security modes is selected:</db:para>
+<db:programlisting language="cpp">        ButtonGroup {
+            id: securityModeGroup
+            onClicked: {
+                if (securityModeGroup.checkedButton === preSharedMode)
+                    client.setSecurityMode(QtCoap.SecurityMode.PreSharedKey);
+                else
+                    client.setSecurityMode(QtCoap.SecurityMode.Certificate);
+            }
+        }
+</db:programlisting>
+<db:para>And in the <db:code>.cpp</db:code> file:</db:para>
+<db:programlisting language="cpp">void QmlCoapSecureClient::setSecurityMode(QtCoap::SecurityMode mode)
+{
+    // Create a new client, if the security mode has changed
+    if (m_coapClient &amp;amp;&amp;amp; mode != m_securityMode) {
+        delete m_coapClient;
+        m_coapClient = nullptr;
+    }
+
+    if (!m_coapClient) {
+        m_coapClient = new QCoapClient(mode);
+        m_securityMode = mode;
+    ...
+</db:programlisting>
+<db:para>Then we connect the signals of the client, to get notified when a CoAP reply is received or a request has failed:</db:para>
+<db:programlisting language="cpp">    ...
+        connect(m_coapClient, &amp;amp;QCoapClient::finished, this,
+                [this](QCoapReply *reply) {
+                    if (!reply)
+                        emit finished(&quot;Something went wrong, received a null reply&quot;);
+                    else if (reply-&amp;gt;errorReceived() != QtCoap::Error::Ok)
+                        emit finished(errorMessage(reply-&amp;gt;errorReceived()));
+                    else
+                        emit finished(reply-&amp;gt;message().payload());
+                });
+
+        connect(m_coapClient, &amp;amp;QCoapClient::error, this,
+                [this](QCoapReply *, QtCoap::Error errorCode) {
+                    emit finished(errorMessage(errorCode));
+                });
+    ...
+</db:programlisting>
+<db:para>The <db:code>QmlCoapSecureClient::finished()</db:code> signal triggers the <db:code>onFinished</db:code> signal handler of <db:code>CoapSecureClient</db:code>, which handles the output:</db:para>
+<db:programlisting language="cpp">    CoapSecureClient {
+        id: client
+        onFinished: {
+            outputView.text = result;
+            statusLabel.text = &quot;&quot;;
+            disconnectButton.enabled = true;
+        }
+    }
+    ...
+</db:programlisting>
+</db:section>
+<db:section xml:id="sending-a-request">
+<db:title>Sending a Request</db:title>
+<db:para>When the user clicks on the <db:guilabel>Send Request</db:guilabel> button, we set the security configuration based on the selected security mode and send a <db:code>GET</db:code> request:</db:para>
+<db:programlisting language="cpp">    ...
+        Button {
+            id: requestButton
+            text: qsTr(&quot;Send Request&quot;)
+            enabled: securityModeGroup.checkState !== Qt.Unchecked
+
+            onClicked: {
+                outputView.text = &quot;&quot;;
+                if (securityModeGroup.checkedButton === preSharedMode)
+                    client.setSecurityConfiguration(pskField.text, identityField.text);
+                else
+                    client.setSecurityConfiguration(localCertificatePicker.selectedFile,
+                                                    caCertificatePicker.selectedFile,
+                                                    privateKeyPicker.selectedFile);
+
+                client.sendGetRequest(hostComboBox.editText, resourceField.text,
+    ...
+</db:programlisting>
+<db:para>There are two overloads for the <db:code>setSecurityConfiguration</db:code> method. For the PSK mode we simply set the client identity and the pre-shared key:</db:para>
+<db:programlisting language="cpp">QmlCoapSecureClient::setSecurityConfiguration(const QString &amp;amp;preSharedKey, const QString &amp;amp;identity)
+{
+    QCoapSecurityConfiguration configuration;
+    configuration.setPreSharedKey(preSharedKey.toUtf8());
+    configuration.setPreSharedKeyIdentity(identity.toUtf8());
+    m_configuration = configuration;
+}
+</db:programlisting>
+<db:para>And for X.509 certificates, we read the certificate files and the private key, and set the security configuration:</db:para>
+<db:programlisting language="cpp">void QmlCoapSecureClient::setSecurityConfiguration(const QString &amp;amp;localCertificatePath,
+                                                   const QString &amp;amp;caCertificatePath,
+                                                   const QString &amp;amp;privateKeyPath)
+{
+    QCoapSecurityConfiguration configuration;
+
+    const auto localCerts =
+            QSslCertificate::fromPath(QUrl(localCertificatePath).toLocalFile(), QSsl::Pem,
+                                      QSslCertificate::PatternSyntax::FixedString);
+    if (localCerts.isEmpty())
+        qCWarning(lcCoapClient, &quot;The specified local certificate file is not valid.&quot;);
+    else
+        configuration.setLocalCertificateChain(localCerts.toVector());
+
+    const auto caCerts = QSslCertificate::fromPath(QUrl(caCertificatePath).toLocalFile(), QSsl::Pem,
+                                                   QSslCertificate::PatternSyntax::FixedString);
+    if (caCerts.isEmpty())
+        qCWarning(lcCoapClient, &quot;The specified CA certificate file is not valid.&quot;);
+    else
+        configuration.setCaCertificates(caCerts.toVector());
+
+    QFile privateKey(QUrl(privateKeyPath).toLocalFile());
+    if (privateKey.open(QIODevice::ReadOnly)) {
+        QCoapPrivateKey key(privateKey.readAll(), QSsl::Ec);
+        configuration.setPrivateKey(key);
+    } else {
+        qCWarning(lcCoapClient) &amp;lt;&amp;lt; &quot;Unable to read the specified private key file&quot;
+                                &amp;lt;&amp;lt; privateKeyPath;
+    }
+    m_configuration = configuration;
+}
+</db:programlisting>
+<db:para>After setting the security configuration, the <db:code>sendGetRequest</db:code> method sets the request URL and sends a <db:code>GET</db:code> request:</db:para>
+<db:programlisting language="cpp">void QmlCoapSecureClient::sendGetRequest(const QString &amp;amp;host, const QString &amp;amp;path, int port)
+{
+    if (!m_coapClient)
+        return;
+
+    m_coapClient-&amp;gt;setSecurityConfiguration(m_configuration);
+
+    QUrl url;
+    url.setHost(host);
+    url.setPath(path);
+    url.setPort(port);
+    m_coapClient-&amp;gt;get(url);
+}
+</db:programlisting>
+<db:para>When sending the first request, a handshake with the CoAP server is performed. After the handshake is successfully done, all the subsequent messages are encrypted, and changing the security configuration after a successful handshake won't have any effect. If you want to change it, or change the host, you need to disconnect first.</db:para>
+<db:programlisting language="cpp">void QmlCoapSecureClient::disconnect()
+{
+    if (m_coapClient)
+        m_coapClient-&amp;gt;disconnect();
+}
+</db:programlisting>
+<db:para>This will abort the handshake and close the open sockets.</db:para>
+<db:para>For the authentication using X.509 certificates, we need to specify the certificate files. The <db:code>FilePicker</db:code> component is used for this purpose. It combines a text field and a button for opening a file dialog when the button is pressed:</db:para>
+<db:programlisting language="cpp">Item {
+    id: filePicker
+
+    property string dialogText
+    property alias selectedFile: filePathField.text
+
+    height: addFileButton.height
+
+    FileDialog {
+        id: fileDialog
+        title: qsTr(&quot;Please Choose %1&quot;).arg(dialogText)
+        folder: StandardPaths.writableLocation(StandardPaths.HomeLocation)
+        fileMode: FileDialog.OpenFile
+        onAccepted: filePathField.text = fileDialog.file
+    }
+
+    RowLayout {
+        anchors.fill: parent
+        TextField {
+            id: filePathField
+            placeholderText: qsTr(&quot;&amp;lt;%1&amp;gt;&quot;).arg(dialogText)
+            inputMethodHints: Qt.ImhUrlCharactersOnly
+            selectByMouse: true
+            Layout.fillWidth: true
+        }
+
+        Button {
+            id: addFileButton
+            text: qsTr(&quot;Add %1&quot;).arg(dialogText)
+            onClicked: fileDialog.open()
+        }
+    }
+}
+</db:programlisting>
+<db:para>In the <db:code>main.qml</db:code> file <db:code>FilePicker</db:code> is instantiated several times for creating input fields for certificates and the private key:</db:para>
+<db:programlisting language="cpp">    ...
+        FilePicker {
+            id: localCertificatePicker
+            dialogText: &quot;Local Certificate&quot;
+            enabled: securityModeGroup.checkedButton === certificateMode
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+        }
+
+        FilePicker {
+            id: caCertificatePicker
+            dialogText: &quot;CA Certificate&quot;
+            enabled: securityModeGroup.checkedButton === certificateMode
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+        }
+
+        FilePicker {
+            id: privateKeyPicker
+            dialogText: &quot;Private Key&quot;
+            enabled: securityModeGroup.checkedButton === certificateMode
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+        }
+    ...
+</db:programlisting>
+</db:section>
+<db:section xml:id="setting-up-a-secure-coap-server">
+<db:title>Setting Up a Secure CoAP Server</db:title>
+<db:para>To run this example, you need to have a secure CoAP server supporting either PSK or Certificate modes (or both). You have the following options:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Manually build and run a secure CoAP server using, for example, <db:link xlink:href="https://github.com/obgm/libcoap">libcoap</db:link>, <db:link xlink:href="https://github.com/eclipse/californium">Californium</db:link>, <db:link xlink:href="https://github.com/keith-cullen/FreeCoAP">FreeCoAP</db:link>, or any other CoAP library which supports DTLS.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Use the ready Docker images available at Docker Hub, which build and run the secure CoAP servers suitable for our example. The steps required for using the docker-based CoAP servers are described below.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="setting-up-a-server-for-psk-mode">
+<db:title>Setting Up a Server For PSK Mode</db:title>
+<db:para>The following command pulls the docker container for a secure CoAP server based on <db:link xlink:href="https://github.com/eclipse/californium/tree/master/demo-apps/cf-plugtest-server">Californium plugtest</db:link> (which is not secure by default) from the Docker Hub and starts it:</db:para>
+<db:programlisting language="cpp" role="bad">docker run --name coap-test-server -d --rm -p 5683:5683/udp -p 5684:5684/udp sokurazy/coap-secure-test-server:californium.1.1.0
+</db:programlisting>
+<db:para>The CoAP test server will be reachable on ports <db:emphasis>5683</db:emphasis> (non-secure) and <db:emphasis>5684</db:emphasis> (secure). For instructions on retrieving the IP address see <db:link xlink:href="qtcoap-quicksecureclient-example.xml#getting-the-ip-address">Getting The IP Address</db:link>.</db:para>
+<db:para>To run the example with this server, you need to set the pre-shared key to <db:code>secretPSK</db:code> and the identity to <db:code>Client_identity</db:code>.</db:para>
+</db:section>
+<db:section xml:id="setting-up-a-server-for-certificate-mode">
+<db:title>Setting Up a Server For Certificate Mode</db:title>
+<db:para>The docker image of the secure server using authentication with X.509 certificates is based on the <db:link xlink:href="https://github.com/keith-cullen/FreeCoAP/tree/master/sample/time_server">time server</db:link> example from the FreeCoAP library. The following command pulls the container from Docker Hub and starts it:</db:para>
+<db:programlisting language="cpp" role="bad">docker run --name coap-time-server -d --rm -p 5684:5684/udp sokurazy/coap-secure-time-sever:freecoap
+</db:programlisting>
+<db:para>For instructions on retrieving the IP address see <db:link xlink:href="qtcoap-quicksecureclient-example.xml#getting-the-ip-address">Getting The IP Address</db:link>. The CoAP test server will be reachable by the retrieved IP address on port <db:emphasis>5684</db:emphasis> and resource path <db:code>/time</db:code>.</db:para>
+<db:para>To run the example with this server, you need to specify the certificate files required by the server. They are located in the docker container, under <db:code>/root/certs</db:code> directory. To copy them to a local directory, use the following command:</db:para>
+<db:programlisting language="cpp" role="bad">docker cp &amp;lt;container_id&amp;gt;:/root/certs &amp;lt;local_directory_path&amp;gt;
+</db:programlisting>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp" role="bad">$ docker cp 5e46502df88f:/root/certs ~/
+</db:programlisting>
+<db:para>The instructions for getting the container ID are described below.</db:para>
+</db:section>
+<db:section xml:id="getting-the-ip-address">
+<db:title>Getting The IP Address</db:title>
+<db:para>To find out the IP address of a docker container, first retrieve the container ID by running the <db:code>docker ps</db:code> command, which will output something like:</db:para>
+<db:programlisting language="cpp" role="bad">$ docker ps
+CONTAINER ID        IMAGE
+5e46502df88f        sokurazy/coap-secure-test-server:californium.1.1.0
+</db:programlisting>
+<db:para>Then you can obtain the IP address with the following command:</db:para>
+<db:programlisting language="cpp" role="bad">docker inspect &amp;lt;container_id&amp;gt; | grep IPAddress
+</db:programlisting>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp" role="bad">$ docker inspect 5e46502df88f | grep IPAddress
+...
+&quot;IPAddress&quot;: &quot;172.17.0.2&quot;,
+...
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/CMakeLists.txt">quicksecureclient/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/FilePicker.qml">quicksecureclient/FilePicker.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/main.cpp">quicksecureclient/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/main.qml">quicksecureclient/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/qml.qrc">quicksecureclient/qml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/qmlcoapsecureclient.cpp">quicksecureclient/qmlcoapsecureclient.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/qmlcoapsecureclient.h">quicksecureclient/qmlcoapsecureclient.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quicksecureclient/quicksecureclient.pro">quicksecureclient/quicksecureclient.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

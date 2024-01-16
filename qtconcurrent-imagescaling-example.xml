@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Image Scaling Example</db:title>
+<db:productname>QtConcurrent</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Concurrent Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to asynchronously download and scale images.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/imagescaling_example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example shows how to use the QFuture and QPromise classes to download a collection of images from the network and scale them, without blocking the UI.</db:para>
+<db:para>The application consists of the the following steps:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Download images form the list of URLs specified by the user.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Scale the images.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Show the scaled images in a grid layout.</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>Let's start with the download:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;QByteArray&amp;gt; Images::download(const QList&amp;lt;QUrl&amp;gt; &amp;amp;urls)
+</db:programlisting>
+<db:para>The <db:code>download()</db:code> method takes a list of URLs and returns a QFuture. The QFuture stores the byte array data received for each downloaded image. To store the data inside the QFuture, we create a QPromise object and report that it has started to indicate the start of the download:</db:para>
+<db:programlisting language="cpp">    QSharedPointer&amp;lt;QPromise&amp;lt;QByteArray&amp;gt;&amp;gt; promise(new QPromise&amp;lt;QByteArray&amp;gt;());
+    promise-&amp;gt;start();
+    ...
+    return promise-&amp;gt;future();
+}
+</db:programlisting>
+<db:para>The future associated with the promise is returned to the caller.</db:para>
+<db:para>Without going into details yet, let's note that the promise object is wrapped inside a QSharedPointer. This will be explained later.</db:para>
+<db:para>We use QNetworkAccessManager to send network requests and download data for each url:</db:para>
+<db:programlisting language="cpp">    for (auto url : urls) {
+        QSharedPointer&amp;lt;QNetworkReply&amp;gt; reply(qnam.get(QNetworkRequest(url)));
+        replies.push_back(reply);
+</db:programlisting>
+<db:para>And here starts the interesting part:</db:para>
+<db:programlisting language="cpp">    ...
+        QtFuture::connect(reply.get(), &amp;amp;QNetworkReply::finished).then([=] {
+            if (promise-&amp;gt;isCanceled()) {
+                if (!promise-&amp;gt;future().isFinished())
+                    promise-&amp;gt;finish();
+                return;
+            }
+
+            if (reply-&amp;gt;error() != QNetworkReply::NoError) {
+                if (!promise-&amp;gt;future().isFinished())
+                    throw reply-&amp;gt;error();
+            }
+            promise-&amp;gt;addResult(reply-&amp;gt;readAll());
+
+            // Report finished on the last download
+            if (promise-&amp;gt;future().resultCount() == urls.size()) {
+                promise-&amp;gt;finish();
+            }
+        }).onFailed([=] (QNetworkReply::NetworkError error) {
+            promise-&amp;gt;setException(std::make_exception_ptr(error));
+            promise-&amp;gt;finish();
+        }).onFailed([=] {
+            const auto ex = std::make_exception_ptr(
+                        std::runtime_error(&quot;Unknown error occurred while downloading.&quot;));
+            promise-&amp;gt;setException(ex);
+            promise-&amp;gt;finish();
+        });
+    }
+    ...
+</db:programlisting>
+<db:para>Instead of connecting to QNetworkReply's signals using the QObject::connect() method, we use QtFuture::connect(). It works similar to QObject::connect(), but returns a QFuture object, that becomes available as soon as the QNetworkReply::finished() signal is emitted. This allows us to attach continuations and failure handlers, as it is done in the example.</db:para>
+<db:para>In the continuation attached via <db:emphasis role="bold">.then()</db:emphasis>, we check if the user has requested to cancel the download. If that's the case, we stop processing the request. By calling the <db:code>QPromise::finish()</db:code> method, we notify the user that processing has been finished. In case the network request has ended with an error, we throw an exception. The exception will be handled in the failure handler attached using the <db:emphasis role="bold">.onFailed()</db:emphasis> method. Note that we have two failure handlers: the first one captures the network errors, the second one all other exceptions thrown during the execution. Both handlers save the exception inside the promise object (to be handled by the caller of the <db:code>download()</db:code> method) and report that the computation has finished. Also note that, for simplicity, in case of an error we interrupt all pending downloads.</db:para>
+<db:para>If the request has not been canceled and no error occurred, we read the data from the network reply and add it to the list of results of the promise object:</db:para>
+<db:programlisting language="cpp">    ...
+            promise-&amp;gt;addResult(reply-&amp;gt;readAll());
+
+            // Report finished on the last download
+            if (promise-&amp;gt;future().resultCount() == urls.size()) {
+                promise-&amp;gt;finish();
+            }
+    ...
+</db:programlisting>
+<db:para>If the number of results stored inside the promise object is equal to the number of the <db:code>url</db:code>s to be downloaded, there are no more requests to process, so we also report that the promise has finished.</db:para>
+<db:para>As mentioned earlier, we've wrapped the promise inside a QSharedPointer. Since the promise object is shared between handlers connected to each network reply, we need to copy and use the promise object in multiple places simultaneously. Hence, a QSharedPointer is used.</db:para>
+<db:para><db:code>download()</db:code> method is called from the <db:code>QImage::process</db:code> method. It is invoked when the user presses the <db:emphasis>&quot;Add URLs&quot;</db:emphasis> button:</db:para>
+<db:programlisting language="cpp">    ...
+    connect(addUrlsButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Images::process);
+    ...
+</db:programlisting>
+<db:para>After clearing the possible leftovers from previous download, we create a dialog so that the user can specify the URLs for the images to download. Based on the specified URL count, we initialize the layout where the images will be shown and start the download. The future returned by the <db:code>download()</db:code> method is saved, so that the user can cancel the download if needed:</db:para>
+<db:programlisting language="cpp">void Images::process()
+{
+    // Clean previous state
+    replies.clear();
+
+    if (downloadDialog-&amp;gt;exec() == QDialog::Accepted) {
+
+        const auto urls = downloadDialog-&amp;gt;getUrls();
+        if (urls.empty())
+            return;
+
+        cancelButton-&amp;gt;setEnabled(true);
+
+        initLayout(urls.size());
+
+        downloadFuture = download(urls);
+        statusBar-&amp;gt;showMessage(tr(&quot;Downloading...&quot;));
+    ...
+</db:programlisting>
+<db:para>Next, we attach a continuation to handle the scaling step:</db:para>
+<db:programlisting language="cpp">        downloadFuture.then([this](auto) { cancelButton-&amp;gt;setEnabled(false); })
+                .then(QtFuture::Launch::Async,
+                      [this] {
+                          QMetaObject::invokeMethod(this,
+                                                    [this] { updateStatus(tr(&quot;Scaling...&quot;)); });
+                          return scaled();
+                      })
+    ...
+</db:programlisting>
+<db:para>Since the scaling may be computationally heavy, and we don't want to block the main thread, we pass the <db:code>QtFuture::Launch::Async</db:code> option, to launch the scaling step in a new thread. The <db:code>scaled()</db:code> method returns a list of the scaled images to the next step, which takes care of showing images in the layout.</db:para>
+<db:para>Note that <db:code>updateStatus()</db:code> is called through QMetaObject::invokeMethod(), because it updates the UI and needs to be invoked from the main thread.</db:para>
+<db:programlisting language="cpp">    ...
+                .then(this, [this](const QList&amp;lt;QImage&amp;gt; &amp;amp;scaled) {
+                    showImages(scaled);
+                    updateStatus(tr(&quot;Finished&quot;));
+                })
+    ...
+</db:programlisting>
+<db:para>For the same reason <db:code>showImages()</db:code> also needs to be invoked from the main thread, so we pass <db:code>this</db:code> as a context to <db:code>.then()</db:code>. By default, <db:code>.then()</db:code> is launched in the parent's thread, but if a context object is specified, it is launched in the context object's thread.</db:para>
+<db:para>Then we add cancellation and failure handlers:</db:para>
+<db:programlisting language="cpp">    ...
+                .onCanceled([this] { updateStatus(tr(&quot;Download has been canceled.&quot;)); })
+                .onFailed([this](QNetworkReply::NetworkError error) {
+                    updateStatus(tr(&quot;Download finished with error: %1&quot;).arg(error));
+
+                    // Abort all pending requests
+                    abortDownload();
+                })
+                .onFailed([this](const std::exception&amp;amp; ex) {
+                    updateStatus(tr(ex.what()));
+                });
+</db:programlisting>
+<db:para>We don't need to specify the context anymore, because <db:code>.onCanceled()</db:code> and the next handlers will be launched in their parent's context.</db:para>
+<db:para>The handler attached via the <db:code>.onCanceled()</db:code> method will be called if the user has pressed the <db:emphasis>&quot;Cancel&quot;</db:emphasis> button:</db:para>
+<db:programlisting language="cpp">    ...
+    connect(cancelButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Images::cancel);
+    ...
+</db:programlisting>
+<db:para>The <db:code>cancel()</db:code> method simply aborts all the pending requests:</db:para>
+<db:programlisting language="cpp">void Images::cancel()
+{
+    statusBar-&amp;gt;showMessage(tr(&quot;Canceling...&quot;));
+
+    downloadFuture.cancel();
+    abortDownload();
+}
+</db:programlisting>
+<db:para>The handlers attached via <db:code>.onFailed()</db:code> method will be called in case an error occurred during one of the previous steps. For example, if a network error has been saved inside the promise during the download step, it will be propagated to the handler that takes <db:code>QNetworkReply::NetworkError</db:code> as argument. A failure can happen also during the scaling step:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; Images::scaled() const
+{
+    QList&amp;lt;QImage&amp;gt; scaled;
+    const auto data = downloadFuture.results();
+    for (auto imgData : data) {
+        QImage image;
+        image.loadFromData(imgData);
+        if (image.isNull())
+            throw std::runtime_error(&quot;Failed to load image.&quot;);
+
+        scaled.push_back(image.scaled(100, 100, Qt::KeepAspectRatio));
+    }
+
+    return scaled;
+}
+</db:programlisting>
+<db:para>The rest of the code is straightforward, you can check the example project for more details.</db:para>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/qtconcurrent/imagescaling?h=6.3">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

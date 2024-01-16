@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Deploying an Application on Android</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="examples-android.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Qt for Android Examples"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="android-openssl-support.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Adding OpenSSL Support for Android"/></db:extendedlink>
+<db:abstract>
+<db:para>The technical steps required to deploy a Qt application on Android.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This article describes the technical steps required to deploy a Qt application to an Android device.</db:para>
+<db:note>
+<db:para><db:link xlink:href="android-deploy-qt-tool.xml">The androiddeployqt Tool</db:link> automates this process.</db:para>
+</db:note>
+<db:section xml:id="android-application-bundle">
+<db:title>Android Application Bundle</db:title>
+<db:para>Applications on Android can be packaged in two ways; either as Application Package (APK) or Android App Bundle (AAB). Both are ZIP files which follow a predefined directory structure. The difference between the two is that APK files can be deployed and executed on a device, whereas AAB is intended to be interpreted by the Google Play store and is used to generate APK files for different device architectures.</db:para>
+<db:para>For testing the application locally, the APK format is the most appropriate, as this can be uploaded directly to the device and run. For distribution to the Google Play store, it is recommended to use AAB instead, which has a similar layout. The added convenience of AAB is that you can include all target ABIs in the same bundle without increasing the size of the actual package downloaded by your users. When using AAB, the Google Play store generates optimized APK packages for the devices issuing the download request and automatically signs them with your publisher key.</db:para>
+<db:para>For more information on the AAB format, see <db:link xlink:href="https://developer.android.com/guide/app-bundle">the Android App Bundles</db:link>.</db:para>
+<db:para>In either case, the application bundle is generated from a specific directory structure that contains the .so file of your code, as well as all Qt's dependencies needed by your application. In addition, any .jar files, Java code, assets, resources and .xml files are included.</db:para>
+<db:section xml:id="generating-the-application-bundle">
+<db:title>Generating the Application Bundle</db:title>
+<db:para>It is recommended to use Qt Creator or the Makefile created by qmake or CMake to create the application bundle.</db:para>
+<db:para>All the steps described here are automatically handled by the build script and the <db:link xlink:href="android-deploy-qt-tool.xml#androiddeployqt">androiddeployqt deployment tool</db:link>, which are run by Qt Creator by default.</db:para>
+<db:note>
+<db:para>If you prefer building Android packages from the command line, see <db:link xlink:href="deployment-android.xml#building-the-android-application">Building the Android Application</db:link>.</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="android-package-templates">
+<db:title>Android Package Templates</db:title>
+<db:para>The default templates used by Qt are found in $Qt_install_dir/src/android/templates. The first step of making a custom package is to copy these files into an empty directory, for example android, under your project. Then, you need to define that path in your project's .pro file, using the variable <db:link xlink:href="qmake-variable-reference.xml#android-package-source-dir">ANDROID_PACKAGE_SOURCE_DIR</db:link>:</db:para>
+<db:programlisting language="cpp" role="bad">android {
+    ANDROID_PACKAGE_SOURCE_DIR = $$PWD/android
+
+    DISTFILES += \
+        android/AndroidManifest.xml \
+        android/build.gradle \
+        android/res/values/libs.xml
+}
+</db:programlisting>
+<db:para>Qt Creator copies the package templates to your Android build directory (<db:emphasis>$ANDROID_BUILD_DIR=$BUILD_DIR/android-build</db:emphasis>) into your project build directory (<db:emphasis>$BUILD_DIR</db:emphasis>). If you want to build from the command line, use the following after running qmake or CMake:</db:para>
+<db:programlisting language="cpp">make -j$(nproc) apk_install_target
+</db:programlisting>
+<db:para>The previous command copies the application's binaries and resources into the $ANDROID_BUILD_DIR. The build directory acts now as the packaging directory, which the application bundle is created from. The main parts of the package templates are described in the following sections.</db:para>
+<db:section xml:id="androidmanifest-xml">
+<db:title>AndroidManifest.xml</db:title>
+<db:para>The AndroidManifest.xml file gives detailed meta-information about your application. This information is used to customize your application bundle and by the target device to decide which features to enable, the default orientation of the application, and so on. In addition, it's used by the Google Play Store for information on the version code, device support, package name, and lots more. The Android Manifest is also used to define <db:link xlink:href="android-services.xml">Android Services</db:link>, and custom <db:link xlink:href="https://developer.android.com/guide/components/activities/intro-activities">Android Activities</db:link>.</db:para>
+<db:para>For more information about the AndroidManifest.xml, see <db:link xlink:href="android-manifest-file-configuration.xml">Android Manifest file documentation</db:link>.</db:para>
+</db:section>
+<db:section xml:id="java-code">
+<db:title>Java Code</db:title>
+<db:para>Under $Qt_install_dir/src/android/java/src/org/qtproject/qt/android/bindings/ are the files comprising the Java code of the Android application. This Java code is compiled under $ANDROID_BUILD_DIR and added to the application bundle. The regular Android application launcher is a Java process, so Qt applications have a Java-based entry point. The code in here will load the required Qt libraries, based on the meta-information given in Manifest file.</db:para>
+<db:para>After loading the libraries, the Java code will call into the application's native main() function on a new thread and the application will launch. At this point, the Java code in the templates is used to delegate events from Android into Qt.</db:para>
+<db:para>One thing to note about the files in this directory is that they can contain code specific to certain Android versions. Based on the minimum required Android API level of your application it might be necessary to remove some of this code. This is done automatically by androiddeployqt and Qt Creator during packaging.</db:para>
+<db:para>If your minimum Android API level is 20 or lower, the code below is removed before building, since it's not a supported API on Android API level 20. However, if your minimum API level is 21 or higher, it is left in:</db:para>
+<db:programlisting language="cpp">//@ANDROID-21
+    @Override
+    public void onActivityReenter(int resultCode, Intent data)
+    {
+        // Do something
+        return super.onActivityReenter(resultCode, data);
+    }
+//@ANDROID-21
+    </db:programlisting>
+</db:section>
+<db:section xml:id="resources">
+<db:title>Resources</db:title>
+<db:para>Under the $Qt_instal_dir/src/android/templates/res/ folder are Android resources that can be accessed from the AndroidManifest.xml and Java code used by all Qt applications.</db:para>
+<db:section xml:id="libs-xml">
+<db:title>libs.xml</db:title>
+<db:para>This file can be found at $Qt_instal_dir/src/android/templates/res/values/libs.xml. One of the files containing meta information about the deployment of the application is libs.xml. It consists of the following values:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>bundled_libs: Libraries in the package's library folder which should be loaded on start-up. Library names should be specified without the lib prefix and .so suffix.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>qt_libs: Qt libraries which should be loaded on start-up. When bundled deployment is used, these are expected to be found inside the APK's library folder.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:note>
+<db:para>Ministro is no longer maintained.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="strings-xml">
+<db:title>strings.xml</db:title>
+<db:para>This file can be found at $Qt_instal_dir/src/android/java/res/values/strings.xml. The strings.xml file contains strings used by the AndroidManifest.xml and by the deployment mechanisms.</db:para>
+<db:para>In particular, the application name and the name of the application binary can be specified here. There are also strings that contain additional libraries that should be loaded and JAR files which should be included in the class path.</db:para>
+</db:section>
+<db:section xml:id="gradle-files">
+<db:title>Gradle Files</db:title>
+<db:para>The main Gradle build file can be found at $Qt_instal_dir/src/android/templates/build.gradle. This file is required by the Gradle build system used by Android to generate the application's APK. For more information, see <db:link xlink:href="https://developer.android.com/studio/build#build-files">Android Build Configuration Files</db:link>.</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="customizing-the-package-templates">
+<db:title>Customizing the Package Templates</db:title>
+<db:section xml:id="resources">
+<db:title>Resources</db:title>
+<db:para>Put any resources used by your application under $ANDROID_PACKAGE_SOURCE_DIR/res/. A typical example of resources customization which should be placed here are the icons used by the application launcher to show your application.</db:para>
+</db:section>
+<db:section xml:id="custom-java-code">
+<db:title>Custom Java Code</db:title>
+<db:para>Place any Java code under the path $ANDROID_PACKAGE_SOURCE_DIR/src/. Any code here can be used with your application, for example you can call Java methods from within Qt code. For more information, see <db:link xlink:href="qtcore-platform-androidnotifier-example.xml">Qt Android Notifier Example</db:link>.</db:para>
+<db:para>When using Qt Creator, add the Java files to your project using <db:link xlink:href="qmake-variable-reference.xml#distfiles">DISTFILES</db:link>, so they are visible under the project files.</db:para>
+</db:section>
+<db:section xml:id="assets">
+<db:title>Assets</db:title>
+<db:para>You can place any assets that are intended to be accessed by Java code under $ANDROID_PACKAGE_SOURCE_DIR/assets/. For more information on using assets with Qt, see <db:link xlink:href="porting-to-android.xml">Porting to Android</db:link>.</db:para>
+<db:note>
+<db:para>Using <db:link xlink:href="resources.xml">The Qt Resource System</db:link> entails having .qrc files bundled in the .so files which must be unpacked first to be loaded by the linker, while the Android assets are compressed in the <db:emphasis>.apk</db:emphasis> and can be directly used in your application. That means using the Android assets can take up less space, but it's not a cross-platform solution with Qt.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="android-libraries">
+<db:title>Android Libraries</db:title>
+<db:para>Under $ANDROID_PACKAGE_SOURCE_DIR/libs in your custom package directory, it's possible to place libraries that should be included in the application bundle. JAR libraries should be placed directly under $ANDROID_PACKAGE_SOURCE_DIR/libs/, while shared libraries should be put in a subdirectory named after the target ABI of the libraries. The supported ABIs are: armeabi-v7a, arm64-v8a, x86, x86_64.</db:para>
+<db:para>For more information, see also <db:link xlink:href="android-3rdparty-libs.xml">Third-party Android Libraries</db:link>.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="building-the-android-application">
+<db:title>Building the Android Application</db:title>
+<db:para>Starting from Qt 5.14.0, you may use the <db:emphasis>&quot;aab&quot;</db:emphasis> or <db:emphasis>&quot;apk&quot;</db:emphasis> build targets from the Makefile directly to build the application bundle. Use the following command to generate an AAB:</db:para>
+<db:programlisting language="cpp" role="bad">make -j$(nproc) aab
+</db:programlisting>
+<db:para>Or to generate the APK:</db:para>
+<db:programlisting language="cpp" role="bad">make -j$(nproc) apk
+</db:programlisting>
+<db:para>Under the hood, your Qt code is built and copied to the $ANDROID_BUILD_DIR, then <db:link xlink:href="http://www.gradle.org">Gradle</db:link> is used to build the Java code and package the application. If an APK intended for release is built, then it should be signed with jarsigner and aligned with zipalign. For more information on signing the package with Qt Creator, see <db:link xlink:href="http://doc.qt.io/qtcreator/creator-deploying-android.html#signing-android-packages">Signing Android packages</db:link>.</db:para>
+</db:section>
+</db:article>

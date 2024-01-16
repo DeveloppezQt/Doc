@@ -1,0 +1,602 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QScopedPointer Class</db:title>
+<db:subtitle>template &lt;typename T, typename Cleanup&gt; class QScopedPointer</db:subtitle>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> class stores a pointer to a dynamically allocated object, and deletes it upon destruction.</db:para>
+<db:note>
+<db:para>All functions in this class are reentrant.</db:para>
+</db:note>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>QScopedPointer</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>CMake</db:term>
+<db:listitem>
+<db:para>find_package(Qt6 REQUIRED COMPONENTS Core)</db:para>
+<db:para>target_link_libraries(mytarget PRIVATE Qt6::Core)</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += core</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherited By</db:term>
+<db:listitem>
+<db:para><db:link xlink:href="qscopedarraypointer.xml" xlink:role="class">QScopedArrayPointer</db:link></db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Group</db:term>
+<db:listitem>
+<db:para>QScopedPointer is part of <db:simplelist><db:member>misc</db:member></db:simplelist></db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para>Managing heap allocated objects manually is hard and error prone, with the common result that code leaks memory and is hard to maintain. <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> is a small utility class that heavily simplifies this by assigning stack-based memory ownership to heap allocations, more generally called resource acquisition is initialization(RAII).</db:para>
+<db:para><db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> guarantees that the object pointed to will get deleted when the current scope disappears.</db:para>
+<db:para>Consider this function which does heap allocations, and has various exit points:</db:para>
+<db:programlisting language="cpp">void myFunction(bool useSubClass)
+{
+    MyClass *p = useSubClass ? new MyClass() : new MySubClass;
+    QIODevice *device = handsOverOwnership();
+
+    if (m_value &amp;gt; 3) {
+        delete p;
+        delete device;
+        return;
+    }
+
+    try {
+        process(device);
+    }
+    catch (...) {
+        delete p;
+        delete device;
+        throw;
+    }
+
+    delete p;
+    delete device;
+}
+</db:programlisting>
+<db:para>It's encumbered by the manual delete calls. With <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link>, the code can be simplified to:</db:para>
+<db:programlisting language="cpp">void myFunction(bool useSubClass)
+{
+    // assuming that MyClass has a virtual destructor
+    QScopedPointer&amp;lt;MyClass&amp;gt; p(useSubClass ? new MyClass() : new MySubClass);
+    QScopedPointer&amp;lt;QIODevice&amp;gt; device(handsOverOwnership());
+
+    if (m_value &amp;gt; 3)
+        return;
+
+    process(device);
+}
+</db:programlisting>
+<db:para>The code the compiler generates for <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> is the same as when writing it manually. Code that makes use of <db:code role="parameter">delete</db:code> are candidates for <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> usage (and if not, possibly another type of smart pointer such as <db:link xlink:href="qsharedpointer.xml">QSharedPointer</db:link>). <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> intentionally has no copy constructor or assignment operator, such that ownership and lifetime is clearly communicated.</db:para>
+<db:para>The const qualification on a regular C++ pointer can also be expressed with a <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link>:</db:para>
+<db:programlisting language="cpp">    const QWidget *const p = new QWidget();
+    // is equivalent to:
+    const QScopedPointer&amp;lt;const QWidget&amp;gt; p(new QWidget());
+
+    QWidget *const p = new QWidget();
+    // is equivalent to:
+    const QScopedPointer&amp;lt;QWidget&amp;gt; p(new QWidget());
+
+    const QWidget *p = new QWidget();
+    // is equivalent to:
+    QScopedPointer&amp;lt;const QWidget&amp;gt; p(new QWidget());
+</db:programlisting>
+<db:section xml:id="custom-cleanup-handlers">
+<db:title>Custom Cleanup Handlers</db:title>
+<db:para>Arrays as well as pointers that have been allocated with <db:code>malloc</db:code> must not be deleted using <db:code>delete</db:code>. <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link>'s second template parameter can be used for custom cleanup handlers.</db:para>
+<db:para>The following custom cleanup handlers exist:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>QScopedPointerDeleter - the default, deletes the pointer using <db:code>delete</db:code></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QScopedPointerArrayDeleter - deletes the pointer using <db:code>delete []</db:code>. Use this handler for pointers that were allocated with <db:code>new []</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QScopedPointerPodDeleter - deletes the pointer using <db:code>free()</db:code>. Use this handler for pointers that were allocated with <db:code>malloc()</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QScopedPointerDeleteLater - deletes a pointer by calling <db:code>deleteLater()</db:code> on it. Use this handler for pointers to <db:link xlink:href="qobject.xml">QObject</db:link>'s that are actively participating in a <db:link xlink:href="qeventloop.xml">QEventLoop</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>You can pass your own classes as handlers, provided that they have a public static function <db:code>void cleanup(T *pointer)</db:code>.</db:para>
+<db:programlisting language="cpp">// this QScopedPointer deletes its data using the delete[] operator:
+QScopedPointer&amp;lt;int, QScopedPointerArrayDeleter&amp;lt;int&amp;gt; &amp;gt; arrayPointer(new int[42]);
+
+// this QScopedPointer frees its data using free():
+QScopedPointer&amp;lt;int, QScopedPointerPodDeleter&amp;gt; podPointer(reinterpret_cast&amp;lt;int *&amp;gt;(malloc(42)));
+
+// this struct calls &quot;myCustomDeallocator&quot; to delete the pointer
+struct ScopedPointerCustomDeleter
+{
+    static inline void cleanup(MyCustomClass *pointer)
+    {
+        myCustomDeallocator(pointer);
+    }
+};
+
+// QScopedPointer using a custom deleter:
+QScopedPointer&amp;lt;MyCustomClass, ScopedPointerCustomDeleter&amp;gt; customPointer(new MyCustomClass);
+</db:programlisting>
+</db:section>
+<db:section xml:id="forward-declared-pointers">
+<db:title>Forward Declared Pointers</db:title>
+<db:para>Classes that are forward declared can be used within <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link>, as long as the destructor of the forward declared class is available whenever a <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> needs to clean up.</db:para>
+<db:para>Concretely, this means that all classes containing a <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> that points to a forward declared class must have non-inline constructors, destructors and assignment operators:</db:para>
+<db:programlisting language="cpp">class MyPrivateClass; // forward declare MyPrivateClass
+
+class MyClass
+{
+private:
+    QScopedPointer&amp;lt;MyPrivateClass&amp;gt; privatePtr; // QScopedPointer to forward declared class
+
+public:
+    MyClass(); // OK
+    inline ~MyClass() {} // VIOLATION - Destructor must not be inline
+
+private:
+    Q_DISABLE_COPY(MyClass) // OK - copy constructor and assignment operators
+                             // are now disabled, so the compiler won't implicitly
+                             // generate them.
+};
+</db:programlisting>
+<db:para>Otherwise, the compiler outputs a warning about not being able to destruct <db:code>MyPrivateClass</db:code>.</db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qsharedpointer.xml">QSharedPointer</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="QScopedPointer">
+<db:title>[explicit] QScopedPointer::QScopedPointer(T *<db:emphasis>p</db:emphasis> = nullptr)</db:title>
+<db:constructorsynopsis>
+<db:methodname>QScopedPointer</db:methodname>
+<db:methodparam>
+<db:type>T *</db:type>
+<db:parameter>p</db:parameter>
+<db:initializer>nullptr</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">constructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">QScopedPointer(T *p)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:constructorsynopsis>
+<db:para>Constructs this <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> instance and sets its pointer to <db:code role="parameter">p</db:code>.</db:para>
+</db:section>
+<db:section xml:id="dtor.QScopedPointer">
+<db:title>QScopedPointer::~QScopedPointer()</db:title>
+<db:destructorsynopsis>
+<db:methodname>~QScopedPointer</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">destructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">~QScopedPointer()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:destructorsynopsis>
+<db:para>Destroys this <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> object. Delete the object its pointer points to.</db:para>
+</db:section>
+<db:section xml:id="data">
+<db:title>T *QScopedPointer::data() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>T *</db:type>
+<db:methodname>data</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">T * data() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the value of the pointer referenced by this object. <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> still owns the object pointed to.</db:para>
+</db:section>
+<db:section xml:id="get">
+<db:title>[since 5.11] T *QScopedPointer::get() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>T *</db:type>
+<db:methodname>get</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">T * get() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Same as <db:link xlink:href="qscopedpointer.xml#data">data</db:link>().</db:para>
+<db:para>This function was introduced in Qt 5.11.</db:para>
+</db:section>
+<db:section xml:id="isNull">
+<db:title>bool QScopedPointer::isNull() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>bool</db:type>
+<db:methodname>isNull</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool isNull() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns <db:code>true</db:code> if this object refers to <db:code>nullptr</db:code>.</db:para>
+</db:section>
+<db:section xml:id="reset">
+<db:title>void QScopedPointer::reset(T *<db:emphasis>other</db:emphasis> = nullptr)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>reset</db:methodname>
+<db:methodparam>
+<db:type>T *</db:type>
+<db:parameter>other</db:parameter>
+<db:initializer>nullptr</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void reset(T *other)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Deletes the existing object it is pointing to (if any), and sets its pointer to <db:code role="parameter">other</db:code>. <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> now owns <db:code role="parameter">other</db:code> and will delete it in its destructor.</db:para>
+</db:section>
+<db:section xml:id="operator-bool">
+<db:title>[explicit] bool QScopedPointer::operator bool() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>bool</db:type>
+<db:methodname>operator bool</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator bool() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns <db:code>true</db:code> if the contained pointer is not <db:code>nullptr</db:code>. This function is suitable for use in <db:code>if-constructs</db:code>, like:</db:para>
+<db:programlisting language="cpp">if (scopedPointer) {
+    ...
+}
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator-not">
+<db:title>bool QScopedPointer::operator!() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>bool</db:type>
+<db:methodname>operator!</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator!() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if this object refers to nullptr.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator-2a">
+<db:title>T &amp;QScopedPointer::operator*() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>T &amp;</db:type>
+<db:methodname>operator*</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">T &amp; operator*() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Provides access to the scoped pointer's object.</db:para>
+<db:para>If the contained pointer is nullptr, behavior is undefined.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator--gt">
+<db:title>T *QScopedPointer::operator-&gt;() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>T *</db:type>
+<db:methodname>operator-&gt;</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">T * operator-&gt;() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Provides access to the scoped pointer's object.</db:para>
+<db:para>If the contained pointer is nullptr, behavior is undefined.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="related-non-members">
+<db:title>Related Non-Members</db:title>
+<db:section xml:id="operator-not-eq">
+<db:title>bool operator!=(const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>lhs</db:emphasis>, const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>rhs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator!=</db:methodname>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>lhs</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>rhs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator!=(const QScopedPointer&lt;T, Cleanup&gt; &amp;lhs, const QScopedPointer&lt;T, Cleanup&gt; &amp;rhs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">lhs</db:code> and <db:code role="parameter">rhs</db:code> refer to distinct pointers.</db:para>
+</db:section>
+<db:section xml:id="operator-not-eq-1">
+<db:title>[since 5.8] bool operator!=(const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>lhs</db:emphasis>, <db:emphasis>std::nullptr_t</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator!=</db:methodname>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>lhs</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>std::nullptr_t</db:type>
+<db:parameter></db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="overload">overload</db:synopsisinfo>
+<db:synopsisinfo role="overload-number">1</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator!=(const QScopedPointer&lt;T, Cleanup&gt; &amp;lhs, std::nullptr_t)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">lhs</db:code> refers to a valid (i.e. non-null) pointer.</db:para>
+<db:para>This function was introduced in Qt 5.8.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">QScopedPointer::isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator-not-eq-2">
+<db:title>[since 5.8] bool operator!=(<db:emphasis>std::nullptr_t</db:emphasis>, const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>rhs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator!=</db:methodname>
+<db:methodparam>
+<db:type>std::nullptr_t</db:type>
+<db:parameter></db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>rhs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="overload">overload</db:synopsisinfo>
+<db:synopsisinfo role="overload-number">2</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator!=(std::nullptr_t, const QScopedPointer&lt;T, Cleanup&gt; &amp;rhs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">rhs</db:code> refers to a valid (i.e. non-null) pointer.</db:para>
+<db:para>This function was introduced in Qt 5.8.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">QScopedPointer::isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator-eq-eq">
+<db:title>bool operator==(const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>lhs</db:emphasis>, const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>rhs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator==</db:methodname>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>lhs</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>rhs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator==(const QScopedPointer&lt;T, Cleanup&gt; &amp;lhs, const QScopedPointer&lt;T, Cleanup&gt; &amp;rhs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">lhs</db:code> and <db:code role="parameter">rhs</db:code> refer to the same pointer.</db:para>
+</db:section>
+<db:section xml:id="operator-eq-eq-1">
+<db:title>[since 5.8] bool operator==(const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>lhs</db:emphasis>, <db:emphasis>std::nullptr_t</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator==</db:methodname>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>lhs</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>std::nullptr_t</db:type>
+<db:parameter></db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="overload">overload</db:synopsisinfo>
+<db:synopsisinfo role="overload-number">1</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator==(const QScopedPointer&lt;T, Cleanup&gt; &amp;lhs, std::nullptr_t)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">lhs</db:code> refers to nullptr.</db:para>
+<db:para>This function was introduced in Qt 5.8.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">QScopedPointer::isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="operator-eq-eq-2">
+<db:title>[since 5.8] bool operator==(<db:emphasis>std::nullptr_t</db:emphasis>, const QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>rhs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>operator==</db:methodname>
+<db:methodparam>
+<db:type>std::nullptr_t</db:type>
+<db:parameter></db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>rhs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="overload">overload</db:synopsisinfo>
+<db:synopsisinfo role="overload-number">2</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool operator==(std::nullptr_t, const QScopedPointer&lt;T, Cleanup&gt; &amp;rhs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns true if <db:code role="parameter">rhs</db:code> refers to nullptr.</db:para>
+<db:para>This function was introduced in Qt 5.8.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qscopedpointer.xml#isNull">QScopedPointer::isNull</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="obsolete">
+<db:title>Obsolete Members for QScopedPointer</db:title>
+<db:para><db:emphasis role="bold">The following members of class <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> are deprecated.</db:emphasis> We strongly advise against using them in new code.</db:para>
+<db:section xml:id="obsolete-member-function-documentation">
+<db:title>Obsolete Member Function Documentation</db:title>
+<db:section xml:id="take">
+<db:title>T *QScopedPointer::take()</db:title>
+<db:methodsynopsis>
+<db:type>T *</db:type>
+<db:methodname>take</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">T * take()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">deprecated</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>This function is deprecated since 6.1. We strongly advise against using it in new code.</db:para>
+<db:para>Use std::unique_ptr and release() instead.</db:para>
+<db:para>Returns the value of the pointer referenced by this object. The pointer of this <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> object will be reset to nullptr.</db:para>
+<db:para>Callers of this function take ownership of the pointer.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="obsolete-related-non-members">
+<db:title>Obsolete Related Non-Members</db:title>
+<db:section xml:id="swap-1">
+<db:title>void swap(QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>lhs</db:emphasis>, QScopedPointer&lt;T, Cleanup&gt; &amp;<db:emphasis>rhs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>swap</db:methodname>
+<db:methodparam>
+<db:type>QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>lhs</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>QScopedPointer&lt;T, Cleanup&gt; &amp;</db:type>
+<db:parameter>rhs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="overload">overload</db:synopsisinfo>
+<db:synopsisinfo role="overload-number">1</db:synopsisinfo>
+<db:synopsisinfo role="signature">void swap(QScopedPointer&lt;T, Cleanup&gt; &amp;lhs, QScopedPointer&lt;T, Cleanup&gt; &amp;rhs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">deprecated</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>This function is deprecated since 6.1. We strongly advise against using it in new code.</db:para>
+<db:para>Use std::unique_ptr instead; this function may let a pointer escape its scope.</db:para>
+<db:para>Swaps <db:code role="parameter">lhs</db:code> with <db:code role="parameter">rhs</db:code>.</db:para>
+</db:section>
+</db:section>
+</db:section>
+</db:article>
