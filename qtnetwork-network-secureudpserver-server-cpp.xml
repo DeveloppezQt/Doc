@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>DTLS server</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This examples demonstrates how to implement a simple DTLS server.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;server.h&quot;
+
+#include &amp;lt;algorithm&amp;gt;
+
+namespace {
+
+QString peer_info(const QHostAddress &amp;amp;address, quint16 port)
+{
+    const static QString info = QStringLiteral(&quot;(%1:%2)&quot;);
+    return info.arg(address.toString()).arg(port);
+}
+
+QString connection_info(QSharedPointer&amp;lt;QDtls&amp;gt; connection)
+{
+    QString info(DtlsServer::tr(&quot;Session cipher: &quot;));
+    info += connection-&amp;gt;sessionCipher().name();
+
+    info += DtlsServer::tr(&quot;; session protocol: &quot;);
+    switch (connection-&amp;gt;sessionProtocol()) {
+    case QSsl::DtlsV1_0:
+        info += DtlsServer::tr(&quot;DTLS 1.0.&quot;);
+        break;
+    case QSsl::DtlsV1_2:
+        info += DtlsServer::tr(&quot;DTLS 1.2.&quot;);
+        break;
+    case QSsl::DtlsV1_2OrLater:
+        info += DtlsServer::tr(&quot;DTLS 1.2 or later.&quot;);
+        break;
+    default:
+        info += DtlsServer::tr(&quot;Unknown protocol.&quot;);
+    }
+
+    return info;
+}
+
+} // unnamed namespace
+
+DtlsServer::DtlsServer()
+{
+    connect(&amp;amp;serverSocket, &amp;amp;QAbstractSocket::readyRead, this, &amp;amp;DtlsServer::readyRead);
+
+    serverConfiguration = QSslConfiguration::defaultDtlsConfiguration();
+    serverConfiguration.setPreSharedKeyIdentityHint(&quot;Qt DTLS example server&quot;);
+    serverConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+}
+
+DtlsServer::~DtlsServer()
+{
+    shutdown();
+}
+
+bool DtlsServer::listen(const QHostAddress &amp;amp;address, quint16 port)
+{
+    if (address != serverSocket.localAddress() || port != serverSocket.localPort()) {
+        shutdown();
+        listening = serverSocket.bind(address, port);
+        if (!listening)
+            emit errorMessage(serverSocket.errorString());
+    } else {
+        listening = true;
+    }
+
+    return listening;
+}
+
+bool DtlsServer::isListening() const
+{
+    return listening;
+}
+
+void DtlsServer::close()
+{
+    listening = false;
+}
+
+void DtlsServer::readyRead()
+{
+    const qint64 bytesToRead = serverSocket.pendingDatagramSize();
+    if (bytesToRead &amp;lt;= 0) {
+        emit warningMessage(tr(&quot;A spurious read notification&quot;));
+        return;
+    }
+
+    QByteArray dgram(bytesToRead, Qt::Uninitialized);
+    QHostAddress peerAddress;
+    quint16 peerPort = 0;
+    const qint64 bytesRead = serverSocket.readDatagram(dgram.data(), dgram.size(),
+                                                       &amp;amp;peerAddress, &amp;amp;peerPort);
+    if (bytesRead &amp;lt;= 0) {
+        emit warningMessage(tr(&quot;Failed to read a datagram: &quot;) + serverSocket.errorString());
+        return;
+    }
+
+    dgram.resize(bytesRead);
+    if (peerAddress.isNull() || !peerPort) {
+        emit warningMessage(tr(&quot;Failed to extract peer info (address, port)&quot;));
+        return;
+    }
+
+    const auto client = std::find_if(knownClients.begin(), knownClients.end(),
+                                     [&amp;amp;](const DtlsConnection &amp;amp;connection){
+        return connection-&amp;gt;peerAddress() == peerAddress
+               &amp;amp;&amp;amp; connection-&amp;gt;peerPort() == peerPort;
+    });
+
+    if (client == knownClients.end())
+        return handleNewConnection(peerAddress, peerPort, dgram);
+
+    if ((*client)-&amp;gt;isConnectionEncrypted()) {
+        decryptDatagram(*client, dgram);
+        if ((*client)-&amp;gt;dtlsError() == QDtlsError::RemoteClosedConnectionError)
+            knownClients.erase(client);
+        return;
+    }
+
+    doHandshake(*client, dgram);
+}
+
+void DtlsServer::pskRequired(QSslPreSharedKeyAuthenticator *auth)
+{
+    Q_ASSERT(auth);
+
+    emit infoMessage(tr(&quot;PSK callback, received a client's identity: '%1'&quot;)
+                     .arg(QString::fromLatin1(auth-&amp;gt;identity())));
+    auth-&amp;gt;setPreSharedKey(QByteArrayLiteral(&quot;\x1a\x2b\x3c\x4d\x5e\x6f&quot;));
+}
+
+void DtlsServer::handleNewConnection(const QHostAddress &amp;amp;peerAddress,
+                                     quint16 peerPort, const QByteArray &amp;amp;clientHello)
+{
+    if (!listening)
+        return;
+
+    const QString peerInfo = peer_info(peerAddress, peerPort);
+    if (cookieSender.verifyClient(&amp;amp;serverSocket, clientHello, peerAddress, peerPort)) {
+        emit infoMessage(peerInfo + tr(&quot;: verified, starting a handshake&quot;));
+        DtlsConnection newConnection(new QDtls(QSslSocket::SslServerMode));
+        newConnection-&amp;gt;setDtlsConfiguration(serverConfiguration);
+        newConnection-&amp;gt;setPeer(peerAddress, peerPort);
+        newConnection-&amp;gt;connect(newConnection.data(), &amp;amp;QDtls::pskRequired,
+                               this, &amp;amp;DtlsServer::pskRequired);
+        knownClients.push_back(newConnection);
+        doHandshake(newConnection, clientHello);
+    } else if (cookieSender.dtlsError() != QDtlsError::NoError) {
+        emit errorMessage(tr(&quot;DTLS error: &quot;) + cookieSender.dtlsErrorString());
+    } else {
+        emit infoMessage(peerInfo + tr(&quot;: not verified yet&quot;));
+    }
+}
+
+void DtlsServer::doHandshake(DtlsConnection newConnection, const QByteArray &amp;amp;clientHello)
+{
+    const bool result = newConnection-&amp;gt;doHandshake(&amp;amp;serverSocket, clientHello);
+    if (!result) {
+        emit errorMessage(newConnection-&amp;gt;dtlsErrorString());
+        return;
+    }
+
+    const QString peerInfo = peer_info(newConnection-&amp;gt;peerAddress(),
+                                       newConnection-&amp;gt;peerPort());
+    switch (newConnection-&amp;gt;handshakeState()) {
+    case QDtls::HandshakeInProgress:
+        emit infoMessage(peerInfo + tr(&quot;: handshake is in progress ...&quot;));
+        break;
+    case QDtls::HandshakeComplete:
+        emit infoMessage(tr(&quot;Connection with %1 encrypted. %2&quot;)
+                         .arg(peerInfo, connection_info(newConnection)));
+        break;
+    default:
+        Q_UNREACHABLE();
+    }
+}
+
+void DtlsServer::decryptDatagram(DtlsConnection connection, const QByteArray &amp;amp;clientMessage)
+{
+    Q_ASSERT(connection-&amp;gt;isConnectionEncrypted());
+
+    const QString peerInfo = peer_info(connection-&amp;gt;peerAddress(), connection-&amp;gt;peerPort());
+    const QByteArray dgram = connection-&amp;gt;decryptDatagram(&amp;amp;serverSocket, clientMessage);
+    if (dgram.size()) {
+        emit datagramReceived(peerInfo, clientMessage, dgram);
+        connection-&amp;gt;writeDatagramEncrypted(&amp;amp;serverSocket, tr(&quot;to %1: ACK&quot;).arg(peerInfo).toLatin1());
+    } else if (connection-&amp;gt;dtlsError() == QDtlsError::NoError) {
+        emit warningMessage(peerInfo + &quot;: &quot; + tr(&quot;0 byte dgram, could be a re-connect attempt?&quot;));
+    } else {
+        emit errorMessage(peerInfo + &quot;: &quot; + connection-&amp;gt;dtlsErrorString());
+    }
+}
+
+void DtlsServer::shutdown()
+{
+    for (DtlsConnection &amp;amp;connection : knownClients)
+        connection-&amp;gt;shutdown(&amp;amp;serverSocket);
+
+    knownClients.clear();
+    serverSocket.close();
+}
+
+
+</db:programlisting>
+</db:article>

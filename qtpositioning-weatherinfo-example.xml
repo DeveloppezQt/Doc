@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Weather Info (C++/QML)</db:title>
+<db:productname>QtPositioning</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Positioning Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Weather Info example shows how to use the user's current position to retrieve local content from a web service in a C++ plugin for QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Key <db:link xlink:href="qtpositioning-index.xml">Qt Positioning</db:link> classes used in this example:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfo.xml">QGeoPositionInfo</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfosource.xml">QGeoPositionInfoSource</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/example-weatherinfo.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+<db:para>The example uses weather data provided by <db:link xlink:href="http://www.openweathermap.org">http://www.openweathermap.org</db:link>.</db:para>
+<db:para>The key part of this example is the application's data model, contained in the WeatherData and AppModel classes. WeatherData represents the weather information taken from the HTTP service. It is a simple data class, but we give it Q_PROPERTies to expose it nicely to QML, later.</db:para>
+<db:programlisting language="cpp">class WeatherData : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString dayOfWeek
+               READ dayOfWeek WRITE setDayOfWeek
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString weatherIcon
+               READ weatherIcon WRITE setWeatherIcon
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString weatherDescription
+               READ weatherDescription WRITE setWeatherDescription
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString temperature
+               READ temperature WRITE setTemperature
+               NOTIFY dataChanged)
+
+public:
+    explicit WeatherData(QObject *parent = 0);
+    WeatherData(const WeatherData &amp;amp;other);
+
+    QString dayOfWeek() const;
+    QString weatherIcon() const;
+    QString weatherDescription() const;
+    QString temperature() const;
+
+    void setDayOfWeek(const QString &amp;amp;value);
+    void setWeatherIcon(const QString &amp;amp;value);
+    void setWeatherDescription(const QString &amp;amp;value);
+    void setTemperature(const QString &amp;amp;value);
+
+signals:
+    void dataChanged();
+};
+</db:programlisting>
+<db:para>AppModel models the state of the entire application. At startup, the application first begins by waiting for network connectivity. We do this using the <db:link xlink:href="qnetworkconfigurationmanager.xml">QNetworkConfigurationManager</db:link> and <db:link xlink:href="qnetworksession.xml">QNetworkSession</db:link> family of C++ APIs.</db:para>
+<db:programlisting language="cpp">AppModel::AppModel(QObject *parent) :
+        QObject(parent),
+        d(new AppModelPrivate)
+{
+    // make sure we have an active network session
+    d-&amp;gt;nam = new QNetworkAccessManager(this);
+
+    QNetworkConfigurationManager ncm;
+    d-&amp;gt;ns = new QNetworkSession(ncm.defaultConfiguration(), this);
+    connect(d-&amp;gt;ns, SIGNAL(opened()), this, SLOT(networkSessionOpened()));
+    // the session may be already open. if it is, run the slot directly
+    if (d-&amp;gt;ns-&amp;gt;isOpen())
+        this-&amp;gt;networkSessionOpened();
+    // tell the system we want network
+    d-&amp;gt;ns-&amp;gt;open();
+}
+</db:programlisting>
+<db:para>Once the network session is open, we proceed to get the platform's default position source using QGeoPositionInfo::createDefaultSource()</db:para>
+<db:programlisting language="cpp">void AppModel::networkSessionOpened()
+{
+    d-&amp;gt;src = QGeoPositionInfoSource::createDefaultSource(this);
+
+    if (d-&amp;gt;src) {
+        d-&amp;gt;useGps = true;
+        connect(d-&amp;gt;src, SIGNAL(positionUpdated(QGeoPositionInfo)),
+                this, SLOT(positionUpdated(QGeoPositionInfo)));
+        connect(d-&amp;gt;src, SIGNAL(error(QGeoPositionInfoSource::Error)),
+                this, SLOT(positionError(QGeoPositionInfoSource::Error)));
+        d-&amp;gt;src-&amp;gt;startUpdates();
+    } else {
+        d-&amp;gt;useGps = false;
+        d-&amp;gt;city = &quot;Brisbane&quot;;
+        emit cityChanged();
+        this-&amp;gt;refreshWeather();
+    }
+}
+</db:programlisting>
+<db:para>If no default source is available, we take a static position and fetch weather for that. If, however, we do have a position source, we connect its positionUpdated() signal to a slot on the AppModel and call startUpdates(), which begins regular updates of device position.</db:para>
+<db:para>When a position update is received, we use the longitude and latitude of the returned coordinate to retrieve the current &quot;city&quot; name for use in the weather lookup.</db:para>
+<db:programlisting language="cpp">void AppModel::positionUpdated(QGeoPositionInfo gpsPos)
+{
+    d-&amp;gt;coord = gpsPos.coordinate();
+
+    if (!(d-&amp;gt;useGps))
+        return;
+
+    queryCity();
+}
+</db:programlisting>
+<db:para>To inform the UI about this process, the cityChanged() signal is emitted when a new city is used, and the weatherChanged() signal whenever a weather update occurs.</db:para>
+<db:programlisting language="cpp">class AppModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool ready
+               READ ready
+               NOTIFY readyChanged)
+    Q_PROPERTY(bool hasSource
+               READ hasSource
+               NOTIFY readyChanged)
+    Q_PROPERTY(bool hasValidCity
+               READ hasValidCity
+               NOTIFY cityChanged)
+    Q_PROPERTY(bool hasValidWeather
+               READ hasValidWeather
+               NOTIFY weatherChanged)
+    Q_PROPERTY(bool useGps
+               READ useGps WRITE setUseGps
+               NOTIFY useGpsChanged)
+    Q_PROPERTY(QString city
+               READ city WRITE setCity
+               NOTIFY cityChanged)
+    Q_PROPERTY(WeatherData *weather
+               READ weather
+               NOTIFY weatherChanged)
+    Q_PROPERTY(QQmlListProperty&amp;lt;WeatherData&amp;gt; forecast
+               READ forecast
+               NOTIFY weatherChanged)
+
+public:
+    explicit AppModel(QObject *parent = 0);
+    ~AppModel();
+
+    bool ready() const;
+    bool hasSource() const;
+    bool useGps() const;
+    bool hasValidCity() const;
+    bool hasValidWeather() const;
+    void setUseGps(bool value);
+    void hadError(bool tryAgain);
+
+    QString city() const;
+    void setCity(const QString &amp;amp;value);
+
+    WeatherData *weather() const;
+    QQmlListProperty&amp;lt;WeatherData&amp;gt; forecast() const;
+
+public slots:
+    Q_INVOKABLE void refreshWeather();
+
+signals:
+    void readyChanged();
+    void useGpsChanged();
+    void cityChanged();
+    void weatherChanged();
+
+};
+</db:programlisting>
+<db:para>We use a <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> for the weather forecast information, which contains the next 4 days of forecast weather. This makes it easy to access from QML.</db:para>
+<db:para>To expose these to the QML UI layer, we use the <db:link xlink:href="qqmlengine.xml#qmlRegisterType-2">qmlRegisterType</db:link>() function. We call this once for each type we wish to register, before loading the actual QML file.</db:para>
+<db:programlisting language="cpp">#include &quot;appmodel.h&quot;
+
+int main(int argc, char *argv[])
+{
+    QLoggingCategory::setFilterRules(&quot;wapp.*.debug=false&quot;);
+    QGuiApplication application(argc, argv);
+
+    qmlRegisterType&amp;lt;WeatherData&amp;gt;(&quot;WeatherInfo&quot;, 1, 0, &quot;WeatherData&quot;);
+    qmlRegisterType&amp;lt;AppModel&amp;gt;(&quot;WeatherInfo&quot;, 1, 0, &quot;AppModel&quot;);
+
+    const QString mainQmlApp = QStringLiteral(&quot;qrc:///weatherinfo.qml&quot;);
+    QQuickView view;
+    view.setSource(QUrl(mainQmlApp));
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+
+    QObject::connect(view.engine(), SIGNAL(quit()), qApp, SLOT(quit()));
+    view.setGeometry(QRect(100, 100, 360, 640));
+    view.show();
+    return application.exec();
+}
+</db:programlisting>
+<db:para>Finally, in the actual QML, we instantiate the AppModel.</db:para>
+<db:programlisting language="qml">import WeatherInfo 1.0
+
+Item {
+    id: window
+    AppModel {
+        id: model
+        onReadyChanged: {
+            if (model.ready)
+                window.state = &quot;ready&quot;
+            else
+                window.state = &quot;loading&quot;
+        }
+    }
+}
+</db:programlisting>
+<db:para>Once instantiated like this, we can use its properties elsewhere in the QML document:</db:para>
+<db:programlisting language="qml">            BigForecastIcon {
+                id: current
+
+                width: main.width -12
+                height: 2 * (main.height - 25 - 12) / 3
+
+                weatherIcon: (model.hasValidWeather
+                          ? model.weather.weatherIcon
+                          : &quot;01d&quot;)
+            }
+</db:programlisting>
+</db:section>
+<db:section xml:id="files-and-attributions">
+<db:title>Files and Attributions</db:title>
+<db:para>The example bundles the following images from Third-Party sources:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="">Tango Icons</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Public Domain</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="">Tango Weather Icon Pack by Darkobra</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Public Domain</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/appmodel.cpp">weatherinfo/appmodel.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/appmodel.h">weatherinfo/appmodel.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/components/BigForecastIcon.qml">weatherinfo/components/BigForecastIcon.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/components/ForecastIcon.qml">weatherinfo/components/ForecastIcon.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/components/WeatherIcon.qml">weatherinfo/components/WeatherIcon.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/main.cpp">weatherinfo/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/weatherinfo.pro">weatherinfo/weatherinfo.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/weatherinfo.qml">weatherinfo/weatherinfo.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/weatherinfo.qrc">weatherinfo/weatherinfo.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-few-clouds.png">weatherinfo/icons/weather-few-clouds.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-fog.png">weatherinfo/icons/weather-fog.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-haze.png">weatherinfo/icons/weather-haze.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-icy.png">weatherinfo/icons/weather-icy.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-overcast.png">weatherinfo/icons/weather-overcast.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-showers.png">weatherinfo/icons/weather-showers.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-sleet.png">weatherinfo/icons/weather-sleet.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-snow.png">weatherinfo/icons/weather-snow.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-storm.png">weatherinfo/icons/weather-storm.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-sunny-very-few-clouds.png">weatherinfo/icons/weather-sunny-very-few-clouds.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-sunny.png">weatherinfo/icons/weather-sunny.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="weatherinfo/icons/weather-thundershower.png">weatherinfo/icons/weather-thundershower.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>CAN Bus example</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example sends and receives CAN bus frames.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 Andre Hartmann &amp;lt;aha_1980@gmx.de&amp;gt;
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtSerialBus module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;sendframebox.h&quot;
+#include &quot;ui_sendframebox.h&quot;
+
+enum {
+    MaxStandardId = 0x7FF,
+    MaxExtendedId = 0x10000000
+};
+
+enum {
+    MaxPayload = 8,
+    MaxPayloadFd = 64
+};
+
+HexIntegerValidator::HexIntegerValidator(QObject *parent) :
+    QValidator(parent),
+    m_maximum(MaxStandardId)
+{
+}
+
+QValidator::State HexIntegerValidator::validate(QString &amp;amp;input, int &amp;amp;) const
+{
+    bool ok;
+    uint value = input.toUInt(&amp;amp;ok, 16);
+
+    if (input.isEmpty())
+        return Intermediate;
+
+    if (!ok || value &amp;gt; m_maximum)
+        return Invalid;
+
+    return Acceptable;
+}
+
+void HexIntegerValidator::setMaximum(uint maximum)
+{
+    m_maximum = maximum;
+}
+
+HexStringValidator::HexStringValidator(QObject *parent) :
+    QValidator(parent),
+    m_maxLength(MaxPayload)
+{
+}
+
+QValidator::State HexStringValidator::validate(QString &amp;amp;input, int &amp;amp;pos) const
+{
+    const int maxSize = 2 * m_maxLength;
+    const QChar space = QLatin1Char(' ');
+    QString data = input;
+    data.remove(space);
+
+    if (data.isEmpty())
+        return Intermediate;
+
+    // limit maximum size and forbid trailing spaces
+    if ((data.size() &amp;gt; maxSize) || (data.size() == maxSize &amp;amp;&amp;amp; input.endsWith(space)))
+        return Invalid;
+
+    // check if all input is valid
+    const QRegularExpression re(QStringLiteral(&quot;^[[:xdigit:]]*$&quot;));
+    if (!re.match(data).hasMatch())
+        return Invalid;
+
+    // insert a space after every two hex nibbles
+    const QRegularExpression insertSpace(QStringLiteral(&quot;(?:[[:xdigit:]]{2} )*[[:xdigit:]]{3}&quot;));
+    if (insertSpace.match(input).hasMatch()) {
+        input.insert(input.size() - 1, space);
+        pos = input.size();
+    }
+
+    return Acceptable;
+}
+
+void HexStringValidator::setMaxLength(int maxLength)
+{
+    m_maxLength = maxLength;
+}
+
+SendFrameBox::SendFrameBox(QWidget *parent) :
+    QGroupBox(parent),
+    m_ui(new Ui::SendFrameBox)
+{
+    m_ui-&amp;gt;setupUi(this);
+
+    m_hexIntegerValidator = new HexIntegerValidator(this);
+    m_ui-&amp;gt;frameIdEdit-&amp;gt;setValidator(m_hexIntegerValidator);
+    m_hexStringValidator = new HexStringValidator(this);
+    m_ui-&amp;gt;payloadEdit-&amp;gt;setValidator(m_hexStringValidator);
+
+    connect(m_ui-&amp;gt;dataFrame, &amp;amp;QRadioButton::toggled, [this](bool set) {
+        if (set)
+            m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;setEnabled(true);
+    });
+
+    connect(m_ui-&amp;gt;remoteFrame, &amp;amp;QRadioButton::toggled, [this](bool set) {
+        if (set) {
+            m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;setEnabled(false);
+            m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;setChecked(false);
+        }
+    });
+
+    connect(m_ui-&amp;gt;errorFrame, &amp;amp;QRadioButton::toggled, [this](bool set) {
+        if (set) {
+            m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;setEnabled(false);
+            m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;setChecked(false);
+        }
+    });
+
+    connect(m_ui-&amp;gt;extendedFormatBox, &amp;amp;QCheckBox::toggled, [this](bool set) {
+        m_hexIntegerValidator-&amp;gt;setMaximum(set ? MaxExtendedId : MaxStandardId);
+    });
+
+    connect(m_ui-&amp;gt;flexibleDataRateBox, &amp;amp;QCheckBox::toggled, [this](bool set) {
+        m_hexStringValidator-&amp;gt;setMaxLength(set ? MaxPayloadFd : MaxPayload);
+        m_ui-&amp;gt;bitrateSwitchBox-&amp;gt;setEnabled(set);
+        if (!set)
+            m_ui-&amp;gt;bitrateSwitchBox-&amp;gt;setChecked(false);
+    });
+
+    auto frameIdTextChanged = [this]() {
+        const bool hasFrameId = !m_ui-&amp;gt;frameIdEdit-&amp;gt;text().isEmpty();
+        m_ui-&amp;gt;sendButton-&amp;gt;setEnabled(hasFrameId);
+        m_ui-&amp;gt;sendButton-&amp;gt;setToolTip(hasFrameId
+                                     ? QString() : tr(&quot;Cannot send because no Frame ID was given.&quot;));
+    };
+    connect(m_ui-&amp;gt;frameIdEdit, &amp;amp;QLineEdit::textChanged, frameIdTextChanged);
+    frameIdTextChanged();
+
+    connect(m_ui-&amp;gt;sendButton, &amp;amp;QPushButton::clicked, [this]() {
+        const uint frameId = m_ui-&amp;gt;frameIdEdit-&amp;gt;text().toUInt(nullptr, 16);
+        QString data = m_ui-&amp;gt;payloadEdit-&amp;gt;text();
+        const QByteArray payload = QByteArray::fromHex(data.remove(QLatin1Char(' ')).toLatin1());
+
+        QCanBusFrame frame = QCanBusFrame(frameId, payload);
+        frame.setExtendedFrameFormat(m_ui-&amp;gt;extendedFormatBox-&amp;gt;isChecked());
+        frame.setFlexibleDataRateFormat(m_ui-&amp;gt;flexibleDataRateBox-&amp;gt;isChecked());
+        frame.setBitrateSwitch(m_ui-&amp;gt;bitrateSwitchBox-&amp;gt;isChecked());
+
+        if (m_ui-&amp;gt;errorFrame-&amp;gt;isChecked())
+            frame.setFrameType(QCanBusFrame::ErrorFrame);
+        else if (m_ui-&amp;gt;remoteFrame-&amp;gt;isChecked())
+            frame.setFrameType(QCanBusFrame::RemoteRequestFrame);
+
+        emit sendFrame(frame);
+    });
+}
+
+SendFrameBox::~SendFrameBox()
+{
+    delete m_ui;
+}
+
+</db:programlisting>
+</db:article>

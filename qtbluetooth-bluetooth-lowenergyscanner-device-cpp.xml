@@ -1,0 +1,383 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Scanner Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An application designed to browse the content of Bluetooth Low Energy peripheral devices. The example demonstrates the use of all Qt Bluetooth Low Energy classes.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/***************************************************************************
+**
+** Copyright (C) 2013 BlackBerry Limited. All rights reserved.
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;device.h&quot;
+
+#include &amp;lt;qbluetoothaddress.h&amp;gt;
+#include &amp;lt;qbluetoothdevicediscoveryagent.h&amp;gt;
+#include &amp;lt;qbluetoothlocaldevice.h&amp;gt;
+#include &amp;lt;qbluetoothdeviceinfo.h&amp;gt;
+#include &amp;lt;qbluetoothservicediscoveryagent.h&amp;gt;
+#include &amp;lt;QDebug&amp;gt;
+#include &amp;lt;QList&amp;gt;
+#include &amp;lt;QMetaEnum&amp;gt;
+#include &amp;lt;QTimer&amp;gt;
+
+Device::Device()
+{
+    discoveryAgent = new QBluetoothDeviceDiscoveryAgent();
+    discoveryAgent-&amp;gt;setLowEnergyDiscoveryTimeout(5000);
+    connect(discoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
+            this, &amp;amp;Device::addDevice);
+    connect(discoveryAgent, QOverload&amp;lt;QBluetoothDeviceDiscoveryAgent::Error&amp;gt;::of(&amp;amp;QBluetoothDeviceDiscoveryAgent::error),
+            this, &amp;amp;Device::deviceScanError);
+    connect(discoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::finished, this, &amp;amp;Device::deviceScanFinished);
+
+    setUpdate(&quot;Search&quot;);
+}
+
+Device::~Device()
+{
+    delete discoveryAgent;
+    delete controller;
+    qDeleteAll(devices);
+    qDeleteAll(m_services);
+    qDeleteAll(m_characteristics);
+    devices.clear();
+    m_services.clear();
+    m_characteristics.clear();
+}
+
+void Device::startDeviceDiscovery()
+{
+    qDeleteAll(devices);
+    devices.clear();
+    emit devicesUpdated();
+
+    setUpdate(&quot;Scanning for devices ...&quot;);
+    discoveryAgent-&amp;gt;start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
+
+    if (discoveryAgent-&amp;gt;isActive()) {
+        m_deviceScanState = true;
+        Q_EMIT stateChanged();
+    }
+}
+
+void Device::addDevice(const QBluetoothDeviceInfo &amp;amp;info)
+{
+    if (info.coreConfigurations() &amp;amp; QBluetoothDeviceInfo::LowEnergyCoreConfiguration) {
+        auto d = new DeviceInfo(info);
+        devices.append(d);
+        setUpdate(&quot;Last device added: &quot; + d-&amp;gt;getName());
+    }
+}
+
+void Device::deviceScanFinished()
+{
+    emit devicesUpdated();
+    m_deviceScanState = false;
+    emit stateChanged();
+    if (devices.isEmpty())
+        setUpdate(&quot;No Low Energy devices found...&quot;);
+    else
+        setUpdate(&quot;Done! Scan Again!&quot;);
+}
+
+QVariant Device::getDevices()
+{
+    return QVariant::fromValue(devices);
+}
+
+QVariant Device::getServices()
+{
+    return QVariant::fromValue(m_services);
+}
+
+QVariant Device::getCharacteristics()
+{
+    return QVariant::fromValue(m_characteristics);
+}
+
+QString Device::getUpdate()
+{
+    return m_message;
+}
+
+void Device::scanServices(const QString &amp;amp;address)
+{
+    // We need the current device for service discovery.
+
+    for (auto d: qAsConst(devices)) {
+        auto device = qobject_cast&amp;lt;DeviceInfo *&amp;gt;(d);
+        if (!device)
+            continue;
+
+        if (device-&amp;gt;getAddress() == address )
+            currentDevice.setDevice(device-&amp;gt;getDevice());
+    }
+
+    if (!currentDevice.getDevice().isValid()) {
+        qWarning() &amp;lt;&amp;lt; &quot;Not a valid device&quot;;
+        return;
+    }
+
+    qDeleteAll(m_characteristics);
+    m_characteristics.clear();
+    emit characteristicsUpdated();
+    qDeleteAll(m_services);
+    m_services.clear();
+    emit servicesUpdated();
+
+    setUpdate(&quot;Back\n(Connecting to device...)&quot;);
+
+    if (controller &amp;amp;&amp;amp; m_previousAddress != currentDevice.getAddress()) {
+        controller-&amp;gt;disconnectFromDevice();
+        delete controller;
+        controller = nullptr;
+    }
+
+    if (!controller) {
+        // Connecting signals and slots for connecting to LE services.
+        controller = QLowEnergyController::createCentral(currentDevice.getDevice());
+        connect(controller, &amp;amp;QLowEnergyController::connected,
+                this, &amp;amp;Device::deviceConnected);
+        connect(controller, QOverload&amp;lt;QLowEnergyController::Error&amp;gt;::of(&amp;amp;QLowEnergyController::error),
+                this, &amp;amp;Device::errorReceived);
+        connect(controller, &amp;amp;QLowEnergyController::disconnected,
+                this, &amp;amp;Device::deviceDisconnected);
+        connect(controller, &amp;amp;QLowEnergyController::serviceDiscovered,
+                this, &amp;amp;Device::addLowEnergyService);
+        connect(controller, &amp;amp;QLowEnergyController::discoveryFinished,
+                this, &amp;amp;Device::serviceScanDone);
+    }
+
+    if (isRandomAddress())
+        controller-&amp;gt;setRemoteAddressType(QLowEnergyController::RandomAddress);
+    else
+        controller-&amp;gt;setRemoteAddressType(QLowEnergyController::PublicAddress);
+    controller-&amp;gt;connectToDevice();
+
+    m_previousAddress = currentDevice.getAddress();
+}
+
+void Device::addLowEnergyService(const QBluetoothUuid &amp;amp;serviceUuid)
+{
+    QLowEnergyService *service = controller-&amp;gt;createServiceObject(serviceUuid);
+    if (!service) {
+        qWarning() &amp;lt;&amp;lt; &quot;Cannot create service for uuid&quot;;
+        return;
+    }
+    auto serv = new ServiceInfo(service);
+    m_services.append(serv);
+
+    emit servicesUpdated();
+}
+
+void Device::serviceScanDone()
+{
+    setUpdate(&quot;Back\n(Service scan done!)&quot;);
+    // force UI in case we didn't find anything
+    if (m_services.isEmpty())
+        emit servicesUpdated();
+}
+
+void Device::connectToService(const QString &amp;amp;uuid)
+{
+    QLowEnergyService *service = nullptr;
+    for (auto s: qAsConst(m_services)) {
+        auto serviceInfo = qobject_cast&amp;lt;ServiceInfo *&amp;gt;(s);
+        if (!serviceInfo)
+            continue;
+
+        if (serviceInfo-&amp;gt;getUuid() == uuid) {
+            service = serviceInfo-&amp;gt;service();
+            break;
+        }
+    }
+
+    if (!service)
+        return;
+
+    qDeleteAll(m_characteristics);
+    m_characteristics.clear();
+    emit characteristicsUpdated();
+
+    if (service-&amp;gt;state() == QLowEnergyService::DiscoveryRequired) {
+        connect(service, &amp;amp;QLowEnergyService::stateChanged,
+                this, &amp;amp;Device::serviceDetailsDiscovered);
+        service-&amp;gt;discoverDetails();
+        setUpdate(&quot;Back\n(Discovering details...)&quot;);
+        return;
+    }
+
+    //discovery already done
+    const QList&amp;lt;QLowEnergyCharacteristic&amp;gt; chars = service-&amp;gt;characteristics();
+    for (const QLowEnergyCharacteristic &amp;amp;ch : chars) {
+        auto cInfo = new CharacteristicInfo(ch);
+        m_characteristics.append(cInfo);
+    }
+
+    QTimer::singleShot(0, this, &amp;amp;Device::characteristicsUpdated);
+}
+
+void Device::deviceConnected()
+{
+    setUpdate(&quot;Back\n(Discovering services...)&quot;);
+    connected = true;
+    controller-&amp;gt;discoverServices();
+}
+
+void Device::errorReceived(QLowEnergyController::Error /*error*/)
+{
+    qWarning() &amp;lt;&amp;lt; &quot;Error: &quot; &amp;lt;&amp;lt; controller-&amp;gt;errorString();
+    setUpdate(QString(&quot;Back\n(%1)&quot;).arg(controller-&amp;gt;errorString()));
+}
+
+void Device::setUpdate(const QString &amp;amp;message)
+{
+    m_message = message;
+    emit updateChanged();
+}
+
+void Device::disconnectFromDevice()
+{
+    // UI always expects disconnect() signal when calling this signal
+    // TODO what is really needed is to extend state() to a multi value
+    // and thus allowing UI to keep track of controller progress in addition to
+    // device scan progress
+
+    if (controller-&amp;gt;state() != QLowEnergyController::UnconnectedState)
+        controller-&amp;gt;disconnectFromDevice();
+    else
+        deviceDisconnected();
+}
+
+void Device::deviceDisconnected()
+{
+    qWarning() &amp;lt;&amp;lt; &quot;Disconnect from device&quot;;
+    emit disconnected();
+}
+
+void Device::serviceDetailsDiscovered(QLowEnergyService::ServiceState newState)
+{
+    if (newState != QLowEnergyService::ServiceDiscovered) {
+        // do not hang in &quot;Scanning for characteristics&quot; mode forever
+        // in case the service discovery failed
+        // We have to queue the signal up to give UI time to even enter
+        // the above mode
+        if (newState != QLowEnergyService::DiscoveringServices) {
+            QMetaObject::invokeMethod(this, &quot;characteristicsUpdated&quot;,
+                                      Qt::QueuedConnection);
+        }
+        return;
+    }
+
+    auto service = qobject_cast&amp;lt;QLowEnergyService *&amp;gt;(sender());
+    if (!service)
+        return;
+
+    const QList&amp;lt;QLowEnergyCharacteristic&amp;gt; chars = service-&amp;gt;characteristics();
+    for (const QLowEnergyCharacteristic &amp;amp;ch : chars) {
+        auto cInfo = new CharacteristicInfo(ch);
+        m_characteristics.append(cInfo);
+    }
+
+    emit characteristicsUpdated();
+}
+
+void Device::deviceScanError(QBluetoothDeviceDiscoveryAgent::Error error)
+{
+    if (error == QBluetoothDeviceDiscoveryAgent::PoweredOffError)
+        setUpdate(&quot;The Bluetooth adaptor is powered off, power it on before doing discovery.&quot;);
+    else if (error == QBluetoothDeviceDiscoveryAgent::InputOutputError)
+        setUpdate(&quot;Writing or reading from the device resulted in an error.&quot;);
+    else {
+        static QMetaEnum qme = discoveryAgent-&amp;gt;metaObject()-&amp;gt;enumerator(
+                    discoveryAgent-&amp;gt;metaObject()-&amp;gt;indexOfEnumerator(&quot;Error&quot;));
+        setUpdate(&quot;Error: &quot; + QLatin1String(qme.valueToKey(error)));
+    }
+
+    m_deviceScanState = false;
+    emit devicesUpdated();
+    emit stateChanged();
+}
+
+bool Device::state()
+{
+    return m_deviceScanState;
+}
+
+bool Device::hasControllerError() const
+{
+    return (controller &amp;amp;&amp;amp; controller-&amp;gt;error() != QLowEnergyController::NoError);
+}
+
+bool Device::isRandomAddress() const
+{
+    return randomAddress;
+}
+
+void Device::setRandomAddress(bool newValue)
+{
+    randomAddress = newValue;
+    emit randomAddressChanged();
+}
+
+</db:programlisting>
+</db:article>

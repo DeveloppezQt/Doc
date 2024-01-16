@@ -1,0 +1,547 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Simple Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple browser based on Qt WebEngine Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;browser.h&quot;
+#include &quot;browserwindow.h&quot;
+#include &quot;downloadmanagerwidget.h&quot;
+#include &quot;tabwidget.h&quot;
+#include &quot;webview.h&quot;
+#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QCloseEvent&amp;gt;
+#include &amp;lt;QDesktopWidget&amp;gt;
+#include &amp;lt;QEvent&amp;gt;
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QInputDialog&amp;gt;
+#include &amp;lt;QMenuBar&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QProgressBar&amp;gt;
+#include &amp;lt;QStatusBar&amp;gt;
+#include &amp;lt;QToolBar&amp;gt;
+#include &amp;lt;QVBoxLayout&amp;gt;
+#include &amp;lt;QWebEngineProfile&amp;gt;
+
+BrowserWindow::BrowserWindow(Browser *browser, QWebEngineProfile *profile, bool forDevTools)
+    : m_browser(browser)
+    , m_profile(profile)
+    , m_tabWidget(new TabWidget(profile, this))
+    , m_progressBar(nullptr)
+    , m_historyBackAction(nullptr)
+    , m_historyForwardAction(nullptr)
+    , m_stopAction(nullptr)
+    , m_reloadAction(nullptr)
+    , m_stopReloadAction(nullptr)
+    , m_urlLineEdit(nullptr)
+    , m_favAction(nullptr)
+{
+    setAttribute(Qt::WA_DeleteOnClose, true);
+    setFocusPolicy(Qt::ClickFocus);
+
+    if (!forDevTools) {
+        m_progressBar = new QProgressBar(this);
+
+        QToolBar *toolbar = createToolBar();
+        addToolBar(toolbar);
+        menuBar()-&amp;gt;addMenu(createFileMenu(m_tabWidget));
+        menuBar()-&amp;gt;addMenu(createEditMenu());
+        menuBar()-&amp;gt;addMenu(createViewMenu(toolbar));
+        menuBar()-&amp;gt;addMenu(createWindowMenu(m_tabWidget));
+        menuBar()-&amp;gt;addMenu(createHelpMenu());
+    }
+
+    QWidget *centralWidget = new QWidget(this);
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout-&amp;gt;setSpacing(0);
+    layout-&amp;gt;setMargin(0);
+    if (!forDevTools) {
+        addToolBarBreak();
+
+        m_progressBar-&amp;gt;setMaximumHeight(1);
+        m_progressBar-&amp;gt;setTextVisible(false);
+        m_progressBar-&amp;gt;setStyleSheet(QStringLiteral(&quot;QProgressBar {border: 0px} QProgressBar::chunk {background-color: #da4453}&quot;));
+
+        layout-&amp;gt;addWidget(m_progressBar);
+    }
+
+    layout-&amp;gt;addWidget(m_tabWidget);
+    centralWidget-&amp;gt;setLayout(layout);
+    setCentralWidget(centralWidget);
+
+    connect(m_tabWidget, &amp;amp;TabWidget::titleChanged, this, &amp;amp;BrowserWindow::handleWebViewTitleChanged);
+    if (!forDevTools) {
+        connect(m_tabWidget, &amp;amp;TabWidget::linkHovered, [this](const QString&amp;amp; url) {
+            statusBar()-&amp;gt;showMessage(url);
+        });
+        connect(m_tabWidget, &amp;amp;TabWidget::loadProgress, this, &amp;amp;BrowserWindow::handleWebViewLoadProgress);
+        connect(m_tabWidget, &amp;amp;TabWidget::webActionEnabledChanged, this, &amp;amp;BrowserWindow::handleWebActionEnabledChanged);
+        connect(m_tabWidget, &amp;amp;TabWidget::urlChanged, [this](const QUrl &amp;amp;url) {
+            m_urlLineEdit-&amp;gt;setText(url.toDisplayString());
+        });
+        connect(m_tabWidget, &amp;amp;TabWidget::favIconChanged, m_favAction, &amp;amp;QAction::setIcon);
+        connect(m_tabWidget, &amp;amp;TabWidget::devToolsRequested, this, &amp;amp;BrowserWindow::handleDevToolsRequested);
+        connect(m_urlLineEdit, &amp;amp;QLineEdit::returnPressed, [this]() {
+            m_tabWidget-&amp;gt;setUrl(QUrl::fromUserInput(m_urlLineEdit-&amp;gt;text()));
+        });
+
+        QAction *focusUrlLineEditAction = new QAction(this);
+        addAction(focusUrlLineEditAction);
+        focusUrlLineEditAction-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_L));
+        connect(focusUrlLineEditAction, &amp;amp;QAction::triggered, this, [this] () {
+            m_urlLineEdit-&amp;gt;setFocus(Qt::ShortcutFocusReason);
+        });
+    }
+
+    handleWebViewTitleChanged(QString());
+    m_tabWidget-&amp;gt;createTab();
+}
+
+QSize BrowserWindow::sizeHint() const
+{
+    QRect desktopRect = QApplication::desktop()-&amp;gt;screenGeometry();
+    QSize size = desktopRect.size() * qreal(0.9);
+    return size;
+}
+
+QMenu *BrowserWindow::createFileMenu(TabWidget *tabWidget)
+{
+    QMenu *fileMenu = new QMenu(tr(&quot;&amp;amp;File&quot;));
+    fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;New Window&quot;), this, &amp;amp;BrowserWindow::handleNewWindowTriggered, QKeySequence::New);
+    fileMenu-&amp;gt;addAction(tr(&quot;New &amp;amp;Incognito Window&quot;), this, &amp;amp;BrowserWindow::handleNewIncognitoWindowTriggered);
+
+    QAction *newTabAction = new QAction(tr(&quot;New &amp;amp;Tab&quot;), this);
+    newTabAction-&amp;gt;setShortcuts(QKeySequence::AddTab);
+    connect(newTabAction, &amp;amp;QAction::triggered, this, [this]() {
+        m_tabWidget-&amp;gt;createTab();
+        m_urlLineEdit-&amp;gt;setFocus();
+    });
+    fileMenu-&amp;gt;addAction(newTabAction);
+
+    fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Open File...&quot;), this, &amp;amp;BrowserWindow::handleFileOpenTriggered, QKeySequence::Open);
+    fileMenu-&amp;gt;addSeparator();
+
+    QAction *closeTabAction = new QAction(tr(&quot;&amp;amp;Close Tab&quot;), this);
+    closeTabAction-&amp;gt;setShortcuts(QKeySequence::Close);
+    connect(closeTabAction, &amp;amp;QAction::triggered, [tabWidget]() {
+        tabWidget-&amp;gt;closeTab(tabWidget-&amp;gt;currentIndex());
+    });
+    fileMenu-&amp;gt;addAction(closeTabAction);
+
+    QAction *closeAction = new QAction(tr(&quot;&amp;amp;Quit&quot;),this);
+    closeAction-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q));
+    connect(closeAction, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::close);
+    fileMenu-&amp;gt;addAction(closeAction);
+
+    connect(fileMenu, &amp;amp;QMenu::aboutToShow, [this, closeAction]() {
+        if (m_browser-&amp;gt;windows().count() == 1)
+            closeAction-&amp;gt;setText(tr(&quot;&amp;amp;Quit&quot;));
+        else
+            closeAction-&amp;gt;setText(tr(&quot;&amp;amp;Close Window&quot;));
+    });
+    return fileMenu;
+}
+
+QMenu *BrowserWindow::createEditMenu()
+{
+    QMenu *editMenu = new QMenu(tr(&quot;&amp;amp;Edit&quot;));
+    QAction *findAction = editMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Find&quot;));
+    findAction-&amp;gt;setShortcuts(QKeySequence::Find);
+    connect(findAction, &amp;amp;QAction::triggered, this, &amp;amp;BrowserWindow::handleFindActionTriggered);
+
+    QAction *findNextAction = editMenu-&amp;gt;addAction(tr(&quot;Find &amp;amp;Next&quot;));
+    findNextAction-&amp;gt;setShortcut(QKeySequence::FindNext);
+    connect(findNextAction, &amp;amp;QAction::triggered, [this]() {
+        if (!currentTab() || m_lastSearch.isEmpty())
+            return;
+        currentTab()-&amp;gt;findText(m_lastSearch);
+    });
+
+    QAction *findPreviousAction = editMenu-&amp;gt;addAction(tr(&quot;Find &amp;amp;Previous&quot;));
+    findPreviousAction-&amp;gt;setShortcut(QKeySequence::FindPrevious);
+    connect(findPreviousAction, &amp;amp;QAction::triggered, [this]() {
+        if (!currentTab() || m_lastSearch.isEmpty())
+            return;
+        currentTab()-&amp;gt;findText(m_lastSearch, QWebEnginePage::FindBackward);
+    });
+
+    return editMenu;
+}
+
+QMenu *BrowserWindow::createViewMenu(QToolBar *toolbar)
+{
+    QMenu *viewMenu = new QMenu(tr(&quot;&amp;amp;View&quot;));
+    m_stopAction = viewMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Stop&quot;));
+    QList&amp;lt;QKeySequence&amp;gt; shortcuts;
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_Period));
+    shortcuts.append(Qt::Key_Escape);
+    m_stopAction-&amp;gt;setShortcuts(shortcuts);
+    connect(m_stopAction, &amp;amp;QAction::triggered, [this]() {
+        m_tabWidget-&amp;gt;triggerWebPageAction(QWebEnginePage::Stop);
+    });
+
+    m_reloadAction = viewMenu-&amp;gt;addAction(tr(&quot;Reload Page&quot;));
+    m_reloadAction-&amp;gt;setShortcuts(QKeySequence::Refresh);
+    connect(m_reloadAction, &amp;amp;QAction::triggered, [this]() {
+        m_tabWidget-&amp;gt;triggerWebPageAction(QWebEnginePage::Reload);
+    });
+
+    QAction *zoomIn = viewMenu-&amp;gt;addAction(tr(&quot;Zoom &amp;amp;In&quot;));
+    zoomIn-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Plus));
+    connect(zoomIn, &amp;amp;QAction::triggered, [this]() {
+        if (currentTab())
+            currentTab()-&amp;gt;setZoomFactor(currentTab()-&amp;gt;zoomFactor() + 0.1);
+    });
+
+    QAction *zoomOut = viewMenu-&amp;gt;addAction(tr(&quot;Zoom &amp;amp;Out&quot;));
+    zoomOut-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Minus));
+    connect(zoomOut, &amp;amp;QAction::triggered, [this]() {
+        if (currentTab())
+            currentTab()-&amp;gt;setZoomFactor(currentTab()-&amp;gt;zoomFactor() - 0.1);
+    });
+
+    QAction *resetZoom = viewMenu-&amp;gt;addAction(tr(&quot;Reset &amp;amp;Zoom&quot;));
+    resetZoom-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_0));
+    connect(resetZoom, &amp;amp;QAction::triggered, [this]() {
+        if (currentTab())
+            currentTab()-&amp;gt;setZoomFactor(1.0);
+    });
+
+    viewMenu-&amp;gt;addSeparator();
+    QAction *viewToolbarAction = new QAction(tr(&quot;Hide Toolbar&quot;),this);
+    viewToolbarAction-&amp;gt;setShortcut(tr(&quot;Ctrl+|&quot;));
+    connect(viewToolbarAction, &amp;amp;QAction::triggered, [toolbar,viewToolbarAction]() {
+        if (toolbar-&amp;gt;isVisible()) {
+            viewToolbarAction-&amp;gt;setText(tr(&quot;Show Toolbar&quot;));
+            toolbar-&amp;gt;close();
+        } else {
+            viewToolbarAction-&amp;gt;setText(tr(&quot;Hide Toolbar&quot;));
+            toolbar-&amp;gt;show();
+        }
+    });
+    viewMenu-&amp;gt;addAction(viewToolbarAction);
+
+    QAction *viewStatusbarAction = new QAction(tr(&quot;Hide Status Bar&quot;), this);
+    viewStatusbarAction-&amp;gt;setShortcut(tr(&quot;Ctrl+/&quot;));
+    connect(viewStatusbarAction, &amp;amp;QAction::triggered, [this, viewStatusbarAction]() {
+        if (statusBar()-&amp;gt;isVisible()) {
+            viewStatusbarAction-&amp;gt;setText(tr(&quot;Show Status Bar&quot;));
+            statusBar()-&amp;gt;close();
+        } else {
+            viewStatusbarAction-&amp;gt;setText(tr(&quot;Hide Status Bar&quot;));
+            statusBar()-&amp;gt;show();
+        }
+    });
+    viewMenu-&amp;gt;addAction(viewStatusbarAction);
+    return viewMenu;
+}
+
+QMenu *BrowserWindow::createWindowMenu(TabWidget *tabWidget)
+{
+    QMenu *menu = new QMenu(tr(&quot;&amp;amp;Window&quot;));
+
+    QAction *nextTabAction = new QAction(tr(&quot;Show Next Tab&quot;), this);
+    QList&amp;lt;QKeySequence&amp;gt; shortcuts;
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_BraceRight));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_PageDown));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_BracketRight));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_Less));
+    nextTabAction-&amp;gt;setShortcuts(shortcuts);
+    connect(nextTabAction, &amp;amp;QAction::triggered, tabWidget, &amp;amp;TabWidget::nextTab);
+
+    QAction *previousTabAction = new QAction(tr(&quot;Show Previous Tab&quot;), this);
+    shortcuts.clear();
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_BraceLeft));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_PageUp));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_BracketLeft));
+    shortcuts.append(QKeySequence(Qt::CTRL | Qt::Key_Greater));
+    previousTabAction-&amp;gt;setShortcuts(shortcuts);
+    connect(previousTabAction, &amp;amp;QAction::triggered, tabWidget, &amp;amp;TabWidget::previousTab);
+
+    connect(menu, &amp;amp;QMenu::aboutToShow, [this, menu, nextTabAction, previousTabAction]() {
+        menu-&amp;gt;clear();
+        menu-&amp;gt;addAction(nextTabAction);
+        menu-&amp;gt;addAction(previousTabAction);
+        menu-&amp;gt;addSeparator();
+
+        QVector&amp;lt;BrowserWindow*&amp;gt; windows = m_browser-&amp;gt;windows();
+        int index(-1);
+        for (auto window : windows) {
+            QAction *action = menu-&amp;gt;addAction(window-&amp;gt;windowTitle(), this, &amp;amp;BrowserWindow::handleShowWindowTriggered);
+            action-&amp;gt;setData(++index);
+            action-&amp;gt;setCheckable(true);
+            if (window == this)
+                action-&amp;gt;setChecked(true);
+        }
+    });
+    return menu;
+}
+
+QMenu *BrowserWindow::createHelpMenu()
+{
+    QMenu *helpMenu = new QMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, QApplication::aboutQt);
+    return helpMenu;
+}
+
+QToolBar *BrowserWindow::createToolBar()
+{
+    QToolBar *navigationBar = new QToolBar(tr(&quot;Navigation&quot;));
+    navigationBar-&amp;gt;setMovable(false);
+    navigationBar-&amp;gt;toggleViewAction()-&amp;gt;setEnabled(false);
+
+    m_historyBackAction = new QAction(this);
+    QList&amp;lt;QKeySequence&amp;gt; backShortcuts = QKeySequence::keyBindings(QKeySequence::Back);
+    for (auto it = backShortcuts.begin(); it != backShortcuts.end();) {
+        // Chromium already handles navigate on backspace when appropriate.
+        if ((*it)[0] == Qt::Key_Backspace)
+            it = backShortcuts.erase(it);
+        else
+            ++it;
+    }
+    // For some reason Qt doesn't bind the dedicated Back key to Back.
+    backShortcuts.append(QKeySequence(Qt::Key_Back));
+    m_historyBackAction-&amp;gt;setShortcuts(backShortcuts);
+    m_historyBackAction-&amp;gt;setIconVisibleInMenu(false);
+    m_historyBackAction-&amp;gt;setIcon(QIcon(QStringLiteral(&quot;:go-previous.png&quot;)));
+    m_historyBackAction-&amp;gt;setToolTip(tr(&quot;Go back in history&quot;));
+    connect(m_historyBackAction, &amp;amp;QAction::triggered, [this]() {
+        m_tabWidget-&amp;gt;triggerWebPageAction(QWebEnginePage::Back);
+    });
+    navigationBar-&amp;gt;addAction(m_historyBackAction);
+
+    m_historyForwardAction = new QAction(this);
+    QList&amp;lt;QKeySequence&amp;gt; fwdShortcuts = QKeySequence::keyBindings(QKeySequence::Forward);
+    for (auto it = fwdShortcuts.begin(); it != fwdShortcuts.end();) {
+        if (((*it)[0] &amp;amp; Qt::Key_unknown) == Qt::Key_Backspace)
+            it = fwdShortcuts.erase(it);
+        else
+            ++it;
+    }
+    fwdShortcuts.append(QKeySequence(Qt::Key_Forward));
+    m_historyForwardAction-&amp;gt;setShortcuts(fwdShortcuts);
+    m_historyForwardAction-&amp;gt;setIconVisibleInMenu(false);
+    m_historyForwardAction-&amp;gt;setIcon(QIcon(QStringLiteral(&quot;:go-next.png&quot;)));
+    m_historyForwardAction-&amp;gt;setToolTip(tr(&quot;Go forward in history&quot;));
+    connect(m_historyForwardAction, &amp;amp;QAction::triggered, [this]() {
+        m_tabWidget-&amp;gt;triggerWebPageAction(QWebEnginePage::Forward);
+    });
+    navigationBar-&amp;gt;addAction(m_historyForwardAction);
+
+    m_stopReloadAction = new QAction(this);
+    connect(m_stopReloadAction, &amp;amp;QAction::triggered, [this]() {
+        m_tabWidget-&amp;gt;triggerWebPageAction(QWebEnginePage::WebAction(m_stopReloadAction-&amp;gt;data().toInt()));
+    });
+    navigationBar-&amp;gt;addAction(m_stopReloadAction);
+
+    m_urlLineEdit = new QLineEdit(this);
+    m_favAction = new QAction(this);
+    m_urlLineEdit-&amp;gt;addAction(m_favAction, QLineEdit::LeadingPosition);
+    m_urlLineEdit-&amp;gt;setClearButtonEnabled(true);
+    navigationBar-&amp;gt;addWidget(m_urlLineEdit);
+
+    auto downloadsAction = new QAction(this);
+    downloadsAction-&amp;gt;setIcon(QIcon(QStringLiteral(&quot;:go-bottom.png&quot;)));
+    downloadsAction-&amp;gt;setToolTip(tr(&quot;Show downloads&quot;));
+    navigationBar-&amp;gt;addAction(downloadsAction);
+    connect(downloadsAction, &amp;amp;QAction::triggered, [this]() {
+        m_browser-&amp;gt;downloadManagerWidget().show();
+    });
+
+    return navigationBar;
+}
+
+void BrowserWindow::handleWebActionEnabledChanged(QWebEnginePage::WebAction action, bool enabled)
+{
+    switch (action) {
+    case QWebEnginePage::Back:
+        m_historyBackAction-&amp;gt;setEnabled(enabled);
+        break;
+    case QWebEnginePage::Forward:
+        m_historyForwardAction-&amp;gt;setEnabled(enabled);
+        break;
+    case QWebEnginePage::Reload:
+        m_reloadAction-&amp;gt;setEnabled(enabled);
+        break;
+    case QWebEnginePage::Stop:
+        m_stopAction-&amp;gt;setEnabled(enabled);
+        break;
+    default:
+        qWarning(&quot;Unhandled webActionChanged signal&quot;);
+    }
+}
+
+void BrowserWindow::handleWebViewTitleChanged(const QString &amp;amp;title)
+{
+    QString suffix = m_profile-&amp;gt;isOffTheRecord()
+        ? tr(&quot;Qt Simple Browser (Incognito)&quot;)
+        : tr(&quot;Qt Simple Browser&quot;);
+
+    if (title.isEmpty())
+        setWindowTitle(suffix);
+    else
+        setWindowTitle(title + &quot; - &quot; + suffix);
+}
+
+void BrowserWindow::handleNewWindowTriggered()
+{
+    BrowserWindow *window = m_browser-&amp;gt;createWindow();
+    window-&amp;gt;m_urlLineEdit-&amp;gt;setFocus();
+}
+
+void BrowserWindow::handleNewIncognitoWindowTriggered()
+{
+    BrowserWindow *window = m_browser-&amp;gt;createWindow(/* offTheRecord: */ true);
+    window-&amp;gt;m_urlLineEdit-&amp;gt;setFocus();
+}
+
+void BrowserWindow::handleFileOpenTriggered()
+{
+    QUrl url = QFileDialog::getOpenFileUrl(this, tr(&quot;Open Web Resource&quot;), QString(),
+                                                tr(&quot;Web Resources (*.html *.htm *.svg *.png *.gif *.svgz);;All files (*.*)&quot;));
+    if (url.isEmpty())
+        return;
+    currentTab()-&amp;gt;setUrl(url);
+}
+
+void BrowserWindow::handleFindActionTriggered()
+{
+    if (!currentTab())
+        return;
+    bool ok = false;
+    QString search = QInputDialog::getText(this, tr(&quot;Find&quot;),
+                                           tr(&quot;Find:&quot;), QLineEdit::Normal,
+                                           m_lastSearch, &amp;amp;ok);
+    if (ok &amp;amp;&amp;amp; !search.isEmpty()) {
+        m_lastSearch = search;
+        currentTab()-&amp;gt;findText(m_lastSearch, 0, [this](bool found) {
+            if (!found)
+                statusBar()-&amp;gt;showMessage(tr(&quot;\&quot;%1\&quot; not found.&quot;).arg(m_lastSearch));
+        });
+    }
+}
+
+void BrowserWindow::closeEvent(QCloseEvent *event)
+{
+    if (m_tabWidget-&amp;gt;count() &amp;gt; 1) {
+        int ret = QMessageBox::warning(this, tr(&quot;Confirm close&quot;),
+                                       tr(&quot;Are you sure you want to close the window ?\n&quot;
+                                          &quot;There are %1 tabs open.&quot;).arg(m_tabWidget-&amp;gt;count()),
+                                       QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (ret == QMessageBox::No) {
+            event-&amp;gt;ignore();
+            return;
+        }
+    }
+    event-&amp;gt;accept();
+    deleteLater();
+}
+
+TabWidget *BrowserWindow::tabWidget() const
+{
+    return m_tabWidget;
+}
+
+WebView *BrowserWindow::currentTab() const
+{
+    return m_tabWidget-&amp;gt;currentWebView();
+}
+
+void BrowserWindow::handleWebViewLoadProgress(int progress)
+{
+    static QIcon stopIcon(QStringLiteral(&quot;:process-stop.png&quot;));
+    static QIcon reloadIcon(QStringLiteral(&quot;:view-refresh.png&quot;));
+
+    if (0 &amp;lt; progress &amp;amp;&amp;amp; progress &amp;lt; 100) {
+        m_stopReloadAction-&amp;gt;setData(QWebEnginePage::Stop);
+        m_stopReloadAction-&amp;gt;setIcon(stopIcon);
+        m_stopReloadAction-&amp;gt;setToolTip(tr(&quot;Stop loading the current page&quot;));
+        m_progressBar-&amp;gt;setValue(progress);
+    } else {
+        m_stopReloadAction-&amp;gt;setData(QWebEnginePage::Reload);
+        m_stopReloadAction-&amp;gt;setIcon(reloadIcon);
+        m_stopReloadAction-&amp;gt;setToolTip(tr(&quot;Reload the current page&quot;));
+        m_progressBar-&amp;gt;setValue(0);
+    }
+}
+
+void BrowserWindow::handleShowWindowTriggered()
+{
+    if (QAction *action = qobject_cast&amp;lt;QAction*&amp;gt;(sender())) {
+        int offset = action-&amp;gt;data().toInt();
+        QVector&amp;lt;BrowserWindow*&amp;gt; windows = m_browser-&amp;gt;windows();
+        windows.at(offset)-&amp;gt;activateWindow();
+        windows.at(offset)-&amp;gt;currentTab()-&amp;gt;setFocus();
+    }
+}
+
+void BrowserWindow::handleDevToolsRequested(QWebEnginePage *source)
+{
+    source-&amp;gt;setDevToolsPage(m_browser-&amp;gt;createDevToolsWindow()-&amp;gt;currentTab()-&amp;gt;page());
+    source-&amp;gt;triggerAction(QWebEnginePage::InspectElement);
+}
+
+</db:programlisting>
+</db:article>

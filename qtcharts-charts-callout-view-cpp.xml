@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Callout Example</db:title>
+<db:productname>QtCharts</db:productname>
+<db:edition>Qt Charts | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Charts Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows how to draw an additional element (a callout) on top of the chart.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Charts module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;view.h&quot;
+#include &amp;lt;QtGui/QResizeEvent&amp;gt;
+#include &amp;lt;QtWidgets/QGraphicsScene&amp;gt;
+#include &amp;lt;QtCharts/QChart&amp;gt;
+#include &amp;lt;QtCharts/QLineSeries&amp;gt;
+#include &amp;lt;QtCharts/QSplineSeries&amp;gt;
+#include &amp;lt;QtWidgets/QGraphicsTextItem&amp;gt;
+#include &quot;callout.h&quot;
+#include &amp;lt;QtGui/QMouseEvent&amp;gt;
+
+View::View(QWidget *parent)
+    : QGraphicsView(new QGraphicsScene, parent),
+      m_coordX(0),
+      m_coordY(0),
+      m_chart(0),
+      m_tooltip(0)
+{
+    setDragMode(QGraphicsView::NoDrag);
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    // chart
+    m_chart = new QChart;
+    m_chart-&amp;gt;setMinimumSize(640, 480);
+    m_chart-&amp;gt;setTitle(&quot;Hover the line to show callout. Click the line to make it stay&quot;);
+    m_chart-&amp;gt;legend()-&amp;gt;hide();
+    QLineSeries *series = new QLineSeries;
+    series-&amp;gt;append(1, 3);
+    series-&amp;gt;append(4, 5);
+    series-&amp;gt;append(5, 4.5);
+    series-&amp;gt;append(7, 1);
+    series-&amp;gt;append(11, 2);
+    m_chart-&amp;gt;addSeries(series);
+
+    QSplineSeries *series2 = new QSplineSeries;
+    series2-&amp;gt;append(1.6, 1.4);
+    series2-&amp;gt;append(2.4, 3.5);
+    series2-&amp;gt;append(3.7, 2.5);
+    series2-&amp;gt;append(7, 4);
+    series2-&amp;gt;append(10, 2);
+    m_chart-&amp;gt;addSeries(series2);
+
+    m_chart-&amp;gt;createDefaultAxes();
+    m_chart-&amp;gt;setAcceptHoverEvents(true);
+
+    setRenderHint(QPainter::Antialiasing);
+    scene()-&amp;gt;addItem(m_chart);
+
+    m_coordX = new QGraphicsSimpleTextItem(m_chart);
+    m_coordX-&amp;gt;setPos(m_chart-&amp;gt;size().width()/2 - 50, m_chart-&amp;gt;size().height());
+    m_coordX-&amp;gt;setText(&quot;X: &quot;);
+    m_coordY = new QGraphicsSimpleTextItem(m_chart);
+    m_coordY-&amp;gt;setPos(m_chart-&amp;gt;size().width()/2 + 50, m_chart-&amp;gt;size().height());
+    m_coordY-&amp;gt;setText(&quot;Y: &quot;);
+
+    connect(series, &amp;amp;QLineSeries::clicked, this, &amp;amp;View::keepCallout);
+    connect(series, &amp;amp;QLineSeries::hovered, this, &amp;amp;View::tooltip);
+
+    connect(series2, &amp;amp;QSplineSeries::clicked, this, &amp;amp;View::keepCallout);
+    connect(series2, &amp;amp;QSplineSeries::hovered, this, &amp;amp;View::tooltip);
+
+    this-&amp;gt;setMouseTracking(true);
+}
+
+void View::resizeEvent(QResizeEvent *event)
+{
+    if (scene()) {
+        scene()-&amp;gt;setSceneRect(QRect(QPoint(0, 0), event-&amp;gt;size()));
+         m_chart-&amp;gt;resize(event-&amp;gt;size());
+         m_coordX-&amp;gt;setPos(m_chart-&amp;gt;size().width()/2 - 50, m_chart-&amp;gt;size().height() - 20);
+         m_coordY-&amp;gt;setPos(m_chart-&amp;gt;size().width()/2 + 50, m_chart-&amp;gt;size().height() - 20);
+         const auto callouts = m_callouts;
+         for (Callout *callout : callouts)
+             callout-&amp;gt;updateGeometry();
+    }
+    QGraphicsView::resizeEvent(event);
+}
+
+void View::mouseMoveEvent(QMouseEvent *event)
+{
+    m_coordX-&amp;gt;setText(QString(&quot;X: %1&quot;).arg(m_chart-&amp;gt;mapToValue(event-&amp;gt;pos()).x()));
+    m_coordY-&amp;gt;setText(QString(&quot;Y: %1&quot;).arg(m_chart-&amp;gt;mapToValue(event-&amp;gt;pos()).y()));
+    QGraphicsView::mouseMoveEvent(event);
+}
+
+void View::keepCallout()
+{
+    m_callouts.append(m_tooltip);
+    m_tooltip = new Callout(m_chart);
+}
+
+void View::tooltip(QPointF point, bool state)
+{
+    if (m_tooltip == 0)
+        m_tooltip = new Callout(m_chart);
+
+    if (state) {
+        m_tooltip-&amp;gt;setText(QString(&quot;X: %1 \nY: %2 &quot;).arg(point.x()).arg(point.y()));
+        m_tooltip-&amp;gt;setAnchor(point);
+        m_tooltip-&amp;gt;setZValue(11);
+        m_tooltip-&amp;gt;updateGeometry();
+        m_tooltip-&amp;gt;show();
+    } else {
+        m_tooltip-&amp;gt;hide();
+    }
+}
+
+</db:programlisting>
+</db:article>

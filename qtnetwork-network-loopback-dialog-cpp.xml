@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Loopback Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates the client-server communication on a local host.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;dialog.h&quot;
+
+#include &amp;lt;QtNetwork&amp;gt;
+#include &amp;lt;QtWidgets&amp;gt;
+
+static const int TotalBytes = 50 * 1024 * 1024;
+static const int PayloadSize = 64 * 1024; // 64 KB
+
+Dialog::Dialog(QWidget *parent)
+    : QDialog(parent)
+{
+    clientProgressBar = new QProgressBar;
+    clientStatusLabel = new QLabel(tr(&quot;Client ready&quot;));
+    serverProgressBar = new QProgressBar;
+    serverStatusLabel = new QLabel(tr(&quot;Server ready&quot;));
+
+    startButton = new QPushButton(tr(&quot;&amp;amp;Start&quot;));
+    quitButton = new QPushButton(tr(&quot;&amp;amp;Quit&quot;));
+
+    buttonBox = new QDialogButtonBox;
+    buttonBox-&amp;gt;addButton(startButton, QDialogButtonBox::ActionRole);
+    buttonBox-&amp;gt;addButton(quitButton, QDialogButtonBox::RejectRole);
+
+    connect(startButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;Dialog::start);
+    connect(quitButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;QWidget::close);
+    connect(&amp;amp;tcpServer, &amp;amp;QTcpServer::newConnection,
+            this, &amp;amp;Dialog::acceptConnection);
+    connect(&amp;amp;tcpClient, &amp;amp;QAbstractSocket::connected, this, &amp;amp;Dialog::startTransfer);
+    connect(&amp;amp;tcpClient, &amp;amp;QIODevice::bytesWritten,
+            this, &amp;amp;Dialog::updateClientProgress);
+    connect(&amp;amp;tcpClient, QOverload&amp;lt;QAbstractSocket::SocketError&amp;gt;::of(&amp;amp;QAbstractSocket::error),
+            this, &amp;amp;Dialog::displayError);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addWidget(clientProgressBar);
+    mainLayout-&amp;gt;addWidget(clientStatusLabel);
+    mainLayout-&amp;gt;addWidget(serverProgressBar);
+    mainLayout-&amp;gt;addWidget(serverStatusLabel);
+    mainLayout-&amp;gt;addStretch(1);
+    mainLayout-&amp;gt;addSpacing(10);
+    mainLayout-&amp;gt;addWidget(buttonBox);
+    setLayout(mainLayout);
+
+    setWindowTitle(tr(&quot;Loopback&quot;));
+}
+
+void Dialog::start()
+{
+    startButton-&amp;gt;setEnabled(false);
+
+#ifndef QT_NO_CURSOR
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+#endif
+
+    bytesWritten = 0;
+    bytesReceived = 0;
+
+    while (!tcpServer.isListening() &amp;amp;&amp;amp; !tcpServer.listen()) {
+        QMessageBox::StandardButton ret = QMessageBox::critical(this,
+                                        tr(&quot;Loopback&quot;),
+                                        tr(&quot;Unable to start the test: %1.&quot;)
+                                        .arg(tcpServer.errorString()),
+                                        QMessageBox::Retry
+                                        | QMessageBox::Cancel);
+        if (ret == QMessageBox::Cancel)
+            return;
+    }
+
+    serverStatusLabel-&amp;gt;setText(tr(&quot;Listening&quot;));
+    clientStatusLabel-&amp;gt;setText(tr(&quot;Connecting&quot;));
+    tcpClient.connectToHost(QHostAddress::LocalHost, tcpServer.serverPort());
+}
+
+void Dialog::acceptConnection()
+{
+    tcpServerConnection = tcpServer.nextPendingConnection();
+    if (!tcpServerConnection) {
+        serverStatusLabel-&amp;gt;setText(tr(&quot;Error: got invalid pending connection!&quot;));
+        return;
+    }
+
+    connect(tcpServerConnection, &amp;amp;QIODevice::readyRead,
+            this, &amp;amp;Dialog::updateServerProgress);
+    connect(tcpServerConnection,
+            QOverload&amp;lt;QAbstractSocket::SocketError&amp;gt;::of(&amp;amp;QAbstractSocket::error),
+            this, &amp;amp;Dialog::displayError);
+    connect(tcpServerConnection, &amp;amp;QTcpSocket::disconnected,
+            tcpServerConnection, &amp;amp;QTcpSocket::deleteLater);
+
+    serverStatusLabel-&amp;gt;setText(tr(&quot;Accepted connection&quot;));
+    tcpServer.close();
+}
+
+void Dialog::startTransfer()
+{
+    // called when the TCP client connected to the loopback server
+    bytesToWrite = TotalBytes - int(tcpClient.write(QByteArray(PayloadSize, '@')));
+    clientStatusLabel-&amp;gt;setText(tr(&quot;Connected&quot;));
+}
+
+void Dialog::updateServerProgress()
+{
+    bytesReceived += int(tcpServerConnection-&amp;gt;bytesAvailable());
+    tcpServerConnection-&amp;gt;readAll();
+
+    serverProgressBar-&amp;gt;setMaximum(TotalBytes);
+    serverProgressBar-&amp;gt;setValue(bytesReceived);
+    serverStatusLabel-&amp;gt;setText(tr(&quot;Received %1MB&quot;)
+                               .arg(bytesReceived / (1024 * 1024)));
+
+    if (bytesReceived == TotalBytes) {
+        tcpServerConnection-&amp;gt;close();
+        startButton-&amp;gt;setEnabled(true);
+#ifndef QT_NO_CURSOR
+        QApplication::restoreOverrideCursor();
+#endif
+    }
+}
+
+void Dialog::updateClientProgress(qint64 numBytes)
+{
+    // called when the TCP client has written some bytes
+    bytesWritten += int(numBytes);
+
+    // only write more if not finished and when the Qt write buffer is below a certain size.
+    if (bytesToWrite &amp;gt; 0 &amp;amp;&amp;amp; tcpClient.bytesToWrite() &amp;lt;= 4 * PayloadSize)
+        bytesToWrite -= tcpClient.write(QByteArray(qMin(bytesToWrite, PayloadSize), '@'));
+
+    clientProgressBar-&amp;gt;setMaximum(TotalBytes);
+    clientProgressBar-&amp;gt;setValue(bytesWritten);
+    clientStatusLabel-&amp;gt;setText(tr(&quot;Sent %1MB&quot;).arg(bytesWritten / (1024 * 1024)));
+}
+
+void Dialog::displayError(QAbstractSocket::SocketError socketError)
+{
+    if (socketError == QTcpSocket::RemoteHostClosedError)
+        return;
+
+    QMessageBox::information(this, tr(&quot;Network error&quot;),
+                             tr(&quot;The following error occurred: %1.&quot;)
+                             .arg(tcpClient.errorString()));
+
+    tcpClient.close();
+    tcpServer.close();
+    clientProgressBar-&amp;gt;reset();
+    serverProgressBar-&amp;gt;reset();
+    clientStatusLabel-&amp;gt;setText(tr(&quot;Client ready&quot;));
+    serverStatusLabel-&amp;gt;setText(tr(&quot;Server ready&quot;));
+    startButton-&amp;gt;setEnabled(true);
+#ifndef QT_NO_CURSOR
+    QApplication::restoreOverrideCursor();
+#endif
+}
+
+</db:programlisting>
+</db:article>

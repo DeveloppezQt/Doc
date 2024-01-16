@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt 3D: Planets QML Example</db:title>
+<db:productname>Qt3D</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates combining Qt 3D rendering and Qt Quick 2 elements.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/planets-qml-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Planets</db:emphasis> demonstrates how to implement an application that combines the use of Qt 3D rendering with Qt Quick 2D elements. The example shows the eight planets of our Solar System with the Sun.</db:para>
+<db:para>Planet texture maps are Copyright (c) by James Hastings-Trew <db:link xlink:href="http://planetpixelemporium.com/planets.html">http://planetpixelemporium.com/planets.html</db:link> used with permission.</db:para>
+<db:para>The planets are rotating around the Sun based on their orbit at a given time. The rotation starts at 2000 Jan 0.0 UT. The planet positions are calculated based on the formulas found here: <db:link xlink:href="http://www.stjarnhimlen.se/comp/ppcomp.html">http://www.stjarnhimlen.se/comp/ppcomp.html</db:link> and <db:link xlink:href="http://www.davidcolarusso.com/astro/">http://www.davidcolarusso.com/astro/</db:link>.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="qt-quick-2d-implementation">
+<db:title>Qt Quick 2D Implementation</db:title>
+<db:para>The Qt Quick Implementation <db:link xlink:href="">PlanetsMain.qml</db:link> of the example renders the 3D content using the <db:code>Scene3D</db:code> type.</db:para>
+<db:programlisting language="qml">Scene3D {
+    anchors.fill: parent
+    aspects: [&quot;render&quot;, &quot;logic&quot;, &quot;input&quot;]
+
+    SolarSystem { id: solarsystem }
+}
+</db:programlisting>
+<db:para>The planet related information is stored into a <db:code>ListModel</db:code>. The selection buttons for the planets and the information sheet are created based on the model. The 2D elements, selection buttons and sliders, are implemented in the <db:link xlink:href="">PlanetsMain.qml</db:link>.</db:para>
+<db:para>The selection buttons change the <db:code>focusedPlanet</db:code> property of the <db:code>mainview</db:code>. As the property changes, the planet information is updated, and the camera is animated to the new position.</db:para>
+<db:programlisting language="qml">onFocusedPlanetChanged: {
+    if (focusedPlanet == 100) {
+        info.opacity = 0
+        updatePlanetInfo()
+    } else {
+        updatePlanetInfo()
+        info.opacity = 1
+    }
+
+    solarsystem.changePlanetFocus(oldPlanet, focusedPlanet)
+    oldPlanet = focusedPlanet
+}
+</db:programlisting>
+<db:para>The camera position and the camera look at point are updated based on values that are animated in the <db:link xlink:href="">SolarSystem.qml</db:link>, triggered from the <db:code>changePlanetFocus()</db:code> function.</db:para>
+<db:programlisting language="qml">QQ2.NumberAnimation {
+    id: lookAtOffsetAnimation
+    target: sceneRoot
+    properties: &quot;xLookAtOffset, yLookAtOffset, zLookAtOffset&quot;
+    to: 0
+    easing.type: Easing.InOutQuint
+    duration: 1250
+}
+
+QQ2.NumberAnimation {
+    id: cameraOffsetAnimation
+    target: sceneRoot
+    properties: &quot;xCameraOffset, yCameraOffset, zCameraOffset&quot;
+    to: 0
+    easing.type: Easing.InOutQuint
+    duration: 2500
+}
+</db:programlisting>
+<db:para>The sliders are used to adjust the rotation speed, the planet size, and the viewing distance. When a slider value changes, a JavaScript function in <db:link xlink:href="">SolarSystem.qml</db:link> is called to adjust the given property. For example, changing the value of the <db:emphasis>Viewing Distance</db:emphasis> slider calls the <db:code>changeCameraDistance()</db:code> method.</db:para>
+<db:programlisting language="qml">onValueChanged: solarsystem.changeCameraDistance(value)
+</db:programlisting>
+</db:section>
+<db:section xml:id="qt-3d-implementation">
+<db:title>Qt 3D Implementation</db:title>
+<db:para>The main part of the implementation, including the movement and rotation maths for the planets, is done in the <db:link xlink:href="">SolarSystem.qml</db:link>.</db:para>
+<db:para>First, a <db:code>Camera</db:code>, a <db:code>Light</db:code>, and a <db:code>Configuration</db:code> are added, followed by <db:code>Effect</db:code>s for the planet <db:code>Material</db:code>s, and finally the planets themselves. For example, Earth is constructed as follows:</db:para>
+<db:programlisting language="qml">Entity {
+    id: earthEntity
+
+    Planet {
+        id: earth
+        tilt: planetData[Planets.EARTH].tilt
+    }
+
+    PlanetMaterial {
+        id: materialEarth
+        effect: effectDSB
+        ambientLight: ambientStrengthPlanet
+        diffuseMap: &quot;qrc:/images/solarsystemscope/earthmap2k.jpg&quot;
+        specularMap: &quot;qrc:/images/solarsystemscope/earthspec2k.jpg&quot;
+        normalMap: &quot;qrc:/images/solarsystemscope/earthnormal2k.jpg&quot;
+        shininess: shininessSpecularMap
+    }
+
+    property Transform transformEarth: Transform {
+        matrix: {
+            var m = Qt.matrix4x4()
+            m.translate(Qt.vector3d(earth.x, earth.y, earth.z))
+            m.rotate(earth.tilt, tiltAxis)
+            m.rotate(earth.roll, rollAxis)
+            m.scale(earth.r)
+            return m
+        }
+    }
+
+    components: [ earth, materialEarth, transformEarth ]
+}
+</db:programlisting>
+<db:para>Planet data, which is needed for the movement and rotation calculations, among other things, is constructed with JavaScript in <db:link xlink:href="">planets.js</db:link> by calling <db:code>loadPlanetData()</db:code> as the component completes. Other initializations, such as inserting the planets into an array for easier handling, calculating the ring radii for Saturn and Uranus rings, and setting the default scale, speed, and camera offset, are done as well:</db:para>
+<db:programlisting language="qml">QQ2.Component.onCompleted: {
+    planetData = Planets.loadPlanetData()
+    // Push in the correct order
+    planets.push(sun)
+    planets.push(mercury)
+    planets.push(venus)
+    planets.push(earth)
+    planets.push(mars)
+    planets.push(jupiter)
+    planets.push(saturn)
+    planets.push(uranus)
+    planets.push(neptune)
+    planets.push(moon)
+    // TODO: Once support for creating meshes from arrays is implemented take these into use
+    //saturnRing.makeRing()
+    //uranusRing.makeRing()
+    saturnRingOuterRadius = planetData[Planets.SATURN].radius + Planets.saturnOuterRadius
+    saturnRingInnerRadius = planetData[Planets.SATURN].radius + 6.630
+    uranusRingOuterRadius = planetData[Planets.URANUS].radius + Planets.uranusOuterRadius
+    uranusRingInnerRadius = planetData[Planets.URANUS].radius + 2
+    ready = true
+    changeScale(1200)
+    changeSpeed(0.2)
+    setLookAtOffset(Planets.SUN)
+}
+</db:programlisting>
+<db:para>The scene is animated by calling the <db:code>animate()</db:code> function. That is also the place where the time is advanced, and the new positions for all of the planets are calculated. The planets are rotated in the <db:code>positionPlanet()</db:code> function based on their axial tilt and their sidereal rotation period. Finally, the new camera position is calculated in the <db:code>updateCamera()</db:code> function.</db:para>
+<db:programlisting language="qml">function animate(focusedPlanet) {
+    if (!ready)
+        return
+
+    advanceTime(focusedPlanet)
+    for (var i = 0; i &amp;lt;= Planets.NUM_SELECTABLE_PLANETS; i++)
+        positionPlanet(i)
+
+    updateCamera(focusedPlanet)
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/AppleTVInput.qml">planets-qml/AppleTVInput.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/FpsDisplay.qml">planets-qml/FpsDisplay.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/InfoSheet.qml">planets-qml/InfoSheet.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/Planet.qml">planets-qml/Planet.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetButton.qml">planets-qml/PlanetButton.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetEffect.qml">planets-qml/PlanetEffect.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetFrameGraph.qml">planets-qml/PlanetFrameGraph.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetMaterial.qml">planets-qml/PlanetMaterial.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetsLight.qml">planets-qml/PlanetsLight.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/PlanetsMain.qml">planets-qml/PlanetsMain.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/Ring.qml">planets-qml/Ring.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/ShadowEffect.qml">planets-qml/ShadowEffect.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/SolarSystem.qml">planets-qml/SolarSystem.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/StyledSlider.qml">planets-qml/StyledSlider.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/SunEffect.qml">planets-qml/SunEffect.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/android/AndroidManifest.xml">planets-qml/android/AndroidManifest.xml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/main.cpp">planets-qml/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/networkcontroller.cpp">planets-qml/networkcontroller.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/networkcontroller.h">planets-qml/networkcontroller.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-qml-images.qrc">planets-qml/planets-qml-images.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-qml.pro">planets-qml/planets-qml.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-qml.qrc">planets-qml/planets-qml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient WatchKit Extension/ExtensionDelegate.h">planets-qml/planets-watchos/PlanetsClient WatchKit Extension/ExtensionDelegate.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient WatchKit Extension/InterfaceController.h">planets-qml/planets-watchos/PlanetsClient WatchKit Extension/InterfaceController.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient/AppDelegate.h">planets-qml/planets-watchos/PlanetsClient/AppDelegate.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient/ViewController.h">planets-qml/planets-watchos/PlanetsClient/ViewController.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets.js">planets-qml/planets.js</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/es2/planetD.vert">planets-qml/shaders/es2/planetD.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/es2/planetDB.vert">planets-qml/shaders/es2/planetDB.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/es2/sun.vert">planets-qml/shaders/es2/sun.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/gl3/planetD.vert">planets-qml/shaders/gl3/planetD.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/gl3/planetDB.vert">planets-qml/shaders/gl3/planetDB.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/gl3/planetDShadow.vert">planets-qml/shaders/gl3/planetDShadow.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/gl3/shadowmap.vert">planets-qml/shaders/gl3/shadowmap.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/shaders/gl3/sun.vert">planets-qml/shaders/gl3/sun.vert</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/android/res/drawable-hdpi/icon.png">planets-qml/android/res/drawable-hdpi/icon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/android/res/drawable-ldpi/icon.png">planets-qml/android/res/drawable-ldpi/icon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/android/res/drawable-mdpi/icon.png">planets-qml/android/res/drawable-mdpi/icon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/earth.png">planets-qml/images/earth.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/jupiter.png">planets-qml/images/jupiter.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/mars.png">planets-qml/images/mars.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/mercury.png">planets-qml/images/mercury.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/nasa/uranusringcolortrans.png">planets-qml/images/nasa/uranusringcolortrans.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/neptune.png">planets-qml/images/neptune.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/saturn.png">planets-qml/images/saturn.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/earthcloudmapcolortrans.png">planets-qml/images/solarsystemscope/earthcloudmapcolortrans.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/earthcloudmapspec.jpg">planets-qml/images/solarsystemscope/earthcloudmapspec.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/earthmap2k.jpg">planets-qml/images/solarsystemscope/earthmap2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/earthnormal2k.jpg">planets-qml/images/solarsystemscope/earthnormal2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/earthspec2k.jpg">planets-qml/images/solarsystemscope/earthspec2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/galaxy_starfield.jpg">planets-qml/images/solarsystemscope/galaxy_starfield.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/jupitermap.jpg">planets-qml/images/solarsystemscope/jupitermap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/marsmap2k.jpg">planets-qml/images/solarsystemscope/marsmap2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/marsnormal2k.jpg">planets-qml/images/solarsystemscope/marsnormal2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/mercurymap.jpg">planets-qml/images/solarsystemscope/mercurymap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/mercurynormal.jpg">planets-qml/images/solarsystemscope/mercurynormal.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/moonmap2k.jpg">planets-qml/images/solarsystemscope/moonmap2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/moonnormal2k.jpg">planets-qml/images/solarsystemscope/moonnormal2k.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/neptunemap.jpg">planets-qml/images/solarsystemscope/neptunemap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/saturnmap.jpg">planets-qml/images/solarsystemscope/saturnmap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/saturnringcolortrans.png">planets-qml/images/solarsystemscope/saturnringcolortrans.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/sunmap.jpg">planets-qml/images/solarsystemscope/sunmap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/uranusmap.jpg">planets-qml/images/solarsystemscope/uranusmap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/venusmap.jpg">planets-qml/images/solarsystemscope/venusmap.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/solarsystemscope/venusnormal.jpg">planets-qml/images/solarsystemscope/venusnormal.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/sun.png">planets-qml/images/sun.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/uranus.png">planets-qml/images/uranus.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/images/venus.png">planets-qml/images/venus.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient WatchKit App/Assets.xcassets/AppIcon.appiconset/home_icon.png">planets-qml/planets-watchos/PlanetsClient WatchKit App/Assets.xcassets/AppIcon.appiconset/home_icon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient/Assets.xcassets/AppIcon.appiconset/icon120.png">planets-qml/planets-watchos/PlanetsClient/Assets.xcassets/AppIcon.appiconset/icon120.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="planets-qml/planets-watchos/PlanetsClient/Assets.xcassets/AppIcon.appiconset/icon180.png">planets-qml/planets-watchos/PlanetsClient/Assets.xcassets/AppIcon.appiconset/icon180.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

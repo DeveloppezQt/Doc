@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Secure Socket Client Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to communicate over an encrypted (SSL) connection.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;certificateinfo.h&quot;
+#include &quot;sslclient.h&quot;
+
+#include &quot;ui_sslclient.h&quot;
+#include &quot;ui_sslerrors.h&quot;
+
+#include &amp;lt;QtCore&amp;gt;
+
+SslClient::SslClient(QWidget *parent)
+    : QWidget(parent)
+{
+    setupUi();
+    setupSecureSocket();
+}
+
+SslClient::~SslClient()
+{
+    delete form;
+}
+
+void SslClient::updateEnabledState()
+{
+    const bool unconnected = socket-&amp;gt;state() == QAbstractSocket::UnconnectedState;
+    form-&amp;gt;hostNameEdit-&amp;gt;setReadOnly(!unconnected);
+    form-&amp;gt;hostNameEdit-&amp;gt;setFocusPolicy(unconnected ? Qt::StrongFocus : Qt::NoFocus);
+    form-&amp;gt;hostNameLabel-&amp;gt;setEnabled(unconnected);
+    form-&amp;gt;portBox-&amp;gt;setEnabled(unconnected);
+    form-&amp;gt;portLabel-&amp;gt;setEnabled(unconnected);
+    form-&amp;gt;connectButton-&amp;gt;setEnabled(unconnected &amp;amp;&amp;amp; !form-&amp;gt;hostNameEdit-&amp;gt;text().isEmpty());
+
+    const bool connected = socket-&amp;gt;state() == QAbstractSocket::ConnectedState;
+    form-&amp;gt;sessionOutput-&amp;gt;setEnabled(connected);
+    form-&amp;gt;sessionInput-&amp;gt;setEnabled(connected);
+    form-&amp;gt;sessionInputLabel-&amp;gt;setEnabled(connected);
+    form-&amp;gt;sendButton-&amp;gt;setEnabled(connected);
+}
+
+void SslClient::secureConnect()
+{
+    socket-&amp;gt;connectToHostEncrypted(form-&amp;gt;hostNameEdit-&amp;gt;text(), form-&amp;gt;portBox-&amp;gt;value());
+    updateEnabledState();
+}
+
+void SslClient::socketStateChanged(QAbstractSocket::SocketState state)
+{
+    if (executingDialog)
+        return;
+
+    updateEnabledState();
+
+    if (state == QAbstractSocket::UnconnectedState) {
+        form-&amp;gt;sessionInput-&amp;gt;clear();
+        form-&amp;gt;hostNameEdit-&amp;gt;setPalette(QPalette());
+        form-&amp;gt;hostNameEdit-&amp;gt;setFocus();
+        form-&amp;gt;cipherLabel-&amp;gt;setText(tr(&quot;&amp;lt;none&amp;gt;&quot;));
+        padLock-&amp;gt;hide();
+    }
+}
+
+void SslClient::socketEncrypted()
+{
+    form-&amp;gt;sessionOutput-&amp;gt;clear();
+    form-&amp;gt;sessionInput-&amp;gt;setFocus();
+
+    QPalette palette;
+    palette.setColor(QPalette::Base, QColor(255, 255, 192));
+    form-&amp;gt;hostNameEdit-&amp;gt;setPalette(palette);
+
+    const QSslCipher cipher = socket-&amp;gt;sessionCipher();
+    const QString cipherInfo = QString(&quot;%1, %2 (%3/%4)&quot;).arg(cipher.authenticationMethod())
+                                       .arg(cipher.name()).arg(cipher.usedBits())
+                                       .arg(cipher.supportedBits());;
+    form-&amp;gt;cipherLabel-&amp;gt;setText(cipherInfo);
+    padLock-&amp;gt;show();
+}
+
+void SslClient::socketReadyRead()
+{
+    appendString(QString::fromUtf8(socket-&amp;gt;readAll()));
+}
+
+void SslClient::sendData()
+{
+    const QString input = form-&amp;gt;sessionInput-&amp;gt;text();
+    appendString(input + '\n');
+    socket-&amp;gt;write(input.toUtf8() + &quot;\r\n&quot;);
+    form-&amp;gt;sessionInput-&amp;gt;clear();
+}
+
+void SslClient::socketError(QAbstractSocket::SocketError)
+{
+    if (handlingSocketError)
+        return;
+
+    handlingSocketError = true;
+    QMessageBox::critical(this, tr(&quot;Connection error&quot;), socket-&amp;gt;errorString());
+    handlingSocketError = false;
+}
+
+void SslClient::sslErrors(const QList&amp;lt;QSslError&amp;gt; &amp;amp;errors)
+{
+    QDialog errorDialog(this);
+    Ui_SslErrors ui;
+    ui.setupUi(&amp;amp;errorDialog);
+    connect(ui.certificateChainButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;SslClient::displayCertificateInfo);
+
+    for (const auto &amp;amp;error : errors)
+        ui.sslErrorList-&amp;gt;addItem(error.errorString());
+
+    executingDialog = true;
+    if (errorDialog.exec() == QDialog::Accepted)
+        socket-&amp;gt;ignoreSslErrors();
+    executingDialog = false;
+
+    // did the socket state change?
+    if (socket-&amp;gt;state() != QAbstractSocket::ConnectedState)
+        socketStateChanged(socket-&amp;gt;state());
+}
+
+void SslClient::displayCertificateInfo()
+{
+    CertificateInfo info;
+    info.setCertificateChain(socket-&amp;gt;peerCertificateChain());
+    info.exec();
+}
+
+void SslClient::setupUi()
+{
+    if (form)
+        return;
+
+    form = new Ui_Form;
+    form-&amp;gt;setupUi(this);
+    form-&amp;gt;hostNameEdit-&amp;gt;setSelection(0, form-&amp;gt;hostNameEdit-&amp;gt;text().size());
+    form-&amp;gt;sessionOutput-&amp;gt;setHtml(tr(&quot;&amp;amp;lt;not connected&amp;amp;gt;&quot;));
+
+    connect(form-&amp;gt;hostNameEdit, SIGNAL(textChanged(QString)),
+            this, SLOT(updateEnabledState()));
+    connect(form-&amp;gt;connectButton, SIGNAL(clicked()),
+            this, SLOT(secureConnect()));
+    connect(form-&amp;gt;sendButton, SIGNAL(clicked()),
+            this, SLOT(sendData()));
+
+    padLock = new QToolButton;
+    padLock-&amp;gt;setIcon(QIcon(&quot;:/encrypted.png&quot;));
+    connect(padLock, SIGNAL(clicked()), this, SLOT(displayCertificateInfo()));
+
+#if QT_CONFIG(cursor)
+    padLock-&amp;gt;setCursor(Qt::ArrowCursor);
+#endif
+    padLock-&amp;gt;setToolTip(tr(&quot;Display encryption details.&quot;));
+
+    const int extent = form-&amp;gt;hostNameEdit-&amp;gt;height() - 2;
+    padLock-&amp;gt;resize(extent, extent);
+    padLock-&amp;gt;setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Ignored);
+
+    QHBoxLayout *layout = new QHBoxLayout(form-&amp;gt;hostNameEdit);
+    layout-&amp;gt;setMargin(form-&amp;gt;hostNameEdit-&amp;gt;style()-&amp;gt;pixelMetric(QStyle::PM_DefaultFrameWidth));
+    layout-&amp;gt;setSpacing(0);
+    layout-&amp;gt;addStretch();
+    layout-&amp;gt;addWidget(padLock);
+
+    form-&amp;gt;hostNameEdit-&amp;gt;setLayout(layout);
+    padLock-&amp;gt;hide();
+}
+
+void SslClient::setupSecureSocket()
+{
+    if (socket)
+        return;
+
+    socket = new QSslSocket(this);
+
+    connect(socket, SIGNAL(stateChanged(QAbstractSocket::SocketState)),
+            this, SLOT(socketStateChanged(QAbstractSocket::SocketState)));
+    connect(socket, SIGNAL(encrypted()),
+            this, SLOT(socketEncrypted()));
+    connect(socket, SIGNAL(error(QAbstractSocket::SocketError)),
+            this, SLOT(socketError(QAbstractSocket::SocketError)));
+    connect(socket, SIGNAL(sslErrors(QList&amp;lt;QSslError&amp;gt;)),
+            this, SLOT(sslErrors(QList&amp;lt;QSslError&amp;gt;)));
+    connect(socket, SIGNAL(readyRead()),
+            this, SLOT(socketReadyRead()));
+
+}
+
+void SslClient::appendString(const QString &amp;amp;line)
+{
+    QTextCursor cursor(form-&amp;gt;sessionOutput-&amp;gt;textCursor());
+    cursor.movePosition(QTextCursor::End);
+    cursor.insertText(line);
+    form-&amp;gt;sessionOutput-&amp;gt;verticalScrollBar()-&amp;gt;setValue(form-&amp;gt;sessionOutput-&amp;gt;verticalScrollBar()-&amp;gt;maximum());
+}
+
+</db:programlisting>
+</db:article>

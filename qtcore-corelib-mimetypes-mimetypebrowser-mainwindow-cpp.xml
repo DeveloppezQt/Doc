@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>MIME Type Browser Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows the hierarchy of MIME types and can be used to determine the MIME type of a file.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;mimetypemodel.h&quot;
+
+#include &amp;lt;QAction&amp;gt;
+#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QInputDialog&amp;gt;
+#include &amp;lt;QMenu&amp;gt;
+#include &amp;lt;QMenuBar&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QPlainTextEdit&amp;gt;
+#include &amp;lt;QSplitter&amp;gt;
+#include &amp;lt;QStatusBar&amp;gt;
+#include &amp;lt;QTextEdit&amp;gt;
+#include &amp;lt;QTreeView&amp;gt;
+
+#include &amp;lt;QFileInfo&amp;gt;
+#include &amp;lt;QItemSelectionModel&amp;gt;
+#include &amp;lt;QMimeDatabase&amp;gt;
+#include &amp;lt;QMimeType&amp;gt;
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , m_model(new MimetypeModel(this))
+    , m_treeView(new QTreeView(this))
+    , m_detailsText(new QTextEdit(this))
+    , m_findIndex(0)
+{
+    setWindowTitle(tr(&quot;Qt Mime Database Browser&quot;));
+
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    QAction *detectFileAction =
+        fileMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Detect File Type...&quot;), this, &amp;amp;MainWindow::detectFile);
+    detectFileAction-&amp;gt;setShortcuts(QKeySequence::Open);
+
+    QAction *exitAction = fileMenu-&amp;gt;addAction(tr(&quot;E&amp;amp;xit&quot;), qApp, &amp;amp;QApplication::closeAllWindows);
+    exitAction-&amp;gt;setShortcuts(QKeySequence::Quit);
+
+    QMenu *findMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Edit&quot;));
+    QAction *findAction =
+        findMenu-&amp;gt;addAction(tr(&quot;&amp;amp;Find...&quot;), this, &amp;amp;MainWindow::find);
+    findAction-&amp;gt;setShortcuts(QKeySequence::Find);
+    m_findNextAction = findMenu-&amp;gt;addAction(tr(&quot;Find &amp;amp;Next&quot;), this, &amp;amp;MainWindow::findNext);
+    m_findNextAction-&amp;gt;setShortcuts(QKeySequence::FindNext);
+    m_findPreviousAction = findMenu-&amp;gt;addAction(tr(&quot;Find &amp;amp;Previous&quot;), this, &amp;amp;MainWindow::findPrevious);
+    m_findPreviousAction-&amp;gt;setShortcuts(QKeySequence::FindPrevious);
+
+    menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;About&quot;))-&amp;gt;addAction(tr(&quot;&amp;amp;About Qt&quot;), qApp, &amp;amp;QApplication::aboutQt);
+
+    QSplitter *centralSplitter = new QSplitter(this);
+    setCentralWidget(centralSplitter);
+    m_treeView-&amp;gt;setUniformRowHeights(true);
+    m_treeView-&amp;gt;setModel(m_model);
+
+    const auto items = m_model-&amp;gt;findItems(&quot;application/octet-stream&quot;, Qt::MatchContains | Qt::MatchFixedString | Qt::MatchRecursive);
+    if (!items.isEmpty())
+        m_treeView-&amp;gt;expand(m_model-&amp;gt;indexFromItem(items.constFirst()));
+
+    connect(m_treeView-&amp;gt;selectionModel(), &amp;amp;QItemSelectionModel::currentChanged,
+            this, &amp;amp;MainWindow::currentChanged);
+    centralSplitter-&amp;gt;addWidget(m_treeView);
+    m_detailsText-&amp;gt;setReadOnly(true);
+    centralSplitter-&amp;gt;addWidget(m_detailsText);
+
+    updateFindActions();
+}
+
+void MainWindow::currentChanged(const QModelIndex &amp;amp;index)
+{
+    if (index.isValid())
+        m_detailsText-&amp;gt;setText(MimetypeModel::formatMimeTypeInfo(m_model-&amp;gt;mimeType(index)));
+    else
+        m_detailsText-&amp;gt;clear();
+}
+
+void MainWindow::selectAndGoTo(const QModelIndex &amp;amp;index)
+{
+    m_treeView-&amp;gt;scrollTo(index, QAbstractItemView::PositionAtCenter);
+    m_treeView-&amp;gt;setCurrentIndex(index);
+}
+
+void MainWindow::detectFile()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this, tr(&quot;Choose File&quot;));
+    if (fileName.isEmpty())
+        return;
+    QMimeDatabase mimeDatabase;
+    const QFileInfo fi(fileName);
+    const QMimeType mimeType = mimeDatabase.mimeTypeForFile(fi);
+    const QModelIndex index = mimeType.isValid()
+        ? m_model-&amp;gt;indexForMimeType(mimeType.name()) : QModelIndex();
+    if (index.isValid()) {
+        statusBar()-&amp;gt;showMessage(tr(&quot;\&quot;%1\&quot; is of type \&quot;%2\&quot;&quot;).arg(fi.fileName(), mimeType.name()));
+        selectAndGoTo(index);
+    } else {
+        QMessageBox::information(this, tr(&quot;Unknown File Type&quot;),
+                                 tr(&quot;The type of %1 could not be determined.&quot;)
+                                 .arg(QDir::toNativeSeparators(fileName)));
+    }
+}
+
+void MainWindow::updateFindActions()
+{
+    const bool findNextPreviousEnabled = m_findMatches.size() &amp;gt; 1;
+    m_findNextAction-&amp;gt;setEnabled(findNextPreviousEnabled);
+    m_findPreviousAction-&amp;gt;setEnabled(findNextPreviousEnabled);
+}
+
+void MainWindow::findPrevious()
+{
+    if (--m_findIndex &amp;lt; 0)
+        m_findIndex = m_findMatches.size() - 1;
+    if (m_findIndex &amp;gt;= 0)
+        selectAndGoTo(m_findMatches.at(m_findIndex));
+}
+
+void MainWindow::findNext()
+{
+    if (++m_findIndex &amp;gt;= m_findMatches.size())
+        m_findIndex = 0;
+    if (m_findIndex &amp;lt; m_findMatches.size())
+        selectAndGoTo(m_findMatches.at(m_findIndex));
+}
+
+void MainWindow::find()
+{
+    QInputDialog inputDialog(this);
+    inputDialog.setWindowTitle(tr(&quot;Find&quot;));
+    inputDialog.setLabelText(tr(&quot;Text:&quot;));
+    if (inputDialog.exec() != QDialog::Accepted)
+        return;
+    const QString value = inputDialog.textValue().trimmed();
+    if (value.isEmpty())
+        return;
+
+    m_findMatches.clear();
+    m_findIndex = 0;
+    foreach (const QStandardItem *item, m_model-&amp;gt;findItems(value, Qt::MatchContains | Qt::MatchFixedString | Qt::MatchRecursive))
+        m_findMatches.append(m_model-&amp;gt;indexFromItem(item));
+    statusBar()-&amp;gt;showMessage(tr(&quot;%n mime types match \&quot;%1\&quot;.&quot;, 0, m_findMatches.size()).arg(value));
+    updateFindActions();
+    if (!m_findMatches.isEmpty())
+        selectAndGoTo(m_findMatches.constFirst());
+}
+
+</db:programlisting>
+</db:article>

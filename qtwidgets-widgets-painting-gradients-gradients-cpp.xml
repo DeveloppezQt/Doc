@@ -1,0 +1,604 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Gradients</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how gradients can be used with <db:link xlink:href="qpainter.xml">QPainter</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;gradients.h&quot;
+#include &quot;hoverpoints.h&quot;
+
+#include &amp;lt;algorithm&amp;gt;
+
+ShadeWidget::ShadeWidget(ShadeType type, QWidget *parent)
+    : QWidget(parent), m_shade_type(type), m_alpha_gradient(QLinearGradient(0, 0, 0, 0))
+{
+
+    // Checkers background
+    if (m_shade_type == ARGBShade) {
+        QPixmap pm(20, 20);
+        QPainter pmp(&amp;amp;pm);
+        pmp.fillRect(0, 0, 10, 10, Qt::lightGray);
+        pmp.fillRect(10, 10, 10, 10, Qt::lightGray);
+        pmp.fillRect(0, 10, 10, 10, Qt::darkGray);
+        pmp.fillRect(10, 0, 10, 10, Qt::darkGray);
+        pmp.end();
+        QPalette pal = palette();
+        pal.setBrush(backgroundRole(), QBrush(pm));
+        setAutoFillBackground(true);
+        setPalette(pal);
+
+    } else {
+        setAttribute(Qt::WA_NoBackground);
+    }
+
+    QPolygonF points;
+    points &amp;lt;&amp;lt; QPointF(0, sizeHint().height())
+           &amp;lt;&amp;lt; QPointF(sizeHint().width(), 0);
+
+    m_hoverPoints = new HoverPoints(this, HoverPoints::CircleShape);
+//     m_hoverPoints-&amp;gt;setConnectionType(HoverPoints::LineConnection);
+    m_hoverPoints-&amp;gt;setPoints(points);
+    m_hoverPoints-&amp;gt;setPointLock(0, HoverPoints::LockToLeft);
+    m_hoverPoints-&amp;gt;setPointLock(1, HoverPoints::LockToRight);
+    m_hoverPoints-&amp;gt;setSortType(HoverPoints::XSort);
+
+    setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+
+    connect(m_hoverPoints, &amp;amp;HoverPoints::pointsChanged,
+            this, &amp;amp;ShadeWidget::colorsChanged);
+}
+
+QPolygonF ShadeWidget::points() const
+{
+    return m_hoverPoints-&amp;gt;points();
+}
+
+uint ShadeWidget::colorAt(int x)
+{
+    generateShade();
+
+    QPolygonF pts = m_hoverPoints-&amp;gt;points();
+    for (int i=1; i &amp;lt; pts.size(); ++i) {
+        if (pts.at(i-1).x() &amp;lt;= x &amp;amp;&amp;amp; pts.at(i).x() &amp;gt;= x) {
+            QLineF l(pts.at(i-1), pts.at(i));
+            l.setLength(l.length() * ((x - l.x1()) / l.dx()));
+            return m_shade.pixel(qRound(qMin(l.x2(), (qreal(m_shade.width() - 1)))),
+                                 qRound(qMin(l.y2(), qreal(m_shade.height() - 1))));
+        }
+    }
+    return 0;
+}
+
+void ShadeWidget::setGradientStops(const QGradientStops &amp;amp;stops)
+{
+    if (m_shade_type == ARGBShade) {
+        m_alpha_gradient = QLinearGradient(0, 0, width(), 0);
+
+        for (int i=0; i&amp;lt;stops.size(); ++i) {
+            QColor c = stops.at(i).second;
+            m_alpha_gradient.setColorAt(stops.at(i).first, QColor(c.red(), c.green(), c.blue()));
+        }
+
+        m_shade = QImage();
+        generateShade();
+        update();
+    }
+}
+
+void ShadeWidget::paintEvent(QPaintEvent *)
+{
+    generateShade();
+
+    QPainter p(this);
+    p.drawImage(0, 0, m_shade);
+
+    p.setPen(QColor(146, 146, 146));
+    p.drawRect(0, 0, width() - 1, height() - 1);
+}
+
+void ShadeWidget::generateShade()
+{
+    if (m_shade.isNull() || m_shade.size() != size()) {
+
+        if (m_shade_type == ARGBShade) {
+            m_shade = QImage(size(), QImage::Format_ARGB32_Premultiplied);
+            m_shade.fill(0);
+
+            QPainter p(&amp;amp;m_shade);
+            p.fillRect(rect(), m_alpha_gradient);
+
+            p.setCompositionMode(QPainter::CompositionMode_DestinationIn);
+            QLinearGradient fade(0, 0, 0, height());
+            fade.setColorAt(0, QColor(0, 0, 0, 255));
+            fade.setColorAt(1, QColor(0, 0, 0, 0));
+            p.fillRect(rect(), fade);
+
+        } else {
+            m_shade = QImage(size(), QImage::Format_RGB32);
+            QLinearGradient shade(0, 0, 0, height());
+            shade.setColorAt(1, Qt::black);
+
+            if (m_shade_type == RedShade)
+                shade.setColorAt(0, Qt::red);
+            else if (m_shade_type == GreenShade)
+                shade.setColorAt(0, Qt::green);
+            else
+                shade.setColorAt(0, Qt::blue);
+
+            QPainter p(&amp;amp;m_shade);
+            p.fillRect(rect(), shade);
+        }
+    }
+}
+
+GradientEditor::GradientEditor(QWidget *parent)
+    : QWidget(parent)
+{
+    QVBoxLayout *vbox = new QVBoxLayout(this);
+    vbox-&amp;gt;setSpacing(1);
+    vbox-&amp;gt;setMargin(1);
+
+    m_red_shade = new ShadeWidget(ShadeWidget::RedShade, this);
+    m_green_shade = new ShadeWidget(ShadeWidget::GreenShade, this);
+    m_blue_shade = new ShadeWidget(ShadeWidget::BlueShade, this);
+    m_alpha_shade = new ShadeWidget(ShadeWidget::ARGBShade, this);
+
+    vbox-&amp;gt;addWidget(m_red_shade);
+    vbox-&amp;gt;addWidget(m_green_shade);
+    vbox-&amp;gt;addWidget(m_blue_shade);
+    vbox-&amp;gt;addWidget(m_alpha_shade);
+
+    connect(m_red_shade, &amp;amp;ShadeWidget::colorsChanged,
+            this, &amp;amp;GradientEditor::pointsUpdated);
+    connect(m_green_shade, &amp;amp;ShadeWidget::colorsChanged,
+           this, &amp;amp;GradientEditor::pointsUpdated);
+    connect(m_blue_shade, &amp;amp;ShadeWidget::colorsChanged,
+            this, &amp;amp;GradientEditor::pointsUpdated);
+    connect(m_alpha_shade, &amp;amp;ShadeWidget::colorsChanged,
+            this, &amp;amp;GradientEditor::pointsUpdated);
+}
+
+inline static bool x_less_than(const QPointF &amp;amp;p1, const QPointF &amp;amp;p2)
+{
+    return p1.x() &amp;lt; p2.x();
+}
+
+void GradientEditor::pointsUpdated()
+{
+    qreal w = m_alpha_shade-&amp;gt;width();
+
+    QGradientStops stops;
+
+    QPolygonF points;
+
+    points += m_red_shade-&amp;gt;points();
+    points += m_green_shade-&amp;gt;points();
+    points += m_blue_shade-&amp;gt;points();
+    points += m_alpha_shade-&amp;gt;points();
+
+    std::sort(points.begin(), points.end(), x_less_than);
+
+    for (int i = 0; i &amp;lt; points.size(); ++i) {
+        qreal x = int(points.at(i).x());
+        if (i + 1 &amp;lt; points.size() &amp;amp;&amp;amp; x == points.at(i + 1).x())
+            continue;
+        QColor color((0x00ff0000 &amp;amp; m_red_shade-&amp;gt;colorAt(int(x))) &amp;gt;&amp;gt; 16,
+                     (0x0000ff00 &amp;amp; m_green_shade-&amp;gt;colorAt(int(x))) &amp;gt;&amp;gt; 8,
+                     (0x000000ff &amp;amp; m_blue_shade-&amp;gt;colorAt(int(x))),
+                     (0xff000000 &amp;amp; m_alpha_shade-&amp;gt;colorAt(int(x))) &amp;gt;&amp;gt; 24);
+
+        if (x / w &amp;gt; 1)
+            return;
+
+        stops &amp;lt;&amp;lt; QGradientStop(x / w, color);
+    }
+
+    m_alpha_shade-&amp;gt;setGradientStops(stops);
+
+    emit gradientStopsChanged(stops);
+}
+
+static void set_shade_points(const QPolygonF &amp;amp;points, ShadeWidget *shade)
+{
+    shade-&amp;gt;hoverPoints()-&amp;gt;setPoints(points);
+    shade-&amp;gt;hoverPoints()-&amp;gt;setPointLock(0, HoverPoints::LockToLeft);
+    shade-&amp;gt;hoverPoints()-&amp;gt;setPointLock(points.size() - 1, HoverPoints::LockToRight);
+    shade-&amp;gt;update();
+}
+
+void GradientEditor::setGradientStops(const QGradientStops &amp;amp;stops)
+{
+    QPolygonF pts_red, pts_green, pts_blue, pts_alpha;
+
+    qreal h_red = m_red_shade-&amp;gt;height();
+    qreal h_green = m_green_shade-&amp;gt;height();
+    qreal h_blue = m_blue_shade-&amp;gt;height();
+    qreal h_alpha = m_alpha_shade-&amp;gt;height();
+
+    for (int i = 0; i &amp;lt; stops.size(); ++i) {
+        qreal pos = stops.at(i).first;
+        QRgb color = stops.at(i).second.rgba();
+        pts_red &amp;lt;&amp;lt; QPointF(pos * m_red_shade-&amp;gt;width(), h_red - qRed(color) * h_red / 255);
+        pts_green &amp;lt;&amp;lt; QPointF(pos * m_green_shade-&amp;gt;width(), h_green - qGreen(color) * h_green / 255);
+        pts_blue &amp;lt;&amp;lt; QPointF(pos * m_blue_shade-&amp;gt;width(), h_blue - qBlue(color) * h_blue / 255);
+        pts_alpha &amp;lt;&amp;lt; QPointF(pos * m_alpha_shade-&amp;gt;width(), h_alpha - qAlpha(color) * h_alpha / 255);
+    }
+
+    set_shade_points(pts_red, m_red_shade);
+    set_shade_points(pts_green, m_green_shade);
+    set_shade_points(pts_blue, m_blue_shade);
+    set_shade_points(pts_alpha, m_alpha_shade);
+
+}
+
+GradientWidget::GradientWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    setWindowTitle(tr(&quot;Gradients&quot;));
+
+    m_renderer = new GradientRenderer(this);
+
+    QGroupBox *mainGroup = new QGroupBox(this);
+    mainGroup-&amp;gt;setTitle(tr(&quot;Gradients&quot;));
+
+    QGroupBox *editorGroup = new QGroupBox(mainGroup);
+    editorGroup-&amp;gt;setTitle(tr(&quot;Color Editor&quot;));
+    m_editor = new GradientEditor(editorGroup);
+
+    QGroupBox *typeGroup = new QGroupBox(mainGroup);
+    typeGroup-&amp;gt;setTitle(tr(&quot;Gradient Type&quot;));
+    m_linearButton = new QRadioButton(tr(&quot;Linear Gradient&quot;), typeGroup);
+    m_radialButton = new QRadioButton(tr(&quot;Radial Gradient&quot;), typeGroup);
+    m_conicalButton = new QRadioButton(tr(&quot;Conical Gradient&quot;), typeGroup);
+
+    QGroupBox *spreadGroup = new QGroupBox(mainGroup);
+    spreadGroup-&amp;gt;setTitle(tr(&quot;Spread Method&quot;));
+    m_padSpreadButton = new QRadioButton(tr(&quot;Pad Spread&quot;), spreadGroup);
+    m_reflectSpreadButton = new QRadioButton(tr(&quot;Reflect Spread&quot;), spreadGroup);
+    m_repeatSpreadButton = new QRadioButton(tr(&quot;Repeat Spread&quot;), spreadGroup);
+
+    QGroupBox *presetsGroup = new QGroupBox(mainGroup);
+    presetsGroup-&amp;gt;setTitle(tr(&quot;Presets&quot;));
+    QPushButton *prevPresetButton = new QPushButton(tr(&quot;&amp;lt;&quot;), presetsGroup);
+    m_presetButton = new QPushButton(tr(&quot;(unset)&quot;), presetsGroup);
+    QPushButton *nextPresetButton = new QPushButton(tr(&quot;&amp;gt;&quot;), presetsGroup);
+    updatePresetName();
+
+    QGroupBox *defaultsGroup = new QGroupBox(mainGroup);
+    defaultsGroup-&amp;gt;setTitle(tr(&quot;Examples&quot;));
+    QPushButton *default1Button = new QPushButton(tr(&quot;1&quot;), defaultsGroup);
+    QPushButton *default2Button = new QPushButton(tr(&quot;2&quot;), defaultsGroup);
+    QPushButton *default3Button = new QPushButton(tr(&quot;3&quot;), defaultsGroup);
+    QPushButton *default4Button = new QPushButton(tr(&quot;Reset&quot;), editorGroup);
+
+    QPushButton *showSourceButton = new QPushButton(mainGroup);
+    showSourceButton-&amp;gt;setText(tr(&quot;Show Source&quot;));
+#if QT_CONFIG(opengl)
+    QPushButton *enableOpenGLButton = new QPushButton(mainGroup);
+    enableOpenGLButton-&amp;gt;setText(tr(&quot;Use OpenGL&quot;));
+    enableOpenGLButton-&amp;gt;setCheckable(true);
+    enableOpenGLButton-&amp;gt;setChecked(m_renderer-&amp;gt;usesOpenGL());
+#endif
+    QPushButton *whatsThisButton = new QPushButton(mainGroup);
+    whatsThisButton-&amp;gt;setText(tr(&quot;What's This?&quot;));
+    whatsThisButton-&amp;gt;setCheckable(true);
+
+    // Layouts
+    QHBoxLayout *mainLayout = new QHBoxLayout(this);
+    mainLayout-&amp;gt;addWidget(m_renderer);
+    mainLayout-&amp;gt;addWidget(mainGroup);
+
+    mainGroup-&amp;gt;setFixedWidth(200);
+    QVBoxLayout *mainGroupLayout = new QVBoxLayout(mainGroup);
+    mainGroupLayout-&amp;gt;addWidget(editorGroup);
+    mainGroupLayout-&amp;gt;addWidget(typeGroup);
+    mainGroupLayout-&amp;gt;addWidget(spreadGroup);
+    mainGroupLayout-&amp;gt;addWidget(presetsGroup);
+    mainGroupLayout-&amp;gt;addWidget(defaultsGroup);
+    mainGroupLayout-&amp;gt;addStretch(1);
+    mainGroupLayout-&amp;gt;addWidget(showSourceButton);
+#if QT_CONFIG(opengl)
+    mainGroupLayout-&amp;gt;addWidget(enableOpenGLButton);
+#endif
+    mainGroupLayout-&amp;gt;addWidget(whatsThisButton);
+
+    QVBoxLayout *editorGroupLayout = new QVBoxLayout(editorGroup);
+    editorGroupLayout-&amp;gt;addWidget(m_editor);
+
+    QVBoxLayout *typeGroupLayout = new QVBoxLayout(typeGroup);
+    typeGroupLayout-&amp;gt;addWidget(m_linearButton);
+    typeGroupLayout-&amp;gt;addWidget(m_radialButton);
+    typeGroupLayout-&amp;gt;addWidget(m_conicalButton);
+
+    QVBoxLayout *spreadGroupLayout = new QVBoxLayout(spreadGroup);
+    spreadGroupLayout-&amp;gt;addWidget(m_padSpreadButton);
+    spreadGroupLayout-&amp;gt;addWidget(m_repeatSpreadButton);
+    spreadGroupLayout-&amp;gt;addWidget(m_reflectSpreadButton);
+
+    QHBoxLayout *presetsGroupLayout = new QHBoxLayout(presetsGroup);
+    presetsGroupLayout-&amp;gt;addWidget(prevPresetButton);
+    presetsGroupLayout-&amp;gt;addWidget(m_presetButton, 1);
+    presetsGroupLayout-&amp;gt;addWidget(nextPresetButton);
+
+    QHBoxLayout *defaultsGroupLayout = new QHBoxLayout(defaultsGroup);
+    defaultsGroupLayout-&amp;gt;addWidget(default1Button);
+    defaultsGroupLayout-&amp;gt;addWidget(default2Button);
+    defaultsGroupLayout-&amp;gt;addWidget(default3Button);
+    editorGroupLayout-&amp;gt;addWidget(default4Button);
+
+    connect(m_editor, &amp;amp;GradientEditor::gradientStopsChanged,
+            m_renderer, &amp;amp;GradientRenderer::setGradientStops);
+    connect(m_linearButton, &amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setLinearGradient);
+    connect(m_radialButton, &amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setRadialGradient);
+    connect(m_conicalButton,&amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setConicalGradient);
+
+    connect(m_padSpreadButton, &amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setPadSpread);
+    connect(m_reflectSpreadButton, &amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setReflectSpread);
+    connect(m_repeatSpreadButton, &amp;amp;QRadioButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::setRepeatSpread);
+
+    connect(prevPresetButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setPrevPreset);
+    connect(m_presetButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setPreset);
+    connect(nextPresetButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setNextPreset);
+
+    connect(default1Button, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setDefault1);
+    connect(default2Button, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setDefault2);
+    connect(default3Button, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setDefault3);
+    connect(default4Button, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;GradientWidget::setDefault4);
+
+    connect(showSourceButton, &amp;amp;QPushButton::clicked,
+            m_renderer, &amp;amp;GradientRenderer::showSource);
+#if QT_CONFIG(opengl)
+    connect(enableOpenGLButton, QOverload&amp;lt;bool&amp;gt;::of(&amp;amp;QPushButton::clicked),
+            m_renderer, &amp;amp;ArthurFrame::enableOpenGL);
+#endif
+
+    connect(whatsThisButton, QOverload&amp;lt;bool&amp;gt;::of(&amp;amp;QPushButton::clicked),
+            m_renderer, &amp;amp;ArthurFrame::setDescriptionEnabled);
+    connect(whatsThisButton, QOverload&amp;lt;bool&amp;gt;::of(&amp;amp;QPushButton::clicked),
+            m_renderer-&amp;gt;hoverPoints(), &amp;amp;HoverPoints::setDisabled);
+    connect(m_renderer, QOverload&amp;lt;bool&amp;gt;::of(&amp;amp;ArthurFrame::descriptionEnabledChanged),
+            whatsThisButton, &amp;amp;QPushButton::setChecked);
+    connect(m_renderer, QOverload&amp;lt;bool&amp;gt;::of(&amp;amp;ArthurFrame::descriptionEnabledChanged),
+            m_renderer-&amp;gt;hoverPoints(), &amp;amp;HoverPoints::setDisabled);
+
+    m_renderer-&amp;gt;loadSourceFile(&quot;:res/gradients/gradients.cpp&quot;);
+    m_renderer-&amp;gt;loadDescription(&quot;:res/gradients/gradients.html&quot;);
+
+    QTimer::singleShot(50, this, SLOT(setDefault1()));
+}
+
+void GradientWidget::setDefault(int config)
+{
+    QGradientStops stops;
+    QPolygonF points;
+    switch (config) {
+    case 1:
+        stops &amp;lt;&amp;lt; QGradientStop(0.00, QColor::fromRgba(0));
+        stops &amp;lt;&amp;lt; QGradientStop(0.04, QColor::fromRgba(0xff131360));
+        stops &amp;lt;&amp;lt; QGradientStop(0.08, QColor::fromRgba(0xff202ccc));
+        stops &amp;lt;&amp;lt; QGradientStop(0.42, QColor::fromRgba(0xff93d3f9));
+        stops &amp;lt;&amp;lt; QGradientStop(0.51, QColor::fromRgba(0xffb3e6ff));
+        stops &amp;lt;&amp;lt; QGradientStop(0.73, QColor::fromRgba(0xffffffec));
+        stops &amp;lt;&amp;lt; QGradientStop(0.92, QColor::fromRgba(0xff5353d9));
+        stops &amp;lt;&amp;lt; QGradientStop(0.96, QColor::fromRgba(0xff262666));
+        stops &amp;lt;&amp;lt; QGradientStop(1.00, QColor::fromRgba(0));
+        m_linearButton-&amp;gt;animateClick();
+        m_repeatSpreadButton-&amp;gt;animateClick();
+        break;
+
+    case 2:
+        stops &amp;lt;&amp;lt; QGradientStop(0.00, QColor::fromRgba(0xffffffff));
+        stops &amp;lt;&amp;lt; QGradientStop(0.11, QColor::fromRgba(0xfff9ffa0));
+        stops &amp;lt;&amp;lt; QGradientStop(0.13, QColor::fromRgba(0xfff9ff99));
+        stops &amp;lt;&amp;lt; QGradientStop(0.14, QColor::fromRgba(0xfff3ff86));
+        stops &amp;lt;&amp;lt; QGradientStop(0.49, QColor::fromRgba(0xff93b353));
+        stops &amp;lt;&amp;lt; QGradientStop(0.87, QColor::fromRgba(0xff264619));
+        stops &amp;lt;&amp;lt; QGradientStop(0.96, QColor::fromRgba(0xff0c1306));
+        stops &amp;lt;&amp;lt; QGradientStop(1.00, QColor::fromRgba(0));
+        m_radialButton-&amp;gt;animateClick();
+        m_padSpreadButton-&amp;gt;animateClick();
+        break;
+
+    case 3:
+        stops &amp;lt;&amp;lt; QGradientStop(0.00, QColor::fromRgba(0));
+        stops &amp;lt;&amp;lt; QGradientStop(0.10, QColor::fromRgba(0xffe0cc73));
+        stops &amp;lt;&amp;lt; QGradientStop(0.17, QColor::fromRgba(0xffc6a006));
+        stops &amp;lt;&amp;lt; QGradientStop(0.46, QColor::fromRgba(0xff600659));
+        stops &amp;lt;&amp;lt; QGradientStop(0.72, QColor::fromRgba(0xff0680ac));
+        stops &amp;lt;&amp;lt; QGradientStop(0.92, QColor::fromRgba(0xffb9d9e6));
+        stops &amp;lt;&amp;lt; QGradientStop(1.00, QColor::fromRgba(0));
+        m_conicalButton-&amp;gt;animateClick();
+        m_padSpreadButton-&amp;gt;animateClick();
+        break;
+
+    case 4:
+        stops &amp;lt;&amp;lt; QGradientStop(0.00, QColor::fromRgba(0xff000000));
+        stops &amp;lt;&amp;lt; QGradientStop(1.00, QColor::fromRgba(0xffffffff));
+        break;
+
+    default:
+        qWarning(&quot;bad default: %d\n&quot;, config);
+        break;
+    }
+
+    QPolygonF pts;
+    int h_off = m_renderer-&amp;gt;width() / 10;
+    int v_off = m_renderer-&amp;gt;height() / 8;
+    pts &amp;lt;&amp;lt; QPointF(m_renderer-&amp;gt;width() / 2, m_renderer-&amp;gt;height() / 2)
+        &amp;lt;&amp;lt; QPointF(m_renderer-&amp;gt;width() / 2 - h_off, m_renderer-&amp;gt;height() / 2 - v_off);
+
+    m_editor-&amp;gt;setGradientStops(stops);
+    m_renderer-&amp;gt;hoverPoints()-&amp;gt;setPoints(pts);
+    m_renderer-&amp;gt;setGradientStops(stops);
+}
+
+void GradientWidget::updatePresetName()
+{
+    QMetaEnum presetEnum = QMetaEnum::fromType&amp;lt;QGradient::Preset&amp;gt;();
+    m_presetButton-&amp;gt;setText(QLatin1String(presetEnum.key(m_presetIndex)));
+}
+
+void GradientWidget::changePresetBy(int indexOffset)
+{
+    QMetaEnum presetEnum = QMetaEnum::fromType&amp;lt;QGradient::Preset&amp;gt;();
+    m_presetIndex = qBound(0, m_presetIndex + indexOffset, presetEnum.keyCount() - 1);
+
+    QGradient::Preset preset = static_cast&amp;lt;QGradient::Preset&amp;gt;(presetEnum.value(m_presetIndex));
+    QGradient gradient(preset);
+    if (gradient.type() != QGradient::LinearGradient)
+        return;
+
+    QLinearGradient *linearGradientPointer = static_cast&amp;lt;QLinearGradient *&amp;gt;(&amp;amp;gradient);
+    QLineF objectStopsLine(linearGradientPointer-&amp;gt;start(), linearGradientPointer-&amp;gt;finalStop());
+    qreal scaleX = qFuzzyIsNull(objectStopsLine.dx()) ? 1.0 : (0.8 * m_renderer-&amp;gt;width() / qAbs(objectStopsLine.dx()));
+    qreal scaleY = qFuzzyIsNull(objectStopsLine.dy()) ? 1.0 : (0.8 * m_renderer-&amp;gt;height() / qAbs(objectStopsLine.dy()));
+    QLineF logicalStopsLine = QTransform::fromScale(scaleX, scaleY).map(objectStopsLine);
+    logicalStopsLine.translate(m_renderer-&amp;gt;rect().center() - logicalStopsLine.center());
+    QPolygonF logicalStops;
+    logicalStops &amp;lt;&amp;lt; logicalStopsLine.p1() &amp;lt;&amp;lt; logicalStopsLine.p2();
+
+    m_linearButton-&amp;gt;animateClick();
+    m_padSpreadButton-&amp;gt;animateClick();
+    m_editor-&amp;gt;setGradientStops(gradient.stops());
+    m_renderer-&amp;gt;hoverPoints()-&amp;gt;setPoints(logicalStops);
+    m_renderer-&amp;gt;setGradientStops(gradient.stops());
+
+    updatePresetName();
+}
+
+GradientRenderer::GradientRenderer(QWidget *parent)
+    : ArthurFrame(parent)
+{
+    m_hoverPoints = new HoverPoints(this, HoverPoints::CircleShape);
+    m_hoverPoints-&amp;gt;setPointSize(QSize(20, 20));
+    m_hoverPoints-&amp;gt;setConnectionType(HoverPoints::NoConnection);
+    m_hoverPoints-&amp;gt;setEditable(false);
+
+    QVector&amp;lt;QPointF&amp;gt; points;
+    points &amp;lt;&amp;lt; QPointF(100, 100) &amp;lt;&amp;lt; QPointF(200, 200);
+    m_hoverPoints-&amp;gt;setPoints(points);
+
+    m_spread = QGradient::PadSpread;
+    m_gradientType = Qt::LinearGradientPattern;
+}
+
+void GradientRenderer::setGradientStops(const QGradientStops &amp;amp;stops)
+{
+    m_stops = stops;
+    update();
+}
+
+void GradientRenderer::mousePressEvent(QMouseEvent *)
+{
+    setDescriptionEnabled(false);
+}
+
+void GradientRenderer::paint(QPainter *p)
+{
+    QPolygonF pts = m_hoverPoints-&amp;gt;points();
+
+    QGradient g;
+
+    if (m_gradientType == Qt::LinearGradientPattern) {
+        g = QLinearGradient(pts.at(0), pts.at(1));
+
+    } else if (m_gradientType == Qt::RadialGradientPattern) {
+        g = QRadialGradient(pts.at(0), qMin(width(), height()) / 3.0, pts.at(1));
+
+    } else {
+        QLineF l(pts.at(0), pts.at(1));
+        qreal angle = l.angle(QLineF(0, 0, 1, 0));
+        if (l.dy() &amp;gt; 0)
+            angle = 360 - angle;
+        g = QConicalGradient(pts.at(0), angle);
+    }
+
+    for (int i = 0; i &amp;lt; m_stops.size(); ++i)
+        g.setColorAt(m_stops.at(i).first, m_stops.at(i).second);
+
+    g.setSpread(m_spread);
+
+    p-&amp;gt;setBrush(g);
+    p-&amp;gt;setPen(Qt::NoPen);
+
+    p-&amp;gt;drawRect(rect());
+
+}
+
+</db:programlisting>
+</db:article>

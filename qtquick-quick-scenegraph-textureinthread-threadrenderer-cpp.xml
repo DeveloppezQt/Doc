@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Rendering FBOs in a thread</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use FramebufferObjects in a thread together with Qt Quick.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;threadrenderer.h&quot;
+#include &quot;logorenderer.h&quot;
+
+#include &amp;lt;QtCore/QMutex&amp;gt;
+#include &amp;lt;QtCore/QThread&amp;gt;
+
+#include &amp;lt;QtGui/QOpenGLContext&amp;gt;
+#include &amp;lt;QtGui/QOpenGLFramebufferObject&amp;gt;
+#include &amp;lt;QtGui/QGuiApplication&amp;gt;
+#include &amp;lt;QtGui/QOffscreenSurface&amp;gt;
+
+#include &amp;lt;QtQuick/QQuickWindow&amp;gt;
+#include &amp;lt;qsgsimpletexturenode.h&amp;gt;
+
+QList&amp;lt;QThread *&amp;gt; ThreadRenderer::threads;
+
+/*
+ * The render thread shares a context with the scene graph and will
+ * render into two separate FBOs, one to use for display and one
+ * to use for rendering
+ */
+class RenderThread : public QThread
+{
+    Q_OBJECT
+public:
+    RenderThread(const QSize &amp;amp;size)
+        : surface(nullptr)
+        , context(nullptr)
+        , m_renderFbo(nullptr)
+        , m_displayFbo(nullptr)
+        , m_logoRenderer(nullptr)
+        , m_size(size)
+    {
+        ThreadRenderer::threads &amp;lt;&amp;lt; this;
+    }
+
+    QOffscreenSurface *surface;
+    QOpenGLContext *context;
+
+public slots:
+    void renderNext()
+    {
+        context-&amp;gt;makeCurrent(surface);
+
+        if (!m_renderFbo) {
+            // Initialize the buffers and renderer
+            QOpenGLFramebufferObjectFormat format;
+            format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
+            m_renderFbo = new QOpenGLFramebufferObject(m_size, format);
+            m_displayFbo = new QOpenGLFramebufferObject(m_size, format);
+            m_logoRenderer = new LogoRenderer();
+            m_logoRenderer-&amp;gt;initialize();
+        }
+
+        m_renderFbo-&amp;gt;bind();
+        context-&amp;gt;functions()-&amp;gt;glViewport(0, 0, m_size.width(), m_size.height());
+
+        m_logoRenderer-&amp;gt;render();
+
+        // We need to flush the contents to the FBO before posting
+        // the texture to the other thread, otherwise, we might
+        // get unexpected results.
+        context-&amp;gt;functions()-&amp;gt;glFlush();
+
+        m_renderFbo-&amp;gt;bindDefault();
+        qSwap(m_renderFbo, m_displayFbo);
+
+        emit textureReady(m_displayFbo-&amp;gt;texture(), m_size);
+    }
+
+    void shutDown()
+    {
+        context-&amp;gt;makeCurrent(surface);
+        delete m_renderFbo;
+        delete m_displayFbo;
+        delete m_logoRenderer;
+        context-&amp;gt;doneCurrent();
+        delete context;
+
+        // schedule this to be deleted only after we're done cleaning up
+        surface-&amp;gt;deleteLater();
+
+        // Stop event processing, move the thread to GUI and make sure it is deleted.
+        exit();
+        moveToThread(QGuiApplication::instance()-&amp;gt;thread());
+    }
+
+signals:
+    void textureReady(int id, const QSize &amp;amp;size);
+
+private:
+    QOpenGLFramebufferObject *m_renderFbo;
+    QOpenGLFramebufferObject *m_displayFbo;
+
+    LogoRenderer *m_logoRenderer;
+    QSize m_size;
+};
+
+class TextureNode : public QObject, public QSGSimpleTextureNode
+{
+    Q_OBJECT
+
+public:
+    TextureNode(QQuickWindow *window)
+        : m_id(0)
+        , m_size(0, 0)
+        , m_texture(nullptr)
+        , m_window(window)
+    {
+        // Our texture node must have a texture, so use the default 0 texture.
+        m_texture = m_window-&amp;gt;createTextureFromId(0, QSize(1, 1));
+        setTexture(m_texture);
+        setFiltering(QSGTexture::Linear);
+    }
+
+    ~TextureNode() override
+    {
+        delete m_texture;
+    }
+
+signals:
+    void textureInUse();
+    void pendingNewTexture();
+
+public slots:
+
+    // This function gets called on the FBO rendering thread and will store the
+    // texture id and size and schedule an update on the window.
+    void newTexture(int id, const QSize &amp;amp;size) {
+        m_mutex.lock();
+        m_id = id;
+        m_size = size;
+        m_mutex.unlock();
+
+        // We cannot call QQuickWindow::update directly here, as this is only allowed
+        // from the rendering thread or GUI thread.
+        emit pendingNewTexture();
+    }
+
+    // Before the scene graph starts to render, we update to the pending texture
+    void prepareNode() {
+        m_mutex.lock();
+        int newId = m_id;
+        QSize size = m_size;
+        m_id = 0;
+        m_mutex.unlock();
+        if (newId) {
+            delete m_texture;
+            // note: include QQuickWindow::TextureHasAlphaChannel if the rendered content
+            // has alpha.
+            m_texture = m_window-&amp;gt;createTextureFromId(newId, size);
+            setTexture(m_texture);
+
+            markDirty(DirtyMaterial);
+
+            // This will notify the rendering thread that the texture is now being rendered
+            // and it can start rendering to the other one.
+            emit textureInUse();
+        }
+    }
+
+private:
+
+    int m_id;
+    QSize m_size;
+
+    QMutex m_mutex;
+
+    QSGTexture *m_texture;
+    QQuickWindow *m_window;
+};
+
+ThreadRenderer::ThreadRenderer()
+    : m_renderThread(nullptr)
+{
+    setFlag(ItemHasContents, true);
+    m_renderThread = new RenderThread(QSize(512, 512));
+}
+
+void ThreadRenderer::ready()
+{
+    m_renderThread-&amp;gt;surface = new QOffscreenSurface();
+    m_renderThread-&amp;gt;surface-&amp;gt;setFormat(m_renderThread-&amp;gt;context-&amp;gt;format());
+    m_renderThread-&amp;gt;surface-&amp;gt;create();
+
+    m_renderThread-&amp;gt;moveToThread(m_renderThread);
+
+    connect(window(), &amp;amp;QQuickWindow::sceneGraphInvalidated, m_renderThread, &amp;amp;RenderThread::shutDown, Qt::QueuedConnection);
+
+    m_renderThread-&amp;gt;start();
+    update();
+}
+
+QSGNode *ThreadRenderer::updatePaintNode(QSGNode *oldNode, UpdatePaintNodeData *)
+{
+    TextureNode *node = static_cast&amp;lt;TextureNode *&amp;gt;(oldNode);
+
+    if (!m_renderThread-&amp;gt;context) {
+        QOpenGLContext *current = window()-&amp;gt;openglContext();
+        // Some GL implementations requres that the currently bound context is
+        // made non-current before we set up sharing, so we doneCurrent here
+        // and makeCurrent down below while setting up our own context.
+        current-&amp;gt;doneCurrent();
+
+        m_renderThread-&amp;gt;context = new QOpenGLContext();
+        m_renderThread-&amp;gt;context-&amp;gt;setFormat(current-&amp;gt;format());
+        m_renderThread-&amp;gt;context-&amp;gt;setShareContext(current);
+        m_renderThread-&amp;gt;context-&amp;gt;create();
+        m_renderThread-&amp;gt;context-&amp;gt;moveToThread(m_renderThread);
+
+        current-&amp;gt;makeCurrent(window());
+
+        QMetaObject::invokeMethod(this, &quot;ready&quot;);
+        return nullptr;
+    }
+
+    if (!node) {
+        node = new TextureNode(window());
+
+        /* Set up connections to get the production of FBO textures in sync with vsync on the
+         * rendering thread.
+         *
+         * When a new texture is ready on the rendering thread, we use a direct connection to
+         * the texture node to let it know a new texture can be used. The node will then
+         * emit pendingNewTexture which we bind to QQuickWindow::update to schedule a redraw.
+         *
+         * When the scene graph starts rendering the next frame, the prepareNode() function
+         * is used to update the node with the new texture. Once it completes, it emits
+         * textureInUse() which we connect to the FBO rendering thread's renderNext() to have
+         * it start producing content into its current &quot;back buffer&quot;.
+         *
+         * This FBO rendering pipeline is throttled by vsync on the scene graph rendering thread.
+         */
+        connect(m_renderThread, &amp;amp;RenderThread::textureReady, node, &amp;amp;TextureNode::newTexture, Qt::DirectConnection);
+        connect(node, &amp;amp;TextureNode::pendingNewTexture, window(), &amp;amp;QQuickWindow::update, Qt::QueuedConnection);
+        connect(window(), &amp;amp;QQuickWindow::beforeRendering, node, &amp;amp;TextureNode::prepareNode, Qt::DirectConnection);
+        connect(node, &amp;amp;TextureNode::textureInUse, m_renderThread, &amp;amp;RenderThread::renderNext, Qt::QueuedConnection);
+
+        // Get the production of FBO textures started..
+        QMetaObject::invokeMethod(m_renderThread, &quot;renderNext&quot;, Qt::QueuedConnection);
+    }
+
+    node-&amp;gt;setRect(boundingRect());
+
+    return node;
+}
+
+#include &quot;threadrenderer.moc&quot;
+
+</db:programlisting>
+</db:article>

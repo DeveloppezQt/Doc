@@ -1,0 +1,256 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Chat Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An example showing communication through Bluetooth.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;chat.h&quot;
+#include &quot;remoteselector.h&quot;
+#include &quot;chatserver.h&quot;
+#include &quot;chatclient.h&quot;
+
+#include &amp;lt;QtCore/qdebug.h&amp;gt;
+
+#include &amp;lt;QtBluetooth/qbluetoothdeviceinfo.h&amp;gt;
+#include &amp;lt;QtBluetooth/qbluetoothlocaldevice.h&amp;gt;
+#include &amp;lt;QtBluetooth/qbluetoothuuid.h&amp;gt;
+
+#ifdef Q_OS_ANDROID
+#include &amp;lt;QtAndroidExtras/QtAndroid&amp;gt;
+#endif
+
+static const QLatin1String serviceUuid(&quot;e8e10f95-1a70-4b27-9ccf-02010264e9c8&quot;);
+#ifdef Q_OS_ANDROID
+static const QLatin1String reverseUuid(&quot;c8e96402-0102-cf9c-274b-701a950fe1e8&quot;);
+#endif
+
+Chat::Chat(QWidget *parent)
+    : QDialog(parent), ui(new Ui_Chat)
+{
+    ui-&amp;gt;setupUi(this);
+
+    connect(ui-&amp;gt;quitButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Chat::accept);
+    connect(ui-&amp;gt;connectButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Chat::connectClicked);
+    connect(ui-&amp;gt;sendButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Chat::sendClicked);
+
+    localAdapters = QBluetoothLocalDevice::allDevices();
+    if (localAdapters.count() &amp;lt; 2) {
+        ui-&amp;gt;localAdapterBox-&amp;gt;setVisible(false);
+    } else {
+        //we ignore more than two adapters
+        ui-&amp;gt;localAdapterBox-&amp;gt;setVisible(true);
+        ui-&amp;gt;firstAdapter-&amp;gt;setText(tr(&quot;Default (%1)&quot;, &quot;%1 = Bluetooth address&quot;).
+                                  arg(localAdapters.at(0).address().toString()));
+        ui-&amp;gt;secondAdapter-&amp;gt;setText(localAdapters.at(1).address().toString());
+        ui-&amp;gt;firstAdapter-&amp;gt;setChecked(true);
+        connect(ui-&amp;gt;firstAdapter, &amp;amp;QRadioButton::clicked, this, &amp;amp;Chat::newAdapterSelected);
+        connect(ui-&amp;gt;secondAdapter, &amp;amp;QRadioButton::clicked, this, &amp;amp;Chat::newAdapterSelected);
+        QBluetoothLocalDevice adapter(localAdapters.at(0).address());
+        adapter.setHostMode(QBluetoothLocalDevice::HostDiscoverable);
+    }
+
+    server = new ChatServer(this);
+    connect(server, QOverload&amp;lt;const QString &amp;amp;&amp;gt;::of(&amp;amp;ChatServer::clientConnected),
+            this, &amp;amp;Chat::clientConnected);
+    connect(server, QOverload&amp;lt;const QString &amp;amp;&amp;gt;::of(&amp;amp;ChatServer::clientDisconnected),
+            this,  QOverload&amp;lt;const QString &amp;amp;&amp;gt;::of(&amp;amp;Chat::clientDisconnected));
+    connect(server, &amp;amp;ChatServer::messageReceived,
+            this,  &amp;amp;Chat::showMessage);
+    connect(this, &amp;amp;Chat::sendMessage, server, &amp;amp;ChatServer::sendMessage);
+    server-&amp;gt;startServer();
+
+    localName = QBluetoothLocalDevice().name();
+}
+
+Chat::~Chat()
+{
+    qDeleteAll(clients);
+    delete server;
+}
+
+void Chat::clientConnected(const QString &amp;amp;name)
+{
+    ui-&amp;gt;chat-&amp;gt;insertPlainText(QString::fromLatin1(&quot;%1 has joined chat.\n&quot;).arg(name));
+}
+
+void Chat::clientDisconnected(const QString &amp;amp;name)
+{
+    ui-&amp;gt;chat-&amp;gt;insertPlainText(QString::fromLatin1(&quot;%1 has left.\n&quot;).arg(name));
+}
+
+void Chat::connected(const QString &amp;amp;name)
+{
+    ui-&amp;gt;chat-&amp;gt;insertPlainText(QString::fromLatin1(&quot;Joined chat with %1.\n&quot;).arg(name));
+}
+
+void Chat::newAdapterSelected()
+{
+    const int newAdapterIndex = adapterFromUserSelection();
+    if (currentAdapterIndex != newAdapterIndex) {
+        server-&amp;gt;stopServer();
+        currentAdapterIndex = newAdapterIndex;
+        const QBluetoothHostInfo info = localAdapters.at(currentAdapterIndex);
+        QBluetoothLocalDevice adapter(info.address());
+        adapter.setHostMode(QBluetoothLocalDevice::HostDiscoverable);
+        server-&amp;gt;startServer(info.address());
+        localName = info.name();
+    }
+}
+
+int Chat::adapterFromUserSelection() const
+{
+    int result = 0;
+    QBluetoothAddress newAdapter = localAdapters.at(0).address();
+
+    if (ui-&amp;gt;secondAdapter-&amp;gt;isChecked()) {
+        newAdapter = localAdapters.at(1).address();
+        result = 1;
+    }
+    return result;
+}
+
+void Chat::reactOnSocketError(const QString &amp;amp;error)
+{
+    ui-&amp;gt;chat-&amp;gt;insertPlainText(error);
+}
+
+void Chat::clientDisconnected()
+{
+    ChatClient *client = qobject_cast&amp;lt;ChatClient *&amp;gt;(sender());
+    if (client) {
+        clients.removeOne(client);
+        client-&amp;gt;deleteLater();
+    }
+}
+
+void Chat::connectClicked()
+{
+    ui-&amp;gt;connectButton-&amp;gt;setEnabled(false);
+
+    // scan for services
+    const QBluetoothAddress adapter = localAdapters.isEmpty() ?
+                                           QBluetoothAddress() :
+                                           localAdapters.at(currentAdapterIndex).address();
+
+    RemoteSelector remoteSelector(adapter);
+#ifdef Q_OS_ANDROID
+    if (QtAndroid::androidSdkVersion() &amp;gt;= 23)
+        remoteSelector.startDiscovery(QBluetoothUuid(reverseUuid));
+    else
+        remoteSelector.startDiscovery(QBluetoothUuid(serviceUuid));
+#else
+    remoteSelector.startDiscovery(QBluetoothUuid(serviceUuid));
+#endif
+    if (remoteSelector.exec() == QDialog::Accepted) {
+        QBluetoothServiceInfo service = remoteSelector.service();
+
+        qDebug() &amp;lt;&amp;lt; &quot;Connecting to service 2&quot; &amp;lt;&amp;lt; service.serviceName()
+                 &amp;lt;&amp;lt; &quot;on&quot; &amp;lt;&amp;lt; service.device().name();
+
+        // Create client
+        qDebug() &amp;lt;&amp;lt; &quot;Going to create client&quot;;
+        ChatClient *client = new ChatClient(this);
+qDebug() &amp;lt;&amp;lt; &quot;Connecting...&quot;;
+
+        connect(client, &amp;amp;ChatClient::messageReceived,
+                this, &amp;amp;Chat::showMessage);
+        connect(client, &amp;amp;ChatClient::disconnected,
+                this, QOverload&amp;lt;&amp;gt;::of(&amp;amp;Chat::clientDisconnected));
+        connect(client, QOverload&amp;lt;const QString &amp;amp;&amp;gt;::of(&amp;amp;ChatClient::connected),
+                this, &amp;amp;Chat::connected);
+        connect(client, &amp;amp;ChatClient::socketErrorOccurred,
+                this, &amp;amp;Chat::reactOnSocketError);
+        connect(this, &amp;amp;Chat::sendMessage, client, &amp;amp;ChatClient::sendMessage);
+qDebug() &amp;lt;&amp;lt; &quot;Start client&quot;;
+        client-&amp;gt;startClient(service);
+
+        clients.append(client);
+    }
+
+    ui-&amp;gt;connectButton-&amp;gt;setEnabled(true);
+}
+
+void Chat::sendClicked()
+{
+    ui-&amp;gt;sendButton-&amp;gt;setEnabled(false);
+    ui-&amp;gt;sendText-&amp;gt;setEnabled(false);
+
+    showMessage(localName, ui-&amp;gt;sendText-&amp;gt;text());
+    emit sendMessage(ui-&amp;gt;sendText-&amp;gt;text());
+
+    ui-&amp;gt;sendText-&amp;gt;clear();
+
+    ui-&amp;gt;sendText-&amp;gt;setEnabled(true);
+    ui-&amp;gt;sendButton-&amp;gt;setEnabled(true);
+}
+
+void Chat::showMessage(const QString &amp;amp;sender, const QString &amp;amp;message)
+{
+    ui-&amp;gt;chat-&amp;gt;insertPlainText(QString::fromLatin1(&quot;%1: %2\n&quot;).arg(sender, message));
+    ui-&amp;gt;chat-&amp;gt;ensureCursorVisible();
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Scanner Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An example showing how to locate Bluetooth devices.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;device.h&quot;
+#include &quot;service.h&quot;
+
+#include &amp;lt;qbluetoothaddress.h&amp;gt;
+#include &amp;lt;qbluetoothdevicediscoveryagent.h&amp;gt;
+#include &amp;lt;qbluetoothlocaldevice.h&amp;gt;
+#include &amp;lt;QMenu&amp;gt;
+#include &amp;lt;QDebug&amp;gt;
+
+DeviceDiscoveryDialog::DeviceDiscoveryDialog(QWidget *parent)
+:   QDialog(parent), localDevice(new QBluetoothLocalDevice),
+    ui(new Ui_DeviceDiscovery)
+{
+    ui-&amp;gt;setupUi(this);
+
+    /*
+     * In case of multiple Bluetooth adapters it is possible to set adapter
+     * which will be used. Example code:
+     *
+     * QBluetoothAddress address(&quot;XX:XX:XX:XX:XX:XX&quot;);
+     * discoveryAgent = new QBluetoothDeviceDiscoveryAgent(address);
+     *
+     **/
+
+    discoveryAgent = new QBluetoothDeviceDiscoveryAgent();
+
+    connect(ui-&amp;gt;inquiryType, SIGNAL(toggled(bool)), this, SLOT(setGeneralUnlimited(bool)));
+    connect(ui-&amp;gt;scan, SIGNAL(clicked()), this, SLOT(startScan()));
+
+    connect(discoveryAgent, SIGNAL(deviceDiscovered(QBluetoothDeviceInfo)),
+            this, SLOT(addDevice(QBluetoothDeviceInfo)));
+    connect(discoveryAgent, SIGNAL(finished()), this, SLOT(scanFinished()));
+
+    connect(ui-&amp;gt;list, SIGNAL(itemActivated(QListWidgetItem*)),
+            this, SLOT(itemActivated(QListWidgetItem*)));
+
+    connect(localDevice, SIGNAL(hostModeStateChanged(QBluetoothLocalDevice::HostMode)),
+            this, SLOT(hostModeStateChanged(QBluetoothLocalDevice::HostMode)));
+
+    hostModeStateChanged(localDevice-&amp;gt;hostMode());
+    // add context menu for devices to be able to pair device
+    ui-&amp;gt;list-&amp;gt;setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui-&amp;gt;list, SIGNAL(customContextMenuRequested(QPoint)), this, SLOT(displayPairingMenu(QPoint)));
+    connect(localDevice, SIGNAL(pairingFinished(QBluetoothAddress,QBluetoothLocalDevice::Pairing))
+        , this, SLOT(pairingDone(QBluetoothAddress,QBluetoothLocalDevice::Pairing)));
+
+}
+
+DeviceDiscoveryDialog::~DeviceDiscoveryDialog()
+{
+    delete discoveryAgent;
+}
+
+void DeviceDiscoveryDialog::addDevice(const QBluetoothDeviceInfo &amp;amp;info)
+{
+    QString label = QString(&quot;%1 %2&quot;).arg(info.address().toString()).arg(info.name());
+    QList&amp;lt;QListWidgetItem *&amp;gt; items = ui-&amp;gt;list-&amp;gt;findItems(label, Qt::MatchExactly);
+    if (items.empty()) {
+        QListWidgetItem *item = new QListWidgetItem(label);
+        QBluetoothLocalDevice::Pairing pairingStatus = localDevice-&amp;gt;pairingStatus(info.address());
+        if (pairingStatus == QBluetoothLocalDevice::Paired || pairingStatus == QBluetoothLocalDevice::AuthorizedPaired )
+            item-&amp;gt;setTextColor(QColor(Qt::green));
+        else
+            item-&amp;gt;setTextColor(QColor(Qt::black));
+
+        ui-&amp;gt;list-&amp;gt;addItem(item);
+    }
+
+}
+
+void DeviceDiscoveryDialog::startScan()
+{
+    discoveryAgent-&amp;gt;start();
+    ui-&amp;gt;scan-&amp;gt;setEnabled(false);
+    ui-&amp;gt;inquiryType-&amp;gt;setEnabled(false);
+}
+
+void DeviceDiscoveryDialog::scanFinished()
+{
+    ui-&amp;gt;scan-&amp;gt;setEnabled(true);
+    ui-&amp;gt;inquiryType-&amp;gt;setEnabled(true);
+}
+
+void DeviceDiscoveryDialog::setGeneralUnlimited(bool unlimited)
+{
+    if (unlimited)
+        discoveryAgent-&amp;gt;setInquiryType(QBluetoothDeviceDiscoveryAgent::GeneralUnlimitedInquiry);
+    else
+        discoveryAgent-&amp;gt;setInquiryType(QBluetoothDeviceDiscoveryAgent::LimitedInquiry);
+}
+
+void DeviceDiscoveryDialog::itemActivated(QListWidgetItem *item)
+{
+    QString text = item-&amp;gt;text();
+
+    int index = text.indexOf(' ');
+
+    if (index == -1)
+        return;
+
+    QBluetoothAddress address(text.left(index));
+    QString name(text.mid(index + 1));
+
+    ServiceDiscoveryDialog d(name, address);
+    d.exec();
+}
+
+void DeviceDiscoveryDialog::on_discoverable_clicked(bool clicked)
+{
+    if (clicked)
+        localDevice-&amp;gt;setHostMode(QBluetoothLocalDevice::HostDiscoverable);
+    else
+        localDevice-&amp;gt;setHostMode(QBluetoothLocalDevice::HostConnectable);
+}
+
+void DeviceDiscoveryDialog::on_power_clicked(bool clicked)
+{
+    if (clicked)
+        localDevice-&amp;gt;powerOn();
+    else
+        localDevice-&amp;gt;setHostMode(QBluetoothLocalDevice::HostPoweredOff);
+}
+
+void DeviceDiscoveryDialog::hostModeStateChanged(QBluetoothLocalDevice::HostMode mode)
+{
+    if (mode != QBluetoothLocalDevice::HostPoweredOff)
+        ui-&amp;gt;power-&amp;gt;setChecked(true);
+    else
+       ui-&amp;gt;power-&amp;gt;setChecked( false);
+
+    if (mode == QBluetoothLocalDevice::HostDiscoverable)
+        ui-&amp;gt;discoverable-&amp;gt;setChecked(true);
+    else
+        ui-&amp;gt;discoverable-&amp;gt;setChecked(false);
+
+    bool on = !(mode == QBluetoothLocalDevice::HostPoweredOff);
+
+    ui-&amp;gt;scan-&amp;gt;setEnabled(on);
+    ui-&amp;gt;discoverable-&amp;gt;setEnabled(on);
+}
+void DeviceDiscoveryDialog::displayPairingMenu(const QPoint &amp;amp;pos)
+{
+    if (ui-&amp;gt;list-&amp;gt;count() == 0)
+        return;
+    QMenu menu(this);
+    QAction *pairAction = menu.addAction(&quot;Pair&quot;);
+    QAction *removePairAction = menu.addAction(&quot;Remove Pairing&quot;);
+    QAction *chosenAction = menu.exec(ui-&amp;gt;list-&amp;gt;viewport()-&amp;gt;mapToGlobal(pos));
+    QListWidgetItem *currentItem = ui-&amp;gt;list-&amp;gt;currentItem();
+
+    QString text = currentItem-&amp;gt;text();
+    int index = text.indexOf(' ');
+    if (index == -1)
+        return;
+
+    QBluetoothAddress address (text.left(index));
+    if (chosenAction == pairAction) {
+        localDevice-&amp;gt;requestPairing(address, QBluetoothLocalDevice::Paired);
+    } else if (chosenAction == removePairAction) {
+        localDevice-&amp;gt;requestPairing(address, QBluetoothLocalDevice::Unpaired);
+    }
+}
+void DeviceDiscoveryDialog::pairingDone(const QBluetoothAddress &amp;amp;address, QBluetoothLocalDevice::Pairing pairing)
+{
+    QList&amp;lt;QListWidgetItem *&amp;gt; items = ui-&amp;gt;list-&amp;gt;findItems(address.toString(), Qt::MatchContains);
+
+    if (pairing == QBluetoothLocalDevice::Paired || pairing == QBluetoothLocalDevice::AuthorizedPaired ) {
+        for (int var = 0; var &amp;lt; items.count(); ++var) {
+            QListWidgetItem *item = items.at(var);
+            item-&amp;gt;setTextColor(QColor(Qt::green));
+        }
+    } else {
+        for (int var = 0; var &amp;lt; items.count(); ++var) {
+            QListWidgetItem *item = items.at(var);
+            item-&amp;gt;setTextColor(QColor(Qt::red));
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

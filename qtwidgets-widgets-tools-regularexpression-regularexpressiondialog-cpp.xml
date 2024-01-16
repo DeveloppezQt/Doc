@@ -1,0 +1,501 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QRegularExpression Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> example shows how regular expressions in Qt are applied to text by providing an environment in which new regular expressions can be created and tested on custom text strings.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 Klarälvdalens Datakonsult AB, a KDAB Group company, info@kdab.com, author Giuseppe D'Angelo &amp;lt;giuseppe.dangelo@kdab.com&amp;gt;
+** Copyright (C) 2016 Samuel Gaist &amp;lt;samuel.gaist@edeltech.ch&amp;gt;
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;regularexpressiondialog.h&quot;
+
+#include &amp;lt;QApplication&amp;gt;
+
+#include &amp;lt;QCheckBox&amp;gt;
+#include &amp;lt;QComboBox&amp;gt;
+#include &amp;lt;QLabel&amp;gt;
+#include &amp;lt;QLineEdit&amp;gt;
+#include &amp;lt;QMenu&amp;gt;
+#include &amp;lt;QSpinBox&amp;gt;
+#include &amp;lt;QPlainTextEdit&amp;gt;
+#include &amp;lt;QTreeWidget&amp;gt;
+
+#include &amp;lt;QAction&amp;gt;
+#include &amp;lt;QClipboard&amp;gt;
+#include &amp;lt;QContextMenuEvent&amp;gt;
+
+#include &amp;lt;QHBoxLayout&amp;gt;
+#include &amp;lt;QGridLayout&amp;gt;
+#include &amp;lt;QFormLayout&amp;gt;
+
+#include &amp;lt;QRegularExpression&amp;gt;
+#include &amp;lt;QRegularExpressionMatch&amp;gt;
+#include &amp;lt;QRegularExpressionMatchIterator&amp;gt;
+
+Q_DECLARE_METATYPE(QRegularExpression::MatchType)
+
+static QString rawStringLiteral(QString pattern)
+{
+    pattern.prepend(QLatin1String(&quot;R\&quot;RX(&quot;));
+    pattern.append(QLatin1String(&quot;)RX\&quot;&quot;));
+    return pattern;
+}
+
+static QString patternToCode(QString pattern)
+{
+    pattern.replace(QLatin1String(&quot;\\&quot;), QLatin1String(&quot;\\\\&quot;));
+    pattern.replace(QLatin1String(&quot;\&quot;&quot;), QLatin1String(&quot;\\\&quot;&quot;));
+    pattern.prepend(QLatin1Char('&quot;'));
+    pattern.append(QLatin1Char('&quot;'));
+    return pattern;
+}
+
+static QString codeToPattern(QString code)
+{
+    for (int i = 0; i &amp;lt; code.size(); ++i) {
+        if (code.at(i) == QLatin1Char('\\'))
+            code.remove(i, 1);
+    }
+    if (code.startsWith(QLatin1Char('&quot;')) &amp;amp;&amp;amp; code.endsWith(QLatin1Char('&quot;'))) {
+        code.chop(1);
+        code.remove(0, 1);
+    }
+    return code;
+}
+
+class PatternLineEdit : public QLineEdit
+{
+    Q_OBJECT
+public:
+    explicit PatternLineEdit(QWidget *parent = nullptr);
+
+private slots:
+    void copyToCode();
+    void pasteFromCode();
+    void escapeSelection();
+
+protected:
+    void contextMenuEvent(QContextMenuEvent *event) override;
+
+private:
+    QAction *escapeSelectionAction;
+    QAction *copyToCodeAction;
+    QAction *pasteFromCodeAction;
+};
+
+PatternLineEdit::PatternLineEdit(QWidget *parent) :
+    QLineEdit(parent),
+    escapeSelectionAction(new QAction(tr(&quot;Escape Selection&quot;), this)),
+    copyToCodeAction(new QAction(tr(&quot;Copy to Code&quot;), this)),
+    pasteFromCodeAction(new QAction(tr(&quot;Paste from Code&quot;), this))
+{
+    setClearButtonEnabled(true);
+    connect(escapeSelectionAction, &amp;amp;QAction::triggered, this, &amp;amp;PatternLineEdit::escapeSelection);
+    connect(copyToCodeAction, &amp;amp;QAction::triggered, this, &amp;amp;PatternLineEdit::copyToCode);
+    connect(pasteFromCodeAction, &amp;amp;QAction::triggered, this, &amp;amp;PatternLineEdit::pasteFromCode);
+#if !QT_CONFIG(clipboard)
+    copyToCodeAction-&amp;gt;setEnabled(false);
+    pasteFromCodeAction-&amp;gt;setEnabled(false);
+#endif
+}
+
+void PatternLineEdit::escapeSelection()
+{
+    const QString selection = selectedText();
+    const QString escapedSelection = QRegularExpression::escape(selection);
+    if (escapedSelection != selection) {
+        QString t = text();
+        t.replace(selectionStart(), selection.size(), escapedSelection);
+        setText(t);
+    }
+}
+
+void PatternLineEdit::copyToCode()
+{
+#if QT_CONFIG(clipboard)
+    QGuiApplication::clipboard()-&amp;gt;setText(patternToCode(text()));
+#endif
+}
+
+void PatternLineEdit::pasteFromCode()
+{
+#if QT_CONFIG(clipboard)
+    setText(codeToPattern(QGuiApplication::clipboard()-&amp;gt;text()));
+#endif
+}
+
+void PatternLineEdit::contextMenuEvent(QContextMenuEvent *event)
+{
+    QMenu *menu = createStandardContextMenu();
+    menu-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+    menu-&amp;gt;addSeparator();
+    escapeSelectionAction-&amp;gt;setEnabled(hasSelectedText());
+    menu-&amp;gt;addAction(escapeSelectionAction);
+    menu-&amp;gt;addSeparator();
+    menu-&amp;gt;addAction(copyToCodeAction);
+    menu-&amp;gt;addAction(pasteFromCodeAction);
+    menu-&amp;gt;popup(event-&amp;gt;globalPos());
+}
+
+class DisplayLineEdit : public QLineEdit
+{
+public:
+    explicit DisplayLineEdit(QWidget *parent = nullptr);
+};
+
+DisplayLineEdit::DisplayLineEdit(QWidget *parent) : QLineEdit(parent)
+{
+    setReadOnly(true);
+    QPalette disabledPalette = palette();
+    disabledPalette.setBrush(QPalette::Base, disabledPalette.brush(QPalette::Disabled, QPalette::Base));
+    setPalette(disabledPalette);
+
+#if QT_CONFIG(clipboard)
+    QAction *copyAction = new QAction(this);
+    copyAction-&amp;gt;setText(RegularExpressionDialog::tr(&quot;Copy to clipboard&quot;));
+    copyAction-&amp;gt;setIcon(QIcon(QStringLiteral(&quot;:/images/copy.png&quot;)));
+    connect(copyAction, &amp;amp;QAction::triggered, this,
+            [this] () { QGuiApplication::clipboard()-&amp;gt;setText(text()); });
+    addAction(copyAction, QLineEdit::TrailingPosition);
+#endif
+}
+
+RegularExpressionDialog::RegularExpressionDialog(QWidget *parent)
+    : QDialog(parent)
+{
+    setupUi();
+    setWindowTitle(tr(&quot;QRegularExpression Example&quot;));
+
+    connect(patternLineEdit, &amp;amp;QLineEdit::textChanged, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(subjectTextEdit, &amp;amp;QPlainTextEdit::textChanged, this, &amp;amp;RegularExpressionDialog::refresh);
+
+    connect(caseInsensitiveOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(dotMatchesEverythingOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(multilineOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(extendedPatternSyntaxOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(invertedGreedinessOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(dontCaptureOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(useUnicodePropertiesOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(optimizeOnFirstUsageOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(dontAutomaticallyOptimizeOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+
+    connect(offsetSpinBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QSpinBox::valueChanged),
+            this, &amp;amp;RegularExpressionDialog::refresh);
+
+    connect(matchTypeComboBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;RegularExpressionDialog::refresh);
+
+    connect(anchoredMatchOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+    connect(dontCheckSubjectStringMatchOptionCheckBox, &amp;amp;QCheckBox::toggled, this, &amp;amp;RegularExpressionDialog::refresh);
+
+    patternLineEdit-&amp;gt;setText(tr(&quot;(\\+?\\d+)-(?&amp;lt;prefix&amp;gt;\\d+)-(?&amp;lt;number&amp;gt;\\w+)&quot;));
+    subjectTextEdit-&amp;gt;setPlainText(tr(&quot;My office number is +43-152-0123456, my mobile is 001-41-255512 instead.&quot;));
+
+    refresh();
+}
+
+void RegularExpressionDialog::setResultUiEnabled(bool enabled)
+{
+    matchDetailsTreeWidget-&amp;gt;setEnabled(enabled);
+    namedGroupsTreeWidget-&amp;gt;setEnabled(enabled);
+}
+
+static void setTextColor(QWidget *widget, const QColor &amp;amp;color)
+{
+    QPalette palette = widget-&amp;gt;palette();
+    palette.setColor(QPalette::Text, color);
+    widget-&amp;gt;setPalette(palette);
+}
+
+void RegularExpressionDialog::refresh()
+{
+    setUpdatesEnabled(false);
+
+    const QString pattern = patternLineEdit-&amp;gt;text();
+    const QString text = subjectTextEdit-&amp;gt;toPlainText();
+
+    offsetSpinBox-&amp;gt;setMaximum(qMax(0, text.length() - 1));
+
+    escapedPatternLineEdit-&amp;gt;setText(patternToCode(pattern));
+    rawStringLiteralLineEdit-&amp;gt;setText(rawStringLiteral(pattern));
+
+    setTextColor(patternLineEdit, subjectTextEdit-&amp;gt;palette().color(QPalette::Text));
+    matchDetailsTreeWidget-&amp;gt;clear();
+    namedGroupsTreeWidget-&amp;gt;clear();
+    regexpStatusLabel-&amp;gt;setText(QString());
+
+    if (pattern.isEmpty()) {
+        setResultUiEnabled(false);
+        setUpdatesEnabled(true);
+        return;
+    }
+
+    QRegularExpression rx(pattern);
+    if (!rx.isValid()) {
+        setTextColor(patternLineEdit, Qt::red);
+        regexpStatusLabel-&amp;gt;setText(tr(&quot;Invalid: syntax error at position %1 (%2)&quot;)
+                                   .arg(rx.patternErrorOffset())
+                                   .arg(rx.errorString()));
+        setResultUiEnabled(false);
+        setUpdatesEnabled(true);
+        return;
+    }
+
+    setResultUiEnabled(true);
+
+    QRegularExpression::MatchType matchType = matchTypeComboBox-&amp;gt;currentData().value&amp;lt;QRegularExpression::MatchType&amp;gt;();
+    QRegularExpression::PatternOptions patternOptions = QRegularExpression::NoPatternOption;
+    QRegularExpression::MatchOptions matchOptions = QRegularExpression::NoMatchOption;
+
+    if (anchoredMatchOptionCheckBox-&amp;gt;isChecked())
+        matchOptions |= QRegularExpression::AnchoredMatchOption;
+    if (dontCheckSubjectStringMatchOptionCheckBox-&amp;gt;isChecked())
+        matchOptions |= QRegularExpression::DontCheckSubjectStringMatchOption;
+
+    if (caseInsensitiveOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::CaseInsensitiveOption;
+    if (dotMatchesEverythingOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::DotMatchesEverythingOption;
+    if (multilineOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::MultilineOption;
+    if (extendedPatternSyntaxOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::ExtendedPatternSyntaxOption;
+    if (invertedGreedinessOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::InvertedGreedinessOption;
+    if (dontCaptureOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::DontCaptureOption;
+    if (useUnicodePropertiesOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::UseUnicodePropertiesOption;
+    if (optimizeOnFirstUsageOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::OptimizeOnFirstUsageOption;
+    if (dontAutomaticallyOptimizeOptionCheckBox-&amp;gt;isChecked())
+        patternOptions |= QRegularExpression::DontAutomaticallyOptimizeOption;
+
+    rx.setPatternOptions(patternOptions);
+
+    const int capturingGroupsCount = rx.captureCount() + 1;
+
+    QRegularExpressionMatchIterator iterator = rx.globalMatch(text, offsetSpinBox-&amp;gt;value(), matchType, matchOptions);
+    int i = 0;
+
+    while (iterator.hasNext()) {
+        QRegularExpressionMatch match = iterator.next();
+
+        QTreeWidgetItem *matchDetailTopItem = new QTreeWidgetItem(matchDetailsTreeWidget);
+        matchDetailTopItem-&amp;gt;setText(0, QString::number(i));
+
+        for (int captureGroupIndex = 0; captureGroupIndex &amp;lt; capturingGroupsCount; ++captureGroupIndex) {
+            QTreeWidgetItem *matchDetailItem = new QTreeWidgetItem(matchDetailTopItem);
+            matchDetailItem-&amp;gt;setText(1, QString::number(captureGroupIndex));
+            matchDetailItem-&amp;gt;setText(2, match.captured(captureGroupIndex));
+        }
+
+        ++i;
+    }
+
+    matchDetailsTreeWidget-&amp;gt;expandAll();
+
+    regexpStatusLabel-&amp;gt;setText(tr(&quot;Valid&quot;));
+
+    const QStringList namedCaptureGroups = rx.namedCaptureGroups();
+    for (int i = 0; i &amp;lt; namedCaptureGroups.size(); ++i) {
+        const QString currentNamedCaptureGroup = namedCaptureGroups.at(i);
+
+        QTreeWidgetItem *namedGroupItem = new QTreeWidgetItem(namedGroupsTreeWidget);
+        namedGroupItem-&amp;gt;setText(0, QString::number(i));
+        namedGroupItem-&amp;gt;setText(1, currentNamedCaptureGroup.isNull() ? tr(&quot;&amp;lt;no name&amp;gt;&quot;) : currentNamedCaptureGroup);
+    }
+
+    setUpdatesEnabled(true);
+}
+
+void RegularExpressionDialog::setupUi()
+{
+    QWidget *leftHalfContainer = setupLeftUi();
+
+    QFrame *verticalSeparator = new QFrame;
+    verticalSeparator-&amp;gt;setFrameStyle(QFrame::VLine | QFrame::Sunken);
+
+    QWidget *rightHalfContainer = setupRightUi();
+
+    QHBoxLayout *mainLayout = new QHBoxLayout;
+    mainLayout-&amp;gt;addWidget(leftHalfContainer);
+    mainLayout-&amp;gt;addWidget(verticalSeparator);
+    mainLayout-&amp;gt;addWidget(rightHalfContainer);
+
+    setLayout(mainLayout);
+}
+
+QWidget *RegularExpressionDialog::setupLeftUi()
+{
+    QWidget *container = new QWidget;
+
+    QFormLayout *layout = new QFormLayout(container);
+    layout-&amp;gt;setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout-&amp;gt;setMargin(0);
+
+    QLabel *regexpAndSubjectLabel = new QLabel(tr(&quot;&amp;lt;h3&amp;gt;Regular expression and text input&amp;lt;/h3&amp;gt;&quot;));
+    layout-&amp;gt;addRow(regexpAndSubjectLabel);
+
+    patternLineEdit = new PatternLineEdit;
+    patternLineEdit-&amp;gt;setClearButtonEnabled(true);
+    layout-&amp;gt;addRow(tr(&quot;&amp;amp;Pattern:&quot;), patternLineEdit);
+
+    rawStringLiteralLineEdit = new DisplayLineEdit;
+    layout-&amp;gt;addRow(tr(&quot;&amp;amp;Raw string literal:&quot;), rawStringLiteralLineEdit);
+    escapedPatternLineEdit = new DisplayLineEdit;
+    layout-&amp;gt;addRow(tr(&quot;&amp;amp;Escaped pattern:&quot;), escapedPatternLineEdit);
+
+    subjectTextEdit = new QPlainTextEdit;
+    layout-&amp;gt;addRow(tr(&quot;&amp;amp;Subject text:&quot;), subjectTextEdit);
+
+    caseInsensitiveOptionCheckBox = new QCheckBox(tr(&quot;Case insensitive (/i)&quot;));
+    dotMatchesEverythingOptionCheckBox = new QCheckBox(tr(&quot;Dot matches everything (/s)&quot;));
+    multilineOptionCheckBox = new QCheckBox(tr(&quot;Multiline (/m)&quot;));
+    extendedPatternSyntaxOptionCheckBox = new QCheckBox(tr(&quot;Extended pattern (/x)&quot;));
+    invertedGreedinessOptionCheckBox = new QCheckBox(tr(&quot;Inverted greediness&quot;));
+    dontCaptureOptionCheckBox = new QCheckBox(tr(&quot;Don't capture&quot;));
+    useUnicodePropertiesOptionCheckBox = new QCheckBox(tr(&quot;Use unicode properties (/u)&quot;));
+    optimizeOnFirstUsageOptionCheckBox = new QCheckBox(tr(&quot;Optimize on first usage&quot;));
+    dontAutomaticallyOptimizeOptionCheckBox = new QCheckBox(tr(&quot;Don't automatically optimize&quot;));
+
+    QGridLayout *patternOptionsCheckBoxLayout = new QGridLayout;
+    int gridRow = 0;
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(caseInsensitiveOptionCheckBox, gridRow, 1);
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(dotMatchesEverythingOptionCheckBox, gridRow, 2);
+    ++gridRow;
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(multilineOptionCheckBox, gridRow, 1);
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(extendedPatternSyntaxOptionCheckBox, gridRow, 2);
+    ++gridRow;
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(invertedGreedinessOptionCheckBox, gridRow, 1);
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(dontCaptureOptionCheckBox, gridRow, 2);
+    ++gridRow;
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(useUnicodePropertiesOptionCheckBox, gridRow, 1);
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(optimizeOnFirstUsageOptionCheckBox, gridRow, 2);
+    ++gridRow;
+    patternOptionsCheckBoxLayout-&amp;gt;addWidget(dontAutomaticallyOptimizeOptionCheckBox, gridRow, 1);
+
+    layout-&amp;gt;addRow(tr(&quot;Pattern options:&quot;), patternOptionsCheckBoxLayout);
+
+    offsetSpinBox = new QSpinBox;
+    layout-&amp;gt;addRow(tr(&quot;Match &amp;amp;offset:&quot;), offsetSpinBox);
+
+    matchTypeComboBox = new QComboBox;
+    matchTypeComboBox-&amp;gt;addItem(tr(&quot;Normal&quot;), QVariant::fromValue(QRegularExpression::NormalMatch));
+    matchTypeComboBox-&amp;gt;addItem(tr(&quot;Partial prefer complete&quot;), QVariant::fromValue(QRegularExpression::PartialPreferCompleteMatch));
+    matchTypeComboBox-&amp;gt;addItem(tr(&quot;Partial prefer first&quot;), QVariant::fromValue(QRegularExpression::PartialPreferFirstMatch));
+    matchTypeComboBox-&amp;gt;addItem(tr(&quot;No match&quot;), QVariant::fromValue(QRegularExpression::NoMatch));
+    layout-&amp;gt;addRow(tr(&quot;Match &amp;amp;type:&quot;), matchTypeComboBox);
+
+    dontCheckSubjectStringMatchOptionCheckBox = new QCheckBox(tr(&quot;Don't check subject string&quot;));
+    anchoredMatchOptionCheckBox = new QCheckBox(tr(&quot;Anchored match&quot;));
+
+    QGridLayout *matchOptionsCheckBoxLayout = new QGridLayout;
+    matchOptionsCheckBoxLayout-&amp;gt;addWidget(dontCheckSubjectStringMatchOptionCheckBox, 0, 0);
+    matchOptionsCheckBoxLayout-&amp;gt;addWidget(anchoredMatchOptionCheckBox, 0, 1);
+    layout-&amp;gt;addRow(tr(&quot;Match options:&quot;), matchOptionsCheckBoxLayout);
+
+    return container;
+}
+
+QWidget *RegularExpressionDialog::setupRightUi()
+{
+    QWidget *container = new QWidget;
+
+    QFormLayout *layout = new QFormLayout(container);
+    layout-&amp;gt;setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    layout-&amp;gt;setMargin(0);
+
+    QLabel *matchInfoLabel = new QLabel(tr(&quot;&amp;lt;h3&amp;gt;Match information&amp;lt;/h3&amp;gt;&quot;));
+    layout-&amp;gt;addRow(matchInfoLabel);
+
+    matchDetailsTreeWidget = new QTreeWidget;
+    matchDetailsTreeWidget-&amp;gt;setHeaderLabels(QStringList() &amp;lt;&amp;lt; tr(&quot;Match index&quot;) &amp;lt;&amp;lt; tr(&quot;Group index&quot;) &amp;lt;&amp;lt; tr(&quot;Captured string&quot;));
+    matchDetailsTreeWidget-&amp;gt;setSizeAdjustPolicy(QTreeWidget::AdjustToContents);
+    layout-&amp;gt;addRow(tr(&quot;Match details:&quot;), matchDetailsTreeWidget);
+
+    QFrame *horizontalSeparator = new QFrame;
+    horizontalSeparator-&amp;gt;setFrameStyle(QFrame::HLine | QFrame::Sunken);
+    layout-&amp;gt;addRow(horizontalSeparator);
+
+    QLabel *regexpInfoLabel = new QLabel(tr(&quot;&amp;lt;h3&amp;gt;Regular expression information&amp;lt;/h3&amp;gt;&quot;));
+    layout-&amp;gt;addRow(regexpInfoLabel);
+
+    regexpStatusLabel = new QLabel(tr(&quot;Valid&quot;));
+    regexpStatusLabel-&amp;gt;setWordWrap(true);
+    layout-&amp;gt;addRow(tr(&quot;Pattern status:&quot;), regexpStatusLabel);
+
+    namedGroupsTreeWidget = new QTreeWidget;
+    namedGroupsTreeWidget-&amp;gt;setHeaderLabels(QStringList() &amp;lt;&amp;lt; tr(&quot;Index&quot;) &amp;lt;&amp;lt; tr(&quot;Named group&quot;));
+    namedGroupsTreeWidget-&amp;gt;setSizeAdjustPolicy(QTreeWidget::AdjustToContents);
+    namedGroupsTreeWidget-&amp;gt;setRootIsDecorated(false);
+    layout-&amp;gt;addRow(tr(&quot;Named groups:&quot;), namedGroupsTreeWidget);
+
+    return container;
+}
+
+#include &quot;regularexpressiondialog.moc&quot;
+
+</db:programlisting>
+</db:article>

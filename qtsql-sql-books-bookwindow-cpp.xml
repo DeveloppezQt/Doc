@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Books</db:title>
+<db:productname>QtSql</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SQL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use Qt SQL classes with a model/view framework.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;bookwindow.h&quot;
+#include &quot;bookdelegate.h&quot;
+#include &quot;initdb.h&quot;
+
+#include &amp;lt;QtSql&amp;gt;
+
+BookWindow::BookWindow()
+{
+    ui.setupUi(this);
+
+    if (!QSqlDatabase::drivers().contains(&quot;QSQLITE&quot;))
+        QMessageBox::critical(
+                    this,
+                    &quot;Unable to load database&quot;,
+                    &quot;This demo needs the SQLITE driver&quot;
+                    );
+
+    // Initialize the database:
+    QSqlError err = initDb();
+    if (err.type() != QSqlError::NoError) {
+        showError(err);
+        return;
+    }
+
+    // Create the data model:
+    model = new QSqlRelationalTableModel(ui.bookTable);
+    model-&amp;gt;setEditStrategy(QSqlTableModel::OnManualSubmit);
+    model-&amp;gt;setTable(&quot;books&quot;);
+
+    // Remember the indexes of the columns:
+    authorIdx = model-&amp;gt;fieldIndex(&quot;author&quot;);
+    genreIdx = model-&amp;gt;fieldIndex(&quot;genre&quot;);
+
+    // Set the relations to the other database tables:
+    model-&amp;gt;setRelation(authorIdx, QSqlRelation(&quot;authors&quot;, &quot;id&quot;, &quot;name&quot;));
+    model-&amp;gt;setRelation(genreIdx, QSqlRelation(&quot;genres&quot;, &quot;id&quot;, &quot;name&quot;));
+
+    // Set the localized header captions:
+    model-&amp;gt;setHeaderData(authorIdx, Qt::Horizontal, tr(&quot;Author Name&quot;));
+    model-&amp;gt;setHeaderData(genreIdx, Qt::Horizontal, tr(&quot;Genre&quot;));
+    model-&amp;gt;setHeaderData(model-&amp;gt;fieldIndex(&quot;title&quot;),
+                         Qt::Horizontal, tr(&quot;Title&quot;));
+    model-&amp;gt;setHeaderData(model-&amp;gt;fieldIndex(&quot;year&quot;), Qt::Horizontal, tr(&quot;Year&quot;));
+    model-&amp;gt;setHeaderData(model-&amp;gt;fieldIndex(&quot;rating&quot;),
+                         Qt::Horizontal, tr(&quot;Rating&quot;));
+
+    // Populate the model:
+    if (!model-&amp;gt;select()) {
+        showError(model-&amp;gt;lastError());
+        return;
+    }
+
+    // Set the model and hide the ID column:
+    ui.bookTable-&amp;gt;setModel(model);
+    ui.bookTable-&amp;gt;setItemDelegate(new BookDelegate(ui.bookTable));
+    ui.bookTable-&amp;gt;setColumnHidden(model-&amp;gt;fieldIndex(&quot;id&quot;), true);
+    ui.bookTable-&amp;gt;setSelectionMode(QAbstractItemView::SingleSelection);
+
+    // Initialize the Author combo box:
+    ui.authorEdit-&amp;gt;setModel(model-&amp;gt;relationModel(authorIdx));
+    ui.authorEdit-&amp;gt;setModelColumn(
+                model-&amp;gt;relationModel(authorIdx)-&amp;gt;fieldIndex(&quot;name&quot;));
+
+    ui.genreEdit-&amp;gt;setModel(model-&amp;gt;relationModel(genreIdx));
+    ui.genreEdit-&amp;gt;setModelColumn(
+                model-&amp;gt;relationModel(genreIdx)-&amp;gt;fieldIndex(&quot;name&quot;));
+
+    // Lock and prohibit resizing of the width of the rating column:
+    ui.bookTable-&amp;gt;horizontalHeader()-&amp;gt;setSectionResizeMode(
+                model-&amp;gt;fieldIndex(&quot;rating&quot;),
+                QHeaderView::ResizeToContents);
+
+    QDataWidgetMapper *mapper = new QDataWidgetMapper(this);
+    mapper-&amp;gt;setModel(model);
+    mapper-&amp;gt;setItemDelegate(new BookDelegate(this));
+    mapper-&amp;gt;addMapping(ui.titleEdit, model-&amp;gt;fieldIndex(&quot;title&quot;));
+    mapper-&amp;gt;addMapping(ui.yearEdit, model-&amp;gt;fieldIndex(&quot;year&quot;));
+    mapper-&amp;gt;addMapping(ui.authorEdit, authorIdx);
+    mapper-&amp;gt;addMapping(ui.genreEdit, genreIdx);
+    mapper-&amp;gt;addMapping(ui.ratingEdit, model-&amp;gt;fieldIndex(&quot;rating&quot;));
+
+    connect(ui.bookTable-&amp;gt;selectionModel(),
+            &amp;amp;QItemSelectionModel::currentRowChanged,
+            mapper,
+            &amp;amp;QDataWidgetMapper::setCurrentModelIndex
+            );
+
+    ui.bookTable-&amp;gt;setCurrentIndex(model-&amp;gt;index(0, 0));
+    createMenuBar();
+}
+
+void BookWindow::showError(const QSqlError &amp;amp;err)
+{
+    QMessageBox::critical(this, &quot;Unable to initialize Database&quot;,
+                &quot;Error initializing database: &quot; + err.text());
+}
+
+void BookWindow::createMenuBar()
+{
+    QAction *quitAction = new QAction(tr(&quot;&amp;amp;Quit&quot;), this);
+    QAction *aboutAction = new QAction(tr(&quot;&amp;amp;About&quot;), this);
+    QAction *aboutQtAction = new QAction(tr(&quot;&amp;amp;About Qt&quot;), this);
+
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    fileMenu-&amp;gt;addAction(quitAction);
+
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(aboutAction);
+    helpMenu-&amp;gt;addAction(aboutQtAction);
+
+    connect(quitAction, &amp;amp;QAction::triggered, this, &amp;amp;BookWindow::close);
+    connect(aboutAction, &amp;amp;QAction::triggered, this, &amp;amp;BookWindow::about);
+    connect(aboutQtAction, &amp;amp;QAction::triggered, qApp, &amp;amp;QApplication::aboutQt);
+}
+
+void BookWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About Books&quot;),
+            tr(&quot;&amp;lt;p&amp;gt;The &amp;lt;b&amp;gt;Books&amp;lt;/b&amp;gt; example shows how to use Qt SQL classes &quot;
+               &quot;with a model/view framework.&quot;));
+}
+
+</db:programlisting>
+</db:article>

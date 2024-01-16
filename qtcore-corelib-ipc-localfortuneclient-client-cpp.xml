@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Local Fortune Client Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates using <db:link xlink:href="qlocalsocket.xml">QLocalSocket</db:link> for a simple local service client.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtNetwork&amp;gt;
+
+#include &quot;client.h&quot;
+
+Client::Client(QWidget *parent)
+    : QDialog(parent),
+      hostLineEdit(new QLineEdit(&quot;fortune&quot;)),
+      getFortuneButton(new QPushButton(tr(&quot;Get Fortune&quot;))),
+      statusLabel(new QLabel(tr(&quot;This examples requires that you run the &quot;
+                                &quot;Local Fortune Server example as well.&quot;))),
+      socket(new QLocalSocket(this))
+{
+    setWindowFlags(windowFlags() &amp;amp; ~Qt::WindowContextHelpButtonHint);
+    QLabel *hostLabel = new QLabel(tr(&quot;&amp;amp;Server name:&quot;));
+    hostLabel-&amp;gt;setBuddy(hostLineEdit);
+
+    statusLabel-&amp;gt;setWordWrap(true);
+
+    getFortuneButton-&amp;gt;setDefault(true);
+    QPushButton *quitButton = new QPushButton(tr(&quot;Quit&quot;));
+
+    QDialogButtonBox *buttonBox = new QDialogButtonBox;
+    buttonBox-&amp;gt;addButton(getFortuneButton, QDialogButtonBox::ActionRole);
+    buttonBox-&amp;gt;addButton(quitButton, QDialogButtonBox::RejectRole);
+
+    in.setDevice(socket);
+    in.setVersion(QDataStream::Qt_5_10);
+
+    connect(hostLineEdit, &amp;amp;QLineEdit::textChanged,
+            this, &amp;amp;Client::enableGetFortuneButton);
+    connect(getFortuneButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;Client::requestNewFortune);
+    connect(quitButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Client::close);
+    connect(socket, &amp;amp;QLocalSocket::readyRead, this, &amp;amp;Client::readFortune);
+    connect(socket, QOverload&amp;lt;QLocalSocket::LocalSocketError&amp;gt;::of(&amp;amp;QLocalSocket::error),
+            this, &amp;amp;Client::displayError);
+
+    QGridLayout *mainLayout = new QGridLayout(this);
+    mainLayout-&amp;gt;addWidget(hostLabel, 0, 0);
+    mainLayout-&amp;gt;addWidget(hostLineEdit, 0, 1);
+    mainLayout-&amp;gt;addWidget(statusLabel, 2, 0, 1, 2);
+    mainLayout-&amp;gt;addWidget(buttonBox, 3, 0, 1, 2);
+
+    setWindowTitle(QGuiApplication::applicationDisplayName());
+    hostLineEdit-&amp;gt;setFocus();
+}
+
+void Client::requestNewFortune()
+{
+    getFortuneButton-&amp;gt;setEnabled(false);
+    blockSize = 0;
+    socket-&amp;gt;abort();
+    socket-&amp;gt;connectToServer(hostLineEdit-&amp;gt;text());
+}
+
+void Client::readFortune()
+{
+    if (blockSize == 0) {
+        // Relies on the fact that QDataStream serializes a quint32 into
+        // sizeof(quint32) bytes
+        if (socket-&amp;gt;bytesAvailable() &amp;lt; (int)sizeof(quint32))
+            return;
+        in &amp;gt;&amp;gt; blockSize;
+    }
+
+    if (socket-&amp;gt;bytesAvailable() &amp;lt; blockSize || in.atEnd())
+        return;
+
+    QString nextFortune;
+    in &amp;gt;&amp;gt; nextFortune;
+
+    if (nextFortune == currentFortune) {
+        QTimer::singleShot(0, this, &amp;amp;Client::requestNewFortune);
+        return;
+    }
+
+    currentFortune = nextFortune;
+    statusLabel-&amp;gt;setText(currentFortune);
+    getFortuneButton-&amp;gt;setEnabled(true);
+}
+
+void Client::displayError(QLocalSocket::LocalSocketError socketError)
+{
+    switch (socketError) {
+    case QLocalSocket::ServerNotFoundError:
+        QMessageBox::information(this, tr(&quot;Local Fortune Client&quot;),
+                                 tr(&quot;The host was not found. Please make sure &quot;
+                                    &quot;that the server is running and that the &quot;
+                                    &quot;server name is correct.&quot;));
+        break;
+    case QLocalSocket::ConnectionRefusedError:
+        QMessageBox::information(this, tr(&quot;Local Fortune Client&quot;),
+                                 tr(&quot;The connection was refused by the peer. &quot;
+                                    &quot;Make sure the fortune server is running, &quot;
+                                    &quot;and check that the server name &quot;
+                                    &quot;is correct.&quot;));
+        break;
+    case QLocalSocket::PeerClosedError:
+        break;
+    default:
+        QMessageBox::information(this, tr(&quot;Local Fortune Client&quot;),
+                                 tr(&quot;The following error occurred: %1.&quot;)
+                                 .arg(socket-&amp;gt;errorString()));
+    }
+
+    getFortuneButton-&amp;gt;setEnabled(true);
+}
+
+void Client::enableGetFortuneButton()
+{
+    getFortuneButton-&amp;gt;setEnabled(!hostLineEdit-&amp;gt;text().isEmpty());
+}
+
+</db:programlisting>
+</db:article>

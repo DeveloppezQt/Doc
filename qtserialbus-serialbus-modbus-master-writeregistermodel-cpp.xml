@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Modbus Master example</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example implements a Modbus master application.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtSerialBus module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;writeregistermodel.h&quot;
+
+enum { NumColumn = 0, CoilsColumn = 1, HoldingColumn = 2, ColumnCount = 3, RowCount = 10 };
+
+WriteRegisterModel::WriteRegisterModel(QObject *parent)
+    : QAbstractTableModel(parent),
+      m_coils(RowCount, false), m_holdingRegisters(RowCount, 0u)
+{
+}
+
+int WriteRegisterModel::rowCount(const QModelIndex &amp;amp;/*parent*/) const
+{
+    return RowCount;
+}
+
+int WriteRegisterModel::columnCount(const QModelIndex &amp;amp;/*parent*/) const
+{
+    return ColumnCount;
+}
+
+QVariant WriteRegisterModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid() || index.row() &amp;gt;= RowCount || index.column() &amp;gt;= ColumnCount)
+        return QVariant();
+
+    Q_ASSERT(m_coils.count() == RowCount);
+    Q_ASSERT(m_holdingRegisters.count() == RowCount);
+
+    if (index.column() == NumColumn &amp;amp;&amp;amp; role == Qt::DisplayRole)
+        return QString::number(index.row());
+
+    if (index.column() == CoilsColumn &amp;amp;&amp;amp; role == Qt::CheckStateRole) // coils
+        return m_coils.at(index.row()) ? Qt::Checked : Qt::Unchecked;
+
+    else if (index.column() == HoldingColumn &amp;amp;&amp;amp; role == Qt::DisplayRole) //holding registers
+        return QString(&quot;0x%1&quot;).arg(QString::number(m_holdingRegisters.at(index.row()), 16));
+
+    return QVariant();
+
+}
+
+QVariant WriteRegisterModel::headerData(int section, Qt::Orientation orientation, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    if (orientation == Qt::Horizontal) {
+        switch (section) {
+        case NumColumn:
+            return QStringLiteral(&quot;#&quot;);
+        case CoilsColumn:
+            return QStringLiteral(&quot;Coils  &quot;);
+        case HoldingColumn:
+            return QStringLiteral(&quot;Holding Registers&quot;);
+        default:
+            break;
+        }
+    }
+    return QVariant();
+}
+
+bool WriteRegisterModel::setData(const QModelIndex &amp;amp;index, const QVariant &amp;amp;value, int role)
+{
+    if (!index.isValid() ||  index.row() &amp;gt;= RowCount || index.column() &amp;gt;= ColumnCount)
+        return false;
+
+    Q_ASSERT(m_coils.count() == RowCount);
+    Q_ASSERT(m_holdingRegisters.count() == RowCount);
+
+    if (index.column() == CoilsColumn &amp;amp;&amp;amp; role == Qt::CheckStateRole) { // coils
+        auto s = static_cast&amp;lt;Qt::CheckState&amp;gt;(value.toUInt());
+        s == Qt::Checked ? m_coils.setBit(index.row()) : m_coils.clearBit(index.row());
+        emit dataChanged(index, index);
+        return true;
+    }
+
+    if (index.column() == HoldingColumn &amp;amp;&amp;amp; role == Qt::EditRole) { // holding registers
+        bool result = false;
+        quint16 newValue = value.toString().toUShort(&amp;amp;result, 16);
+        if (result)
+            m_holdingRegisters[index.row()] = newValue;
+
+        emit dataChanged(index, index);
+        return result;
+    }
+
+    return false;
+}
+
+Qt::ItemFlags WriteRegisterModel::flags(const QModelIndex &amp;amp;index) const
+{
+    if (!index.isValid() || index.row() &amp;gt;= RowCount || index.column() &amp;gt;= ColumnCount)
+        return QAbstractTableModel::flags(index);
+
+    Qt::ItemFlags flags = QAbstractTableModel::flags(index);
+    if ((index.row() &amp;lt; m_address) || (index.row() &amp;gt;= (m_address + m_number)))
+        flags &amp;amp;= ~Qt::ItemIsEnabled;
+
+    if (index.column() == CoilsColumn) //coils
+        return flags | Qt::ItemIsUserCheckable;
+    if (index.column() == HoldingColumn) //holding registers
+        return flags | Qt::ItemIsEditable;
+
+    return flags;
+}
+
+void WriteRegisterModel::setStartAddress(int address)
+{
+    m_address = address;
+    emit updateViewport();
+}
+
+void WriteRegisterModel::setNumberOfValues(const QString &amp;amp;number)
+{
+    m_number = number.toInt();
+    emit updateViewport();
+}
+
+</db:programlisting>
+</db:article>

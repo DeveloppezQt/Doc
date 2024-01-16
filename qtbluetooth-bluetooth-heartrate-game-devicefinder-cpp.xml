@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Heart Rate Game</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A game demonstrating the interaction with a Bluetooth Low Energy Heart Rate device/service.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/***************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;devicefinder.h&quot;
+#include &quot;devicehandler.h&quot;
+#include &quot;deviceinfo.h&quot;
+
+DeviceFinder::DeviceFinder(DeviceHandler *handler, QObject *parent):
+    BluetoothBaseClass(parent),
+    m_deviceHandler(handler)
+{
+    m_deviceDiscoveryAgent = new QBluetoothDeviceDiscoveryAgent(this);
+    m_deviceDiscoveryAgent-&amp;gt;setLowEnergyDiscoveryTimeout(5000);
+
+    connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::deviceDiscovered, this, &amp;amp;DeviceFinder::addDevice);
+    connect(m_deviceDiscoveryAgent, static_cast&amp;lt;void (QBluetoothDeviceDiscoveryAgent::*)(QBluetoothDeviceDiscoveryAgent::Error)&amp;gt;(&amp;amp;QBluetoothDeviceDiscoveryAgent::error),
+            this, &amp;amp;DeviceFinder::scanError);
+
+    connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::finished, this, &amp;amp;DeviceFinder::scanFinished);
+    connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::canceled, this, &amp;amp;DeviceFinder::scanFinished);
+
+#ifdef SIMULATOR
+    m_demoTimer.setSingleShot(true);
+    m_demoTimer.setInterval(2000);
+    connect(&amp;amp;m_demoTimer, &amp;amp;QTimer::timeout, this, &amp;amp;DeviceFinder::scanFinished);
+#endif
+}
+
+DeviceFinder::~DeviceFinder()
+{
+    qDeleteAll(m_devices);
+    m_devices.clear();
+}
+
+void DeviceFinder::startSearch()
+{
+    clearMessages();
+    m_deviceHandler-&amp;gt;setDevice(nullptr);
+    qDeleteAll(m_devices);
+    m_devices.clear();
+
+    emit devicesChanged();
+
+#ifdef SIMULATOR
+    m_demoTimer.start();
+#else
+    m_deviceDiscoveryAgent-&amp;gt;start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
+#endif
+    emit scanningChanged();
+    setInfo(tr(&quot;Scanning for devices...&quot;));
+}
+
+void DeviceFinder::addDevice(const QBluetoothDeviceInfo &amp;amp;device)
+{
+    // If device is LowEnergy-device, add it to the list
+    if (device.coreConfigurations() &amp;amp; QBluetoothDeviceInfo::LowEnergyCoreConfiguration) {
+        m_devices.append(new DeviceInfo(device));
+        setInfo(tr(&quot;Low Energy device found. Scanning more...&quot;));
+        emit devicesChanged();
+    }
+    //...
+}
+
+void DeviceFinder::scanError(QBluetoothDeviceDiscoveryAgent::Error error)
+{
+    if (error == QBluetoothDeviceDiscoveryAgent::PoweredOffError)
+        setError(tr(&quot;The Bluetooth adaptor is powered off.&quot;));
+    else if (error == QBluetoothDeviceDiscoveryAgent::InputOutputError)
+        setError(tr(&quot;Writing or reading from the device resulted in an error.&quot;));
+    else
+        setError(tr(&quot;An unknown error has occurred.&quot;));
+}
+
+void DeviceFinder::scanFinished()
+{
+#ifdef SIMULATOR
+    // Only for testing
+    for (int i = 0; i &amp;lt; 4; i++)
+        m_devices.append(new DeviceInfo(QBluetoothDeviceInfo()));
+#endif
+
+    if (m_devices.isEmpty())
+        setError(tr(&quot;No Low Energy devices found.&quot;));
+    else
+        setInfo(tr(&quot;Scanning done.&quot;));
+
+    emit scanningChanged();
+    emit devicesChanged();
+}
+
+void DeviceFinder::connectToService(const QString &amp;amp;address)
+{
+    m_deviceDiscoveryAgent-&amp;gt;stop();
+
+    DeviceInfo *currentDevice = nullptr;
+    for (QObject *entry : qAsConst(m_devices)) {
+        auto device = qobject_cast&amp;lt;DeviceInfo *&amp;gt;(entry);
+        if (device &amp;amp;&amp;amp; device-&amp;gt;getAddress() == address ) {
+            currentDevice = device;
+            break;
+        }
+    }
+
+    if (currentDevice)
+        m_deviceHandler-&amp;gt;setDevice(currentDevice);
+
+    clearMessages();
+}
+
+bool DeviceFinder::scanning() const
+{
+#ifdef SIMULATOR
+    return m_demoTimer.isActive();
+#else
+    return m_deviceDiscoveryAgent-&amp;gt;isActive();
+#endif
+}
+
+QVariant DeviceFinder::devices()
+{
+    return QVariant::fromValue(m_devices);
+}
+
+</db:programlisting>
+</db:article>

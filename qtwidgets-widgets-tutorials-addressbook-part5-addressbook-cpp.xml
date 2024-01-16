@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Part 5 - Adding a Find Function</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Describes how to add a find function.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &quot;addressbook.h&quot;
+
+AddressBook::AddressBook(QWidget *parent)
+    : QWidget(parent)
+{
+    QLabel *nameLabel = new QLabel(tr(&quot;Name:&quot;));
+    nameLine = new QLineEdit;
+    nameLine-&amp;gt;setReadOnly(true);
+
+    QLabel *addressLabel = new QLabel(tr(&quot;Address:&quot;));
+    addressText = new QTextEdit;
+    addressText-&amp;gt;setReadOnly(true);
+
+    addButton = new QPushButton(tr(&quot;&amp;amp;Add&quot;));
+
+    editButton = new QPushButton(tr(&quot;&amp;amp;Edit&quot;));
+    editButton-&amp;gt;setEnabled(false);
+    removeButton = new QPushButton(tr(&quot;&amp;amp;Remove&quot;));
+    removeButton-&amp;gt;setEnabled(false);
+    findButton = new QPushButton(tr(&quot;&amp;amp;Find&quot;));
+    findButton-&amp;gt;setEnabled(false);
+    submitButton = new QPushButton(tr(&quot;&amp;amp;Submit&quot;));
+    submitButton-&amp;gt;hide();
+    cancelButton = new QPushButton(tr(&quot;&amp;amp;Cancel&quot;));
+    cancelButton-&amp;gt;hide();
+
+    nextButton = new QPushButton(tr(&quot;&amp;amp;Next&quot;));
+    nextButton-&amp;gt;setEnabled(false);
+    previousButton = new QPushButton(tr(&quot;&amp;amp;Previous&quot;));
+    previousButton-&amp;gt;setEnabled(false);
+
+    dialog = new FindDialog(this);
+
+    connect(addButton, SIGNAL(clicked()), this, SLOT(addContact()));
+    connect(submitButton, SIGNAL(clicked()), this, SLOT(submitContact()));
+    connect(editButton, SIGNAL(clicked()), this, SLOT(editContact()));
+    connect(cancelButton, SIGNAL(clicked()), this, SLOT(cancel()));
+    connect(removeButton, SIGNAL(clicked()), this, SLOT(removeContact()));
+    connect(findButton, SIGNAL(clicked()), this, SLOT(findContact()));
+    connect(nextButton, SIGNAL(clicked()), this, SLOT(next()));
+    connect(previousButton, SIGNAL(clicked()), this, SLOT(previous()));
+
+    QVBoxLayout *buttonLayout1 = new QVBoxLayout;
+    buttonLayout1-&amp;gt;addWidget(addButton);
+    buttonLayout1-&amp;gt;addWidget(editButton);
+    buttonLayout1-&amp;gt;addWidget(removeButton);
+    buttonLayout1-&amp;gt;addWidget(findButton);
+    buttonLayout1-&amp;gt;addWidget(submitButton);
+    buttonLayout1-&amp;gt;addWidget(cancelButton);
+    buttonLayout1-&amp;gt;addStretch();
+
+    QHBoxLayout *buttonLayout2 = new QHBoxLayout;
+    buttonLayout2-&amp;gt;addWidget(previousButton);
+    buttonLayout2-&amp;gt;addWidget(nextButton);
+
+    QGridLayout *mainLayout = new QGridLayout;
+    mainLayout-&amp;gt;addWidget(nameLabel, 0, 0);
+    mainLayout-&amp;gt;addWidget(nameLine, 0, 1);
+    mainLayout-&amp;gt;addWidget(addressLabel, 1, 0, Qt::AlignTop);
+    mainLayout-&amp;gt;addWidget(addressText, 1, 1);
+    mainLayout-&amp;gt;addLayout(buttonLayout1, 1, 2);
+    mainLayout-&amp;gt;addLayout(buttonLayout2, 2, 1);
+
+    setLayout(mainLayout);
+    setWindowTitle(tr(&quot;Simple Address Book&quot;));
+}
+
+void AddressBook::addContact()
+{
+    oldName = nameLine-&amp;gt;text();
+    oldAddress = addressText-&amp;gt;toPlainText();
+
+    nameLine-&amp;gt;clear();
+    addressText-&amp;gt;clear();
+
+    updateInterface(AddingMode);
+}
+
+void AddressBook::editContact()
+{
+    oldName = nameLine-&amp;gt;text();
+    oldAddress = addressText-&amp;gt;toPlainText();
+
+    updateInterface(EditingMode);
+}
+
+void AddressBook::submitContact()
+{
+    QString name = nameLine-&amp;gt;text();
+    QString address = addressText-&amp;gt;toPlainText();
+
+    if (name.isEmpty() || address.isEmpty()) {
+        QMessageBox::information(this, tr(&quot;Empty Field&quot;),
+            tr(&quot;Please enter a name and address.&quot;));
+        return;
+    }
+
+    if (currentMode == AddingMode) {
+
+        if (!contacts.contains(name)) {
+            contacts.insert(name, address);
+            QMessageBox::information(this, tr(&quot;Add Successful&quot;),
+                tr(&quot;\&quot;%1\&quot; has been added to your address book.&quot;).arg(name));
+        } else {
+            QMessageBox::information(this, tr(&quot;Add Unsuccessful&quot;),
+                tr(&quot;Sorry, \&quot;%1\&quot; is already in your address book.&quot;).arg(name));
+        }
+    } else if (currentMode == EditingMode) {
+
+        if (oldName != name) {
+            if (!contacts.contains(name)) {
+                QMessageBox::information(this, tr(&quot;Edit Successful&quot;),
+                    tr(&quot;\&quot;%1\&quot; has been edited in your address book.&quot;).arg(oldName));
+                contacts.remove(oldName);
+                contacts.insert(name, address);
+            } else {
+                QMessageBox::information(this, tr(&quot;Edit Unsuccessful&quot;),
+                    tr(&quot;Sorry, \&quot;%1\&quot; is already in your address book.&quot;).arg(name));
+            }
+        } else if (oldAddress != address) {
+            QMessageBox::information(this, tr(&quot;Edit Successful&quot;),
+                tr(&quot;\&quot;%1\&quot; has been edited in your address book.&quot;).arg(name));
+            contacts[name] = address;
+        }
+    }
+
+    updateInterface(NavigationMode);
+}
+
+void AddressBook::cancel()
+{
+    nameLine-&amp;gt;setText(oldName);
+    addressText-&amp;gt;setText(oldAddress);
+    updateInterface(NavigationMode);
+}
+
+void AddressBook::removeContact()
+{
+    QString name = nameLine-&amp;gt;text();
+    QString address = addressText-&amp;gt;toPlainText();
+
+    if (contacts.contains(name)) {
+
+        int button = QMessageBox::question(this,
+            tr(&quot;Confirm Remove&quot;),
+            tr(&quot;Are you sure you want to remove \&quot;%1\&quot;?&quot;).arg(name),
+            QMessageBox::Yes | QMessageBox::No);
+
+        if (button == QMessageBox::Yes) {
+
+            previous();
+            contacts.remove(name);
+
+            QMessageBox::information(this, tr(&quot;Remove Successful&quot;),
+                tr(&quot;\&quot;%1\&quot; has been removed from your address book.&quot;).arg(name));
+        }
+    }
+
+    updateInterface(NavigationMode);
+}
+
+void AddressBook::next()
+{
+    QString name = nameLine-&amp;gt;text();
+    QMap&amp;lt;QString, QString&amp;gt;::iterator i = contacts.find(name);
+
+    if (i != contacts.end())
+        i++;
+
+    if (i == contacts.end())
+        i = contacts.begin();
+
+    nameLine-&amp;gt;setText(i.key());
+    addressText-&amp;gt;setText(i.value());
+}
+
+void AddressBook::previous()
+{
+    QString name = nameLine-&amp;gt;text();
+    QMap&amp;lt;QString, QString&amp;gt;::iterator i = contacts.find(name);
+
+    if (i == contacts.end()) {
+        nameLine-&amp;gt;clear();
+        addressText-&amp;gt;clear();
+        return;
+    }
+
+    if (i == contacts.begin())
+        i = contacts.end();
+
+    i--;
+    nameLine-&amp;gt;setText(i.key());
+    addressText-&amp;gt;setText(i.value());
+}
+void AddressBook::findContact()
+{
+    dialog-&amp;gt;show();
+
+    if (dialog-&amp;gt;exec() == QDialog::Accepted) {
+        QString contactName = dialog-&amp;gt;getFindText();
+
+        if (contacts.contains(contactName)) {
+            nameLine-&amp;gt;setText(contactName);
+            addressText-&amp;gt;setText(contacts.value(contactName));
+        } else {
+            QMessageBox::information(this, tr(&quot;Contact Not Found&quot;),
+                tr(&quot;Sorry, \&quot;%1\&quot; is not in your address book.&quot;).arg(contactName));
+            return;
+        }
+    }
+
+    updateInterface(NavigationMode);
+}
+
+void AddressBook::updateInterface(Mode mode)
+{
+    currentMode = mode;
+
+    switch (currentMode) {
+
+    case AddingMode:
+    case EditingMode:
+
+        nameLine-&amp;gt;setReadOnly(false);
+        nameLine-&amp;gt;setFocus(Qt::OtherFocusReason);
+        addressText-&amp;gt;setReadOnly(false);
+
+        addButton-&amp;gt;setEnabled(false);
+        editButton-&amp;gt;setEnabled(false);
+        removeButton-&amp;gt;setEnabled(false);
+
+        nextButton-&amp;gt;setEnabled(false);
+        previousButton-&amp;gt;setEnabled(false);
+
+        submitButton-&amp;gt;show();
+        cancelButton-&amp;gt;show();
+        break;
+
+    case NavigationMode:
+
+        if (contacts.isEmpty()) {
+            nameLine-&amp;gt;clear();
+            addressText-&amp;gt;clear();
+        }
+
+        nameLine-&amp;gt;setReadOnly(true);
+        addressText-&amp;gt;setReadOnly(true);
+        addButton-&amp;gt;setEnabled(true);
+
+        int number = contacts.size();
+        editButton-&amp;gt;setEnabled(number &amp;gt;= 1);
+        removeButton-&amp;gt;setEnabled(number &amp;gt;= 1);
+        findButton-&amp;gt;setEnabled(number &amp;gt; 2);
+        nextButton-&amp;gt;setEnabled(number &amp;gt; 1);
+        previousButton-&amp;gt;setEnabled(number &amp;gt; 1);
+
+        submitButton-&amp;gt;hide();
+        cancelButton-&amp;gt;hide();
+        break;
+    }
+}
+
+</db:programlisting>
+</db:article>

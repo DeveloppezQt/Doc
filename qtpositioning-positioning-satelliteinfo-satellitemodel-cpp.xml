@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SatelliteInfo (C++/QML)</db:title>
+<db:productname>QtPositioning</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Positioning Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The SatelliteInfo example shows how the available satellites at the user's current position and marks the satellites currently contributing to the GPS fix as pink.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;satellitemodel.h&quot;
+#include &amp;lt;QTimer&amp;gt;
+#include &amp;lt;QDebug&amp;gt;
+
+SatelliteModel::SatelliteModel(QObject *parent) :
+    QAbstractListModel(parent), source(0), m_componentCompleted(false), m_running(false),
+    m_runningRequested(false), demo(false), isSingle(false), singleRequestServed(false)
+{
+    source = QGeoSatelliteInfoSource::createDefaultSource(this);
+    if (!demo &amp;amp;&amp;amp; !source) {
+        qWarning() &amp;lt;&amp;lt; &quot;No satellite data source found. Changing to demo mode.&quot;;
+        demo = true;
+    }
+    if (!demo) {
+        source-&amp;gt;setUpdateInterval(3000);
+        connect(source, SIGNAL(satellitesInViewUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;)),
+                this, SLOT(satellitesInViewUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;)));
+        connect(source, SIGNAL(satellitesInUseUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;)),
+                this, SLOT(satellitesInUseUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;)));
+        connect(source, SIGNAL(error(QGeoSatelliteInfoSource::Error)),
+                this, SLOT(error(QGeoSatelliteInfoSource::Error)));
+    }
+
+    if (demo) {
+        timer = new QTimer(this);
+        connect(timer, SIGNAL(timeout()), this, SLOT(updateDemoData()));
+        timer-&amp;gt;start(3000);
+    }
+}
+
+int SatelliteModel::rowCount(const QModelIndex &amp;amp;parent) const
+{
+    Q_UNUSED(parent);
+    if (!source &amp;amp;&amp;amp; !demo)
+        return 0;
+
+    return knownSatellites.count();
+}
+
+QVariant SatelliteModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!demo &amp;amp;&amp;amp; !source)
+        return QVariant();
+
+    if (!index.isValid() || index.row() &amp;lt; 0)
+        return QVariant();
+
+    if (index.row() &amp;gt;= knownSatellites.count()) {
+        qWarning() &amp;lt;&amp;lt; &quot;SatelliteModel: Index out of bound&quot;;
+        return QVariant();
+    }
+
+    const QGeoSatelliteInfo &amp;amp;info = knownSatellites.at(index.row());
+    switch (role) {
+    case IdentifierRole:
+        return info.satelliteIdentifier();
+    case InUseRole:
+        return satellitesInUse.contains(info.satelliteIdentifier());
+    case SignalStrengthRole:
+        return info.signalStrength();
+    case ElevationRole:
+        if (!info.hasAttribute(QGeoSatelliteInfo::Elevation))
+            return QVariant();
+        return info.attribute(QGeoSatelliteInfo::Elevation);
+    case AzimuthRole:
+        if (!info.hasAttribute(QGeoSatelliteInfo::Azimuth))
+            return QVariant();
+        return info.attribute(QGeoSatelliteInfo::Azimuth);
+    default:
+        break;
+
+    }
+
+    return QVariant();
+}
+
+QHash&amp;lt;int, QByteArray&amp;gt; SatelliteModel::roleNames() const
+{
+    QHash&amp;lt;int, QByteArray&amp;gt; roleNames;
+    roleNames.insert(IdentifierRole, &quot;satelliteIdentifier&quot;);
+    roleNames.insert(InUseRole, &quot;isInUse&quot;);
+    roleNames.insert(SignalStrengthRole, &quot;signalStrength&quot;);
+    roleNames.insert(ElevationRole, &quot;elevation&quot;);
+    roleNames.insert(AzimuthRole, &quot;azimuth&quot;);
+    return roleNames;
+}
+
+void SatelliteModel::componentComplete()
+{
+    m_componentCompleted = true;
+    if (m_runningRequested)
+        setRunning(true);
+}
+
+bool SatelliteModel::running() const
+{
+    return m_running;
+}
+
+bool SatelliteModel::isSingleRequest() const
+{
+    return isSingle;
+}
+
+void SatelliteModel::setSingleRequest(bool single)
+{
+    if (running()) {
+        qWarning() &amp;lt;&amp;lt; &quot;Cannot change single request mode while running&quot;;
+        return;
+    }
+
+    if (single != isSingle) { //flag changed
+        isSingle = single;
+        emit singleRequestChanged();
+    }
+}
+
+void SatelliteModel::setRunning(bool isActive)
+{
+    if (!source &amp;amp;&amp;amp; !demo)
+        return;
+
+    if (!m_componentCompleted) {
+        m_runningRequested = isActive;
+        return;
+    }
+
+    if (m_running == isActive)
+        return;
+
+    m_running = isActive;
+
+    if (m_running) {
+        clearModel();
+        if (demo)
+            timer-&amp;gt;start(2000);
+        else if (isSingleRequest())
+            source-&amp;gt;requestUpdate(10000);
+        else
+            source-&amp;gt;startUpdates();
+
+        if (demo)
+            singleRequestServed = false;
+    } else {
+        if (demo)
+            timer-&amp;gt;stop();
+        else if (!isSingleRequest())
+            source-&amp;gt;stopUpdates();
+    }
+
+    Q_EMIT runningChanged();
+}
+
+int SatelliteModel::entryCount() const
+{
+    return knownSatellites.count();
+}
+
+bool SatelliteModel::canProvideSatelliteInfo() const
+{
+    return !demo;
+}
+
+void SatelliteModel::clearModel()
+{
+    beginResetModel();
+    knownSatelliteIds.clear();
+    knownSatellites.clear();
+    satellitesInUse.clear();
+    endResetModel();
+}
+
+void SatelliteModel::updateDemoData()
+{
+    static bool flag = true;
+    QList&amp;lt;QGeoSatelliteInfo&amp;gt; satellites;
+    if (flag) {
+        for (int i = 0; i&amp;lt;5; i++) {
+            QGeoSatelliteInfo info;
+            info.setSatelliteIdentifier(i);
+            info.setSignalStrength(20 + 20*i);
+            satellites.append(info);
+        }
+    } else {
+        for (int i = 0; i&amp;lt;9; i++) {
+            QGeoSatelliteInfo info;
+            info.setSatelliteIdentifier(i*2);
+            info.setSignalStrength(20 + 10*i);
+            satellites.append(info);
+        }
+    }
+
+    satellitesInViewUpdated(satellites);
+    flag ? satellitesInUseUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;() &amp;lt;&amp;lt; satellites.at(2))
+         : satellitesInUseUpdated(QList&amp;lt;QGeoSatelliteInfo&amp;gt;() &amp;lt;&amp;lt; satellites.at(3));
+    flag = !flag;
+
+    emit errorFound(flag);
+
+    if (isSingleRequest() &amp;amp;&amp;amp; !singleRequestServed) {
+        singleRequestServed = true;
+        setRunning(false);
+    }
+}
+
+void SatelliteModel::error(QGeoSatelliteInfoSource::Error error)
+{
+    emit errorFound((int)error);
+}
+
+inline bool operator&amp;lt;(const QGeoSatelliteInfo&amp;amp; a, const QGeoSatelliteInfo&amp;amp; b)
+{
+    return a.satelliteIdentifier() &amp;lt; b.satelliteIdentifier();
+}
+
+void SatelliteModel::satellitesInViewUpdated(const QList&amp;lt;QGeoSatelliteInfo&amp;gt; &amp;amp;infos)
+{
+    if (!running())
+        return;
+
+    int oldEntryCount = knownSatellites.count();
+
+    QSet&amp;lt;int&amp;gt; satelliteIdsInUpdate;
+    foreach (const QGeoSatelliteInfo &amp;amp;info, infos)
+        satelliteIdsInUpdate.insert(info.satelliteIdentifier());
+
+    QSet&amp;lt;int&amp;gt; toBeRemoved = knownSatelliteIds - satelliteIdsInUpdate;
+
+    //We reset the model as in reality just about all entry values change
+    //and there are generally a lot of inserts and removals each time
+    //Hence we don't bother with complex model update logic beyond resetModel()
+    beginResetModel();
+
+    knownSatellites = infos;
+
+    //sort them for presentation purposes
+    std::sort(knownSatellites.begin(), knownSatellites.end());
+
+    //remove old &quot;InUse&quot; data
+    //new satellites are by default not in &quot;InUse&quot;
+    //existing satellites keep their &quot;inUse&quot; state
+    satellitesInUse -= toBeRemoved;
+
+    knownSatelliteIds = satelliteIdsInUpdate;
+    endResetModel();
+
+    if (oldEntryCount != knownSatellites.count())
+        emit entryCountChanged();
+}
+
+void SatelliteModel::satellitesInUseUpdated(const QList&amp;lt;QGeoSatelliteInfo&amp;gt; &amp;amp;infos)
+{
+    if (!running())
+        return;
+
+    beginResetModel();
+
+    satellitesInUse.clear();
+    foreach (const QGeoSatelliteInfo &amp;amp;info, infos)
+        satellitesInUse.insert(info.satelliteIdentifier());
+
+    endResetModel();
+}
+
+</db:programlisting>
+</db:article>
