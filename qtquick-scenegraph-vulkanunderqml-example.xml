@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Vulkan Under QML</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to render directly with Vulkan under a Qt Quick scene.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/vulkanunderqml-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>Compiling this example requires an SDK. See <db:link xlink:href="qtgui-overview.xml#vulkan-integration">Vulkan Integration</db:link> for information on what to install.</db:para>
+</db:note>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>This example makes use of the <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>() signals to draw custom Vulkan content under a Qt Quick scene. QML is used to render a text label on top.</db:para>
+<db:para>The example is equivalent in most ways to the <db:link xlink:href="qtquick-scenegraph-openglunderqml-example.xml">OpenGL Under QML</db:link>, <db:link xlink:href="qtquick-scenegraph-d3d11underqml-example.xml">Direct3D 11 Under QML</db:link>, and <db:link xlink:href="qtquick-scenegraph-metalunderqml-example.xml">Metal Under QML</db:link> examples, they all render the same custom content, just via different native APIs.</db:para>
+<db:para>The particulars of utilizing QML will be covered in this documentation without delving into the detail of custom Vulkan rendering.</db:para>
+</db:section>
+<db:section xml:id="affecting-vulkan-rendering-from-qml">
+<db:title>Affecting Vulkan rendering from QML</db:title>
+<db:para>The example shows how to use values that are exposed to QML to control Vulkan rendering.</db:para>
+<db:para>To expose the threshold value <db:code>t</db:code> to QML, in the definition of <db:code>VulkanSquircle</db:code>, we use the <db:link xlink:href="qobject.xml#Q_OBJECT">Q_OBJECT</db:link>, <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>, and <db:link xlink:href="qqmlengine.xml#QML_ELEMENT">QML_ELEMENT</db:link> macros like so:</db:para>
+<db:programlisting language="cpp">class VulkanSquircle : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(qreal t READ t WRITE setT NOTIFY tChanged)
+    QML_ELEMENT
+</db:programlisting>
+<db:para>We then go on to declare public and private items:</db:para>
+<db:programlisting language="cpp">public:
+    VulkanSquircle();
+
+    qreal t() const { return m_t; }
+    void setT(qreal t);
+
+signals:
+    void tChanged();
+
+public slots:
+    void sync();
+    void cleanup();
+
+private slots:
+    void handleWindowChanged(QQuickWindow *win);
+
+private:
+    void releaseResources() override;
+
+    qreal m_t = 0;
+    SquircleRenderer *m_renderer = nullptr;
+</db:programlisting>
+<db:para>Then in <db:code>main.qml</db:code> we animate the threshold value using a <db:link xlink:href="qml-qtquick-numberanimation.xml">NumberAnimation</db:link>.</db:para>
+<db:programlisting language="cpp">    VulkanSquircle {
+        SequentialAnimation on t {
+            NumberAnimation { to: 1; duration: 2500; easing.type: Easing.InQuad }
+            NumberAnimation { to: 0; duration: 2500; easing.type: Easing.OutQuad }
+            loops: Animation.Infinite
+</db:programlisting>
+<db:para>The <db:code>t</db:code> variable is ultimately used by the SPIR-V shader program that draws the squircles.</db:para>
+</db:section>
+<db:section xml:id="using-signals-to-render-custom-vulkan-content">
+<db:title>Using signals to render custom Vulkan content</db:title>
+<db:para>The <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>() signals are what are used.</db:para>
+<db:para>The <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() signal is emitted at the start of every frame, before the scene graph starts its rendering. This means any Vulkan draw calls that are made as a response to this signal, will stack under the Qt Quick items. There are two signals because the custom Vulkan commands are recorded onto the same command buffer used by the scene graph.</db:para>
+<db:para>The beforeRendering() function on its own is not sufficient for this, because it gets emitted at the start of the frame, before recording the start of a <db:code>renderpass</db:code> instance by using <db:link xlink:href="https://www.khronos.org/registry/vulkan/specs/1.1-extensions/man/html/vkCmdBeginRenderPass.html">vkCmdBeginRenderPass</db:link>.</db:para>
+<db:para>The solution: by connecting to beforeRenderPassRecording(), the application's own commands and the scene graph's scaffolding will end up in the right order.</db:para>
+<db:para>Connecting the signals is done by the <db:code>sync()</db:code> function:</db:para>
+<db:programlisting language="cpp">void VulkanSquircle::sync()
+{
+    if (!m_renderer) {
+        m_renderer = new SquircleRenderer;
+        // Initializing resources is done before starting to record the
+        // renderpass, regardless of wanting an underlay or overlay.
+        connect(window(), &amp;amp;QQuickWindow::beforeRendering, m_renderer, &amp;amp;SquircleRenderer::frameStart, Qt::DirectConnection);
+        // Here we want an underlay and therefore connect to
+        // beforeRenderPassRecording. Changing to afterRenderPassRecording
+        // would render the squircle on top (overlay).
+        connect(window(), &amp;amp;QQuickWindow::beforeRenderPassRecording, m_renderer, &amp;amp;SquircleRenderer::mainPassRecordingStart, Qt::DirectConnection);
+    }
+    m_renderer-&amp;gt;setViewportSize(window()-&amp;gt;size() * window()-&amp;gt;devicePixelRatio());
+    m_renderer-&amp;gt;setT(m_t);
+</db:programlisting>
+<db:para>Another way you can render Vulkan content on top of the Qt Quick scene is by connecting to the <db:link xlink:href="qquickwindow.xml#afterRendering">QQuickWindow::afterRendering</db:link>() and <db:link xlink:href="qquickwindow.xml#afterRenderPassRecording">QQuickWindow::afterRenderPassRecording</db:link>() signals.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/scenegraph/vulkanunderqml?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Chat</db:title>
+<db:productname>QtGrpc</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GRPC Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using the Qt GRPC client API in the user applications.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis>Chat</db:emphasis> explains how to authenticate chat users and send and receive short messages between chat clients. The application supports the following message formats:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Text - use message input field to send the message.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Image - copy the image buffer to the clipboard to send the message using the <db:code>'Ctrl + V'</db:code> shortcut.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The chat client uses a simple RPC protocol described in the protobuf scheme:</db:para>
+<db:programlisting language="cpp">package qtgrpc.examples.chat;
+
+message ChatMessage
+{
+    enum ContentType {
+        Unknown = 0;
+        Text = 1;
+        Image = 2;
+    };
+    uint64 timestamp = 1;
+    bytes content = 2;
+    ContentType type = 3;
+    string from = 4;
+}
+
+message ChatMessages
+{
+    repeated ChatMessage messages = 1;
+}
+
+message User
+{
+    string name = 1;
+    string password = 2;
+}
+
+message Users {
+    repeated User users = 1;
+}
+
+message None { }
+
+service SimpleChat
+{
+    rpc messageList(None) returns (stream ChatMessages) { }
+    rpc sendMessage(ChatMessage) returns (None) { }
+}
+</db:programlisting>
+<db:para>On the login screen, enter user credentials:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/chatlogin.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>The list of users is predefined on the server side and is constant. The password for all users is <db:code>qwerty</db:code>.</db:para>
+</db:note>
+<db:para>The chat client uses an authentication type called <db:code>call credentials</db:code>. Each gRPC message includes the user credentials in the message header. Credentials are passed to the <db:link xlink:href="qgrpchttp2channel.xml">QGrpcHttp2Channel</db:link> once and reused implicitily:</db:para>
+<db:programlisting language="cpp">std::shared_ptr&amp;lt;QAbstractGrpcChannel&amp;gt; channel(
+        new QGrpcHttp2Channel(url,
+                              QGrpcUserPasswordCredentials(name, password.toUtf8())
+                                      | QGrpcInsecureChannelCredentials()));
+</db:programlisting>
+<db:para>The chat client starts the communication with the server using a subscription to gRPC server streaming:</db:para>
+<db:programlisting language="cpp">auto stream = m_client-&amp;gt;streamMessageList(qtgrpc::examples::chat::None());
+QObject::connect(stream.get(), &amp;amp;QGrpcStream::errorOccurred, this,
+                 [this, stream](const QGrpcStatus &amp;amp;status) {
+                     qCritical()
+                             &amp;lt;&amp;lt; &quot;Stream error(&quot; &amp;lt;&amp;lt; status.code() &amp;lt;&amp;lt; &quot;):&quot; &amp;lt;&amp;lt; status.message();
+                     if (status.code() == QGrpcStatus::Unauthenticated)
+                         emit authFailed();
+                 });
+
+QObject::connect(stream.get(), &amp;amp;QGrpcStream::finished, this,
+                 [this, stream]() { setState(Disconnected); });
+
+QObject::connect(stream.get(), &amp;amp;QGrpcStream::messageReceived, this, [this, name, stream]() {
+    if (m_userName != name) {
+        m_userName = name;
+        emit userNameChanged();
+    }
+    setState(Connected);
+    m_messages.append(stream-&amp;gt;read&amp;lt;qtgrpc::examples::chat::ChatMessages&amp;gt;().messages());
+});
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgrpcstream.xml">QGrpcStream</db:link> handler provides the signals that the client application should connect to.</db:para>
+<db:para>The <db:link xlink:href="qgrpcoperation.xml#errorOccurred">QGrpcStream::errorOccurred</db:link> signal indicates the error that occurred either on the server side or in the communication channel. Typically, an error results in the connection to the server being closed and the <db:link xlink:href="qgrpcoperation.xml#finished">QGrpcStream::finished</db:link> signal being emitted.</db:para>
+<db:para>When the server sends new messages to the stream, <db:link xlink:href="qgrpcstream.xml">QGrpcStream</db:link> emits the <db:link xlink:href="qgrpcstream.xml#messageReceived">QGrpcStream::messageReceived</db:link> signal. The slot connected to this signal processes the chat message. Messages that are received from the <db:code>SimpleChat/messageList</db:code> server stream are collected in the custom <db:link xlink:href="qabstractlistmodel.xml">QAbstractListModel</db:link> model and displayed to the user.</db:para>
+<db:para>When the <db:link xlink:href="qgrpcoperation.xml#finished">QGrpcStream::finished</db:link> signal is emitted, there is nothing more you can do with this stream instance, so you need to initiate a new subscription.</db:para>
+<db:para>After a successful subscription, the chat client switches to the conversation screen and allows you to see and send short messages:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/chatconversation.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>To send the message, use a unary RPC call <db:code>SimpleChat/sendMessage</db:code>. The client application first sets fields of the <db:code>ChatMessage</db:code> protobuf message and then calls the client method:</db:para>
+<db:programlisting language="cpp">qtgrpc::examples::chat::ChatMessage msg;
+msg.setContent(content.toUtf8());
+msg.setType(qtgrpc::examples::chat::ChatMessage::Text);
+msg.setTimestamp(QDateTime::currentMSecsSinceEpoch());
+msg.setFrom(m_userName);
+m_client-&amp;gt;sendMessage(msg);
+</db:programlisting>
+<db:para>Then, the gRPC server processes the client messages and broadcasts them to all the connected clients through the <db:code>SimpleChat/messageList</db:code> stream.</db:para>
+<db:note>
+<db:para>This example uses the reference gRPC C++ API in the server implementation.</db:para>
+</db:note>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtgrpc.git/tree/examples/grpc/chat?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

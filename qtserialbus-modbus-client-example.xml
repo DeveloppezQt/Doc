@@ -1,0 +1,197 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Modbus Client</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example implements a Modbus client application.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The example acts as Modbus client sending Modbus request via serial line or TCP. The shown dialog allows the definition of standard requests and displays incoming responses.</db:para>
+<db:para>The example must be used in conjunction with the <db:link xlink:href="qtserialbus-modbus-server-example.xml">Modbus Server example</db:link> or another Modbus device which is either connected via TCP or Serial Port.</db:para>
+<db:para>Key classes used in this example:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusclient.xml">QModbusClient</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusdataunit.xml">QModbusDataUnit</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusreply.xml">QModbusReply</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/modbusclient.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="creating-a-qmodbusclient">
+<db:title>Creating a QModbusClient</db:title>
+<db:para>An instance of <db:link xlink:href="qmodbusclient.xml">QModbusClient</db:link> is required to perform any communication. Depending on the specified connection type, the example can instantiate a <db:link xlink:href="qmodbusrtuserialclient.xml">QModbusRtuSerialClient</db:link> (for serial communication), or a <db:link xlink:href="qmodbustcpclient.xml">QModbusTcpClient</db:link> (for TCP-based communication).</db:para>
+<db:programlisting language="cpp">    auto type = static_cast&amp;lt;ModbusConnection&amp;gt;(index);
+    if (type == Serial) {
+#if QT_CONFIG(modbus_serialport)
+        modbusDevice = new QModbusRtuSerialClient(this);
+        // Try to fill in the first available serial port name if the line edit
+        // is empty, or contains a url (assume that ':' is only a part of url).
+        const auto ports = QSerialPortInfo::availablePorts();
+        const auto currentText = ui-&amp;gt;portEdit-&amp;gt;text();
+        if (!ports.isEmpty() &amp;amp;&amp;amp; (currentText.isEmpty() || currentText.contains(u':')))
+            ui-&amp;gt;portEdit-&amp;gt;setText(ports.front().portName());
+#endif
+    } else if (type == Tcp) {
+        modbusDevice = new QModbusTcpClient(this);
+        const QUrl currentUrl = QUrl::fromUserInput(ui-&amp;gt;portEdit-&amp;gt;text());
+        // Check if we already have &amp;lt;ip address&amp;gt;:&amp;lt;port&amp;gt;
+        if (currentUrl.port() &amp;lt;= 0)
+            ui-&amp;gt;portEdit-&amp;gt;setText(QLatin1String(&quot;127.0.0.1:50200&quot;));
+    }
+</db:programlisting>
+<db:para>Once the client is created, use the <db:link xlink:href="qmodbusdevice.xml#setConnectionParameter">setConnectionParameter</db:link>() method to specify the connection parameters. The parameters vary depending on the communication type:</db:para>
+<db:programlisting language="cpp">        const auto settings = m_settingsDialog-&amp;gt;settings();
+        if (static_cast&amp;lt;ModbusConnection&amp;gt;(ui-&amp;gt;connectType-&amp;gt;currentIndex()) == Serial) {
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::SerialPortNameParameter,
+                ui-&amp;gt;portEdit-&amp;gt;text());
+#if QT_CONFIG(modbus_serialport)
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::SerialParityParameter,
+                settings.parity);
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::SerialBaudRateParameter,
+                settings.baud);
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::SerialDataBitsParameter,
+                settings.dataBits);
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::SerialStopBitsParameter,
+                settings.stopBits);
+#endif
+        } else {
+            const QUrl url = QUrl::fromUserInput(ui-&amp;gt;portEdit-&amp;gt;text());
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::NetworkPortParameter, url.port());
+            modbusDevice-&amp;gt;setConnectionParameter(QModbusDevice::NetworkAddressParameter, url.host());
+        }
+        modbusDevice-&amp;gt;setTimeout(settings.responseTime);
+        modbusDevice-&amp;gt;setNumberOfRetries(settings.numberOfRetries);
+</db:programlisting>
+<db:para>After the client is created and all the parameters are specified, use <db:link xlink:href="qmodbusdevice.xml#connectDevice">QModbusClient::connectDevice</db:link>() to connect to Modbus network.</db:para>
+</db:section>
+<db:section xml:id="reading-data">
+<db:title>Reading Data</db:title>
+<db:para>To read data from Modbus server, the client needs to specify a server address and the parameters of objects that it wants to read:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusdataunit.xml#RegisterType-enum">RegisterType</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusdataunit.xml#startAddress">start address</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qmodbusdataunit.xml#valueCount">number of entries to read</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The object parameters are represented by the <db:link xlink:href="qmodbusdataunit.xml">QModbusDataUnit</db:link> class:</db:para>
+<db:programlisting language="cpp">QModbusDataUnit MainWindow::readRequest() const
+{
+    const auto table = ui-&amp;gt;writeTable-&amp;gt;currentData().value&amp;lt;QModbusDataUnit::RegisterType&amp;gt;();
+
+    int startAddress = ui-&amp;gt;readAddress-&amp;gt;value();
+    Q_ASSERT(startAddress &amp;gt;= 0 &amp;amp;&amp;amp; startAddress &amp;lt; 10);
+
+    // do not go beyond 10 entries
+    quint16 numberOfEntries = qMin(ui-&amp;gt;readSize-&amp;gt;currentText().toUShort(),
+                                   quint16(10 - startAddress));
+    return QModbusDataUnit(table, startAddress, numberOfEntries);
+}
+</db:programlisting>
+<db:para>Once the parameters are collected, the <db:link xlink:href="qmodbusclient.xml#sendReadRequest">sendReadRequest</db:link>() method is used to send the actual request. The method returns a <db:link xlink:href="qmodbusreply.xml">QModbusReply</db:link> which should be processed in an asynchronous way, so the <db:link xlink:href="qmodbusreply.xml#finished">QModbusReply::finished</db:link>() signal is used to check when the reply is ready.</db:para>
+<db:programlisting language="cpp">    if (auto *reply = modbusDevice-&amp;gt;sendReadRequest(readRequest(), ui-&amp;gt;serverEdit-&amp;gt;value())) {
+        if (!reply-&amp;gt;isFinished())
+            connect(reply, &amp;amp;QModbusReply::finished, this, &amp;amp;MainWindow::onReadReady);
+        else
+            delete reply; // broadcast replies return immediately
+    } else {
+        statusBar()-&amp;gt;showMessage(tr(&quot;Read error: %1&quot;).arg(modbusDevice-&amp;gt;errorString()), 5000);
+    }
+</db:programlisting>
+<db:para>Once the <db:link xlink:href="qmodbusreply.xml#finished">QModbusReply::finished</db:link>() signal is received, the reply object can be used to get the data or to check for read errors:</db:para>
+<db:programlisting language="cpp">void MainWindow::onReadReady()
+{
+    auto reply = qobject_cast&amp;lt;QModbusReply *&amp;gt;(sender());
+    if (!reply)
+        return;
+
+    if (reply-&amp;gt;error() == QModbusDevice::NoError) {
+        const QModbusDataUnit unit = reply-&amp;gt;result();
+        for (qsizetype i = 0, total = unit.valueCount(); i &amp;lt; total; ++i) {
+            const QString entry = tr(&quot;Address: %1, Value: %2&quot;).arg(unit.startAddress() + i)
+                                     .arg(QString::number(unit.value(i),
+                                          unit.registerType() &amp;lt;= QModbusDataUnit::Coils ? 10 : 16));
+            ui-&amp;gt;readValue-&amp;gt;addItem(entry);
+        }
+    } else if (reply-&amp;gt;error() == QModbusDevice::ProtocolError) {
+        statusBar()-&amp;gt;showMessage(tr(&quot;Read response error: %1 (Modbus exception: 0x%2)&quot;).
+                                    arg(reply-&amp;gt;errorString()).
+                                    arg(reply-&amp;gt;rawResult().exceptionCode(), -1, 16), 5000);
+    } else {
+        statusBar()-&amp;gt;showMessage(tr(&quot;Read response error: %1 (code: 0x%2)&quot;).
+                                    arg(reply-&amp;gt;errorString()).
+                                    arg(reply-&amp;gt;error(), -1, 16), 5000);
+    }
+
+    reply-&amp;gt;deleteLater();
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="writing-data">
+<db:title>Writing Data</db:title>
+<db:para>To write the data to the Modbus server, the client needs to specify the server address, and the parameters of objects that it wants to write. As with reading the data, the <db:link xlink:href="qmodbusdataunit.xml">QModbusDataUnit</db:link> class is used to represent the information about the data to be written. This time the data also includes the desired <db:link xlink:href="qmodbusdataunit.xml#values">values</db:link>. The <db:link xlink:href="qmodbusclient.xml#sendWriteRequest">sendWriteRequest</db:link>() method is used to write the desired data:</db:para>
+<db:programlisting language="cpp">    QModbusDataUnit writeUnit = writeRequest();
+    QModbusDataUnit::RegisterType table = writeUnit.registerType();
+    for (qsizetype i = 0, total = writeUnit.valueCount(); i &amp;lt; total; ++i) {
+        const auto addr = i + writeUnit.startAddress();
+        if (table == QModbusDataUnit::Coils)
+            writeUnit.setValue(i, writeModel-&amp;gt;m_coils[addr]);
+        else
+            writeUnit.setValue(i, writeModel-&amp;gt;m_holdingRegisters[addr]);
+    }
+
+    if (auto *reply = modbusDevice-&amp;gt;sendWriteRequest(writeUnit, ui-&amp;gt;serverEdit-&amp;gt;value())) {
+        if (!reply-&amp;gt;isFinished()) {
+            connect(reply, &amp;amp;QModbusReply::finished, this, [this, reply]() {
+                const auto error = reply-&amp;gt;error();
+                if (error == QModbusDevice::ProtocolError) {
+                    statusBar()-&amp;gt;showMessage(tr(&quot;Write response error: %1 (Modbus exception: 0x%2)&quot;)
+                        .arg(reply-&amp;gt;errorString()).arg(reply-&amp;gt;rawResult().exceptionCode(), -1, 16),
+                        5000);
+                } else if (error != QModbusDevice::NoError) {
+                    statusBar()-&amp;gt;showMessage(tr(&quot;Write response error: %1 (code: 0x%2)&quot;).
+                        arg(reply-&amp;gt;errorString()).arg(error, -1, 16), 5000);
+                }
+                reply-&amp;gt;deleteLater();
+            });
+        } else {
+            // broadcast replies return immediately
+            reply-&amp;gt;deleteLater();
+        }
+    } else {
+        statusBar()-&amp;gt;showMessage(tr(&quot;Write error: %1&quot;).arg(modbusDevice-&amp;gt;errorString()), 5000);
+    }
+</db:programlisting>
+<db:para>Like with reading the data, the returned <db:link xlink:href="qmodbusreply.xml">QModbusReply</db:link> object is used to check for write errors.</db:para>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtserialbus.git/tree/examples/serialbus/modbus/client?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

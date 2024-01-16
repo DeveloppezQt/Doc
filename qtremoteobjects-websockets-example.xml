@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QtRemoteObjects WebSockets Applications</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using a non-<db:link xlink:href="qiodevice.xml">QIODevice</db:link>-based transport (<db:link xlink:href="qwebsocket.xml">QWebSocket</db:link>) with <db:link xlink:href="qml-qtremoteobjects-qtremoteobjects.xml">QtRemoteObjects</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This example shares a <db:code>QStandardItemModel</db:code> over a web socket. The model can be edited in the window of the <db:code>wsserver</db:code> application, and the changes are propagated to the window of the <db:code>wsclient</db:code> application.</db:para>
+<db:para>This is made possible by implementing a small <db:link xlink:href="qiodevice.xml">QIODevice</db:link>-derived wrapper, <db:code>WebSocketIoDevice</db:code>, for <db:code>QWebSocket</db:code>. SSL is used if Qt is compiled with support for it.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/StandardItemTableWindow.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="the-wsserver-application">
+<db:title>The WsServer Application</db:title>
+<db:para>The <db:code>wsserver</db:code> application creates a <db:code>QStandardItemModel</db:code> with two columns and inserts data into it.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QLoggingCategory::setFilterRules(&quot;qt.remoteobjects.debug=false\n&quot;
+                                     &quot;qt.remoteobjects.warning=false&quot;);
+    QApplication app(argc, argv);
+
+    const int modelSize = 100000;
+    QStringList list;
+    QStandardItemModel sourceModel;
+    QStringList hHeaderList;
+    hHeaderList &amp;lt;&amp;lt; QStringLiteral(&quot;First Column with spacing&quot;) &amp;lt;&amp;lt; QStringLiteral(&quot;Second Column with spacing&quot;);
+    sourceModel.setHorizontalHeaderLabels(hHeaderList);
+    list.reserve(modelSize);
+    for (int i = 0; i &amp;lt; modelSize; ++i) {
+        QStandardItem *firstItem = new QStandardItem(QStringLiteral(&quot;FancyTextNumber %1&quot;).arg(i));
+        if (i == 0)
+            firstItem-&amp;gt;appendRow(addChild(2, 2));
+        QStandardItem *secondItem = new QStandardItem(QStringLiteral(&quot;FancyRow2TextNumber %1&quot;).arg(i));
+        if (i % 2 == 0)
+            firstItem-&amp;gt;setBackground(Qt::red);
+        QList&amp;lt;QStandardItem*&amp;gt; row;
+        row &amp;lt;&amp;lt; firstItem &amp;lt;&amp;lt; secondItem;
+        sourceModel.invisibleRootItem()-&amp;gt;appendRow(row);
+        //sourceModel.appendRow(row);
+        list &amp;lt;&amp;lt; QStringLiteral(&quot;FancyTextNumber %1&quot;).arg(i);
+    }
+</db:programlisting>
+<db:para>It then starts a <db:code>QWebSocketServer</db:code> bound to port 8088, and hosts the data model.</db:para>
+<db:programlisting language="cpp">QWebSocketServer webSockServer{QStringLiteral(&quot;WS QtRO&quot;), QWebSocketServer::NonSecureMode};
+webSockServer.listen(QHostAddress::Any, 8088);
+
+QRemoteObjectHost hostNode;
+hostNode.setHostUrl(webSockServer.serverAddress().toString(), QRemoteObjectHost::AllowExternalRegistration);
+
+hostNode.enableRemoting(&amp;amp;sourceModel, QStringLiteral(&quot;RemoteModel&quot;), roles);
+</db:programlisting>
+<db:para>When handling new connections, SSL is configured if Qt is compiled with support for it. Then a <db:code>WebSocketIoDevice</db:code> is created using the incoming <db:link xlink:href="qml-qtwebsockets-websocketserver.xml">WebSocketServer</db:link> connection.</db:para>
+<db:programlisting language="cpp">QObject::connect(&amp;amp;webSockServer, &amp;amp;QWebSocketServer::newConnection, &amp;amp;hostNode, [&amp;amp;hostNode, &amp;amp;webSockServer]{
+    while (auto conn = webSockServer.nextPendingConnection()) {
+#ifndef QT_NO_SSL
+        // Always use secure connections when available
+        QSslConfiguration sslConf;
+        QFile certFile(QStringLiteral(&quot;:/sslcert/server.crt&quot;));
+        if (!certFile.open(QIODevice::ReadOnly))
+            qFatal(&quot;Can't open client.crt file&quot;);
+        sslConf.setLocalCertificate(QSslCertificate{certFile.readAll()});
+
+        QFile keyFile(QStringLiteral(&quot;:/sslcert/server.key&quot;));
+        if (!keyFile.open(QIODevice::ReadOnly))
+            qFatal(&quot;Can't open client.key file&quot;);
+        sslConf.setPrivateKey(QSslKey{keyFile.readAll(), QSsl::Rsa});
+
+        sslConf.setPeerVerifyMode(QSslSocket::VerifyPeer);
+        conn-&amp;gt;setSslConfiguration(sslConf);
+        QObject::connect(conn, &amp;amp;QWebSocket::sslErrors, conn, &amp;amp;QWebSocket::deleteLater);
+#endif
+        QObject::connect(conn, &amp;amp;QWebSocket::disconnected, conn, &amp;amp;QWebSocket::deleteLater);
+        QObject::connect(conn, &amp;amp;QWebSocket::errorOccurred, conn, &amp;amp;QWebSocket::deleteLater);
+        auto ioDevice = new WebSocketIoDevice(conn);
+        QObject::connect(conn, &amp;amp;QWebSocket::destroyed, ioDevice, &amp;amp;WebSocketIoDevice::deleteLater);
+        hostNode.addHostSideConnection(ioDevice);
+    }
+});
+</db:programlisting>
+<db:para>A <db:link xlink:href="qtreeview.xml">QTreeView</db:link> is created with the <db:link xlink:href="qstandarditemmodel.xml">QStandardItemModel</db:link> as model. Then multiple timers are started with <db:link xlink:href="qtimer.xml#singleShot">QTimer::singleShot</db:link> to perform more modifications to the model.</db:para>
+<db:programlisting language="cpp">QTreeView view;
+view.setWindowTitle(QStringLiteral(&quot;SourceView&quot;));
+view.setModel(&amp;amp;sourceModel);
+view.show();
+TimerHandler handler;
+handler.model = &amp;amp;sourceModel;
+QTimer::singleShot(5000, &amp;amp;handler, &amp;amp;TimerHandler::changeData);
+QTimer::singleShot(10000, &amp;amp;handler, &amp;amp;TimerHandler::insertData);
+QTimer::singleShot(11000, &amp;amp;handler, &amp;amp;TimerHandler::changeFlags);
+QTimer::singleShot(12000, &amp;amp;handler, &amp;amp;TimerHandler::removeData);
+QTimer::singleShot(13000, &amp;amp;handler, &amp;amp;TimerHandler::moveData);
+
+return app.exec();
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-wsclient-application">
+<db:title>The WsClient Application</db:title>
+<db:para>The <db:code>wsclient</db:code> application creates a <db:link xlink:href="qwebsocket.xml">QWebSocket</db:link> and a <db:code>WebSocketIoDevice</db:code> taking it as an argument.</db:para>
+<db:programlisting language="cpp">QScopedPointer&amp;lt;QWebSocket&amp;gt; webSocket{new QWebSocket};
+WebSocketIoDevice socket(webSocket.data());
+</db:programlisting>
+<db:para>If Qt is compiled with support for SSL, the client is configured with it.</db:para>
+<db:programlisting language="cpp">#ifndef QT_NO_SSL
+    // Always use secure connections when available
+    QSslConfiguration sslConf;
+    QFile certFile(QStringLiteral(&quot;:/sslcert/client.crt&quot;));
+    if (!certFile.open(QIODevice::ReadOnly))
+        qFatal(&quot;Can't open client.crt file&quot;);
+    sslConf.setLocalCertificate(QSslCertificate{certFile.readAll()});
+
+    QFile keyFile(QStringLiteral(&quot;:/sslcert/client.key&quot;));
+    if (!keyFile.open(QIODevice::ReadOnly))
+        qFatal(&quot;Can't open client.key file&quot;);
+    sslConf.setPrivateKey(QSslKey{keyFile.readAll(), QSsl::Rsa});
+
+    sslConf.setPeerVerifyMode(QSslSocket::VerifyPeer);
+    webSocket-&amp;gt;setSslConfiguration(sslConf);
+#endif
+</db:programlisting>
+<db:para>Then a <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> is created, and setup to use the WebSocketIoDevice. Then it connects to <db:code>wsserver</db:code>.</db:para>
+<db:programlisting language="cpp">QRemoteObjectNode node;
+node.addClientSideConnection(&amp;amp;socket);
+node.setHeartbeatInterval(1000);
+webSocket-&amp;gt;open(QStringLiteral(&quot;ws://localhost:8088&quot;));
+</db:programlisting>
+<db:para>A <db:link xlink:href="qtreeview.xml">QTreeView</db:link> is created to display the data from the server. The model is acquired from the node, and it is then set as the model of the <db:link xlink:href="qtreeview.xml">QTreeView</db:link>, which is then shown.</db:para>
+<db:programlisting language="cpp">QTreeView view;
+view.setWindowTitle(QStringLiteral(&quot;RemoteView&quot;));
+view.resize(640,480);
+QScopedPointer&amp;lt;QAbstractItemModelReplica&amp;gt; model(node.acquireModel(QStringLiteral(&quot;RemoteModel&quot;)));
+view.setModel(model.data());
+view.show();
+
+return app.exec();
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtremoteobjects.git/tree/examples/remoteobjects/websockets?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

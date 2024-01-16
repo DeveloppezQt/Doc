@@ -1,0 +1,392 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt OPC UA Viewer Example</db:title>
+<db:productname>QtOpcUa</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>An OPC UA module for Qt</db:titleabbrev>
+<db:abstract>
+<db:para>Using the model/view approach to display all nodes of an OPC UA server in a tree view.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;treeitem.h&quot;
+#include &quot;opcuamodel.h&quot;
+#include &amp;lt;QOpcUaArgument&amp;gt;
+#include &amp;lt;QOpcUaAxisInformation&amp;gt;
+#include &amp;lt;QOpcUaClient&amp;gt;
+#include &amp;lt;QOpcUaComplexNumber&amp;gt;
+#include &amp;lt;QOpcUaDoubleComplexNumber&amp;gt;
+#include &amp;lt;QOpcUaEUInformation&amp;gt;
+#include &amp;lt;QOpcUaExtensionObject&amp;gt;
+#include &amp;lt;QOpcUaLocalizedText&amp;gt;
+#include &amp;lt;QOpcUaQualifiedName&amp;gt;
+#include &amp;lt;QOpcUaRange&amp;gt;
+#include &amp;lt;QOpcUaXValue&amp;gt;
+#include &amp;lt;QMetaEnum&amp;gt;
+#include &amp;lt;QPixmap&amp;gt;
+
+const int numberOfDisplayColumns = 8; // NodeId, Value, NodeClass, DataType, BrowseName, DisplayName, Description, Historizing
+
+TreeItem::TreeItem(OpcUaModel *model) : QObject(nullptr)
+  , mModel(model)
+{
+}
+
+TreeItem::TreeItem(QOpcUaNode *node, OpcUaModel *model, TreeItem *parent) : QObject(parent)
+  , mOpcNode(node)
+  , mModel(model)
+  , mParentItem(parent)
+{
+    connect(mOpcNode.get(), &amp;amp;QOpcUaNode::attributeRead, this, &amp;amp;TreeItem::handleAttributes);
+    connect(mOpcNode.get(), &amp;amp;QOpcUaNode::attributeUpdated, this, &amp;amp;TreeItem::handleAttributes);
+    connect(mOpcNode.get(), &amp;amp;QOpcUaNode::browseFinished, this, &amp;amp;TreeItem::browseFinished);
+
+    if (!mOpcNode-&amp;gt;readAttributes( QOpcUa::NodeAttribute::Value
+                            | QOpcUa::NodeAttribute::NodeClass
+                            | QOpcUa::NodeAttribute::Description
+                            | QOpcUa::NodeAttribute::DataType
+                            | QOpcUa::NodeAttribute::BrowseName
+                            | QOpcUa::NodeAttribute::DisplayName
+                            | QOpcUa::NodeAttribute::Historizing
+                            ))
+        qWarning() &amp;lt;&amp;lt; &quot;Reading attributes&quot; &amp;lt;&amp;lt; mOpcNode-&amp;gt;nodeId() &amp;lt;&amp;lt; &quot;failed&quot;;
+}
+
+TreeItem::TreeItem(QOpcUaNode *node, OpcUaModel *model, const QOpcUaReferenceDescription &amp;amp;browsingData, TreeItem *parent) : TreeItem(node, model, parent)
+{
+    mNodeBrowseName = browsingData.browseName().name();
+    mNodeClass = browsingData.nodeClass();
+    mNodeId = browsingData.targetNodeId().nodeId();
+    mNodeDisplayName = browsingData.displayName().text();
+    mHistorizing = false;
+}
+
+TreeItem::~TreeItem()
+{
+    qDeleteAll(mChildItems);
+}
+
+TreeItem *TreeItem::child(int row)
+{
+    if (row &amp;gt;= mChildItems.size())
+        qCritical() &amp;lt;&amp;lt; &quot;TreeItem in row&quot; &amp;lt;&amp;lt; row &amp;lt;&amp;lt; &quot;does not exist.&quot;;
+    return mChildItems[row];
+}
+
+int TreeItem::childIndex(const TreeItem *child) const
+{
+    return mChildItems.indexOf(const_cast&amp;lt;TreeItem *&amp;gt;(child));
+}
+
+int TreeItem::childCount()
+{
+    startBrowsing();
+    return mChildItems.size();
+}
+
+int TreeItem::columnCount() const
+{
+    return numberOfDisplayColumns;
+}
+
+QVariant TreeItem::data(int column)
+{
+    if (column == 0)
+        return mNodeBrowseName;
+    if (column == 1) {
+        if (!mAttributesReady)
+            return tr(&quot;Loading ...&quot;);
+
+        const auto type = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::DataType).toString();
+        const auto value = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::Value);
+
+        return variantToString(value, type);
+    }
+    if (column == 2) {
+        QMetaEnum metaEnum = QMetaEnum::fromType&amp;lt;QOpcUa::NodeClass&amp;gt;();
+        QString name = metaEnum.valueToKey(int(mNodeClass));
+        return name + &quot; (&quot; + QString::number(int(mNodeClass)) + ')';
+    }
+    if (column == 3) {
+        if (!mAttributesReady)
+            return tr(&quot;Loading ...&quot;);
+
+        const QString typeId = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::DataType).toString();
+        auto enumEntry = QOpcUa::namespace0IdFromNodeId(typeId);
+        if (enumEntry == QOpcUa::NodeIds::Namespace0::Unknown)
+            return typeId;
+        return QOpcUa::namespace0IdName(enumEntry) + &quot; (&quot; + typeId + &quot;)&quot;;
+    }
+    if (column == 4)
+        return mNodeId;
+    if (column == 5)
+        return mNodeDisplayName;
+    if (column == 6) {
+        return mAttributesReady
+            ? mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::Description).value&amp;lt;QOpcUaLocalizedText&amp;gt;().text()
+            : tr(&quot;Loading ...&quot;);
+    }
+    if (column == 7) {
+        return mAttributesReady
+            ? mHistorizing ? QString(&quot;true&quot;) : QString(&quot;false&quot;) : tr(&quot;Loading ...&quot;);
+    }
+    return QVariant();
+}
+
+int TreeItem::row() const
+{
+    if (!mParentItem)
+        return 0;
+    return mParentItem-&amp;gt;childIndex(this);
+}
+
+TreeItem *TreeItem::parentItem()
+{
+    return mParentItem;
+}
+
+void TreeItem::appendChild(TreeItem *child)
+{
+    if (!child)
+        return;
+
+    if (!hasChildNodeItem(child-&amp;gt;mNodeId)) {
+        mChildItems.append(child);
+        mChildNodeIds.insert(child-&amp;gt;mNodeId);
+    } else {
+        child-&amp;gt;deleteLater();
+    }
+}
+
+static QPixmap createPixmap(const QColor &amp;amp;c)
+{
+    QPixmap p(10,10);
+    p.fill(c);
+    return p;
+}
+
+QPixmap TreeItem::icon(int column) const
+{
+    if (column != 0 || !mOpcNode)
+        return QPixmap();
+
+    static const QPixmap objectPixmap = createPixmap(Qt::darkGreen);
+    static const QPixmap variablePixmap = createPixmap(Qt::darkBlue);
+    static const QPixmap methodPixmap = createPixmap(Qt::darkRed);
+    static const QPixmap defaultPixmap = createPixmap(Qt::gray);
+
+    switch (mNodeClass) {
+    case QOpcUa::NodeClass::Object:
+        return objectPixmap;
+    case QOpcUa::NodeClass::Variable:
+        return variablePixmap;
+    case QOpcUa::NodeClass::Method:
+        return methodPixmap;
+    default:
+        break;
+    }
+
+    return defaultPixmap;
+}
+
+bool TreeItem::hasChildNodeItem(const QString &amp;amp;nodeId) const
+{
+    return mChildNodeIds.contains(nodeId);
+}
+
+void TreeItem::setMonitoringEnabled(bool active)
+{
+    if (!supportsMonitoring())
+        return;
+
+    if (active) {
+        mOpcNode-&amp;gt;enableMonitoring(QOpcUa::NodeAttribute::Value, QOpcUaMonitoringParameters(500));
+    } else {
+        mOpcNode-&amp;gt;disableMonitoring(QOpcUa::NodeAttribute::Value);
+    }
+}
+
+bool TreeItem::monitoringEnabled() const
+{
+    QOpcUaMonitoringParameters monitoring = mOpcNode.get()-&amp;gt;monitoringStatus(QOpcUa::NodeAttribute::Value);
+    return  monitoring.statusCode() == QOpcUa::UaStatusCode::Good &amp;amp;&amp;amp;
+            monitoring.monitoringMode() == QOpcUaMonitoringParameters::MonitoringMode::Reporting;
+}
+
+bool TreeItem::supportsMonitoring() const
+{
+    return mNodeClass == QOpcUa::NodeClass::Variable;
+}
+
+void TreeItem::startBrowsing()
+{
+    if (mBrowseStarted)
+        return;
+
+    if (!mOpcNode-&amp;gt;browseChildren())
+        qWarning() &amp;lt;&amp;lt; &quot;Browsing node&quot; &amp;lt;&amp;lt; mOpcNode-&amp;gt;nodeId() &amp;lt;&amp;lt; &quot;failed&quot;;
+    else
+        mBrowseStarted = true;
+}
+
+void TreeItem::handleAttributes(QOpcUa::NodeAttributes attr)
+{
+    if (attr &amp;amp; QOpcUa::NodeAttribute::NodeClass)
+        mNodeClass = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::NodeClass).value&amp;lt;QOpcUa::NodeClass&amp;gt;();
+    if (attr &amp;amp; QOpcUa::NodeAttribute::BrowseName)
+        mNodeBrowseName = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::BrowseName).value&amp;lt;QOpcUaQualifiedName&amp;gt;().name();
+    if (attr &amp;amp; QOpcUa::NodeAttribute::DisplayName)
+        mNodeDisplayName = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::DisplayName).value&amp;lt;QOpcUaLocalizedText&amp;gt;().text();
+    if (attr &amp;amp; QOpcUa::NodeAttribute::Historizing) {
+        mHistorizing = mOpcNode-&amp;gt;attribute(QOpcUa::NodeAttribute::Historizing).value&amp;lt;bool&amp;gt;();
+    }
+
+    mAttributesReady = true;
+    emit mModel-&amp;gt;dataChanged(mModel-&amp;gt;createIndex(row(), 0, this), mModel-&amp;gt;createIndex(row(), numberOfDisplayColumns - 1, this));
+}
+
+void TreeItem::browseFinished(const QList&amp;lt;QOpcUaReferenceDescription&amp;gt; &amp;amp;children, QOpcUa::UaStatusCode statusCode)
+{
+    if (statusCode != QOpcUa::Good) {
+        qWarning() &amp;lt;&amp;lt; &quot;Browsing node&quot; &amp;lt;&amp;lt; mOpcNode-&amp;gt;nodeId() &amp;lt;&amp;lt; &quot;finally failed:&quot; &amp;lt;&amp;lt; statusCode;
+        return;
+    }
+
+    auto index = mModel-&amp;gt;createIndex(row(), 0, this);
+
+    for (const auto &amp;amp;item : children) {
+        if (hasChildNodeItem(item.targetNodeId().nodeId()))
+            continue;
+
+        auto node = mModel-&amp;gt;opcUaClient()-&amp;gt;node(item.targetNodeId());
+        if (!node) {
+            qWarning() &amp;lt;&amp;lt; &quot;Failed to instantiate node:&quot; &amp;lt;&amp;lt; item.targetNodeId().nodeId();
+            continue;
+        }
+
+        mModel-&amp;gt;beginInsertRows(index, mChildItems.size(), mChildItems.size() + 1);
+        appendChild(new TreeItem(node, mModel, item, this));
+        mModel-&amp;gt;endInsertRows();
+    }
+
+    emit mModel-&amp;gt;dataChanged(mModel-&amp;gt;createIndex(row(), 0, this), mModel-&amp;gt;createIndex(row(), numberOfDisplayColumns - 1, this));
+}
+
+QString TreeItem::variantToString(const QVariant &amp;amp;value, const QString &amp;amp;typeNodeId) const
+{
+    if (value.metaType().id() == QMetaType::QVariantList) {
+        const auto list = value.toList();
+        QString concat;
+        for (int i = 0, size = list.size(); i &amp;lt; size; ++i) {
+            if (i)
+                concat.append(QLatin1Char('\n'));
+            concat.append(variantToString(list.at(i), typeNodeId));
+        }
+        return concat;
+    }
+
+    if (typeNodeId == QLatin1String(&quot;ns=0;i=19&quot;)) { // StatusCode
+        const char *name = QMetaEnum::fromType&amp;lt;QOpcUa::UaStatusCode&amp;gt;().valueToKey(value.toInt());
+        return name ? QLatin1String(name) : QLatin1String(&quot;Unknown StatusCode&quot;);
+    }
+    if (typeNodeId == QLatin1String(&quot;ns=0;i=2&quot;)) // Char
+        return QString::number(value.toInt());
+    if (typeNodeId == QLatin1String(&quot;ns=0;i=3&quot;)) // SChar
+        return QString::number(value.toUInt());
+    if (typeNodeId == QLatin1String(&quot;ns=0;i=4&quot;)) // Int16
+        return QString::number(value.toInt());
+    if (typeNodeId == QLatin1String(&quot;ns=0;i=5&quot;)) // UInt16
+        return QString::number(value.toUInt());
+    if (value.metaType().id() == QMetaType::QByteArray)
+        return QLatin1String(&quot;0x&quot;) + value.toByteArray().toHex();
+    if (value.metaType().id() == QMetaType::QDateTime)
+        return value.toDateTime().toString(Qt::ISODate);
+    if (value.canConvert&amp;lt;QOpcUaQualifiedName&amp;gt;()) {
+        const auto name = value.value&amp;lt;QOpcUaQualifiedName&amp;gt;();
+        return QStringLiteral(&quot;[NamespaceIndex: %1, Name: \&quot;%2\&quot;]&quot;).arg(name.namespaceIndex()).arg(name.name());
+    }
+    if (value.canConvert&amp;lt;QOpcUaLocalizedText&amp;gt;()) {
+        const auto text = value.value&amp;lt;QOpcUaLocalizedText&amp;gt;();
+        return localizedTextToString(text);
+    }
+    if (value.canConvert&amp;lt;QOpcUaRange&amp;gt;()) {
+        const auto range = value.value&amp;lt;QOpcUaRange&amp;gt;();
+        return rangeToString(range);
+    }
+    if (value.canConvert&amp;lt;QOpcUaComplexNumber&amp;gt;()) {
+        const auto complex = value.value&amp;lt;QOpcUaComplexNumber&amp;gt;();
+        return QStringLiteral(&quot;[Real: %1, Imaginary: %2]&quot;).arg(complex.real()).arg(complex.imaginary());
+    }
+    if (value.canConvert&amp;lt;QOpcUaDoubleComplexNumber&amp;gt;()) {
+        const auto complex = value.value&amp;lt;QOpcUaDoubleComplexNumber&amp;gt;();
+        return QStringLiteral(&quot;[Real: %1, Imaginary: %2]&quot;).arg(complex.real()).arg(complex.imaginary());
+    }
+    if (value.canConvert&amp;lt;QOpcUaXValue&amp;gt;()) {
+        const auto xv = value.value&amp;lt;QOpcUaXValue&amp;gt;();
+        return QStringLiteral(&quot;[X: %1, Value: %2]&quot;).arg(xv.x()).arg(xv.value());
+    }
+    if (value.canConvert&amp;lt;QOpcUaEUInformation&amp;gt;()) {
+        const auto info = value.value&amp;lt;QOpcUaEUInformation&amp;gt;();
+        return euInformationToString(info);
+    }
+    if (value.canConvert&amp;lt;QOpcUaAxisInformation&amp;gt;()) {
+        const auto info = value.value&amp;lt;QOpcUaAxisInformation&amp;gt;();
+        return QStringLiteral(&quot;[EUInformation: %1, EURange: %2, Title: %3 , AxisScaleType: %4, AxisSteps: %5]&quot;).arg(
+                    euInformationToString(info.engineeringUnits())).arg(rangeToString(info.eURange())).arg(localizedTextToString(info.title())).arg(
+                        info.axisScaleType() == QOpcUa::AxisScale::Linear ? &quot;Linear&quot; : (info.axisScaleType() == QOpcUa::AxisScale::Ln) ? &quot;Ln&quot; : &quot;Log&quot;).arg(
+                        numberArrayToString(info.axisSteps()));
+    }
+    if (value.canConvert&amp;lt;QOpcUaExpandedNodeId&amp;gt;()) {
+        const auto id = value.value&amp;lt;QOpcUaExpandedNodeId&amp;gt;();
+        return QStringLiteral(&quot;[NodeId: \&quot;%1\&quot;, ServerIndex: \&quot;%2\&quot;, NamespaceUri: \&quot;%3\&quot;]&quot;).arg(
+                    id.nodeId()).arg(id.serverIndex()).arg(id.namespaceUri());
+    }
+    if (value.canConvert&amp;lt;QOpcUaArgument&amp;gt;()) {
+        const auto a = value.value&amp;lt;QOpcUaArgument&amp;gt;();
+
+        return QStringLiteral(&quot;[Name: \&quot;%1\&quot;, DataType: \&quot;%2\&quot;, ValueRank: \&quot;%3\&quot;, ArrayDimensions: %4, Description: %5]&quot;).arg(
+                    a.name(), a.dataTypeId()).arg(a.valueRank()).arg(numberArrayToString(a.arrayDimensions()),
+                    localizedTextToString(a.description()));
+    }
+    if (value.canConvert&amp;lt;QOpcUaExtensionObject&amp;gt;()) {
+        const auto obj = value.value&amp;lt;QOpcUaExtensionObject&amp;gt;();
+        return QStringLiteral(&quot;[TypeId: \&quot;%1\&quot;, Encoding: %2, Body: 0x%3]&quot;).arg(obj.encodingTypeId(),
+                    obj.encoding() == QOpcUaExtensionObject::Encoding::NoBody ?
+                        &quot;NoBody&quot; : (obj.encoding() == QOpcUaExtensionObject::Encoding::ByteString ?
+                            &quot;ByteString&quot; : &quot;XML&quot;)).arg(obj.encodedBody().isEmpty() ? &quot;0&quot; : QString(obj.encodedBody().toHex()));
+    }
+
+    if (value.canConvert&amp;lt;QString&amp;gt;())
+        return value.toString();
+
+    return QString();
+}
+
+QString TreeItem::localizedTextToString(const QOpcUaLocalizedText &amp;amp;text) const
+{
+    return QStringLiteral(&quot;[Locale: \&quot;%1\&quot;, Text: \&quot;%2\&quot;]&quot;).arg(text.locale()).arg(text.text());
+}
+
+QString TreeItem::rangeToString(const QOpcUaRange &amp;amp;range) const
+{
+    return QStringLiteral(&quot;[Low: %1, High: %2]&quot;).arg(range.low()).arg(range.high());
+}
+
+QString TreeItem::euInformationToString(const QOpcUaEUInformation &amp;amp;info) const
+{
+    return QStringLiteral(&quot;[UnitId: %1, NamespaceUri: \&quot;%2\&quot;, DisplayName: %3, Description: %4]&quot;).arg(info.unitId()).arg(
+                info.namespaceUri()).arg(localizedTextToString(info.displayName())).arg(localizedTextToString(info.description()));
+}
+
+</db:programlisting>
+</db:article>

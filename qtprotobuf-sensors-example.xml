@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Sensors</db:title>
+<db:productname>QtProtobuf</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Protobuf Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Sensors example shows how two applications can communicate by sending protobuf messages using UDP sockets.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Sensors example consists of the following components:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>protobuf_sensors</db:code> library that you generate from the protobuf schema using the <db:link xlink:href="qt-add-protobuf.xml">qt_add_protobuf</db:link> call.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>protobuf_sensor_emulator</db:code> application that emulates simple sensor behavior.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>protobuf_sensors_client</db:code> application that displays the sensor data from the UDP socket.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The client application binds on the <db:code>localhost</db:code> UDP port <db:code>65500</db:code> and waits for data from the emulator application.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/client.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Use the emulator application to change the values of sensor data and send the data to the client's UDP port.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/emulator.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The applications use the generated messages from the <db:code>protobuf_sensors</db:code> library to communicate. The library is generated from the protobuf schema described in .proto files.</db:para>
+<db:programlisting language="cpp">qt_add_protobuf(protobuf_sensors
+    PROTO_FILES
+        sensors.proto
+        tlv.proto
+)
+</db:programlisting>
+<db:para>The first file describes the Type-Length-Value message, that wraps the sensor data:</db:para>
+<db:programlisting language="cpp">package qt.examples.sensors.tlv;
+
+enum MessageType {
+    Coordinates = 0;
+    Temperature = 1;
+    WarningNotification = 2;
+}
+
+// Protobuf messages imply inline data size.
+message TlvMessage
+{
+    MessageType type = 1;
+    bytes value = 2;
+}
+</db:programlisting>
+<db:para>The second .proto file contains a description of the sensor messages:</db:para>
+<db:programlisting language="cpp">package qt.examples.sensors;
+
+message Coordinates
+{
+    double longitude = 1;
+    double latitude = 2;
+    double altitude = 3;
+}
+
+message Temperature
+{
+    enum Unit {
+        Farenheit = 0;
+        Celsius = 1;
+    }
+    sint32 value = 1;
+    Unit units = 2;
+}
+
+message WarningNotification
+{
+    string text = 1;
+}
+</db:programlisting>
+<db:para>Messages are serialized using <db:link xlink:href="qprotobufserializer.xml">QProtobufSerializer</db:link> that you instantiate in the client:</db:para>
+<db:programlisting language="cpp">class SensorClient : public QObject
+{
+    Q_OBJECT
+...
+private:
+    QUdpSocket m_client;
+    QProtobufSerializer m_serializer;
+};
+</db:programlisting>
+<db:para>And the emulator:</db:para>
+<db:programlisting language="cpp">class SensorEmulator : public QObject
+{
+    Q_OBJECT
+...
+    QUdpSocket m_socket;
+    QProtobufSerializer m_serializer;
+};
+</db:programlisting>
+<db:para>After you click the <db:guilabel>Send</db:guilabel> button in the emulator application, the data from <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> fields is converted from string format to the message field-specific format, for example, double for the fields of the Coordinates message:</db:para>
+<db:programlisting language="cpp">    QObject::connect(ui-&amp;gt;sendCoordinates, &amp;amp;QPushButton::clicked, this, [this]() {
+        qt::examples::sensors::Coordinates coord;
+        coord.setLatitude(ui-&amp;gt;latitudeValue-&amp;gt;text().toDouble());
+        coord.setLongitude(ui-&amp;gt;longitudeValue-&amp;gt;text().toDouble());
+        coord.setAltitude(ui-&amp;gt;altitudeValue-&amp;gt;text().toDouble());
+        emit coordinatesUpdated(coord);
+    });
+</db:programlisting>
+<db:para>Then the message with all the fields is serialized and wrapped with the Type-Length-Value message:</db:para>
+<db:programlisting language="cpp">    Q_ASSERT(serializer != nullptr);
+    qt::examples::sensors::tlv::TlvMessage msg;
+    msg.setType(type);
+    msg.setValue(data);
+    return msg.serialize(serializer);
+</db:programlisting>
+<db:para>The client applies the reverse operations on the received datagrams. First the Type-Length-Value message is deserialized from the datagram data:</db:para>
+<db:programlisting language="cpp">        const auto datagram = m_client.receiveDatagram();
+        qt::examples::sensors::tlv::TlvMessage msg;
+        msg.deserialize(&amp;amp;m_serializer, datagram.data());
+        if (m_serializer.deserializationError()
+                != QAbstractProtobufSerializer::NoError) {
+            qWarning().nospace() &amp;lt;&amp;lt; &quot;Unable to deserialize datagram (&quot;
+                       &amp;lt;&amp;lt; m_serializer.deserializationError() &amp;lt;&amp;lt; &quot;)&quot;
+                       &amp;lt;&amp;lt; m_serializer.deserializationErrorString();
+            continue;
+        }
+</db:programlisting>
+<db:para>Then the Type-Length-Value message is deserialized into the sensor message:</db:para>
+<db:programlisting language="cpp">            qt::examples::sensors::Coordinates coord;
+            coord.deserialize(&amp;amp;m_serializer, msg.value());
+            emit coordinatesUpdated(coord);
+            break;
+</db:programlisting>
+<db:para>Finally, it is converted and displayed to the user:</db:para>
+<db:programlisting language="cpp">    ui-&amp;gt;latitudeValue-&amp;gt;setText(QString::number(coord.latitude(), 'f', 7));
+    ui-&amp;gt;longitudeValue-&amp;gt;setText(QString::number(coord.longitude(), 'f', 7));
+    ui-&amp;gt;altitudeValue-&amp;gt;setText(QString::number(coord.altitude(), 'f', 7));
+</db:programlisting>
+<db:note>
+<db:para>Before running the example, make sure that your operating system allows binding on UDP port <db:code>65500</db:code> and sending the data over UDP.</db:para>
+</db:note>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtgrpc.git/tree/examples/protobuf/sensors?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

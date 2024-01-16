@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Log File Position Source (C++)</db:title>
+<db:productname>QtPositioning</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Positioning Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Logfile Position Source shows how to create and work with a custom position source. It can be useful for simulating GPS data, or when the data is received in some custom format.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="creating-custom-position-source">
+<db:title>Creating custom Position Source</db:title>
+<db:para>In this example, the data is read from a text file, <db:emphasis>simplelog.txt</db:emphasis>. The file specifies position data using a simple text format: it contains one position update per line, where each line contains a date/time, a latitude and a longitude, separated by spaces. The date/time is in ISO 8601 format and the latitude and longitude are in degrees decimal format. Here is an excerpt from <db:emphasis>simplelog.txt</db:emphasis>:</db:para>
+<db:programlisting language="cpp">2009-08-24T22:25:01 -27.576082 153.092415
+2009-08-24T22:25:02 -27.576223 153.092530
+2009-08-24T22:25:03 -27.576364 153.092648
+</db:programlisting>
+<db:para>We create a custom <db:code>LogFilePositionSource</db:code> class, which derives from <db:link xlink:href="qgeopositioninfosource.xml">QGeoPositionInfoSource</db:link>. It reads position data from the file and distributes it via the <db:link xlink:href="qgeopositioninfosource.xml#positionUpdated">positionUpdated</db:link>() signal.</db:para>
+<db:para>The resulting time and position information is then displayed on the screen as simple text in date/time and latitude/longitude format.</db:para>
+<db:para>Here is the definition of the <db:code>LogFilePositionSource</db:code> class:</db:para>
+<db:programlisting language="cpp">class LogFilePositionSource : public QGeoPositionInfoSource
+{
+    Q_OBJECT
+public:
+    LogFilePositionSource(QObject *parent = 0);
+
+    QGeoPositionInfo lastKnownPosition(bool satelliteMethodsOnly = false) const override;
+
+    PositioningMethods supportedPositioningMethods() const override;
+    int minimumUpdateInterval() const override;
+    Error error() const override;
+
+public slots:
+    virtual void startUpdates() override;
+    virtual void stopUpdates() override;
+
+    virtual void requestUpdate(int timeout = 5000) override;
+
+private slots:
+    void readNextPosition();
+
+private:
+    QFile *logFile;
+    QTimer *timer;
+    QGeoPositionInfo lastPosition;
+    Error lastError = QGeoPositionInfoSource::NoError;
+};
+</db:programlisting>
+<db:para>The main methods overrided by the subclass are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfosource.xml#startUpdates">startUpdates</db:link>(): called by client applications to start regular position updates.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfosource.xml#stopUpdates">stopUpdates</db:link>(): called by client applications to stop regular position updates.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfosource.xml#requestUpdate">requestUpdate</db:link>(): called by client applications to request a single update, with a specified timeout.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>When a position update is available, the subclass emits the <db:link xlink:href="qgeopositioninfosource.xml#positionUpdated">positionUpdated</db:link>() signal.</db:para>
+<db:para>Here are the key methods in the class implementation:</db:para>
+<db:programlisting language="cpp">LogFilePositionSource::LogFilePositionSource(QObject *parent)
+    : QGeoPositionInfoSource(parent),
+      logFile(new QFile(this)),
+      timer(new QTimer(this))
+{
+    connect(timer, &amp;amp;QTimer::timeout, this, &amp;amp;LogFilePositionSource::readNextPosition);
+
+    logFile-&amp;gt;setFileName(&quot;:/simplelog.txt&quot;);
+    if (!logFile-&amp;gt;open(QIODevice::ReadOnly))
+        qWarning() &amp;lt;&amp;lt; &quot;Error: cannot open source file&quot; &amp;lt;&amp;lt; logFile-&amp;gt;fileName();
+}
+
+void LogFilePositionSource::startUpdates()
+{
+    lastError = QGeoPositionInfoSource::NoError;
+    int interval = updateInterval();
+    if (interval &amp;lt; minimumUpdateInterval())
+        interval = minimumUpdateInterval();
+
+    timer-&amp;gt;start(interval);
+}
+
+void LogFilePositionSource::stopUpdates()
+{
+    timer-&amp;gt;stop();
+}
+
+void LogFilePositionSource::requestUpdate(int /*timeout*/)
+{
+    // For simplicity, ignore timeout - assume that if data is not available
+    // now, no data will be added to the file later
+    lastError = QGeoPositionInfoSource::NoError;
+    if (logFile-&amp;gt;canReadLine()) {
+        readNextPosition();
+    } else {
+        lastError = QGeoPositionInfoSource::UpdateTimeoutError;
+        emit QGeoPositionInfoSource::errorOccurred(lastError);
+    }
+}
+
+void LogFilePositionSource::readNextPosition()
+{
+    QByteArray line = logFile-&amp;gt;readLine().trimmed();
+    if (!line.isEmpty()) {
+        QList&amp;lt;QByteArray&amp;gt; data = line.split(' ');
+        double latitude;
+        double longitude;
+        bool hasLatitude = false;
+        bool hasLongitude = false;
+        QDateTime timestamp = QDateTime::fromString(QString(data.value(0)), Qt::ISODate);
+        latitude = data.value(1).toDouble(&amp;amp;hasLatitude);
+        longitude = data.value(2).toDouble(&amp;amp;hasLongitude);
+
+        if (hasLatitude &amp;amp;&amp;amp; hasLongitude &amp;amp;&amp;amp; timestamp.isValid()) {
+            QGeoCoordinate coordinate(latitude, longitude);
+            QGeoPositionInfo info(coordinate, timestamp);
+            if (info.isValid()) {
+                lastPosition = info;
+                emit positionUpdated(info);
+            }
+        }
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtpositioning.git/tree/examples/positioning/logfilepositionsource?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

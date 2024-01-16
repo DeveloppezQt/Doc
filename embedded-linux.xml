@@ -1,0 +1,601 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt for Embedded Linux</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Provides information about Embedded Linux support in Qt.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="platform-plugins-for-embedded-linux-devices">
+<db:title>Platform plugins for embedded Linux devices</db:title>
+<db:para>On Embedded Linux systems, there are multiple platform plugins that you can use: EGLFS, LinuxFB, DirectFB, or Wayland. However, the availability of these plugins depend on how Qt is configured.</db:para>
+<db:para>EGLFS is the default plugin on many boards. If it's not suitable, use the QT_QPA_PLATFORM environment variable to request another plugin. Alternatively, for quick tests, use the -platform command-line argument with the same syntax.</db:para>
+<db:note>
+<db:para>As of Qt 5.0, Qt no longer has its own window system (QWS) implementation. For single-process use cases, the <db:link xlink:href="qpa.xml">Qt Platform Abstraction</db:link> is a superior solution; multi-process use cases are supported through <db:link xlink:href="qtwaylandcompositor-index.xml">Wayland</db:link>.</db:para>
+</db:note>
+<db:para>See <db:link xlink:href="configure-linux-device.xml">Configure an Embedded Linux Device</db:link> for an overview of configuring Qt for cross-compilation using an Embedded Linux toolchain.</db:para>
+<db:anchor xml:id="embedded-eglfs"/>
+<db:section xml:id="eglfs">
+<db:title>EGLFS</db:title>
+<db:para><db:link xlink:href="http://www.khronos.org/egl">EGL</db:link> is an interface between OpenGL and the native windowing system. Qt can use EGL for context and surface management, however the API contains no platform-specifics. Creating a <db:emphasis>native window</db:emphasis>, which won't necessarily be an actual window on the screen, must still be done by platform-specific means. This is why we need the board or GPU-specific adaptation code. Typically, these adaptations are provided as:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:emphasis>EGLFS hooks</db:emphasis> – a single source file compiled into the platform plugin</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis>EGL device integration</db:emphasis> – dynamically loaded plugins</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>EGLFS is a platform plugin for running Qt applications on top of EGL and OpenGL ES 2.0, without an actual windowing system like X11 or Wayland. It is the recommended plugin for modern Embedded Linux devices that include a GPU.</db:para>
+<db:para>In addition to Qt Quick and native OpenGL applications, EGLFS supports software-rendered windows, like <db:link xlink:href="qwidget.xml">QWidget</db:link>, too. For <db:link xlink:href="qwidget.xml">QWidget</db:link>, the widgets' contents are rendered using the CPU into images, which are then uploaded into textures and composited by the plugin.</db:para>
+<db:para>EGLFS forces the first top-level window - either a <db:link xlink:href="qwidget.xml">QWidget</db:link> or a <db:link xlink:href="qquickview.xml">QQuickView</db:link> - to become fullscreen. This window is also chosen to be the <db:emphasis>root</db:emphasis> widget window into which all other top-level widgets are composited. For example, dialogs, popup menus, or combo boxes. This behavior is necessary because with EGLFS there is always exactly one native window and one EGL window surface; these belong to the widget or window that is created first. This approach works well when there is a main window that exists for the application's lifetime and all other widgets are either not top-levels or are created afterward, once the main window is shown.</db:para>
+<db:para>There are further restrictions for OpenGL-based windows. EGLFS supports a single fullscreen GL window (as of Qt 5.3), like OpenGL-based <db:link xlink:href="qwindow.xml">QWindow</db:link>, a <db:link xlink:href="qquickview.xml">QQuickView</db:link>, or a <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link>. Opening additional OpenGL windows or mixing such windows with <db:link xlink:href="qwidget.xml">QWidget</db:link>-based content isn't supported; Qt terminates the application with an error message.</db:para>
+<db:para>Furthermore, APIs designed for desktop platforms or environments with a windowing system, such as <db:link xlink:href="dnd.xml">Drag and Drop</db:link>, are not supported on EGLFS.</db:para>
+<db:section xml:id="environment-variables-used-by-eglfs">
+<db:title>Environment variables used by EGLFS</db:title>
+<db:para>If necessary, eglfs can be configured using the following environment variables:</db:para>
+<db:informaltable style="generic" width="100%">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>Environment Variable</db:para>
+</db:th>
+<db:th>
+<db:para>Description</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_INTEGRATION</db:para>
+</db:td>
+<db:td>
+<db:para>In addition to the compiled-in <db:emphasis>hooks</db:emphasis>, it is also possible to use dynamically loaded plugins to provide device or vendor-specific adaptation. This environment variable enforces a specific plugin. For example, setting it to <db:emphasis>eglfs_kms</db:emphasis> uses the KMS/DRM backend. This is only an option when no static or compiled-in hooks were specified in the device makespecs. In practice, the traditional compiled-in hooks are rarely used, almost all backends are now migrated to plugins. The device makespecs still contain a relevant, though optional, EGLFS_DEVICE_INTEGRATION entry: the name of the preferred backend for that particular device. Avoid setting this environment variable if there is more than one plugin present on the target system. In a desktop environment, the KMS or X11 backends are prioritized, depending on the presence of the DISPLAY environment variable.</db:para>
+<db:note>
+<db:para>On some boards a special value of none is used instead of an actual plugin. This indicates that no special integration is necessary to use EGL with the framebuffer; no plugins must be loaded.</db:para>
+</db:note>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_PHYSICAL_WIDTH and QT_QPA_EGLFS_PHYSICAL_HEIGHT</db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the physical screen's width and height in millimeters. Note that since Qt 6 the physical screen size is no longer used to determine logical dpi.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_ROTATION</db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the rotation applied to software-rendered content in <db:link xlink:href="qwidget.xml">QWidget</db:link>-based applications. Supported values are 180, 90, and -90. This variable does not apply to OpenGL-based windows, including Qt Quick. Qt Quick applications can apply transformations in their QML scene instead. The standard eglfs mouse cursor always takes the value into account, with an appropriately positioned and rotated pointer image, regardless of the application type. However, special cursor implementations, such as the KMS/DRM backend's hardware cursor, may not support rotation.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_FORCEVSYNC</db:para>
+</db:td>
+<db:td>
+<db:para>When set, eglfs requests FBIO_WAITFORVSYNC on the framebuffer device after each call to eglSwapBuffers(). This variable is only relevant for backends relying on the legacy Linux fbdev subsystem. Normally, with a default swap interval of 1, Qt assumes that calling eglSwapBuffers() takes care of vsync; if it doesn't (for example, due to driver bugs), try setting QT_QPA_EGLFS_FORCEVSYNC to a non-zero value.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_FORCE888</db:para>
+</db:td>
+<db:td>
+<db:para>When set, the red, green, and blue color channel sizes are ignored when eglfs creates a new context, window or off-screen surface. Instead, the plugin requests a configuration with 8 bits per channel. This can be helpful on devices where configurations with less than 32 or 24 bits per pixel (for example, 5-6-5 or 4-4-4) are chosen by default despite knowing they are not ideal, for example, due to banding effects. Instead of changing application code, this variable provides a shortcut to force 24 or 32 bpp configurations.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>Additionally, the following less commonly used variables are available:</db:para>
+<db:informaltable style="generic" width="100%">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>Environment Variable</db:para>
+</db:th>
+<db:th>
+<db:para>Description</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_FB</db:para>
+</db:td>
+<db:td>
+<db:para>Overrides the framebuffer device. The default is /dev/fb0. On most embedded platforms this variable isn't very relevant because the framebuffer is used only to query settings like the display dimensions. However, on certain devices, this variable provides the ability to specify which display to use in multiple display setups, similar to the fb parameter in LinuxFB.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_WIDTH and QT_QPA_EGLFS_HEIGHT</db:para>
+</db:td>
+<db:td>
+<db:para>Contains the screen's width and height in pixels. While eglfs tries to determine the dimensions from the framebuffer device <db:emphasis>/dev/fb0</db:emphasis>, this doesn't always work. It may be necessary to manually specify the sizes.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_DEPTH</db:para>
+</db:td>
+<db:td>
+<db:para>Overrides the color depth for the screen. On platforms where the framebuffer device <db:emphasis>/dev/fb0</db:emphasis> is not available or the query is not successful, a default of 32 is used. Use this variable to override any such defaults.</db:para>
+<db:note>
+<db:para>This variable only affects the color depth value reported by <db:link xlink:href="qscreen.xml">QScreen</db:link>. It has no connection to EGL configurations and the color depth used for OpenGL rendering.</db:para>
+</db:note>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_SWAPINTERVAL</db:para>
+</db:td>
+<db:td>
+<db:para>By default, a swap interval of 1 is requested. This variable enables synchronizing to the display's vertical refresh. Use this variable to override the swap interval's value. For instance, passing 0 disables blocking on swap, resulting in running as fast as possible without any synchronization.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QT_QPA_EGLFS_DEBUG</db:para>
+</db:td>
+<db:td>
+<db:para>When set, some debugging information is printed on the debug output. For example, the input <db:link xlink:href="qsurfaceformat.xml">QSurfaceFormat</db:link> and the properties of the chosen EGL configuration are printed while creating a new context. When used together with Qt Quick's QSG_INFO variable, you can get useful information for troubleshooting issues related to the EGL configuration.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section xml:id="logging">
+<db:title>Logging</db:title>
+<db:para>In addition to QT_QPA_EGLFS_DEBUG, eglfs also supports Qt's modern categorized logging system. The following logging categories are available:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>qt.qpa.egldeviceintegration – Enables logging for dynamically loaded backends. Use this category to check what backend is in use.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>qt.qpa.input – Enables debug output both from the evdev and libinput input handlers. Use this category to check if a given input device was recognized and opened.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>qt.qpa.eglfs.kms – Enables verbose logging in the KMS/DRM backend.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>After running configure, make sure to inspect its output. This is the easiest, quickest way to identify whether you have the necessary EGLFS backend, libudev, or libinput enabled. In short, if there's an undesired &quot;no&quot; in your configure output, run:</db:para>
+<db:programlisting language="cpp">./configure -v
+</db:programlisting>
+<db:para>to turn on the verbose output, so that you can see the compiler and linker invocations for each configure test.</db:para>
+<db:note>
+<db:para>If you encounter errors about missing headers, libraries, or seemingly cryptic linker failures, often, they are a sign of an incomplete or broken sysroot and isn't related to Qt.</db:para>
+</db:note>
+<db:para>As an example, when targeting the Raspberry Pi with the Broadcom proprietary graphics drivers, the output should contain something like the following:</db:para>
+<db:programlisting language="cpp" role="bad">QPA backends:
+EGLFS ................................ yes
+EGLFS details:
+  EGLFS i.Mx6 ........................ no
+  EGLFS i.Mx6 Wayland ................ no
+  EGLFS EGLDevice .................... no
+  EGLFS GBM .......................... no
+  EGLFS Mali ......................... no
+  EGLFS Raspberry Pi ................. yes
+  EGL on X11 ......................... no
+</db:programlisting>
+<db:para>If this is not the case, it's not advisable to proceed further with the build since accelerated graphics won't be functional without the Raspberry Pi-specific backend, even if the rest of Qt compiles successfully.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="linuxfb">
+<db:title>LinuxFB</db:title>
+<db:para>This plugin writes directly to the framebuffer via Linux's fbdev subsystem. Only software-rendered content is supported. Note that on some setups the display performance is expected to be limited.</db:para>
+<db:para>However, since fbdev is being deprecated in the Linux kernel, the DRM dumb buffer support is also available. To use it, set the QT_QPA_FB_DRM environment variable to a non-zero value. When set, provided that dumb buffers are supported by your system, legacy framebuffer devices like /dev/fb0 won't be accessed. Instead, the rendering is set up via the DRM APIs, similar to the eglfs_kms backend in EGLFS. The output is double-buffered and page flipped, providing proper vsync for software-rendered content as well.</db:para>
+<db:note>
+<db:para>When dumb buffers are in use, none of the options described below are applicable since properties like physical and logical screen sizes are all queried automatically.</db:para>
+</db:note>
+<db:section xml:id="specifying-additional-settings">
+<db:title>Specifying additional settings</db:title>
+<db:para>The linuxfb plugin allows you to specify additional settings via the QT_QPA_PLATFORM environment variable or -platform command-line option. For example, QT_QPA_PLATFORM=linuxfb:fb=/dev/fb1 specifies that the framebuffer device /dev/fb1 must be used instead of the default fb0. To specify multiple settings, separate the mwith a colon (:).</db:para>
+<db:informaltable style="generic">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>Settings</db:para>
+</db:th>
+<db:th>
+<db:para>Description</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para>fb=/dev/fbN</db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the framebuffer devices. On multiple display setups, this setting allows you to run the application on different displays. Currently, there's no way to use multiple framebuffers from one Qt application.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>size=<db:emphasis>&lt;width&gt;</db:emphasis>x<db:emphasis>&lt;height&gt;</db:emphasis></db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the screen size in pixels. The plugin tries to query the display dimensions, both physical and logical, from the framebuffer device. However, this query may not always lead to proper results; it may be necessary to specify the values explicitly.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>mmsize=<db:emphasis>&lt;width&gt;</db:emphasis>x<db:emphasis>&lt;height&gt;</db:emphasis></db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the physical width and height in millimeters.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>offset=<db:emphasis>&lt;width&gt;</db:emphasis>x<db:emphasis>&lt;height&gt;</db:emphasis></db:para>
+</db:td>
+<db:td>
+<db:para>Specifies the top-left corner of the screen offset in pixels. The default position is at (0, 0).</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>nographicsmodeswitch</db:para>
+</db:td>
+<db:td>
+<db:para>Specifies not to switch the virtual terminal to graphics mode (KD_GRAPHICS). Typically, <db:emphasis>enabling</db:emphasis> graphics mode disables the blinking cursor and screen blanking. However, when this parameter is set, those two features are also skipped.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>tty=/dev/ttyN</db:para>
+</db:td>
+<db:td>
+<db:para>Overrides the virtual console. Only used when nographicsmodeswitch isn't set.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>As of Qt 5.9, the behavior of EGLFS and LinuxFB has been synchronized, with regards to the window sizing policy: the first top-level window is forced to cover the entire screen, with both platform plugins. If this is not desired, set the QT_QPA_FB_FORCE_FULLSCREEN environment variable to 0 to restore the behavior from earlier Qt versions.</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="display-output">
+<db:title>Display output</db:title>
+<db:para>The level of support to target one or more displays from one single Qt application varies between the platform plugins. Support often depends on the device and its graphics stack.</db:para>
+<db:section xml:id="eglfs-with-the-eglfs-kms-backend">
+<db:title>EGLFS with the eglfs_kms backend</db:title>
+<db:para>When the KMS/DRM backend is in use, EGLFS reports all available screens in <db:link xlink:href="qguiapplication.xml#screens">QGuiApplication::screens</db:link>(). Applications can target different screens with different windows via <db:link xlink:href="qwindow.xml#setScreen">QWindow::setScreen</db:link>().</db:para>
+<db:note>
+<db:para>The restriction of one single fullscreen window per screen still applies. Changing screens after making the <db:link xlink:href="qwindow.xml">QWindow</db:link> visible isn't supported either. Therefore, it's essential that embedded applications make all the necessary <db:link xlink:href="qwindow.xml#setScreen">QWindow::setScreen</db:link>() calls before calling <db:link xlink:href="qwindow.xml#show">QWindow::show</db:link>().</db:para>
+</db:note>
+<db:para>When you start developing on a given embedded device, often it's necessary to verify the behavior of the device and drivers, and that the connected displays are working as they should. One easy way is to use the <db:emphasis role="bold">hellowindow</db:emphasis> example. Launching it with the -platform eglfs --multiscreen --timeout arguments shows a rotating Qt logo on each connected screen for a few seconds.</db:para>
+<db:section xml:id="custom-configuration">
+<db:title>Custom configuration</db:title>
+<db:para>The KMS/DRM backend also supports custom configurations via a JSON file. To enable this, set the QT_QPA_EGLFS_KMS_CONFIG environment variable to the name of the file. You can also embed this file into the application via the Qt resource system.</db:para>
+<db:para>Most of these configuration options apply to all KMS/DRM-based backends, regardless of the buffer management technology (GBM or EGLStreams).</db:para>
+<db:para>Here's an example configuration:</db:para>
+<db:programlisting language="cpp" role="bad">{
+  &quot;device&quot;: &quot;/dev/dri/card1&quot;,
+  &quot;hwcursor&quot;: false,
+  &quot;pbuffers&quot;: true,
+  &quot;outputs&quot;: [
+    {
+      &quot;name&quot;: &quot;VGA1&quot;,
+      &quot;mode&quot;: &quot;off&quot;
+    },
+    {
+      &quot;name&quot;: &quot;HDMI1&quot;,
+      &quot;mode&quot;: &quot;1024x768&quot;
+    }
+  ]
+}
+</db:programlisting>
+<db:para>Here we configure the specified device so that:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>It won't use the hardware cursor (falls back to rendering the mouse cursor via OpenGL; by default hardware cursors are enabled as they're more efficient).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>It backs <db:link xlink:href="qoffscreensurface.xml">QOffscreenSurface</db:link> with standard EGL pbuffer surfaces (by default this is disabled and a gbm surface is used instead).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Output on the VGA connector is disabled, while HDMI is active with a resolution of 1024x768.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Additionally, such a configuration also disables looking for a device via libudev; instead the specified device is used.</db:para>
+<db:para>When mode is not defined, the system's preferred mode is chosen. The accepted values for mode are: off, current, preferred, skip, widthxheight, widthxheight@vrefresh, or a modeline string.</db:para>
+<db:para>Specifying current chooses a mode with a resolution that matches the current one. Because mode-setting is done only when the desired mode is actually different from the active one (unless forced via the QT_QPA_EGLFS_ALWAYS_SET_MODE environment variable), this value is useful to preserve the current mode and any content in the planes not touched by Qt.</db:para>
+<db:para>skip causes the connector for the output to be ignored as if it were disconnected. off is similar, but it changes the mode and turns off the display.</db:para>
+</db:section>
+<db:section xml:id="default-behavior">
+<db:title>Default behavior</db:title>
+<db:para>By default, all screens reported by the DRM layer are treated as one big virtual desktop. The mouse cursor implementation takes this into account and moves across the screens as expected. Although not recommended, you can disable the virtual desktop by setting separateScreens to false in the configuration.</db:para>
+<db:para>By default, the virtual desktop is formed left to right, based on the order of connectors as reported by the system. To change this, set virtualIndex to a value starting from 0.</db:para>
+<db:para>For example, the following configuration uses the preferred resolution but ensures that the left side of the virtual desktop is the screen connected to the HDMI port; while the right side is the screen connected to the DisplayPort:</db:para>
+<db:programlisting language="cpp" role="bad">{
+  &quot;device&quot;: &quot;drm-nvdc&quot;,
+  &quot;outputs&quot;: [
+    {
+      &quot;name&quot;: &quot;HDMI1&quot;,
+      &quot;virtualIndex&quot;: 0
+    },
+    {
+      &quot;name&quot;: &quot;DP1&quot;,
+      &quot;virtualIndex&quot;: 1
+    }
+  ]
+}
+</db:programlisting>
+<db:para>The order of elements in the array is not relevant. Outputs with unspecified virtual indices are placed after the others, with the original order in the DRM connector list preserved.</db:para>
+<db:para>To create a vertical desktop space (that is, to stack top to bottom instead of left to right), add a virtualDesktopLayout property after device with the value of vertical.</db:para>
+<db:warning>
+<db:para>It's recommended that all screens in the virtual desktop use the same resolution, otherwise elements like the mouse cursor may behave in unexpected ways when entering areas that only exist on one given screen.</db:para>
+</db:warning>
+<db:para>When virtualIndex is not sufficient, the virtualPos property can be used to explicitly specify the top-left position of the screen in question. Taking the previous example and assuming a resolution of 1080p for HDMI1, the following code snippet places a second HDMI-based screen below the first one:</db:para>
+<db:programlisting language="cpp" role="bad">{
+   ...
+  &quot;outputs&quot;: [
+    ...
+    {
+      &quot;name&quot;: &quot;HDMI2&quot;,
+      &quot;virtualPos&quot;: &quot;0, 1080&quot;
+    }
+  ]
+}
+</db:programlisting>
+<db:note>
+<db:para>Avoid such configurations when mouse support is desired. The mouse cursor's behavior may be unexpected with non-linear layouts. Touch should present no issues.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="automatic-physic-screen-size-querying">
+<db:title>Automatic physic screen size querying</db:title>
+<db:para>In some cases, the automatic querying of the physical screen size via DRM may fail. Normally the QT_QPA_EGLFS_PHYSICAL_WIDTH and QT_QPA_EGLFS_PHYSICAL_HEIGHT environment variable would be used to provide the missing values. This is not suitable anymore when multiple screens are present. Instead, use the physicalWidth and physicalHeight properties in the outputs list to specify the sizes in millimeters.</db:para>
+<db:note>
+<db:para>Different physical sizes and thus differing logical DPIs are discouraged because it may lead to unexpected issues due to some graphics stack components not knowing about multiple screens and relying solely on the first screen's values.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="active-outputs-and-qscreen-instances">
+<db:title>Active outputs and QScreen instances</db:title>
+<db:para>Each active output from the outputs array corresponds to one <db:link xlink:href="qscreen.xml">QScreen</db:link> instance reported from <db:link xlink:href="qguiapplication.xml#screens">QGuiApplication::screens</db:link>(). By default, the primary screen that <db:link xlink:href="qguiapplication.xml#primaryScreen-prop">QGuiApplication::primaryScreen</db:link>() reports is the screen that is registered first. If you're not using virtualIndex, this means the decision is based on the DRM connector order. To override this, set the primary property to true on the desired entry in the outputs list.</db:para>
+<db:para>For example, to ensure the screen corresponding to the VGA output is the primary even when the system happens to report the HDMI one first, do the following:</db:para>
+<db:programlisting language="cpp" role="bad">{
+  &quot;device&quot;: &quot;/dev/dri/card0&quot;,
+  &quot;outputs&quot;: [
+      { &quot;name&quot;: &quot;HDMI1&quot; },
+      { &quot;name&quot;: &quot;VGA1&quot;, &quot;mode&quot;: &quot;1280x720&quot;, &quot;primary&quot;: true },
+      { &quot;name&quot;: &quot;LVDS1&quot;, &quot;mode&quot;: &quot;off&quot; }
+  ]
+}
+</db:programlisting>
+<db:para>For troubleshooting, it might be useful to enable debug logs from the KMS/DRM backend. To do this, enable the qt.qpa.eglfs.kms categorized logging rule.</db:para>
+<db:note>
+<db:para>In an embedded environment, virtual desktops are more limited compared to a full windowing system. Windows overlapping multiple screens, non-fullscreen windows, and moving windows between screens, should be avoided and may not function as expected.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="a-common-use-case">
+<db:title>A common use case</db:title>
+<db:para>The most common and best supported use case for a multi-screen setup is to open a dedicated <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> or <db:link xlink:href="qquickview.xml">QQuickView</db:link> for each screen. With the default threaded render loop of the Qt Quick scenegraph, each of these windows will get its own dedicated render thread. This is good because the threads can be throttled independently based on vsync, and will not interfere with each other. With the basic loop, this can get problematic, causing animations to degrade.</db:para>
+<db:para>For example, discovering all connected screens and creating a <db:link xlink:href="qquickview.xml">QQuickView</db:link> for each of them can be done like this:</db:para>
+<db:programlisting language="cpp" role="bad">int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+
+    QVector&amp;lt;QQuickView *&amp;gt; views;
+    for (QScreen *screen : app.screens()) {
+        QQuickView *view = new QQuickView;
+        view-&amp;gt;setScreen(screen);
+        view-&amp;gt;setResizeMode(QQuickView::SizeRootObjectToView);
+        view-&amp;gt;setSource(QUrl(&quot;qrc:/main.qml&quot;));
+        QObject::connect(view-&amp;gt;engine(), &amp;amp;QQmlEngine::quit, qGuiApp, &amp;amp;QCoreApplication::quit);
+        views.append(view);
+        view-&amp;gt;showFullScreen();
+    }
+
+    int result = app.exec();
+
+    qDeleteAll(views);
+    return result;
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="advanced-eglfs-kms-features">
+<db:title>Advanced eglfs_kms features</db:title>
+<db:section xml:id="cloning-mirroring">
+<db:title>Cloning (mirroring)</db:title>
+<db:para>Screen cloning (mirroring) is supported. This is enabled via the clones property:</db:para>
+<db:programlisting language="cpp" role="bad">{
+  &quot;device&quot;: &quot;/dev/dri/card0&quot;,
+  &quot;outputs&quot;: [
+      { &quot;name&quot;: &quot;HDMI1&quot;, &quot;mode&quot;: &quot;1920x1080&quot; },
+      { &quot;name&quot;: &quot;DP1&quot;, &quot;mode&quot;: &quot;1920x1080&quot;, &quot;clones&quot;: &quot;HDMI1&quot; }
+ ]
+}
+</db:programlisting>
+<db:para>In this case, the content on the display connected via DisplayPort will be the same as on the HDMI one. This is ensured by scanning out the same buffer on both.</db:para>
+<db:para>However, this feature can only work if the resolutions are the same, there are no incompatibilities when it comes to accepted buffer formats, and the application doesn't have any output on the <db:link xlink:href="qscreen.xml">QScreen</db:link> associated with a clone destination. In practice, the latter means that no <db:link xlink:href="qwindow.xml">QWindow</db:link> associated with the <db:link xlink:href="qscreen.xml">QScreen</db:link> in question - DP1 in the example - must ever perform a <db:link xlink:href="qopenglcontext.xml#swapBuffers">QOpenGLContext::swapBuffers</db:link>() operation. It's up to the configuration and the application to ensure these.</db:para>
+</db:section>
+<db:section xml:id="headless-mode-using-drm-render">
+<db:title>Headless mode using DRM render</db:title>
+<db:para>Headless mode via DRM render nodes is supported. This allows performing GPU compute (OpenGL compute shaders, OpenCL) or off-screen OpenGL rendering without needing DRM master privileges. In this mode, applications can function even when there is already another process outputting to the screen.</db:para>
+<db:para>Just switching device from /dev/dri/card0 to /dev/dri/renderD128 is futile on its own since there are a number of operations that cannot be performed in headless mode. Therefore, this must be combined with a headless property, for example:</db:para>
+<db:programlisting language="cpp" role="bad">{
+    &quot;device&quot;: &quot;/dev/dri/renderD128&quot;,
+    &quot;headless&quot;: &quot;1024x768&quot;
+}
+</db:programlisting>
+<db:para>Keep in mind that windows are still sized to match the - now virtual - screen size, hence the need for specifying a size in the headless property. There is also a lack of vsync-based throttling.</db:para>
+<db:para>Once enabled, applications have two typical choices to perform off-screen rendering in headless mode:</db:para>
+<db:para>Use an ordinary window, such as a <db:link xlink:href="qopenglwindow.xml">QOpenGLWindow</db:link> subclass, targeting the window's default framebuffer, meaning a gbm_surface in practice:</db:para>
+<db:programlisting language="cpp" role="bad">MyOpenGLWindow w;
+w.show(); // will not actually show up on screen
+w.grabFramebuffer().save(&quot;output.png&quot;);
+</db:programlisting>
+<db:para>Or the typical offscreen approach with an extra FBO:</db:para>
+<db:programlisting language="cpp" role="bad">QOffscreenSurface s;
+s.setFormat(ctx.format());
+s.create();
+ctx.makeCurrent(&amp;amp;s);
+QOpenGLFramebufferObject fbo(1024, 768);
+fbo.bind();
+ctx.functions()-&amp;gt;glClearColor(1, 0, 0, 1);
+ctx.functions()-&amp;gt;glClear(GL_COLOR_BUFFER_BIT);
+fbo.toImage().save(&quot;output.png&quot;);
+ctx.doneCurrent();
+</db:programlisting>
+</db:section>
+<db:section xml:id="drm-api-selection">
+<db:title>DRM API selection</db:title>
+<db:para>KMS/DRM can be used with two different DRM APIs which are <db:emphasis>legacy</db:emphasis> and <db:emphasis>atomic</db:emphasis>. The main benefit of DRM atomic API is to allow several DRM plane updates within the same renderloop, whereas legacy API would require one plane update per vsync.</db:para>
+<db:para>Atomic API is useful when your application needs to blend content into overlays keeping all the updates within the same vsync. Still not all devices support this API and it could be unavailable on some older devices. KMS backend will by default use the legacy API, but you can enable the DRM atomic API with QT_QPA_EGLFS_KMS_ATOMIC environment variable set to 1.</db:para>
+<db:para>Using a smaller framebuffer than screen resolution can also be useful. This is possible with DRM atomic using the size parameter in the JSON file. The example below uses a 1280x720 framebuffer on a 3840x2160 videomode :</db:para>
+<db:programlisting language="cpp" role="bad">{
+  &quot;device&quot;: &quot;/dev/dri/card0&quot;,
+  &quot;outputs&quot;: [
+    { &quot;name&quot;: &quot;HDMI1&quot;, &quot;mode&quot;: &quot;3840x2160&quot;, &quot;size&quot;: &quot;1280x720&quot;, &quot;format&quot;: &quot;argb8888&quot; }
+  ]
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="eglfs-with-an-eglfs-kms-egldevice-backend">
+<db:title>EGLFS with an eglfs_kms_egldevice backend</db:title>
+<db:para>This backend, typically used on Tegra devices, is similar to the KMS/DRM backend mentioned above, except that it relies on the EGLDevice and EGLStream extensions instead of GBM.</db:para>
+<db:para>For technical details about this approach, check out <db:link xlink:href="https://wiki.qt.io/Qt_for_Embedded_Linux/XDC2014RitgerEGLNonMesa">this presentation</db:link>.</db:para>
+<db:para>As of Qt 5.7 this backend shares many of its internal implementation with the GBM-based backend. This means that multiple screens and the advanced configuration via QT_QPA_EGLFS_KMS_CONFIG are supported. Some settings, such as hwcursor and pbuffers are not applicable however.</db:para>
+<db:para>By default, the backend will automatically choose the correct EGL layer for the default plane of each output. When necessary, this can be overridden by setting the QT_QPA_EGLFS_LAYER_INDEX environment variable to the index of the desired layer. This approach does not currently support multiple outputs, so its usage should be limited to systems with a single screen. To see which layers are available, and to debug potential startup issues, enable the logging category qt.qpa.eglfs.kms.</db:para>
+<db:para>In some cases, it may be necessary to perform a video mode set on application startup even when the screen reports that the desired resolution is already set. This is normally optimized away, but if the screen stays powered down, try setting the environment variable QT_QPA_EGLFS_ALWAYS_SET_MODE to a non-zero value and relaunch the application.</db:para>
+<db:para>To configure the behavior of the EGLStream object used by the backend, use the QT_QPA_EGLFS_STREAM_FIFO_LENGTH environment variable. This assumes that KHR_stream_fifo is supported by the target system. By default, the stream operates in mailbox mode. To switch to FIFO mode, set a value of 1 or greater. The value specifies the maximum number of frames the stream can hold.</db:para>
+<db:para>On some systems it may become necessary to target a specific overlay plane through a pre-defined connector. Just forcing a layer index via QT_QPA_EGLFS_LAYER_INDEX does not perform plane configuration and is therefore not suitable in itself. Instead, in such special scenarios use the QT_QPA_EGLFS_KMS_CONNECTOR_INDEX and QT_QPA_EGLFS_KMS_PLANE_INDEX environment variables. When these are set, only the specified connector and plane will be in use, all other outputs will get ignored. The backend will take care of picking the EGL layer that corresponds to the desired plane, and configuring the plane.</db:para>
+</db:section>
+<db:section xml:id="touch-input-in-systems-with-multiple-screens-on-kms-drm">
+<db:title>Touch input in systems with multiple screens on KMS/DRM</db:title>
+<db:para>Touchscreens require additional considerations in multi-display systems because touch events have to be routed to the correct virtual screen, and this requires a correct mapping between touchscreens and display outputs.</db:para>
+<db:para>The mapping is done via the JSON configuration file specified in QT_QPA_EGLFS_KMS_CONFIG and described in the previous sections. When a touchDevice property is present in an element of the outputs array, the value is treated as a device node and the touch device is associated with the display output in question.</db:para>
+<db:para>For example, assuming our touchscreen has a device node of /dev/input/event5 and is a touchscreen integrated into the monitor connected via HDMI as the secondary screen, the following configuration ensures correct touch (and synthesized mouse) event translation:</db:para>
+<db:programlisting language="cpp" role="bad"> {
+    &quot;device&quot;: &quot;drm-nvdc&quot;,
+    &quot;outputs&quot;: [
+      {
+        &quot;name&quot;: &quot;HDMI1&quot;,
+        &quot;touchDevice&quot;: &quot;/dev/input/event5&quot;,
+        &quot;virtualIndex&quot;: 1
+      },
+      {
+        &quot;name&quot;: &quot;DP1&quot;,
+        &quot;virtualIndex&quot;: 0
+      }
+    ]
+}
+</db:programlisting>
+<db:note>
+<db:para>When in doubt, enable logging from both the graphics and input subsystems by setting the environment variable QT_LOGGING_RULES=qt.qpa.*=true before launching the application. This will help identify the correct input device nodes and may uncover output configuration issues that can be difficult to debug otherwise.</db:para>
+</db:note>
+<db:note>
+<db:para>As of Qt 5.14, the above is only supported for the evdevtouch and libinput backends. Other variants will continue to route events to the primary screen. To force the usage of evdevtouch on systems where multiple input backends are available, set the environment variable QT_QPA_EGLFS_NO_LIBINPUT to 1.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="eglfs-with-other-backends">
+<db:title>EGLFS with other backends</db:title>
+<db:para>Other backends, which are typically based on targeting the framebuffer or a composition API directly via the vendor's EGL implementation, usually provide limited or no support for multiple displays. On i.MX6-based boards with Vivante GPUs the QT_QPA_EGLFS_FB environment variable can be used to specify the framebuffer to target, similarly to linuxfb. On the Raspberry Pi the QT_QPA_EGLFS_DISPMANX_ID environment variable can be used to specify the screen to output to. The value corresponds to one of the DISPMANX_ID_ constants, refer to the Dispmanx documentation. Note that these approaches, unlike KMS/DRM, will not typically allow output to multiple screens from the same application. Alternatively, driver-specific environment variables or kernel parameters may also be available as well to control the used framebuffer. Refer to the embedded board's documentation.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="video-memory">
+<db:title>Video memory</db:title>
+<db:para>Systems with a fixed amount of dedicated video memory may need extra care before running Qt applications based on Qt Quick or classes like <db:link xlink:href="qopenglwidget.xml">QOpenGLWidget</db:link>. The default setting may be insufficient for such applications, especially when they are displayed on a high resolution (for example, full HD) screen. In this case, they may start failing in unexpected ways. It is recommended to ensure that there is at least 128 MB of GPU memory available. For systems that do not have a fixed amount of memory reserved for the GPU, this is not an issue.</db:para>
+<db:section xml:id="linuxfb">
+<db:title>linuxfb</db:title>
+<db:para>Use the fb plugin parameter to specify the framebuffer device to use.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="unix-signal-handlers">
+<db:title>Unix signal handlers</db:title>
+<db:para>The console-oriented platform plugins like eglfs and linuxfb install signal handlers by default to capture interrupt (SIGINT), suspend and continue (SIGTSTP, SIGCONT) and termination (SIGTERM). This way the keyboard, terminal cursor, and possibly other graphics state can be restored when the application terminates or gets suspended due to kill, or Ctrl+C or Ctrl+Z. (although terminating or suspending via the keyboard is only possible when QT_QPA_ENABLE_TERMINAL_KEYBOARD is set, as outlined above in the Input section). However, in some cases capturing SIGINT can be undesirable as it may conflict with remote debugging for instance. Therefore, the environment variable QT_QPA_NO_SIGNAL_HANDLER is provided to opt-out from all built-in signal handling.</db:para>
+</db:section>
+<db:section xml:id="fonts">
+<db:title>Fonts</db:title>
+<db:para>Qt normally uses fontconfig to provide access to system fonts. If fontconfig is not available, Qt will fall back to using QBasicFontDatabase. In this case, Qt applications will look for fonts in Qt's lib/fonts directory. Qt will automatically detect pre-rendered fonts and TrueType fonts. This directory can be overridden by setting the QT_QPA_FONTDIR environment variable.</db:para>
+<db:para>For more information on the supported formats, see <db:link xlink:href="qt-embedded-fonts.xml">Qt for Embedded Linux Fonts</db:link>.</db:para>
+<db:note>
+<db:para>Qt no longer ships any fonts in the lib/fonts directory. This means that it is up to the platform (the system image) to provide the necessary fonts.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="platform-plugins-for-windowing-systems-on-embedded-linux-devices">
+<db:title>Platform plugins for windowing systems on embedded Linux devices</db:title>
+<db:section xml:id="xcb">
+<db:title>XCB</db:title>
+<db:para>This is the X11 plugin used on regular desktop Linux platforms. In some embedded environments, that provide X and the necessary development files for <db:link xlink:href="http://xcb.freedesktop.org">xcb</db:link>, this plugin functions just like it does on a regular PC desktop.</db:para>
+<db:note>
+<db:para>On some devices there is no EGL and OpenGL support available under X because the EGL implementation is not compatible with Xlib. In this case the XCB plugin is built without EGL support, meaning that Qt Quick 2 or other OpenGL-based applications do not work with this platform plugin. It can still be used, however, to run software-rendered applications (based on <db:link xlink:href="qwidget.xml">QWidget</db:link> for example).</db:para>
+</db:note>
+<db:para>As a general rule, the usage of XCB on embedded devices is not advisable. Plugins like eglfs are likely to provide better performance and hardware acceleration.</db:para>
+</db:section>
+<db:section xml:id="wayland">
+<db:title>Wayland</db:title>
+<db:para><db:link xlink:href="http://wayland.freedesktop.org/">Wayland</db:link> is a light-weight windowing system; or more precisely, it is a protocol for clients to talk to a display server.</db:para>
+<db:para>Qt Wayland provides a wayland platform plugin that allows Qt applications to connect to a Wayland compositor.</db:para>
+<db:para>For more details, see <db:link xlink:href="wayland-and-qt.xml">Wayland and Qt</db:link>.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="performance-enhancement-guidelines">
+<db:title>Performance enhancement guidelines</db:title>
+<db:section xml:id="use-hardware-rendering-where-possible">
+<db:title>Use hardware rendering where possible</db:title>
+<db:para>When performance is critical to your application, avoid the use of Qt modules that rely on software rendering, such as <db:link xlink:href="qtcharts-index.xml">Qt Charts</db:link>. Prefer modules that rely on hardware rendering instead, where possible.</db:para>
+</db:section>
+<db:section xml:id="follow-the-best-practices-for-qt-quick">
+<db:title>Follow the best practices for Qt Quick</db:title>
+<db:para>Follow the <db:link xlink:href="qtquick-bestpractices.xml">Best Practices for QML and Qt Quick</db:link>, especially with regards to including the <db:link xlink:href="cmake-build-qml-application.xml">QML CMake API</db:link>, so that <db:link xlink:href="qtquick-tool-qmllint.xml">qmllint</db:link>, <db:link xlink:href="qtqml-qml-script-compiler.xml">QML script compiler</db:link> (qmlsc), and the <db:link xlink:href="qtqml-qml-type-compiler.xml">QML type compiler</db:link> (qmltc) are available. In addition, it's preferable to write declarative QML and minimize Javascript. For more information on how using excessive JavaScript may impact performance see <db:link xlink:href="qtquick-performance.xml">QML Performance Considerations And Suggestions</db:link>.</db:para>
+</db:section>
+<db:section xml:id="use-images-textures-and-shader-effects-instead-of-the-canvas-qml-type">
+<db:title>Use images/textures and shader effects instead of the Canvas QML type</db:title>
+<db:para>For drawing custom UI elements, use images/textures and <db:link xlink:href="topics-graphics.xml#shader-effects">Shader Effects</db:link>. Don't use the QML <db:link xlink:href="qml-qtquick-canvas.xml">Canvas</db:link> type. Shaders require hardware acceleration (GPU).</db:para>
+</db:section>
+<db:section xml:id="use-qt-quick-instead-of-qt-widgets">
+<db:title>Use Qt Quick instead of Qt Widgets</db:title>
+<db:para>With Qt Quick, it's possible to use either hardware-accelerated or software-rendered backends. For complex Uls, using Qt Widgets on embedded targets is not recommended, as it will always use a software backend.</db:para>
+<db:para>There are trade-offs here:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Using the QML engine and Qt Quick comes with initial overhead.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If your UI is very simple and repaints rarely, it may perform faster when implemented using Widgets instead of QML.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If your UI benefits from <db:link xlink:href="qtquick-statesanimations-animations.xml">animations</db:link>, <db:link xlink:href="qml-qtquick-flickable.xml">smooth scrolling</db:link>,and <db:link xlink:href="qml-qtquick-item.xml#scale-prop">scaling</db:link>, <db:link xlink:href="qml-qtquick-shadereffect.xml">rendering effects</db:link>, or <db:link xlink:href="qtquick3d-index.xml">3D</db:link> you need to have GPU acceleration, and thus Qt Quick.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="choose-a-resolution-appropriate-for-your-ui-size">
+<db:title>Choose a resolution appropriate for your UI size</db:title>
+<db:para>You need to be cautious with higher resolutions. Resolutions of 720p and higher may reduce performance.</db:para>
+</db:section>
+<db:section xml:id="use-a-qml-window-type-as-your-application-s-root-element">
+<db:title>Use a QML Window type as your application's root element</db:title>
+<db:para>Use a <db:link xlink:href="qml-qtquick-window.xml">Window</db:link> as your application's root element with the application's background <db:link xlink:href="qml-qtquick-window.xml#color-prop">color</db:link>.</db:para>
+<db:para>The reasoning for this is that a Window component has a color property that has the effect of being a buffer clear. Rendering the background using a full-screen <db:link xlink:href="qml-qtquick-rectangle.xml">Rectangle</db:link> as an application's root <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> would cause an additional draw call. For some RHI backends this may be the same thing, but there is a difference between a <db:link xlink:href="qopenglfunctions.xml#glClear">glClear</db:link> call and drawing a quad. In most cases, a single, opaque image might not have a large performance impact but if you were to use an alpha value in that item's color, you might see a significant performance impact.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="related-topics">
+<db:title>Related topics</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="https://doc.qt.io/Boot2Qt/">Boot to Qt</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="configure-linux-device.xml">Configure an Embedded Linux Device</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="inputs-linux-device.xml">Inputs on an Embedded Linux Device</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:article>

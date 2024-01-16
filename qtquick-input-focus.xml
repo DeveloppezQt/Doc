@@ -1,0 +1,269 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Keyboard Focus in Qt Quick</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>handling keyboard focus.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>When a key is pressed or released, a key event is generated and delivered to the focused Qt Quick <db:link xlink:href="qml-qtquick-item.xml">Item</db:link>. To facilitate the construction of reusable components and to address some of the cases unique to fluid user interfaces, the Qt Quick items add a scope based extension to Qt's traditional keyboard focus model.</db:para>
+<db:section xml:id="key-handling-overview">
+<db:title>Key Handling Overview</db:title>
+<db:para>When the user presses or releases a key, the following occurs:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Qt receives the key action and generates a key event.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If a <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> is the active window, the key event is delivered to it.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The key event is delivered by the scene to the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> with <db:emphasis>active focus</db:emphasis>. If no item has active focus, the key event is ignored.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If the <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> with active focus accepts the key event, propagation stops. Otherwise the event is sent to the Item's parent until the event is accepted, or the root item is reached.</db:para>
+<db:para>If the <db:code>Rectangle</db:code> type in the following example has active focus and the <db:code>A</db:code> key is pressed, the event will not be propagated further. Upon pressing the <db:code>B</db:code> key, the event will propagate to the root item and thus be ignored.</db:para>
+<db:programlisting language="qml">Rectangle {
+    width: 100; height: 100
+    focus: true
+    Keys.onPressed: (event)=&amp;gt; {
+        if (event.key == Qt.Key_A) {
+            console.log('Key A was pressed');
+            event.accepted = true;
+        }
+    }
+}
+</db:programlisting>
+</db:listitem>
+<db:listitem>
+<db:para>If the root <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> is reached, the key event is <db:link xlink:href="qevent.xml#ignore">ignored</db:link> and regular Qt key handling continues.</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>See also the <db:link xlink:href="qml-qtquick-keys.xml">Keys attached property</db:link> and <db:link xlink:href="qml-qtquick-keynavigation.xml">KeyNavigation attached property</db:link>.</db:para>
+</db:section>
+<db:section xml:id="querying-the-active-focus-item">
+<db:title>Querying the Active Focus Item</db:title>
+<db:para>Whether or not an <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> has active focus can be queried through the <db:code>Item::activeFocus</db:code> property. For example, here we have a <db:link xlink:href="qml-qtquick-text.xml">Text</db:link> type whose text is determined by whether or not it has active focus.</db:para>
+<db:programlisting language="qml">    Text {
+        text: activeFocus ? &quot;I have active focus!&quot; : &quot;I do not have active focus&quot;
+    }
+</db:programlisting>
+</db:section>
+<db:section xml:id="acquiring-focus-and-focus-scopes">
+<db:title>Acquiring Focus and Focus Scopes</db:title>
+<db:para>An <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> requests focus by setting the <db:code>focus</db:code> property to <db:code>true</db:code>.</db:para>
+<db:para>For very simple cases simply setting the <db:code>focus</db:code> property is sometimes sufficient. If we run the following example with the <db:link xlink:href="qtquick-qml-runtime.xml">qml tool</db:link>, we see that the <db:code>keyHandler</db:code> type has active focus and pressing the <db:code>A</db:code>, <db:code>B</db:code>, or <db:code>C</db:code> keys modifies the text appropriately.</db:para>
+<db:programlisting language="qml">Rectangle {
+    color: &quot;lightsteelblue&quot;; width: 240; height: 25
+    Text { id: myText }
+    Item {
+        id: keyHandler
+        focus: true
+        Keys.onPressed: (event)=&amp;gt; {
+            if (event.key == Qt.Key_A)
+                myText.text = 'Key A was pressed'
+            else if (event.key == Qt.Key_B)
+                myText.text = 'Key B was pressed'
+            else if (event.key == Qt.Key_C)
+                myText.text = 'Key C was pressed'
+        }
+    }
+}
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/declarative-qmlfocus1.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>However, were the above example to be used as a reusable or imported component, this simple use of the <db:code>focus</db:code> property is no longer sufficient.</db:para>
+<db:para>To demonstrate, we create two instances of our previously defined component and set the first one to have focus. The intention is that when the <db:code>A</db:code>, <db:code>B</db:code>, or <db:code>C</db:code> keys are pressed, the first of the two components receives the event and responds accordingly.</db:para>
+<db:para>The code that imports and creates two MyWidget instances:</db:para>
+<db:programlisting language="qml">//Window code that imports MyWidget
+Rectangle {
+    id: window
+    color: &quot;white&quot;; width: 240; height: 150
+
+    Column {
+        anchors.centerIn: parent; spacing: 15
+
+        MyWidget {
+            focus: true             //set this MyWidget to receive the focus
+            color: &quot;lightblue&quot;
+        }
+        MyWidget {
+            color: &quot;palegreen&quot;
+        }
+    }
+}
+</db:programlisting>
+<db:para>The MyWidget code:</db:para>
+<db:programlisting language="qml">Rectangle {
+    id: widget
+    color: &quot;lightsteelblue&quot;; width: 175; height: 25; radius: 10; antialiasing: true
+    Text { id: label; anchors.centerIn: parent}
+    focus: true
+    Keys.onPressed: (event)=&amp;gt; {
+        if (event.key == Qt.Key_A)
+            label.text = 'Key A was pressed'
+        else if (event.key == Qt.Key_B)
+            label.text = 'Key B was pressed'
+        else if (event.key == Qt.Key_C)
+            label.text = 'Key C was pressed'
+    }
+}
+</db:programlisting>
+<db:para>We want the first <db:code>MyWidget</db:code> object to have the focus, so we set its <db:code>focus</db:code> property to <db:code>true</db:code>. However, by running the code, we can confirm that the second widget receives the focus.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/declarative-qmlfocus2.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Looking at both <db:code>MyWidget</db:code> and <db:code>window</db:code> code, the problem is evident - there are three types that set the <db:code>focus</db:code> property to <db:code>true</db:code>. The two <db:code>MyWidget</db:code>s set the <db:code>focus</db:code> to <db:code>true</db:code> and the <db:code>window</db:code> component also sets the focus. Ultimately, only one type can have keyboard focus, and the system has to decide which type receives the focus. When the second <db:code>MyWidget</db:code> is created, it receives the focus because it is the last type to set its <db:code>focus</db:code> property to <db:code>true</db:code>.</db:para>
+<db:para>This problem is due to visibility. The <db:code>MyWidget</db:code> component would like to have the focus, but it cannot control the focus when it is imported or reused. Likewise, the <db:code>window</db:code> component does not have the ability to know if its imported components are requesting the focus.</db:para>
+<db:para>To solve this problem, QML introduces a concept known as a <db:emphasis>focus scope</db:emphasis>. For existing Qt users, a focus scope is like an automatic focus proxy. A focus scope is created by declaring the <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> type.</db:para>
+<db:para>In the next example, a <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> type is added to the component, and the visual result shown.</db:para>
+<db:programlisting language="qml">FocusScope {
+
+    //FocusScope needs to bind to visual properties of the Rectangle
+    property alias color: rectangle.color
+    x: rectangle.x; y: rectangle.y
+    width: rectangle.width; height: rectangle.height
+
+    Rectangle {
+        id: rectangle
+        anchors.centerIn: parent
+        color: &quot;lightsteelblue&quot;; width: 175; height: 25; radius: 10; antialiasing: true
+        Text { id: label; anchors.centerIn: parent }
+        focus: true
+        Keys.onPressed: (event)=&amp;gt; {
+            if (event.key == Qt.Key_A)
+                label.text = 'Key A was pressed'
+            else if (event.key == Qt.Key_B)
+                label.text = 'Key B was pressed'
+            else if (event.key == Qt.Key_C)
+                label.text = 'Key C was pressed'
+        }
+    }
+}
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/declarative-qmlfocus3.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Conceptually <db:emphasis>focus scopes</db:emphasis> are quite simple.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Within each focus scope one object may have <db:code>Item::focus</db:code> set to <db:code>true</db:code>. If more than one <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> has the <db:code>focus</db:code> property set, the last type to set the <db:code>focus</db:code> will have the focus and the others are unset, similar to when there are no focus scopes.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>When a focus scope receives active focus, the contained type with <db:code>focus</db:code> set (if any) also gets the active focus. If this type is also a <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link>, the proxying behavior continues. Both the focus scope and the sub-focused item will have the <db:code>activeFocus</db:code> property set.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Note that, since the <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> type is not a visual type, the properties of its children need to be exposed to the parent item of the <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link>. Layouts and positioning types will use these visual and styling properties to create the layout. In our example, the <db:code>Column</db:code> type cannot display the two widgets properly because the <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> lacks visual properties of its own. The MyWidget component directly binds to the <db:code>rectangle</db:code> properties to allow the <db:code>Column</db:code> type to create the layout containing the children of the <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link>.</db:para>
+<db:para>So far, the example has the second component statically selected. It is trivial now to extend this component to make it clickable, and add it to the original application. We still set one of the widgets as focused by default. Now, clicking either MyClickableWidget gives it focus and the other widget loses the focus.</db:para>
+<db:para>The code that imports and creates two MyClickableWidget instances:</db:para>
+<db:programlisting language="qml">Rectangle {
+    id: window
+
+    color: &quot;white&quot;; width: 240; height: 150
+
+    Column {
+        anchors.centerIn: parent; spacing: 15
+
+        MyClickableWidget {
+            focus: true             //set this MyWidget to receive the focus
+            color: &quot;lightblue&quot;
+        }
+        MyClickableWidget {
+            color: &quot;palegreen&quot;
+        }
+    }
+
+}
+</db:programlisting>
+<db:para>The MyClickableWidget code:</db:para>
+<db:programlisting language="qml">FocusScope {
+
+    id: scope
+
+    //FocusScope needs to bind to visual properties of the children
+    property alias color: rectangle.color
+    x: rectangle.x; y: rectangle.y
+    width: rectangle.width; height: rectangle.height
+
+    Rectangle {
+        id: rectangle
+        anchors.centerIn: parent
+        color: &quot;lightsteelblue&quot;; width: 175; height: 25; radius: 10; antialiasing: true
+        Text { id: label; anchors.centerIn: parent }
+        focus: true
+        Keys.onPressed: (event)=&amp;gt; {
+            if (event.key == Qt.Key_A)
+                label.text = 'Key A was pressed'
+            else if (event.key == Qt.Key_B)
+                label.text = 'Key B was pressed'
+            else if (event.key == Qt.Key_C)
+                label.text = 'Key C was pressed'
+        }
+    }
+    MouseArea { anchors.fill: parent; onClicked: { scope.focus = true } }
+}
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/declarative-qmlfocus4.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>When a QML <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> explicitly relinquishes focus (by setting its <db:code>focus</db:code> property to <db:code>false</db:code> while it has active focus), the system does not automatically select another type to receive focus. That is, it is possible for there to be no currently active focus.</db:para>
+<db:para>See <db:link xlink:href="qtquick-keyinteraction-example.xml">Qt Quick Examples - Key Interaction</db:link> for a demonstration of moving keyboard focus between multiple areas using <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> types.</db:para>
+</db:section>
+<db:section xml:id="advanced-uses-of-focus-scopes">
+<db:title>Advanced Uses of Focus Scopes</db:title>
+<db:para>Focus scopes allow focus to allocation to be easily partitioned. Several QML items use it to this effect.</db:para>
+<db:para><db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link>, for example, is itself a focus scope. Generally this isn't noticeable as <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> doesn't usually have manually added visual children. By being a focus scope, <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> can focus the current list item without worrying about how that will effect the rest of the application. This allows the current item delegate to react to key presses.</db:para>
+<db:para>This contrived example shows how this works. Pressing the <db:code>Return</db:code> key will print the name of the current list item.</db:para>
+<db:programlisting language="qml">Rectangle {
+    color: &quot;lightsteelblue&quot;; width: 100; height: 50
+
+    ListView {
+        anchors.fill: parent
+        focus: true
+
+        model: ListModel {
+            ListElement { name: &quot;Bob&quot; }
+            ListElement { name: &quot;John&quot; }
+            ListElement { name: &quot;Michael&quot; }
+        }
+
+        delegate: FocusScope {
+                width: childrenRect.width; height: childrenRect.height
+                x:childrenRect.x; y: childrenRect.y
+                TextInput {
+                    focus: true
+                    text: name
+                    Keys.onReturnPressed: console.log(name)
+                }
+        }
+    }
+}
+</db:programlisting>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/declarative-qmlfocus5.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>While the example is simple, there is a lot going on behind the scenes. Whenever the current item changes, the <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> sets the delegate's <db:code>Item::focus</db:code> property. As the <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> is a focus scope, this doesn't affect the rest of the application. However, if the <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link> itself has active focus this causes the delegate itself to receive active focus. In this example, the root type of the delegate is also a focus scope, which in turn gives active focus to the <db:link xlink:href="qml-qtquick-textinput.xml">TextInput</db:link> type that actually performs the work of handling the <db:code>Return</db:code> key.</db:para>
+<db:para>All of the QML view classes, such as <db:link xlink:href="qml-qtquick-pathview.xml">PathView</db:link> and <db:link xlink:href="qml-qtquick-gridview.xml">GridView</db:link>, behave in a similar manner to allow key handling in their respective delegates.</db:para>
+</db:section>
+</db:article>
