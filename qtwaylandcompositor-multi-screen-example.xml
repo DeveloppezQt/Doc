@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Multi Screen</db:title>
+<db:productname>QtWaylandCompositor</db:productname>
+<db:edition>Qt Wayland Compositor | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Wayland Compositor Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Multi Screen is a desktop-style Wayland compositor for multiple screens.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="introduction">
+<db:title>Introduction</db:title>
+<db:para>Multi-screen is a desktop-style Wayland compositor example for multiple screens.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/multi-screen.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>For an introduction to the basic principles of creating a <db:link xlink:href="qtwaylandcompositor-index.xml">Qt Wayland Compositor</db:link> with Qt, see the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">Minimal QML example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="supporting-multiple-screens">
+<db:title>Supporting multiple screens</db:title>
+<db:para>For each available screen on the system, the example creates a <db:code>CompositorScreen</db:code>, which is a subclass of <db:link xlink:href="qml-qtwayland-compositor-waylandoutput.xml">WaylandOutput</db:link>. If there is only one physical screen available, the example emulates three screens with dummy data.</db:para>
+<db:programlisting language="qml">Instantiator {
+    id: screens
+    model: emulated ? emulatedScreens : Qt.application.screens
+
+    delegate: CompositorScreen {
+        surfaceArea.color: &quot;lightsteelblue&quot;
+        text: name
+        compositor: comp
+        screen: emulated ? Qt.application.screens[0] : modelData
+        Component.onCompleted: if (!comp.defaultOutput) comp.defaultOutput = this
+        position: Qt.point(virtualX, virtualY)
+        windowed: emulated
+    }
+}
+</db:programlisting>
+<db:para>Each <db:link xlink:href="qml-qtwayland-compositor-waylandoutput.xml">WaylandOutput</db:link> contains a <db:link xlink:href="qtwaylandcompositor-minimal-cpp-example.xml#window">Window</db:link>, which is used for containing client content, as is the standard setup with <db:link xlink:href="qtwaylandcompositor-index.xml">Qt Wayland Compositor</db:link>. Since each <db:link xlink:href="qtwaylandcompositor-minimal-cpp-example.xml#window">Window</db:link> is isolated from the others, we cannot share any Qt Quick items between them. Therefore, when a client connects and a <db:link xlink:href="qml-qtwayland-compositor-shellsurface.xml">ShellSurface</db:link> is created, one <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItem</db:link> is created on each of the screens.</db:para>
+<db:programlisting language="qml">for (var i = 0; i &amp;lt; screens.count; ++i)
+    createShellSurfaceItem(shellSurface, moveItem, screens.objectAt(i));
+</db:programlisting>
+<db:para>These items serve as views of the same client content. The client's surface itself will only be created once, and will be shared by the surface items.</db:para>
+<db:para>Top-level surface items are created as children of the background <db:link xlink:href="qml-qtquick-rectangle.xml">Rectangle</db:link> in each of the outputs. These views are stored for later, and if the client spawns any child windows, these are parented to the top-level window's item.</db:para>
+<db:programlisting language="qml">var parentSurfaceItem = output.viewsBySurface[shellSurface.parentSurface];
+var parent = parentSurfaceItem || output.surfaceArea;
+</db:programlisting>
+<db:para>The client content will be visible only on one or two screens at a time. <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItem</db:link> positions are synchronized so that when windows enter one screen, they are moved off of another at the same time. This gives the appearance of a single item which moves seamlessly between screens. The global position of the client is stored in a shared <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml#moveItem-prop">moveItem</db:link> and relative position of each screen's <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItem</db:link> is calculated based on this. If the <db:code>moveItem</db:code> is currently outside the bounds of one screen, its coordinates will reflect this, and it will not be visible on that screen.</db:para>
+<db:programlisting language="qml">x: surfaceItem.moveItem.x - surfaceItem.output.geometry.x
+y: surfaceItem.moveItem.y - surfaceItem.output.geometry.y
+</db:programlisting>
+<db:para>Finally, <db:link xlink:href="qml-qtwayland-compositor-waylandquickitem.xml#setPrimary-method">WaylandQuickItem::setPrimary</db:link>() is called at appropriate times to set the primary view for the <db:link xlink:href="qml-qtwayland-compositor-shellsurface.xml">ShellSurface</db:link>, which is used when the client asks to be maximized or fullscreen. The primary <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItem</db:link> is selected based on how much of it is currently visible.</db:para>
+<db:note>
+<db:para>In order to support multiple Wayland outputs in the same compositor, the <db:link xlink:href="qt.xml#ApplicationAttribute-enum">Qt::AA_ShareOpenGLContexts</db:link> attribute must be set before the <db:link xlink:href="qguiapplication.xml">QGuiApplication</db:link> object is constructed. In the example, we do this at the very beginning of the <db:code>main()</db:code> function.</db:para>
+</db:note>
+<db:programlisting language="cpp">QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwayland.git/tree/examples/wayland/multi-screen?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtwaylandcompositor-multi-output-example.xml">Multi Output</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

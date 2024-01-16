@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>RESTful API Server</db:title>
+<db:productname>QtHttpServer</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Lightweight HTTP Server Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of how to create a RESTful API server using the <db:link xlink:href="qhttpserver.xml">QHttpServer</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+#ifndef APIBEHAVIOR_H
+#define APIBEHAVIOR_H
+
+#include &quot;types.h&quot;
+#include &quot;utils.h&quot;
+
+#include &amp;lt;QtHttpServer/QHttpServer&amp;gt;
+#include &amp;lt;QtConcurrent/qtconcurrentrun.h&amp;gt;
+
+#include &amp;lt;optional&amp;gt;
+
+template&amp;lt;typename T, typename = void&amp;gt;
+class CrudApi
+{
+};
+
+template&amp;lt;typename T&amp;gt;
+class CrudApi&amp;lt;T,
+              std::enable_if_t&amp;lt;std::conjunction_v&amp;lt;std::is_base_of&amp;lt;Jsonable, T&amp;gt;,
+                                                  std::is_base_of&amp;lt;Updatable, T&amp;gt;&amp;gt;&amp;gt;&amp;gt;
+{
+public:
+    explicit CrudApi(const IdMap&amp;lt;T&amp;gt; &amp;amp;data, std::unique_ptr&amp;lt;FromJsonFactory&amp;lt;T&amp;gt;&amp;gt; factory)
+        : data(data), factory(std::move(factory))
+    {
+    }
+
+    QFuture&amp;lt;QHttpServerResponse&amp;gt; getPaginatedList(const QHttpServerRequest &amp;amp;request) const
+    {
+        using PaginatorType = Paginator&amp;lt;IdMap&amp;lt;T&amp;gt;&amp;gt;;
+        std::optional&amp;lt;qsizetype&amp;gt; maybePage;
+        std::optional&amp;lt;qsizetype&amp;gt; maybePerPage;
+        std::optional&amp;lt;qint64&amp;gt; maybeDelay;
+        if (request.query().hasQueryItem(&quot;page&quot;))
+            maybePage = request.query().queryItemValue(&quot;page&quot;).toLongLong();
+        if (request.query().hasQueryItem(&quot;per_page&quot;))
+            maybePerPage = request.query().queryItemValue(&quot;per_page&quot;).toLongLong();
+        if (request.query().hasQueryItem(&quot;delay&quot;))
+            maybeDelay = request.query().queryItemValue(&quot;delay&quot;).toLongLong();
+
+        if ((maybePage &amp;amp;&amp;amp; *maybePage &amp;lt; 1) || (maybePerPage &amp;amp;&amp;amp; *maybePerPage &amp;lt; 1)) {
+            return QtConcurrent::run([]() {
+                return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+            });
+        }
+
+        PaginatorType paginator(data, maybePage ? *maybePage : PaginatorType::defaultPage,
+                                maybePerPage ? *maybePerPage : PaginatorType::defaultPageSize);
+
+        return QtConcurrent::run([paginator = std::move(paginator), maybeDelay]() {
+            if (maybeDelay)
+                QThread::sleep(*maybeDelay);
+            return paginator.isValid()
+                    ? QHttpServerResponse(paginator.toJson())
+                    : QHttpServerResponse(QHttpServerResponder::StatusCode::NoContent);
+        });
+    }
+
+    QHttpServerResponse getItem(qint64 itemId) const
+    {
+        const auto item = data.find(itemId);
+        return item != data.end() ? QHttpServerResponse(item-&amp;gt;toJson())
+                                  : QHttpServerResponse(QHttpServerResponder::StatusCode::NotFound);
+    }
+
+    QHttpServerResponse postItem(const QHttpServerRequest &amp;amp;request)
+    {
+        const std::optional&amp;lt;QJsonObject&amp;gt; json = byteArrayToJsonObject(request.body());
+        if (!json)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        const std::optional&amp;lt;T&amp;gt; item = factory-&amp;gt;fromJson(*json);
+        if (!item)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+        if (data.contains(item-&amp;gt;id))
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::AlreadyReported);
+
+        const auto entry = data.insert(item-&amp;gt;id, *item);
+        return QHttpServerResponse(entry-&amp;gt;toJson(), QHttpServerResponder::StatusCode::Created);
+    }
+
+    QHttpServerResponse updateItem(qint64 itemId, const QHttpServerRequest &amp;amp;request)
+    {
+        const std::optional&amp;lt;QJsonObject&amp;gt; json = byteArrayToJsonObject(request.body());
+        if (!json)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        auto item = data.find(itemId);
+        if (item == data.end())
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::NoContent);
+        if (!item-&amp;gt;update(*json))
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        return QHttpServerResponse(item-&amp;gt;toJson());
+    }
+
+    QHttpServerResponse updateItemFields(qint64 itemId, const QHttpServerRequest &amp;amp;request)
+    {
+        const std::optional&amp;lt;QJsonObject&amp;gt; json = byteArrayToJsonObject(request.body());
+        if (!json)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        auto item = data.find(itemId);
+        if (item == data.end())
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::NoContent);
+        item-&amp;gt;updateFields(*json);
+
+        return QHttpServerResponse(item-&amp;gt;toJson());
+    }
+
+    QHttpServerResponse deleteItem(qint64 itemId)
+    {
+        if (!data.remove(itemId))
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::NoContent);
+        return QHttpServerResponse(QHttpServerResponder::StatusCode::Ok);
+    }
+
+private:
+    IdMap&amp;lt;T&amp;gt; data;
+    std::unique_ptr&amp;lt;FromJsonFactory&amp;lt;T&amp;gt;&amp;gt; factory;
+};
+
+class SessionApi
+{
+public:
+    explicit SessionApi(const IdMap&amp;lt;SessionEntry&amp;gt; &amp;amp;sessions,
+                        std::unique_ptr&amp;lt;FromJsonFactory&amp;lt;SessionEntry&amp;gt;&amp;gt; factory)
+        : sessions(sessions), factory(std::move(factory))
+    {
+    }
+
+    QHttpServerResponse registerSession(const QHttpServerRequest &amp;amp;request)
+    {
+        const auto json = byteArrayToJsonObject(request.body());
+        if (!json)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+        const auto item = factory-&amp;gt;fromJson(*json);
+        if (!item)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        const auto session = sessions.insert(item-&amp;gt;id, *item);
+        session-&amp;gt;startSession();
+        return QHttpServerResponse(session-&amp;gt;toJson());
+    }
+
+    QHttpServerResponse login(const QHttpServerRequest &amp;amp;request)
+    {
+        const auto json = byteArrayToJsonObject(request.body());
+
+        if (!json || !json-&amp;gt;contains(&quot;email&quot;) || !json-&amp;gt;contains(&quot;password&quot;))
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        auto maybeSession = std::find_if(
+                sessions.begin(), sessions.end(),
+                [email = json-&amp;gt;value(&quot;email&quot;).toString(),
+                 password = json-&amp;gt;value(&quot;password&quot;).toString()](const auto &amp;amp;it) {
+                    return it.password == password &amp;amp;&amp;amp; it.email == email;
+                });
+        if (maybeSession == sessions.end()) {
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::NotFound);
+        }
+        maybeSession-&amp;gt;startSession();
+        return QHttpServerResponse(maybeSession-&amp;gt;toJson());
+    }
+
+    QHttpServerResponse logout(const QHttpServerRequest &amp;amp;request)
+    {
+        const auto maybeToken = getTokenFromRequest(request);
+        if (!maybeToken)
+            return QHttpServerResponse(QHttpServerResponder::StatusCode::BadRequest);
+
+        auto maybeSession = std::find(sessions.begin(), sessions.end(), *maybeToken);
+        if (maybeSession != sessions.end())
+            maybeSession-&amp;gt;endSession();
+        return QHttpServerResponse(QHttpServerResponder::StatusCode::Ok);
+    }
+
+    bool authorize(const QHttpServerRequest &amp;amp;request) const
+    {
+        const auto maybeToken = getTokenFromRequest(request);
+        if (maybeToken) {
+            const auto maybeSession = std::find(sessions.begin(), sessions.end(), *maybeToken);
+            return maybeSession != sessions.end() &amp;amp;&amp;amp; *maybeSession == *maybeToken;
+        }
+        return false;
+    }
+
+private:
+    IdMap&amp;lt;SessionEntry&amp;gt; sessions;
+    std::unique_ptr&amp;lt;FromJsonFactory&amp;lt;SessionEntry&amp;gt;&amp;gt; factory;
+};
+
+#endif // APIBEHAVIOR_H
+
+</db:programlisting>
+</db:article>

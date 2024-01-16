@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt OPC UA X509 Support Example</db:title>
+<db:productname>QtOpcUa</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>An OPC UA module for Qt</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to generate keys and certificate signing requests.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &amp;lt;QOpcUaProvider&amp;gt;
+#include &amp;lt;QOpcUaKeyPair&amp;gt;
+#include &amp;lt;QOpcUaX509CertificateSigningRequest&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionSubjectAlternativeName&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionBasicConstraints&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionKeyUsage&amp;gt;
+#include &amp;lt;QOpcUaX509ExtensionExtendedKeyUsage&amp;gt;
+#include &amp;lt;QFile&amp;gt;
+
+int main(int argc, char **argv)
+{
+    Q_UNUSED(argc);
+    Q_UNUSED(argv);
+
+    // Generate RSA Key
+    QOpcUaKeyPair key;
+    key.generateRsaKey(QOpcUaKeyPair::RsaKeyStrength::Bits2048);
+
+    // Save private key to file
+    QByteArray keyData = key.privateKeyToByteArray(QOpcUaKeyPair::Cipher::Unencrypted, QString());
+
+    // In order to create a private key file with password for the Unified Automation plugin,
+    // the following invocation can be used:
+    // QByteArray keyData = key.privateKeyToByteArray(QOpcUaKeyPair::Cipher::Aes128Cbc, &quot;password&quot;);
+
+    QFile keyFile(&quot;privateKey.pem&quot;);
+    keyFile.open(QFile::WriteOnly);
+    keyFile.write(keyData);
+    keyFile.close();
+
+    // Create a certificate signing request
+    QOpcUaX509CertificateSigningRequest csr;
+
+    // Set the subject of the certificate
+    QOpcUaX509DistinguishedName dn;
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::CommonName, &quot;QtOpcUaViewer&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::CountryName, &quot;DE&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::LocalityName, &quot;Berlin&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::StateOrProvinceName, &quot;Berlin&quot;);
+    dn.setEntry(QOpcUaX509DistinguishedName::Type::OrganizationName, &quot;The Qt Company&quot;);
+    csr.setSubject(dn);
+
+    // The subject alternative name extension is needed for OPC UA
+    QOpcUaX509ExtensionSubjectAlternativeName *san = new QOpcUaX509ExtensionSubjectAlternativeName;
+    san-&amp;gt;addEntry(QOpcUaX509ExtensionSubjectAlternativeName::Type::DNS, &quot;foo.com&quot;);
+    san-&amp;gt;addEntry(QOpcUaX509ExtensionSubjectAlternativeName::Type::URI, &quot;urn:foo.com:The%20Qt%20Company:QtOpcUaViewer&quot;);
+    san-&amp;gt;setCritical(true);
+    csr.addExtension(san);
+
+    // Set the certificate basic constraints
+    QOpcUaX509ExtensionBasicConstraints *bc = new QOpcUaX509ExtensionBasicConstraints;
+    bc-&amp;gt;setCa(false);
+    bc-&amp;gt;setCritical(true);
+    csr.addExtension(bc);
+
+    // The required values for key usage and extended key usage are defined in OPC UA Part 6, 6.2.2, Table 43
+
+    // Set the key usage constraints
+    QOpcUaX509ExtensionKeyUsage *ku = new QOpcUaX509ExtensionKeyUsage;
+    ku-&amp;gt;setCritical(true);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::DigitalSignature);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::NonRepudiation);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::KeyEncipherment);
+    ku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionKeyUsage::KeyUsage::DataEncipherment);
+    csr.addExtension(ku);
+
+    // Set the extended key usage constraints
+    QOpcUaX509ExtensionExtendedKeyUsage *eku = new QOpcUaX509ExtensionExtendedKeyUsage;
+    eku-&amp;gt;setCritical(true);
+    eku-&amp;gt;setKeyUsage(QOpcUaX509ExtensionExtendedKeyUsage::KeyUsage::TlsWebClientAuthentication);
+    csr.addExtension(eku);
+
+    // Now there are two options:
+    // 1. When you need to get your certificate signing request signed by a certificate authority
+    //    you have to use the request data.
+    // 2. When there is no certificate authority you have to self-sign the request.
+
+    // Option 1
+    QByteArray certificateSigingRequestData = csr.createRequest(key);
+
+    // Option 2
+    QByteArray selfSignedCertificateData = csr.createSelfSignedCertificate(key);
+
+    return 0;
+}
+
+</db:programlisting>
+</db:article>

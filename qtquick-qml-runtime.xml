@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Prototyping with the QML Runtime Tool</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Utility to test and load QML files.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:anchor xml:id="qml-runtime-tool"/>
+<db:para>Qt includes the qml executable, a utility that loads and displays QML documents.</db:para>
+<db:para>The qml utility is meant mainly for testing your QML applications and components. To launch a QML application in a production environment, often you need to develop a custom C++ application, or bundle the QML file in a module. See <db:link xlink:href="qtquick-deployment.xml">Deploying QML applications</db:link> for more information. When given a bare <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> as root element, qml will automatically create a window to show the scene. Notably, <db:link xlink:href="qqmlcomponent.xml#create">QQmlComponent::create</db:link>() will not do that. Therefore, when moving from a prototype developed with qml to a C++ application, you need to either make sure the root element is a <db:link xlink:href="qt3dextras-module.xml#window">Window</db:link>, or create a <db:link xlink:href="qquickview.xml">QQuickView</db:link> in C++ to hold the root <db:link xlink:href="qml-qtquick-item.xml">Item</db:link>. But in the meantime, you can load and test parts of your prototype separately with the qml tool.</db:para>
+<db:para>To load a .qml file, provide the file path on the command prompt:</db:para>
+<db:programlisting language="cpp">$ qml myqmlfile.qml
+</db:programlisting>
+<db:para>To see the configuration options, run qml with the --help argument.</db:para>
+<db:para>When the root object in the QML file that you are loading is an Item rather than a Window, it needs to be wrapped in a Window to be shown. While this work is pending, the top-level object that is already loaded is represented by a PartialScene object. The qml tool then loads additional QML files to decide what to do next: one is a configuration file that specifies in what sort of container to wrap the PartialScene. The PartialScene.container property gives a URL pointing to QML source code for the container component, which normally should declare a <db:link xlink:href="qt3dextras-module.xml#window">Window</db:link> in which to wrap the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> that was loaded first. Thus, the process of wrapping an Item into a Window is programmable; and by default, these two additional QML files are loaded from resources inside the qml executable. You can list the available configurations with the --list-conf command:</db:para>
+<db:programlisting language="cpp">$ qml --list-conf
+Built-in configurations:
+  default
+  resizeToItem
+</db:programlisting>
+<db:para>The default configuration provides default behavior: the root Item will be resized to fill the wrapper Window at startup, and also when the user resizes the window. The alternative resizeToItem configuration works the other way around: the Item can programmatically set its own size (for example by creating bindings to its own width and height properties), and the wrapper Window will be resized to fit (subject to any limits that may be imposed by the window system). You can choose either of these using the -c or --config option:</db:para>
+<db:programlisting language="cpp">$ qml -c resizeToItem selfResizingItem.qml
+</db:programlisting>
+<db:para>Additional configurations can be added by creating configuration directories in <db:link xlink:href="qstandardpaths.xml#StandardLocation-enum">QStandardPaths::AppConfigLocation</db:link>, each with two QML files inside: a configuration file named configuration.qml, and a QML file that declares the Item wrapper, which can have any name. If this has been done, the qml --list-conf command will also list those extra configurations, while the --verbose option will expand those to give the complete paths to those configurations, and the additional locations that were searched:</db:para>
+<db:programlisting language="cpp">$ qml --list-conf --verbose
+Built-in configurations:
+  default
+  resizeToItem
+Other configurations:
+  /home/myuser/.config/QtProject/Qml Runtime/simplest
+Checked in:
+  /home/myuser/.config/QtProject/Qml Runtime
+  /etc/xdg/QtProject/Qml Runtime
+</db:programlisting>
+<db:para>Here is an example configuration.qml file:</db:para>
+<db:programlisting language="qml">import QmlRuntime.Config
+
+Configuration {
+    PartialScene {
+        itemType: &quot;QQuickItem&quot;
+        container: Qt.resolvedUrl(&quot;ItemWrapper.qml&quot;)
+    }
+}
+</db:programlisting>
+<db:para>And here is the simplest-possible ItemWrapper.qml that the container property could point to:</db:para>
+<db:programlisting language="qml">import QtQuick
+
+Window {
+    required property Item containedObject: null
+    onContainedObjectChanged: {
+        if (containedObject == undefined || containedObject == null) {
+            visible = false;
+        } else {
+            containedObject.parent = contentItem;
+            visible = true;
+        }
+    }
+}
+</db:programlisting>
+<db:para>When these files have been created, you can use the qml -c option giving the name of the directory containing the configuration.qml file, which specifies the path to the container object:</db:para>
+<db:programlisting language="cpp">$ qml -c simplest mycomponent.qml
+</db:programlisting>
+<db:para>The qml runtime will directly set the containedObject property, which is required to have that name; and when it is set, the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> will be reparented to the <db:link xlink:href="qt3dextras-module.xml#window">Window</db:link> and shown. Since this Window is declared in QML, when you write your own wrapper window, you are free to add whatever additional features you would like: to handle resizing in a customized way, or to add capabilities that you may find useful during prototyping.</db:para>
+<db:para>Regardless of what was found in AppConfigLocation, you can alternatively use the qml -c option giving the complete path to the configuration.qml file, and it can in turn specify the complete path to the container object; so these files can be located anywhere.</db:para>
+<db:para>In addition to the features that can be declared in the configuration files, the qml tool also provides a few more features via command-line options. Use the --help option to get an up-to-date list.</db:para>
+</db:article>

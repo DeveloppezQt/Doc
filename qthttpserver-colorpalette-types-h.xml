@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>RESTful API Server</db:title>
+<db:productname>QtHttpServer</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Lightweight HTTP Server Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of how to create a RESTful API server using the <db:link xlink:href="qhttpserver.xml">QHttpServer</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+#ifndef TYPES_H
+#define TYPES_H
+
+#include &amp;lt;QtGui/QColor&amp;gt;
+#include &amp;lt;QtCore/QDateTime&amp;gt;
+#include &amp;lt;QtCore/QJsonArray&amp;gt;
+#include &amp;lt;QtCore/QJsonObject&amp;gt;
+#include &amp;lt;QtCore/QJsonParseError&amp;gt;
+#include &amp;lt;QtCore/QString&amp;gt;
+#include &amp;lt;QtCore/qtypes.h&amp;gt;
+
+#include &amp;lt;algorithm&amp;gt;
+#include &amp;lt;optional&amp;gt;
+
+struct Jsonable
+{
+    virtual QJsonObject toJson() const = 0;
+    virtual ~Jsonable() = default;
+};
+
+struct Updatable
+{
+    virtual bool update(const QJsonObject &amp;amp;json) = 0;
+    virtual void updateFields(const QJsonObject &amp;amp;json) = 0;
+    virtual ~Updatable() = default;
+};
+
+template&amp;lt;typename T&amp;gt;
+struct FromJsonFactory
+{
+    virtual std::optional&amp;lt;T&amp;gt; fromJson(const QJsonObject &amp;amp;json) const = 0;
+    virtual ~FromJsonFactory() = default;
+};
+
+struct User : public Jsonable, public Updatable
+{
+    qint64 id;
+    QString email;
+    QString firstName;
+    QString lastName;
+    QUrl avatarUrl;
+    QDateTime createdAt;
+    QDateTime updatedAt;
+
+    explicit User(const QString &amp;amp;email, const QString &amp;amp;firstName, const QString &amp;amp;lastName,
+                  const QUrl &amp;amp;avatarUrl,
+                  const QDateTime &amp;amp;createdAt = QDateTime::currentDateTimeUtc(),
+                  const QDateTime &amp;amp;updatedAt = QDateTime::currentDateTimeUtc())
+        : id(nextId()),
+          email(email),
+          firstName(firstName),
+          lastName(lastName),
+          avatarUrl(avatarUrl),
+          createdAt(createdAt),
+          updatedAt(updatedAt)
+    {
+    }
+
+    bool update(const QJsonObject &amp;amp;json) override
+    {
+        if (!json.contains(&quot;email&quot;) || !json.contains(&quot;first_name&quot;) || !json.contains(&quot;last_name&quot;)
+            || !json.contains(&quot;avatar&quot;))
+            return false;
+
+        email = json.value(&quot;email&quot;).toString();
+        firstName = json.value(&quot;first_name&quot;).toString();
+        lastName = json.value(&quot;last_name&quot;).toString();
+        avatarUrl.setPath(json.value(&quot;avatar&quot;).toString());
+        updateTimestamp();
+        return true;
+    }
+
+    void updateFields(const QJsonObject &amp;amp;json) override
+    {
+        if (json.contains(&quot;email&quot;))
+            email = json.value(&quot;email&quot;).toString();
+        if (json.contains(&quot;first_name&quot;))
+            firstName = json.value(&quot;first_name&quot;).toString();
+        if (json.contains(&quot;last_name&quot;))
+            lastName = json.value(&quot;last_name&quot;).toString();
+        if (json.contains(&quot;avatar&quot;))
+            avatarUrl.setPath(json.value(&quot;avatar&quot;).toString());
+        updateTimestamp();
+    }
+
+    QJsonObject toJson() const override
+    {
+        return QJsonObject{ { &quot;id&quot;, id },
+                            { &quot;email&quot;, email },
+                            { &quot;first_name&quot;, firstName },
+                            { &quot;last_name&quot;, lastName },
+                            { &quot;avatar&quot;, avatarUrl.toString() },
+                            { &quot;createdAt&quot;, createdAt.toString(Qt::ISODateWithMs) },
+                            { &quot;updatedAt&quot;, updatedAt.toString(Qt::ISODateWithMs) } };
+    }
+
+private:
+    void updateTimestamp() { updatedAt = QDateTime::currentDateTimeUtc(); }
+
+    static qint64 nextId()
+    {
+        static qint64 lastId = 1;
+        return lastId++;
+    }
+};
+
+struct UserFactory : public FromJsonFactory&amp;lt;User&amp;gt;
+{
+    UserFactory(const QString &amp;amp;scheme, const QString &amp;amp;hostName, int port)
+        : scheme(scheme), hostName(hostName), port(port)
+    {
+    }
+
+    std::optional&amp;lt;User&amp;gt; fromJson(const QJsonObject &amp;amp;json) const override
+    {
+        if (!json.contains(&quot;email&quot;) || !json.contains(&quot;first_name&quot;) || !json.contains(&quot;last_name&quot;)
+            || !json.contains(&quot;avatar&quot;)) {
+            return std::nullopt;
+        }
+
+        if (json.contains(&quot;createdAt&quot;) &amp;amp;&amp;amp; json.contains(&quot;updatedAt&quot;)) {
+            return User(
+                    json.value(&quot;email&quot;).toString(), json.value(&quot;first_name&quot;).toString(),
+                    json.value(&quot;last_name&quot;).toString(), json.value(&quot;avatar&quot;).toString(),
+                    QDateTime::fromString(json.value(&quot;createdAt&quot;).toString(), Qt::ISODateWithMs),
+                    QDateTime::fromString(json.value(&quot;updatedAt&quot;).toString(), Qt::ISODateWithMs));
+        }
+        QUrl avatarUrl(json.value(&quot;avatar&quot;).toString());
+        if (!avatarUrl.isValid()) {
+            avatarUrl.setPath(json.value(&quot;avatar&quot;).toString());
+        }
+        avatarUrl.setScheme(scheme);
+        avatarUrl.setHost(hostName);
+        avatarUrl.setPort(port);
+
+        return User(json.value(&quot;email&quot;).toString(), json.value(&quot;first_name&quot;).toString(),
+                    json.value(&quot;last_name&quot;).toString(), avatarUrl);
+    }
+
+private:
+    QString scheme;
+    QString hostName;
+    int port;
+};
+
+struct Color : public Jsonable, public Updatable
+{
+    qint64 id;
+    QString name;
+    QColor color;
+    QString pantone;
+    QDateTime createdAt;
+    QDateTime updatedAt;
+
+    explicit Color(const QString &amp;amp;name, const QString &amp;amp;color, const QString &amp;amp;pantone,
+                   const QDateTime &amp;amp;createdAt = QDateTime::currentDateTimeUtc(),
+                   const QDateTime &amp;amp;updatedAt = QDateTime::currentDateTimeUtc())
+        : id(nextId()),
+          name(name),
+          color(QColor(color)),
+          pantone(pantone),
+          createdAt(createdAt),
+          updatedAt(updatedAt)
+    {
+    }
+
+    QJsonObject toJson() const override
+    {
+        return QJsonObject{ { &quot;id&quot;, id },
+                            { &quot;name&quot;, name },
+                            { &quot;color&quot;, color.name() },
+                            { &quot;pantone_value&quot;, pantone },
+                            { &quot;createdAt&quot;, createdAt.toString(Qt::ISODateWithMs) },
+                            { &quot;updatedAt&quot;, updatedAt.toString(Qt::ISODateWithMs) } };
+    }
+
+    bool update(const QJsonObject &amp;amp;json) override
+    {
+        if (!json.contains(&quot;name&quot;) || !json.contains(&quot;color&quot;) || !json.contains(&quot;pantone_value&quot;))
+            return false;
+
+        name = json.value(&quot;name&quot;).toString();
+        color = QColor(json.value(&quot;color&quot;).toString());
+        pantone = json.value(&quot;pantone_value&quot;).toString();
+        updateTimestamp();
+        return true;
+    }
+
+    void updateFields(const QJsonObject &amp;amp;json) override
+    {
+        if (json.contains(&quot;name&quot;))
+            name = json.value(&quot;name&quot;).toString();
+        if (json.contains(&quot;color&quot;))
+            color = QColor(json.value(&quot;color&quot;).toString());
+        if (json.contains(&quot;pantone_value&quot;))
+            pantone = json.value(&quot;pantone_value&quot;).toString();
+        updateTimestamp();
+    }
+
+private:
+    void updateTimestamp() { updatedAt = QDateTime::currentDateTimeUtc(); }
+
+    static qint64 nextId()
+    {
+        static qint64 lastId = 1;
+        return lastId++;
+    }
+};
+
+struct ColorFactory : public FromJsonFactory&amp;lt;Color&amp;gt;
+{
+    std::optional&amp;lt;Color&amp;gt; fromJson(const QJsonObject &amp;amp;json) const override
+    {
+        if (!json.contains(&quot;name&quot;) || !json.contains(&quot;color&quot;) || !json.contains(&quot;pantone_value&quot;))
+            return std::nullopt;
+        if (json.contains(&quot;createdAt&quot;) &amp;amp;&amp;amp; json.contains(&quot;updatedAt&quot;)) {
+            return Color(
+                    json.value(&quot;name&quot;).toString(), json.value(&quot;color&quot;).toString(),
+                    json.value(&quot;pantone_value&quot;).toString(),
+                    QDateTime::fromString(json.value(&quot;createdAt&quot;).toString(), Qt::ISODateWithMs),
+                    QDateTime::fromString(json.value(&quot;updatedAt&quot;).toString(), Qt::ISODateWithMs));
+        }
+        return Color(json.value(&quot;name&quot;).toString(), json.value(&quot;color&quot;).toString(),
+                     json.value(&quot;pantone_value&quot;).toString());
+    }
+};
+
+struct SessionEntry : public Jsonable
+{
+    qint64 id;
+    QString email;
+    QString password;
+    std::optional&amp;lt;QUuid&amp;gt; token;
+
+    explicit SessionEntry(const QString &amp;amp;email, const QString &amp;amp;password)
+        : id(nextId()), email(email), password(password)
+    {
+    }
+
+    void startSession() { token = generateToken(); }
+
+    void endSession() { token = std::nullopt; }
+
+    QJsonObject toJson() const override
+    {
+        return token
+                ? QJsonObject{ { &quot;id&quot;, id },
+                               { &quot;token&quot;, token-&amp;gt;toString(QUuid::StringFormat::WithoutBraces) } }
+                : QJsonObject{};
+    }
+
+    bool operator==(const QString &amp;amp;otherToken) const
+    {
+        return token &amp;amp;&amp;amp; *token == QUuid::fromString(otherToken);
+    }
+
+private:
+    QUuid generateToken() { return QUuid::createUuid(); }
+
+    static qint64 nextId()
+    {
+        static qint64 lastId = 1;
+        return lastId++;
+    }
+};
+
+struct SessionEntryFactory : public FromJsonFactory&amp;lt;SessionEntry&amp;gt;
+{
+    std::optional&amp;lt;SessionEntry&amp;gt; fromJson(const QJsonObject &amp;amp;json) const override
+    {
+        if (!json.contains(&quot;email&quot;) || !json.contains(&quot;password&quot;))
+            return std::nullopt;
+
+        return SessionEntry(json.value(&quot;email&quot;).toString(), json.value(&quot;password&quot;).toString());
+    }
+};
+
+template&amp;lt;typename T&amp;gt;
+class IdMap : public QMap&amp;lt;qint64, T&amp;gt;
+{
+public:
+    IdMap() = default;
+    explicit IdMap(const FromJsonFactory&amp;lt;T&amp;gt; &amp;amp;factory, const QJsonArray &amp;amp;array) : QMap&amp;lt;qint64, T&amp;gt;()
+    {
+        for (const auto &amp;amp;jsonValue : array) {
+            if (jsonValue.isObject()) {
+                const auto maybeT = factory.fromJson(jsonValue.toObject());
+                if (maybeT) {
+                    QMap&amp;lt;qint64, T&amp;gt;::insert(maybeT-&amp;gt;id, *maybeT);
+                }
+            }
+        }
+    }
+};
+
+template&amp;lt;typename T&amp;gt;
+class Paginator : public Jsonable
+{
+public:
+    static constexpr qsizetype defaultPage = 1;
+    static constexpr qsizetype defaultPageSize = 6;
+
+    explicit Paginator(const T &amp;amp;container, qsizetype page, qsizetype size)
+    {
+        const auto containerSize = container.size();
+        const auto pageIndex = page - 1;
+        const auto pageSize = qMin(size, containerSize);
+        const auto totalPages = (containerSize % pageSize) == 0 ? (containerSize / pageSize)
+                                                                : (containerSize / pageSize) + 1;
+        valid = containerSize &amp;gt; (pageIndex * pageSize);
+        if (valid) {
+            QJsonArray data;
+
+            auto iter = container.begin();
+            std::advance(iter, std::min(pageIndex * pageSize, containerSize));
+            for (qsizetype i = 0; i &amp;lt; pageSize &amp;amp;&amp;amp; iter != container.end(); ++i, ++iter) {
+                data.push_back(iter-&amp;gt;toJson());
+            }
+            json = QJsonObject{ { &quot;page&quot;, pageIndex + 1 },
+                                { &quot;per_page&quot;, pageSize },
+                                { &quot;total&quot;, containerSize },
+                                { &quot;total_pages&quot;, totalPages },
+                                { &quot;data&quot;, data } };
+        } else {
+            json = QJsonObject{};
+        }
+    }
+
+    QJsonObject toJson() const { return json; }
+
+    constexpr bool isValid() const { return valid; }
+
+private:
+    QJsonObject json;
+    bool valid;
+};
+
+#endif // TYPES_H
+
+</db:programlisting>
+</db:article>

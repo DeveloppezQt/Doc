@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Traffic Light</db:title>
+<db:productname>QtStateMachine</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt State Machine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Traffic Light example shows how to use <db:link xlink:href="qtstatemachine-overview.xml">Qt State Machine Overview</db:link> to implement the control flow of a traffic light.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/trafficlight-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In this example we write a TrafficLightWidget class. The traffic light has three lights: Red, yellow and green. The traffic light transitions from one light to another (red to yellow to green to yellow to red again) at certain intervals.</db:para>
+<db:programlisting language="cpp">class LightWidget : public QWidget
+{
+    Q_OBJECT
+    Q_PROPERTY(bool on READ isOn WRITE setOn)
+public:
+    explicit LightWidget(const QColor &amp;amp;color, QWidget *parent = nullptr)
+        : QWidget(parent), m_color(color)
+    {
+    }
+
+    bool isOn() const { return m_on; }
+
+    void setOn(bool on)
+    {
+        if (on == m_on)
+            return;
+        m_on = on;
+        update();
+    }
+
+public slots:
+    void turnOff() { setOn(false); }
+    void turnOn() { setOn(true); }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (!m_on)
+            return;
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setBrush(m_color);
+        painter.drawEllipse(rect());
+    }
+
+private:
+    QColor m_color;
+    bool m_on = false;
+};
+</db:programlisting>
+<db:para>The LightWidget class represents a single light of the traffic light. It provides an <db:code>on</db:code> property and two slots, turnOn() and turnOff(), to turn the light on and off, respectively. The widget paints itself in the color that's passed to the constructor.</db:para>
+<db:programlisting language="cpp">class TrafficLightWidget : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit TrafficLightWidget(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        auto vbox = new QVBoxLayout(this);
+        m_red = new LightWidget(Qt::red);
+        vbox-&amp;gt;addWidget(m_red);
+        m_yellow = new LightWidget(Qt::yellow);
+        vbox-&amp;gt;addWidget(m_yellow);
+        m_green = new LightWidget(Qt::green);
+        vbox-&amp;gt;addWidget(m_green);
+        auto pal = palette();
+        pal.setColor(QPalette::Window, Qt::black);
+        setPalette(pal);
+        setAutoFillBackground(true);
+    }
+
+    LightWidget *redLight() const { return m_red; }
+    LightWidget *yellowLight() const { return m_yellow; }
+    LightWidget *greenLight() const { return m_green; }
+
+private:
+    LightWidget *m_red;
+    LightWidget *m_yellow;
+    LightWidget *m_green;
+};
+</db:programlisting>
+<db:para>The TrafficLightWidget class represents the visual part of the traffic light; it's a widget that contains three lights arranged vertically, and provides accessor functions for these.</db:para>
+<db:programlisting language="cpp">QState *createLightState(LightWidget *light, int duration, QState *parent = nullptr)
+{
+    auto lightState = new QState(parent);
+    auto timer = new QTimer(lightState);
+    timer-&amp;gt;setInterval(duration);
+    timer-&amp;gt;setSingleShot(true);
+    auto timing = new QState(lightState);
+    QObject::connect(timing, &amp;amp;QAbstractState::entered, light, &amp;amp;LightWidget::turnOn);
+    QObject::connect(timing, &amp;amp;QAbstractState::entered, timer, QOverload&amp;lt;&amp;gt;::of(&amp;amp;QTimer::start));
+    QObject::connect(timing, &amp;amp;QAbstractState::exited, light, &amp;amp;LightWidget::turnOff);
+    auto done = new QFinalState(lightState);
+    timing-&amp;gt;addTransition(timer, &amp;amp;QTimer::timeout, done);
+    lightState-&amp;gt;setInitialState(timing);
+    return lightState;
+}
+</db:programlisting>
+<db:para>The createLightState() function creates a state that turns a light on when the state is entered, and off when the state is exited. The state uses a timer, and as we shall see the timeout is used to transition from one LightState to another. Here is the statechart for the light state:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/trafficlight-example1.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:programlisting language="cpp">class TrafficLight : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit TrafficLight(QWidget *parent = nullptr) : QWidget(parent)
+    {
+        auto vbox = new QVBoxLayout(this);
+        auto widget = new TrafficLightWidget;
+        vbox-&amp;gt;addWidget(widget);
+        vbox-&amp;gt;setContentsMargins(QMargins());
+
+        auto machine = new QStateMachine(this);
+        auto redGoingYellow = createLightState(widget-&amp;gt;redLight(), 3000);
+        redGoingYellow-&amp;gt;setObjectName(&quot;redGoingYellow&quot;);
+        auto yellowGoingGreen = createLightState(widget-&amp;gt;yellowLight(), 1000);
+        yellowGoingGreen-&amp;gt;setObjectName(&quot;yellowGoingGreen&quot;);
+        redGoingYellow-&amp;gt;addTransition(redGoingYellow, &amp;amp;QState::finished, yellowGoingGreen);
+        auto greenGoingYellow = createLightState(widget-&amp;gt;greenLight(), 3000);
+        greenGoingYellow-&amp;gt;setObjectName(&quot;greenGoingYellow&quot;);
+        yellowGoingGreen-&amp;gt;addTransition(yellowGoingGreen, &amp;amp;QState::finished, greenGoingYellow);
+        auto yellowGoingRed = createLightState(widget-&amp;gt;yellowLight(), 1000);
+        yellowGoingRed-&amp;gt;setObjectName(&quot;yellowGoingRed&quot;);
+        greenGoingYellow-&amp;gt;addTransition(greenGoingYellow, &amp;amp;QState::finished, yellowGoingRed);
+        yellowGoingRed-&amp;gt;addTransition(yellowGoingRed, &amp;amp;QState::finished, redGoingYellow);
+
+        machine-&amp;gt;addState(redGoingYellow);
+        machine-&amp;gt;addState(yellowGoingGreen);
+        machine-&amp;gt;addState(greenGoingYellow);
+        machine-&amp;gt;addState(yellowGoingRed);
+        machine-&amp;gt;setInitialState(redGoingYellow);
+        machine-&amp;gt;start();
+    }
+};
+</db:programlisting>
+<db:para>The TrafficLight class combines the TrafficLightWidget with a state machine. The state graph has four states: red-to-yellow, yellow-to-green, green-to-yellow and yellow-to-red. The initial state is red-to-yellow; when the state's timer times out, the state machine transitions to yellow-to-green. The same process repeats through the other states. This is what the statechart looks like:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/trafficlight-example2.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+
+    TrafficLight widget;
+    widget.resize(110, 300);
+    widget.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The main() function constructs a TrafficLight and shows it.</db:para>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtscxml.git/tree/examples/statemachine/trafficlight?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

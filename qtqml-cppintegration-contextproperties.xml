@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Embedding C++ Objects into QML with Context Properties</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how to embed C++ data into QML using context properties.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:warning>
+<db:para>By using context properties in your QML code, you create a dependency from your QML code to the specific context you have in mind when writing it. This limits re-usability of your code since the context may be different in other places where it might be used. Furthermore, the dependency is not declared. You never <db:code>import</db:code> the context or otherwise state what you expect. Therefore, anyone trying to re-use your code will have difficulties finding out whether the place of re-use has a context sufficient for your code.</db:para>
+</db:warning>
+<db:warning>
+<db:para>Context properties are invisible to any tooling that processes QML code ahead of time, before you load it into the QML engine. The <db:link xlink:href="qtqml-qtquick-compiler-tech.xml">Qt Quick Compiler</db:link>, <db:link xlink:href="qtquick-tool-qmllint.xml">qmllint</db:link>, and the <db:link xlink:href="qtquick-tool-qmlls.xml">QML Language Server</db:link> do not know anything about your context properties and will consider any access to context properties as an <db:emphasis>unqualified access</db:emphasis>.</db:para>
+</db:warning>
+<db:note>
+<db:para>Context properties can generally be replaced either by regular properties on the root object of a component, or by singletons defined either in C++ using <db:link xlink:href="qqmlengine.xml#QML_SINGLETON">QML_SINGLETON</db:link> or in QML using <db:link xlink:href="qtqml-documents-definetypes.xml#singleton">pragma Singleton</db:link>.</db:para>
+</db:note>
+<db:para>When loading a QML object into a C++ application, it can be useful to directly embed some C++ data that can be used from within the QML code. This makes it possible, for example, to invoke a C++ method on the embedded object, or use a C++ object instance as a data model for a QML view.</db:para>
+<db:para>The ability to inject C++ data into a QML object is made possible by the <db:link xlink:href="qqmlcontext.xml">QQmlContext</db:link> class. This class exposes data to the context of a QML object so that the data can be referred to directly from within the scope of the QML code.</db:para>
+<db:section xml:id="setting-a-simple-context-property">
+<db:title>Setting a Simple Context Property</db:title>
+<db:para>For example, here is a QML item that refers to a <db:code>currentDateTime</db:code> value that does not exist in the current scope:</db:para>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick
+
+Text { text: currentDateTime }
+</db:programlisting>
+<db:para>This <db:code>currentDateTime</db:code> value can be set directly by the C++ application that loads the QML component, using <db:link xlink:href="qqmlcontext.xml#setContextProperty">QQmlContext::setContextProperty</db:link>():</db:para>
+<db:programlisting language="cpp">QQuickView view;
+view.rootContext()-&amp;gt;setContextProperty(&quot;currentDateTime&quot;, QDateTime::currentDateTime());
+view.setSource(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+view.show();
+</db:programlisting>
+<db:note>
+<db:para>Since all expressions evaluated in QML are evaluated in a particular context, if the context is modified, all bindings in that context will be re-evaluated. Thus, context properties should be used with care outside of application initialization, as this may lead to decreased application performance.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="setting-an-object-as-a-context-property">
+<db:title>Setting an Object as a Context Property</db:title>
+<db:para>Context properties can hold either <db:link xlink:href="qvariant.xml">QVariant</db:link> or <db:link xlink:href="qobject.xml">QObject</db:link>* values. This means custom C++ objects can also be injected using this approach, and these objects can be modified and read directly in QML. Here, we modify the above example to embed a <db:link xlink:href="qobject.xml">QObject</db:link> instance instead of a <db:link xlink:href="qdatetime.xml">QDateTime</db:link> value, and the QML code invokes a method on the object instance:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>C++</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="cpp">class ApplicationData : public QObject
+{
+    Q_OBJECT
+public:
+    Q_INVOKABLE QDateTime getCurrentDateTime() const {
+        return QDateTime::currentDateTime();
+    }
+};
+
+int main(int argc, char *argv[]) {
+    QGuiApplication app(argc, argv);
+
+    QQuickView view;
+
+    ApplicationData data;
+    view.rootContext()-&amp;gt;setContextProperty(&quot;applicationData&quot;, &amp;amp;data);
+
+    view.setSource(QUrl::fromLocalFile(&quot;MyItem.qml&quot;));
+    view.show();
+
+    return app.exec();
+}
+</db:programlisting>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QML</db:para>
+</db:td>
+<db:td>
+<db:programlisting language="qml">// MyItem.qml
+import QtQuick
+
+Text { text: applicationData.getCurrentDateTime() }
+</db:programlisting>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>(Note that date/time values returned from C++ to QML can be formatted through <db:link xlink:href="qml-qtqml-qt.xml#formatDateTime-method">Qt.formatDateTime</db:link>() and associated functions.)</db:para>
+<db:para>If the QML item needs to receive signals from the context property, it can connect to them using the <db:link xlink:href="qml-qtqml-connections.xml">Connections</db:link> type. For example, if <db:code>ApplicationData</db:code> has a signal named <db:code>dataChanged()</db:code>, this signal can be connected to using an <db:code>onDataChanged</db:code> handler within a <db:link xlink:href="qml-qtqml-connections.xml">Connections</db:link> object:</db:para>
+<db:programlisting language="qml">Text {
+    text: applicationData.getCurrentDateTime()
+
+    Connections {
+        target: applicationData
+        onDataChanged: console.log(&quot;The application data changed!&quot;)
+    }
+}
+</db:programlisting>
+<db:para>Context properties can be useful for using C++ based data models in a QML view. See the following examples:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qtquick-models-stringlistmodel-example.xml">String ListModel</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qtquick-models-objectlistmodel-example.xml">Object ListModel</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qtquick-models-abstractitemmodel-example.xml">AbstractItemModel</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>demonstrating the use of <db:link xlink:href="qstringlist.xml">QStringList</db:link>, <db:link xlink:href="qlist.xml">QList</db:link>&lt;<db:link xlink:href="qobject.xml">QObject</db:link>*&gt;-based models and <db:link xlink:href="qabstractitemmodel.xml">QAbstractItemModel</db:link> in QML views.</db:para>
+<db:para>Also see the <db:link xlink:href="qqmlcontext.xml">QQmlContext</db:link> documentation for more information.</db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,237 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple CoAP Client</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Creating an application that communicates with a CoAP server.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simplecoapclient.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Simple CoAP Client</db:emphasis> demonstrates how to create a minimalistic CoAP client application to send and receive CoAP messages.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="setting-up-a-coap-server">
+<db:title>Setting Up a CoAP Server</db:title>
+<db:para>To use the application, you need to specify a CoAP server. You have the following options:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Use the CoAP test server located at <db:code>coap://coap.me</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Create a CoAP server using <db:link xlink:href="https://github.com/obgm/libcoap">libcoap</db:link>, <db:link xlink:href="https://github.com/keith-cullen/FreeCoAP">FreeCoAP</db:link> or any other CoAP server implementation.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Use the <db:link xlink:href="https://github.com/eclipse/californium/">Californium</db:link> plugtest server, which supports most of the CoAP features. You can build it manually or use a ready Docker image, which builds and starts the plugtest server. The steps for using the docker-based server are described below.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="using-the-docker-based-test-server">
+<db:title>Using the Docker-based Test Server</db:title>
+<db:para>The following command pulls the docker container for the CoAP server from the Docker Hub and starts it:</db:para>
+<db:programlisting language="cpp" role="bad">docker run --name coap-test-server -d --rm -p 5683:5683/udp -p 5684:5684/udp tqtc/coap-californium-test-server:3.8.0
+</db:programlisting>
+<db:para>To find out the IP address of the docker container, first retrieve the container ID by running <db:code>docker ps</db:code>, which will output something like:</db:para>
+<db:programlisting language="cpp" role="bad">$ docker ps
+CONTAINER ID        IMAGE
+5e46502df88f        tqtc/coap-californium-test-server:3.8.0
+</db:programlisting>
+<db:para>Then you can obtain the IP address with the following command:</db:para>
+<db:programlisting language="cpp" role="bad">docker inspect &amp;lt;container_id&amp;gt; | grep IPAddress
+</db:programlisting>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp" role="bad">$ docker inspect 5e46502df88f | grep IPAddress
+...
+&quot;IPAddress&quot;: &quot;172.17.0.2&quot;,
+...
+</db:programlisting>
+<db:para>The CoAP test server will be reachable by the retrieved IP address on ports <db:emphasis>5683</db:emphasis> (non-secure) and <db:emphasis>5684</db:emphasis> (secure).</db:para>
+<db:para>To terminate the docker container after usage, use the following command:</db:para>
+<db:programlisting language="cpp" role="bad">docker stop &amp;lt;container_id&amp;gt;
+</db:programlisting>
+<db:para>The <db:code>&lt;container_id&gt;</db:code> here is the same as retrieved by the <db:code>docker ps</db:code> command.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="creating-a-client">
+<db:title>Creating a Client</db:title>
+<db:para>The first step is to create a CoAP client using the QCoapClient class. Then we need to connect its signals, to get notified when a CoAP reply is received or a request has failed:</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    m_client = new QCoapClient(QtCoap::SecurityMode::NoSecurity, this);
+    connect(m_client, &amp;amp;QCoapClient::finished, this, &amp;amp;MainWindow::onFinished);
+    connect(m_client, &amp;amp;QCoapClient::error, this, &amp;amp;MainWindow::onError);
+    ...
+</db:programlisting>
+</db:section>
+<db:section xml:id="sending-requests">
+<db:title>Sending Requests</db:title>
+<db:para>We use the QCoapRequest class to create CoAP requests. This class provides methods for constructing CoAP frames.</db:para>
+<db:programlisting language="cpp">void MainWindow::on_runButton_clicked()
+{
+    const auto msgType = ui-&amp;gt;msgTypeCheckBox-&amp;gt;isChecked() ? QCoapMessage::Type::Confirmable
+                                                          : QCoapMessage::Type::NonConfirmable;
+    QUrl url;
+    url.setHost(tryToResolveHostName(ui-&amp;gt;hostComboBox-&amp;gt;currentText()));
+    url.setPort(ui-&amp;gt;portSpinBox-&amp;gt;value());
+    url.setPath(ui-&amp;gt;resourceComboBox-&amp;gt;currentText());
+
+    QCoapRequest request(url, msgType);
+    for (const auto &amp;amp;option : std::as_const(m_options))
+        request.addOption(option);
+    ...
+</db:programlisting>
+<db:para>In this example, we set the URL, as well as the message type and add options to the request. It is also possible to set the payload, message ID, token, and so on, but we are using the default values here. Note that by default, the message ID and token are generated randomly.</db:para>
+<db:para>Based on the selected request method, we send a <db:code>GET</db:code>, <db:code>PUT</db:code>, <db:code>POST</db:code> or <db:code>DELETE</db:code> request to the server:</db:para>
+<db:programlisting language="cpp">    ...
+    switch (method) {
+    case QtCoap::Method::Get:
+        m_client-&amp;gt;get(request);
+        break;
+    case QtCoap::Method::Put:
+        m_client-&amp;gt;put(request, m_currentData);
+        break;
+    case QtCoap::Method::Post:
+        m_client-&amp;gt;post(request, m_currentData);
+        break;
+    case QtCoap::Method::Delete:
+        m_client-&amp;gt;deleteResource(request);
+        break;
+    default:
+        break;
+    }
+    ...
+</db:programlisting>
+<db:para>For <db:code>PUT</db:code> and <db:code>POST</db:code> requests we also add <db:code>m_currentData</db:code> as a payload for the request.</db:para>
+<db:para>For browsing the contents of the server and discovering the resources available on it, a <db:emphasis>discovery</db:emphasis> request is used:</db:para>
+<db:programlisting language="cpp">void MainWindow::on_discoverButton_clicked()
+{
+    ...
+    QCoapResourceDiscoveryReply *discoverReply =
+            m_client-&amp;gt;discover(url, ui-&amp;gt;discoveryPathEdit-&amp;gt;text());
+    if (discoverReply) {
+        connect(discoverReply, &amp;amp;QCoapResourceDiscoveryReply::discovered,
+                this, &amp;amp;MainWindow::onDiscovered);
+    ...
+</db:programlisting>
+<db:note>
+<db:para>Instead of QCoapReply class, we use the QCoapResourceDiscoveryReply to keep the reply for a discovery request. It has the QCoapResourceDiscoveryReply::discovered signal, which returns the list of QCoapResources that has been discovered.</db:para>
+</db:note>
+<db:para>If there are <db:emphasis>observable</db:emphasis> resources on the server (meaning that they have the resource type <db:code>obs</db:code>), we can subscribe to updates on that resource by running an <db:emphasis>observe</db:emphasis> request:</db:para>
+<db:programlisting language="cpp">void MainWindow::on_observeButton_clicked()
+{
+    ...
+    QCoapReply *observeReply = m_client-&amp;gt;observe(url);
+    ...
+    connect(observeReply, &amp;amp;QCoapReply::notified, this, &amp;amp;MainWindow::onNotified);
+    ...
+</db:programlisting>
+<db:para>The client can unsubscribe from the resource observation by handling the <db:code>clicked()</db:code> signal of the <db:code>cancelObserveButton</db:code>:</db:para>
+<db:programlisting language="cpp">    ...
+    connect(ui-&amp;gt;cancelObserveButton, &amp;amp;QPushButton::clicked, this, [this, url]() {
+        m_client-&amp;gt;cancelObserve(url);
+        ui-&amp;gt;cancelObserveButton-&amp;gt;setEnabled(false);
+    });
+</db:programlisting>
+<db:para>The responses coming from the server are displayed in the UI:</db:para>
+<db:programlisting language="cpp">void MainWindow::addMessage(const QString &amp;amp;message, bool isError)
+{
+    const QString content = &quot;--------------- %1 ---------------\n%2\n\n&quot;_L1
+                                .arg(QDateTime::currentDateTime().toString(), message);
+    ui-&amp;gt;textEdit-&amp;gt;setTextColor(isError ? Qt::red : Qt::black);
+    ui-&amp;gt;textEdit-&amp;gt;insertPlainText(content);
+    ui-&amp;gt;textEdit-&amp;gt;ensureCursorVisible();
+}
+
+void MainWindow::onFinished(QCoapReply *reply)
+{
+    if (reply-&amp;gt;errorReceived() == QtCoap::Error::Ok)
+        addMessage(reply-&amp;gt;message().payload());
+}
+
+static QString errorMessage(QtCoap::Error errorCode)
+{
+    const auto error = QMetaEnum::fromType&amp;lt;QtCoap::Error&amp;gt;().valueToKey(static_cast&amp;lt;int&amp;gt;(errorCode));
+    return MainWindow::tr(&quot;Request failed with error: %1\n&quot;).arg(error);
+}
+
+void MainWindow::onError(QCoapReply *reply, QtCoap::Error error)
+{
+    const auto errorCode = reply ? reply-&amp;gt;errorReceived() : error;
+    addMessage(errorMessage(errorCode), true);
+}
+
+void MainWindow::onDiscovered(QCoapResourceDiscoveryReply *reply, QList&amp;lt;QCoapResource&amp;gt; resources)
+{
+    if (reply-&amp;gt;errorReceived() != QtCoap::Error::Ok)
+        return;
+
+    QString message;
+    for (const auto &amp;amp;resource : std::as_const(resources)) {
+        ui-&amp;gt;resourceComboBox-&amp;gt;addItem(resource.path());
+        message += tr(&quot;Discovered resource: \&quot;%1\&quot; on path %2\n&quot;)
+                        .arg(resource.title(), resource.path());
+    }
+    addMessage(message);
+}
+
+void MainWindow::onNotified(QCoapReply *reply, const QCoapMessage &amp;amp;message)
+{
+    if (reply-&amp;gt;errorReceived() == QtCoap::Error::Ok) {
+        addMessage(tr(&quot;Received observe notification with payload: %1&quot;)
+                        .arg(QString::fromUtf8(message.payload())));
+    }
+}
+
+static QString tryToResolveHostName(const QString hostName)
+{
+    const auto hostInfo = QHostInfo::fromName(hostName);
+    if (!hostInfo.addresses().empty())
+        return hostInfo.addresses().first().toString();
+
+    return hostName;
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/CMakeLists.txt">simplecoapclient/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/main.cpp">simplecoapclient/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/mainwindow.cpp">simplecoapclient/mainwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/mainwindow.h">simplecoapclient/mainwindow.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/mainwindow.ui">simplecoapclient/mainwindow.ui</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/optiondialog.cpp">simplecoapclient/optiondialog.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/optiondialog.h">simplecoapclient/optiondialog.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/optiondialog.ui">simplecoapclient/optiondialog.ui</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="simplecoapclient/simplecoapclient.pro">simplecoapclient/simplecoapclient.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>MQTT Subscriptions</db:title>
+<db:productname>QtMqtt</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt MQTT Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Creating a application that communicates with an MQTT broker.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2017 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;mainwindow.h&quot;
+#include &quot;subscriptionwindow.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+
+#include &amp;lt;QtCore/QDateTime&amp;gt;
+#include &amp;lt;QtMqtt/QMqttClient&amp;gt;
+#include &amp;lt;QtWidgets/QMessageBox&amp;gt;
+
+using namespace Qt::StringLiterals;
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui-&amp;gt;setupUi(this);
+
+    m_client = new QMqttClient(this);
+    m_client-&amp;gt;setHostname(ui-&amp;gt;lineEditHost-&amp;gt;text());
+    m_client-&amp;gt;setPort(static_cast&amp;lt;quint16&amp;gt;(ui-&amp;gt;spinBoxPort-&amp;gt;value()));
+
+    connect(m_client, &amp;amp;QMqttClient::stateChanged, this, &amp;amp;MainWindow::updateLogStateChange);
+    connect(m_client, &amp;amp;QMqttClient::disconnected, this, &amp;amp;MainWindow::brokerDisconnected);
+
+    connect(m_client, &amp;amp;QMqttClient::messageReceived, this, [this](const QByteArray &amp;amp;message, const QMqttTopicName &amp;amp;topic) {
+        const QString content = QDateTime::currentDateTime().toString()
+                    + &quot; Received Topic: &quot;_L1
+                    + topic.name()
+                    + &quot; Message: &quot;_L1
+                    + message
+                    + u'\n';
+        ui-&amp;gt;editLog-&amp;gt;insertPlainText(content);
+    });
+
+    connect(m_client, &amp;amp;QMqttClient::pingResponseReceived, this, [this]() {
+        const QString content = QDateTime::currentDateTime().toString()
+                    + &quot; PingResponse\n&quot;_L1;
+        ui-&amp;gt;editLog-&amp;gt;insertPlainText(content);
+    });
+
+    connect(ui-&amp;gt;lineEditHost, &amp;amp;QLineEdit::textChanged, m_client, &amp;amp;QMqttClient::setHostname);
+    connect(ui-&amp;gt;spinBoxPort, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QSpinBox::valueChanged), this, &amp;amp;MainWindow::setClientPort);
+    connect(ui-&amp;gt;lineEditUser, &amp;amp;QLineEdit::textChanged, m_client, &amp;amp;QMqttClient::setUsername);
+    connect(ui-&amp;gt;lineEditPassword, &amp;amp;QLineEdit::textChanged, m_client, &amp;amp;QMqttClient::setPassword);
+    updateLogStateChange();
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+    qApp-&amp;gt;quit();
+}
+
+void MainWindow::on_buttonConnect_clicked()
+{
+    if (m_client-&amp;gt;state() == QMqttClient::Disconnected) {
+        ui-&amp;gt;lineEditHost-&amp;gt;setEnabled(false);
+        ui-&amp;gt;spinBoxPort-&amp;gt;setEnabled(false);
+        ui-&amp;gt;lineEditUser-&amp;gt;setEnabled(false);
+        ui-&amp;gt;lineEditPassword-&amp;gt;setEnabled(false);
+        ui-&amp;gt;buttonConnect-&amp;gt;setText(tr(&quot;Disconnect&quot;));
+        m_client-&amp;gt;connectToHost();
+    } else {
+        ui-&amp;gt;lineEditHost-&amp;gt;setEnabled(true);
+        ui-&amp;gt;spinBoxPort-&amp;gt;setEnabled(true);
+        ui-&amp;gt;lineEditUser-&amp;gt;setEnabled(true);
+        ui-&amp;gt;lineEditPassword-&amp;gt;setEnabled(true);
+        ui-&amp;gt;buttonConnect-&amp;gt;setText(tr(&quot;Connect&quot;));
+        m_client-&amp;gt;disconnectFromHost();
+    }
+}
+
+void MainWindow::on_buttonQuit_clicked()
+{
+    QApplication::quit();
+}
+
+void MainWindow::updateLogStateChange()
+{
+    const QString content = QDateTime::currentDateTime().toString()
+                    + &quot;: State Change&quot;_L1
+                    + QString::number(m_client-&amp;gt;state())
+                    + u'\n';
+    ui-&amp;gt;editLog-&amp;gt;insertPlainText(content);
+}
+
+void MainWindow::brokerDisconnected()
+{
+    ui-&amp;gt;lineEditHost-&amp;gt;setEnabled(true);
+    ui-&amp;gt;spinBoxPort-&amp;gt;setEnabled(true);
+    ui-&amp;gt;lineEditUser-&amp;gt;setEnabled(true);
+    ui-&amp;gt;lineEditPassword-&amp;gt;setEnabled(true);
+    ui-&amp;gt;buttonConnect-&amp;gt;setText(tr(&quot;Connect&quot;));
+}
+
+void MainWindow::setClientPort(int p)
+{
+    m_client-&amp;gt;setPort(static_cast&amp;lt;quint16&amp;gt;(p));
+}
+
+void MainWindow::on_buttonPublish_clicked()
+{
+    if (m_client-&amp;gt;publish(ui-&amp;gt;lineEditTopic-&amp;gt;text(), ui-&amp;gt;lineEditMessage-&amp;gt;text().toUtf8(),
+                          static_cast&amp;lt;quint8&amp;gt;(ui-&amp;gt;spinQoS_2-&amp;gt;text().toUInt()),
+                          ui-&amp;gt;checkBoxRetain-&amp;gt;isChecked())
+        == -1)
+        QMessageBox::critical(this, u&quot;Error&quot;_s, u&quot;Could not publish message&quot;_s);
+}
+
+void MainWindow::on_buttonSubscribe_clicked()
+{
+    auto subscription = m_client-&amp;gt;subscribe(ui-&amp;gt;lineEditTopic-&amp;gt;text(),
+                                            static_cast&amp;lt;quint8&amp;gt;(ui-&amp;gt;spinQoS-&amp;gt;text().toUInt()));
+    if (!subscription) {
+        QMessageBox::critical(this, u&quot;Error&quot;_s,
+                              u&quot;Could not subscribe. Is there a valid connection?&quot;_s);
+        return;
+    }
+    auto subWindow = new SubscriptionWindow(subscription);
+    subWindow-&amp;gt;setWindowTitle(subscription-&amp;gt;topic().filter());
+    subWindow-&amp;gt;show();
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Android Notifier</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates calling Java code from Qt in an Android application.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/androidnotifier.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example demonstrates how to add a custom Java class to an Android application, and how to call it using the JNI convenience APIs in Qt.</db:para>
+<db:para>Click on one of the smiley faces to send a notification in the status bar of the Android screen.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="calling-java-methods-from-c-code">
+<db:title>Calling Java Methods from C++ Code</db:title>
+<db:para>We define a custom Java class called NotificationClient in the NotificationClient.java file:</db:para>
+<db:programlisting language="cpp">package org.qtproject.example.androidnotifier;
+
+import android.app.Notification;
+import android.app.NotificationManager;
+import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Color;
+import android.graphics.BitmapFactory;
+import android.app.NotificationChannel;
+
+public class NotificationClient
+{
+    public static void notify(Context context, String message) {
+        try {
+            NotificationManager m_notificationManager = (NotificationManager)
+                    context.getSystemService(Context.NOTIFICATION_SERVICE);
+
+            Notification.Builder m_builder;
+            if (android.os.Build.VERSION.SDK_INT &amp;gt;= android.os.Build.VERSION_CODES.O) {
+                int importance = NotificationManager.IMPORTANCE_DEFAULT;
+                NotificationChannel notificationChannel;
+                notificationChannel = new NotificationChannel(&quot;Qt&quot;, &quot;Qt Notifier&quot;, importance);
+                m_notificationManager.createNotificationChannel(notificationChannel);
+                m_builder = new Notification.Builder(context, notificationChannel.getId());
+            } else {
+                m_builder = new Notification.Builder(context);
+            }
+
+            Bitmap icon = BitmapFactory.decodeResource(context.getResources(), R.drawable.icon);
+            m_builder.setSmallIcon(R.drawable.icon)
+                    .setLargeIcon(icon)
+                    .setContentTitle(&quot;A message from Qt!&quot;)
+                    .setContentText(message)
+                    .setDefaults(Notification.DEFAULT_SOUND)
+                    .setColor(Color.GREEN)
+                    .setAutoCancel(true);
+
+            m_notificationManager.notify(0, m_builder.build());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+}
+</db:programlisting>
+<db:para>In the NotificationClient C++ class header file, notificationclient.h, we declare a simple C++ API to display notifications on an Android device. It consists of a single string property, notification, and a slot, updateAndroidNotification(), that calls the Java code:</db:para>
+<db:programlisting language="cpp">class NotificationClient : public QObject
+{
+    Q_OBJECT
+public:
+    explicit NotificationClient(QObject *parent = 0);
+
+    void setNotification(const QString &amp;amp;notification);
+    QString notification() const;
+
+signals:
+    void notificationChanged();
+
+private slots:
+    void updateAndroidNotification();
+
+private:
+    QString m_notification;
+};
+</db:programlisting>
+<db:para>We connect the notificationChanged() signal to the updateAndroidNotification() slot to update the notification text when the notification text changes:</db:para>
+<db:programlisting language="cpp">    m_notification = notification;
+    emit notificationChanged();
+</db:programlisting>
+<db:para>The updateAndroidNotification() function calls the Java method responsible for sending the notification from the Android platform APIs. First, we construct a Java string jstring from the notification string, then pass the jstring object as a parameter to the notify() method in Java:</db:para>
+<db:programlisting language="cpp">void NotificationClient::updateAndroidNotification()
+{
+    QJniObject javaNotification = QJniObject::fromString(m_notification);
+    QJniObject::callStaticMethod&amp;lt;void&amp;gt;(
+                    &quot;org/qtproject/example/androidnotifier/NotificationClient&quot;,
+                    &quot;notify&quot;,
+                    &quot;(Landroid/content/Context;Ljava/lang/String;)V&quot;,
+                    QNativeInterface::QAndroidApplication::context(),
+                    javaNotification.object&amp;lt;jstring&amp;gt;());
+}
+</db:programlisting>
+<db:para>The call to the Java meethod use <db:link xlink:href="qjniobject.xml">QJniObject</db:link> which relies on the Java Native Interface (JNI) APIs to communicate with Java. Also, in the previous snippet, we are passing the app's context object, which the static Java code can use to tap into the app's specific properties and APIs.</db:para>
+<db:para>To make sure our smiley buttons do what they are supposed to, we add the the following code to change the notification text if either of them are clicked:</db:para>
+<db:programlisting language="cpp">    QObject::connect(&amp;amp;happyButton, &amp;amp;QPushButton::clicked, []() {
+        NotificationClient().setNotification(&quot;The user is happy!&quot;);
+    });
+
+    QObject::connect(&amp;amp;sadButton, &amp;amp;QPushButton::clicked, []() {
+        NotificationClient().setNotification(&quot;The user is sad!&quot;);
+    });
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/platform/androidnotifier?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="android.xml">Qt for Android</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>
