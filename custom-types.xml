@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Creating Custom Qt Types</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.5.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>How to create and register new types with Qt.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>When creating user interfaces with Qt, particularly those with specialized controls and features, developers sometimes need to create new data types that can be used alongside or in place of Qt's existing set of value types.</db:para>
+<db:para>Standard types such as <db:link xlink:href="qsize.xml">QSize</db:link>, QColor and <db:link xlink:href="qstring.xml">QString</db:link> can all be stored in <db:link xlink:href="qvariant.xml">QVariant</db:link> objects, used as the types of properties in <db:link xlink:href="qobject.xml">QObject</db:link>-based classes, and emitted in signal-slot communication.</db:para>
+<db:para>In this document, we take a custom type and describe how to integrate it into Qt's object model so that it can be stored in the same way as standard Qt types. We then show how to register the custom type to allow it to be used in signals and slots connections.</db:para>
+</db:section>
+<db:section xml:id="creating-a-custom-type">
+<db:title>Creating a Custom Type</db:title>
+<db:para>Before we begin, we need to ensure that the custom type we are creating meets all the requirements imposed by <db:link xlink:href="qmetatype.xml">QMetaType</db:link>. In other words, it must provide:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>a public default constructor,</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>a public copy constructor, and</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>a public destructor.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The following Message class definition includes these members:</db:para>
+<db:programlisting language="cpp">class Message
+{
+public:
+    Message();
+    Message(const Message &amp;other);
+    ~Message();
+
+    Message(const QString &amp;body, const QStringList &amp;headers);
+
+    QString body() const;
+    QStringList headers() const;
+
+private:
+    QString m_body;
+    QStringList m_headers;
+};
+</db:programlisting>
+<db:para>The class also provides a constructor for normal use and two public member functions that are used to obtain the private data.</db:para>
+</db:section>
+<db:section xml:id="declaring-the-type-with-qmetatype">
+<db:title>Declaring the Type with QMetaType</db:title>
+<db:para>The Message class only needs a suitable implementation in order to be usable. However, Qt's type system will not be able to understand how to store, retrieve and serialize instances of this class without some assistance. For example, we will be unable to store Message values in <db:link xlink:href="qvariant.xml">QVariant</db:link>.</db:para>
+<db:para>The class in Qt responsible for custom types is <db:link xlink:href="qmetatype.xml">QMetaType</db:link>. To make the type known to this class, we invoke the <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro on the class in the header file where it is defined:</db:para>
+<db:programlisting language="cpp">Q_DECLARE_METATYPE(Message);
+</db:programlisting>
+<db:para>This now makes it possible for Message values to be stored in <db:link xlink:href="qvariant.xml">QVariant</db:link> objects and retrieved later. See the <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type Example</db:link> for code that demonstrates this.</db:para>
+<db:para>The <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro also makes it possible for these values to be used as arguments to signals, but <db:emphasis>only in direct signal-slot connections</db:emphasis>. To make the custom type generally usable with the signals and slots mechanism, we need to perform some extra work.</db:para>
+</db:section>
+<db:section xml:id="creating-and-destroying-custom-objects">
+<db:title>Creating and Destroying Custom Objects</db:title>
+<db:para>Although the declaration in the previous section makes the type available for use in direct signal-slot connections, it cannot be used for queued signal-slot connections, such as those that are made between objects in different threads. This is because the meta-object system does not know how to handle creation and destruction of objects of the custom type at run-time.</db:para>
+<db:para>To enable creation of objects at run-time, call the qRegisterMetaType() template function to register it with the meta-object system. This also makes the type available for queued signal-slot communication as long as you call it before you make the first connection that uses the type.</db:para>
+<db:para>The <db:link xlink:href="qtcore-threads-queuedcustomtype-example.xml">Queued Custom Type Example</db:link> declares a Block class which is registered in the main.cpp file:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    ...
+    qRegisterMetaType&lt;Block&gt;();
+    ...
+    return app.exec();
+}
+</db:programlisting>
+<db:para>This type is later used in a signal-slot connection in the window.cpp file:</db:para>
+<db:programlisting language="cpp">Window::Window()
+{
+    thread = new RenderThread();
+    ...
+    connect(thread, SIGNAL(sendBlock(Block)), this, SLOT(addBlock(Block)));
+    ...
+    setWindowTitle(tr(&quot;Queued Custom Type&quot;));
+}
+</db:programlisting>
+<db:para>If a type is used in a queued connection without being registered, a warning will be printed at the console; for example:</db:para>
+<db:programlisting language="cpp">QObject::connect: Cannot queue arguments of type 'Block'
+(Make sure 'Block' is registered using qRegisterMetaType().)
+</db:programlisting>
+</db:section>
+<db:section xml:id="making-the-type-printable">
+<db:title>Making the Type Printable</db:title>
+<db:para>It is often quite useful to make a custom type printable for debugging purposes, as in the following code:</db:para>
+<db:programlisting language="cpp">    Message message(body, headers);
+    qDebug() &lt;&lt; &quot;Original:&quot; &lt;&lt; message;
+</db:programlisting>
+<db:para>This is achieved by creating a streaming operator for the type, which is often defined in the header file for that type:</db:para>
+<db:programlisting language="cpp">QDebug operator&lt;&lt;(QDebug dbg, const Message &amp;message);
+</db:programlisting>
+<db:para>The implementation for the Message type in the <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type Example</db:link> goes to some effort to make the printable representation as readable as possible:</db:para>
+<db:programlisting language="cpp">QDebug operator&lt;&lt;(QDebug dbg, const Message &amp;message)
+{
+    const QString body = message.body();
+    QVector&lt;QStringRef&gt; pieces = body.splitRef(&quot;\r\n&quot;, QString::SkipEmptyParts);
+    if (pieces.isEmpty())
+        dbg.nospace() &lt;&lt; &quot;Message()&quot;;
+    else if (pieces.size() == 1)
+        dbg.nospace() &lt;&lt; &quot;Message(&quot; &lt;&lt; pieces.first() &lt;&lt; &quot;)&quot;;
+    else
+        dbg.nospace() &lt;&lt; &quot;Message(&quot; &lt;&lt; pieces.first() &lt;&lt; &quot; ...)&quot;;
+    return dbg.maybeSpace();
+}
+</db:programlisting>
+<db:para>The output sent to the debug stream can, of course, be made as simple or as complicated as you like. Note that the value returned by this function is the <db:link xlink:href="qdebug.xml">QDebug</db:link> object itself, though this is often obtained by calling the <db:link xlink:href="">maybeSpace()</db:link> member function of <db:link xlink:href="qdebug.xml">QDebug</db:link> that pads out the stream with space characters to make it more readable.</db:para>
+</db:section>
+<db:section xml:id="further-reading">
+<db:title>Further Reading</db:title>
+<db:para>The <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro and qRegisterMetaType() function documentation contain more detailed information about their uses and limitations.</db:para>
+<db:para>The <db:link xlink:href="qtcore-tools-customtype-example.xml">Custom Type</db:link> and <db:link xlink:href="qtcore-threads-queuedcustomtype-example.xml">Queued Custom Type</db:link> examples show how to implement a custom type with the features outlined in this document.</db:para>
+<db:para>The <db:link xlink:href="">Debugging Techniques</db:link> document provides an overview of the debugging mechanisms discussed above.</db:para>
+</db:section>
+</db:article>
