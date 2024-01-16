@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebSockets MQTT Subscription</db:title>
+<db:productname>QtMqtt</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt MQTT Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Combining an MQTT client with a web socket connection.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis>WebSockets MQTT Subscription</db:emphasis> shows how to design a custom <db:link xlink:href="qiodevice.xml">QIODevice</db:link> to combine a <db:link xlink:href="qtwebsockets-index.xml">web socket</db:link> connection with QMqttClient.</db:para>
+<db:section xml:id="creating-a-custom-qiodevice">
+<db:title>Creating a Custom QIODevice</db:title>
+<db:para>The new custom device, <db:code>WebSocketIODevice</db:code>, has to be a subclass of <db:link xlink:href="qiodevice.xml">QIODevice</db:link>:</db:para>
+<db:programlisting language="cpp">class WebSocketIODevice : public QIODevice
+{
+    Q_OBJECT
+public:
+    WebSocketIODevice(QObject *parent = nullptr);
+
+    bool isSequential() const override;
+    qint64 bytesAvailable() const override;
+
+    bool open(OpenMode mode) override;
+    void close() override;
+
+    qint64 readData(char *data, qint64 maxlen) override;
+    qint64 writeData(const char *data, qint64 len) override;
+
+    void setUrl(const QUrl &amp;amp;url);
+    void setProtocol(const QByteArray &amp;amp;data);
+Q_SIGNALS:
+    void socketConnected();
+
+public slots:
+    void handleBinaryMessage(const QByteArray &amp;amp;msg);
+    void onSocketConnected();
+
+private:
+    QByteArray m_protocol;
+    QByteArray m_buffer;
+    QWebSocket m_socket;
+    QUrl m_url;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="designing-a-class-to-manage-the-connection-and-subscription">
+<db:title>Designing a Class to Manage the Connection and Subscription</db:title>
+<db:para><db:code>WebSocketIODevice</db:code> will be a private member of the <db:code>ClientSubscription</db:code> class alongside the QMqttClient and the QMqttSubscription:</db:para>
+<db:programlisting language="cpp">private:
+    QMqttClient m_client;
+    QMqttSubscription *m_subscription;
+    QUrl m_url;
+    QString m_topic;
+    WebSocketIODevice m_device;
+    int m_version;
+</db:programlisting>
+</db:section>
+<db:section xml:id="subscribing-to-and-receiving-messages">
+<db:title>Subscribing to and Receiving Messages</db:title>
+<db:para>The main logic is implemented in the <db:code>connectAndSubscribe()</db:code> method of the <db:code>ClientSubscription</db:code> class. You need to verify that the web socket has successfully connected before you can initialize an MQTT connection over it. After the MQTT connection has been established, the QMqttClient can subscribe to the topic. If the subscription is successful, the QMqttSubscription can be used to receive messages from the subscribed topic that will be handled by the <db:code>handleMessage()</db:code> method of the <db:code>ClientSubscription</db:code> class.</db:para>
+<db:programlisting language="cpp">void ClientSubscription::connectAndSubscribe()
+{
+    qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;Connecting to broker at &quot; &amp;lt;&amp;lt; m_url;
+
+    m_device.setUrl(m_url);
+    m_device.setProtocol(m_version == 3 ? &quot;mqttv3.1&quot; : &quot;mqtt&quot;);
+
+    connect(&amp;amp;m_device, &amp;amp;WebSocketIODevice::socketConnected, this, [this]() {
+        qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;WebSocket connected, initializing MQTT connection.&quot;;
+
+        m_client.setProtocolVersion(m_version == 3 ? QMqttClient::MQTT_3_1 : QMqttClient::MQTT_3_1_1);
+        m_client.setTransport(&amp;amp;m_device, QMqttClient::IODevice);
+
+        connect(&amp;amp;m_client, &amp;amp;QMqttClient::connected, this, [this]() {
+            qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;MQTT connection established&quot;;
+
+            m_subscription = m_client.subscribe(m_topic);
+            if (!m_subscription) {
+                qDebug() &amp;lt;&amp;lt; &quot;Failed to subscribe to &quot; &amp;lt;&amp;lt; m_topic;
+                emit errorOccured();
+            }
+
+            connect(m_subscription, &amp;amp;QMqttSubscription::stateChanged,
+                    [](QMqttSubscription::SubscriptionState s) {
+                qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;Subscription state changed:&quot; &amp;lt;&amp;lt; s;
+            });
+
+            connect(m_subscription, &amp;amp;QMqttSubscription::messageReceived,
+                    [this](QMqttMessage msg) {
+                handleMessage(msg.payload());
+            });
+        });
+
+        m_client.connectToHost();
+    });
+    if (!m_device.open(QIODevice::ReadWrite))
+        qDebug() &amp;lt;&amp;lt; &quot;Could not open socket device&quot;;
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/CMakeLists.txt">websocketsubscription/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/clientsubscription.cpp">websocketsubscription/clientsubscription.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/clientsubscription.h">websocketsubscription/clientsubscription.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/main.cpp">websocketsubscription/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/websocketiodevice.cpp">websocketsubscription/websocketiodevice.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/websocketiodevice.h">websocketsubscription/websocketiodevice.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="websocketsubscription/websocketsubscription.pro">websocketsubscription/websocketsubscription.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

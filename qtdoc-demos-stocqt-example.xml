@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>StocQt</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A configurable stock chart for 100 stocks.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qtquick-demo-stocqt.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The <db:emphasis>StocQt</db:emphasis> application presents trend charts for a custom list of 100 stocks based on the NASDAQ-100. It allows the user to choose stocks from a list, and fetch the required data from the Financial Modeling Prep API using <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link> or from an offline dataset. The application also allows for favoriting up to 5 stocks for use in comparison charts.</db:para>
+<db:para>The application uses several custom types such as Search, StockCheckBox, StockChart, StockView, and SettingsView. These types present the stock data in a readable form and let the user customize the trend chart. For example, the user can choose to view the weekly, monthly, quarterly, or half-yearly trends in the stock price.</db:para>
+<db:para>The application uses a custom StockEngine singleton implemented in C++ for data handling, such as API requests and favoriting stocks. It implements a custom APIHandler class for fetching the online data.</db:para>
+<db:programlisting language="cpp">void ApiHandler::stockHistory(const QString &amp;amp;symbol,
+                              std::function&amp;lt;void(QList&amp;lt;HistoryData&amp;gt;)&amp;gt; onComplete)
+{
+    if (m_useLiveData) {
+        QDateTime sixMonthsAgo = QDateTime::currentDateTimeUtc().addMonths(-6);
+        QString to = QDateTime::currentDateTimeUtc().toString(m_dateFormat);
+        QString from = sixMonthsAgo.toString(m_dateFormat);
+
+        QString url = QString(&quot;https://financialmodelingprep.com/api/v3/historical-price-full/&quot;
+                              &quot;%1?from=%2&amp;amp;to=%3&amp;amp;apikey=%4&quot;)
+                          .arg(symbol, from, to, m_apiKey);
+
+        m_getRequest.setUrl(QUrl(url));
+        QNetworkReply *reply = m_accessManager.get(m_getRequest);
+
+        connect(reply, &amp;amp;QNetworkReply::finished, [reply, this, onComplete]() {
+            QString replyStr = QString(reply-&amp;gt;readAll());
+
+            if (reply-&amp;gt;error() != QNetworkReply::NoError) {
+                qDebug() &amp;lt;&amp;lt; &quot;Network error&quot; &amp;lt;&amp;lt; reply-&amp;gt;errorString() &amp;lt;&amp;lt; reply-&amp;gt;readAll();
+            }
+            QByteArray data = replyStr.toUtf8();
+            QList&amp;lt;HistoryData&amp;gt; dataList = parseHistory(&amp;amp;data);
+            onComplete(dataList);
+            reply-&amp;gt;deleteLater();
+</db:programlisting>
+<db:para>The application uses the <db:link xlink:href="qml-qtqml-models-objectmodel.xml">ObjectModel</db:link> type to access visual data models that it depends on.</db:para>
+<db:programlisting language="cpp">    id: mainWindow
+        ...
+    ListView {
+        id: root
+        ...
+        model: ObjectModel {
+            Item {
+                id: stockContainer
+                width: root.width
+                height: root.height
+                StockView {
+                    id: stockView
+                    anchors.fill: parent
+                    visible: false
+                    width: root.width
+                    height: root.height
+                }
+
+                StockListView {
+                    id: listView
+                    visible: true
+                    anchors.fill: parent
+                    width: root.width
+                    height: root.height
+                }
+            }
+
+            FavoriteView {
+                id: favoriteView
+                width: root.width
+                height: root.height
+            }
+
+            SettingsView {
+                id: infoView
+                width: root.width
+                height: root.height
+            }
+        }
+    }
+</db:programlisting>
+<db:para>The StockListModel is a custom data model listing the stocks with basic information such as stock ID, name, value, and favorite. This application uses this data model when the user wants to choose another stock from the list.</db:para>
+<db:para>StockView and FavoriteView are complex data models that present a trend chart for the selected stock or a group of up to 5 stocks. They use another custom type, StockChart or FavoriteChart, which loads the data from the StockEngine into ListModels and presents the graphical trend of the stock price using a <db:link xlink:href="qml-qtdatavisualization-surface3d.xml">Surface3D</db:link>, <db:link xlink:href="qml-qtdatavisualization-bars3d.xml">Bars3D</db:link>, or <db:link xlink:href="qml-qtdatavisualization-scatter3d.xml">Scatter3D</db:link>.</db:para>
+<db:programlisting language="cpp">Rectangle {
+    id: chart
+        ...
+    function updateHistory(){
+        updateStartDate()
+        var startPoint = StockEngine.stockModel.indexOf(startDate)
+        var totalPoints = StockEngine.stockModel.historyCount()
+
+        var width = startPoint / 50
+        for (var i = 0; i &amp;lt; totalPoints; i++) {
+            var epochInDays = StockEngine.stockModel.historyDate(i, false) / 86400
+            appendSurfacePoint(openModel, width, epochInDays, StockEngine.stockModel.openPrice(i))
+            appendSurfacePoint(closeModel,width, epochInDays, StockEngine.stockModel.closePrice(i))
+            appendSurfacePoint(highModel,width, epochInDays, StockEngine.stockModel.highPrice(i))
+            appendSurfacePoint(lowModel,width, epochInDays, StockEngine.stockModel.lowPrice(i))
+        }
+        ...
+    Surface3D {
+        id: historyGraph
+        ...
+            Surface3DSeries {
+                id: highSeries
+                visible: true
+                baseColor: &quot;green&quot;
+                flatShadingEnabled: true
+                drawMode: Surface3DSeries.DrawSurface
+                itemLabelFormat: &quot;Time: @xLabel High:@yLabel$&quot;
+                ItemModelSurfaceDataProxy {
+                    itemModel: highModel
+                    rowRole: &quot;row&quot;
+                    columnRole: &quot;column&quot;
+                    yPosRole: &quot;value&quot;
+                }
+            },
+</db:programlisting>
+<db:para>The SettingsView presents information on the application as well as a dropdown menu for choosing between offline and live data. Using live data also requires the user to provide an API key.</db:para>
+<db:programlisting language="cpp">Rectangle {
+    id: rectangle
+        ...
+                    function handleKey(keyValid) {
+                        if (keyValid) {
+                            invalidText.visible = false
+                            confirmation.visible = false
+                            StockEngine.setUseLiveData(true)
+                        }
+</db:programlisting>
+<db:para>To understand the application better, browse through its code using Qt Creator.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdoc.git/tree/examples/demos/stocqt?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qmlapplications.xml">QML Applications</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

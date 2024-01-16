@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SSL Server and Client</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Setting up a secure Remote Object network using QSslSockets.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Encrypting communication is critical when you need to pass data through a network you don't have full control over. The two applications in this example show how to share remote objects over an SSL connection, and how to access them.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/ssl-example.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Both <db:emphasis>sslserver</db:emphasis> and <db:emphasis>sslcppclient</db:emphasis> use a custom root CA certificate to validate each other's certificates all located in sslserver/cert.</db:para>
+<db:section xml:id="ssl-server">
+<db:title>SSL Server</db:title>
+<db:para>The <db:emphasis>sslserver</db:emphasis> is configured with certificates and a private key.</db:para>
+<db:programlisting language="cpp">auto config = QSslConfiguration::defaultConfiguration();
+config.setCaCertificates(QSslCertificate::fromPath(QStringLiteral(&quot;:/sslcert/rootCA.pem&quot;)));
+QFile certificateFile(QStringLiteral(&quot;:/sslcert/server.crt&quot;));
+if (certificateFile.open(QIODevice::ReadOnly | QIODevice::Text))
+    config.setLocalCertificate(QSslCertificate(certificateFile.readAll(), QSsl::Pem));
+else
+    qFatal(&quot;Could not open certificate file&quot;);
+QFile keyFile(QStringLiteral(&quot;:/sslcert/server.key&quot;));
+if (keyFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    QSslKey key(keyFile.readAll(), QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
+    if (key.isNull())
+        qFatal(&quot;Key is not valid&quot;);
+    config.setPrivateKey(key);
+} else {
+    qFatal(&quot;Could not open key file&quot;);
+}
+config.setPeerVerifyMode(QSslSocket::VerifyPeer);
+QSslConfiguration::setDefaultConfiguration(config);
+</db:programlisting>
+<db:para>Then it creates a <db:link xlink:href="qremoteobjecthost.xml">QRemoteObjectHost</db:link> object and a <db:link xlink:href="qsslserver.xml">QSslServer</db:link> object. The <db:link xlink:href="qsslserver.xml">QSslServer</db:link> object listens on port 65511. Then setHostUrl is called on the <db:link xlink:href="qremoteobjecthost.xml">QRemoteObjectHost</db:link> object with the URL of the <db:link xlink:href="qsslserver.xml">QSslServer</db:link> object.</db:para>
+<db:programlisting language="cpp">QRemoteObjectHost host;
+QSslServer server;
+server.listen(QHostAddress::Any, 65511);
+host.setHostUrl(server.serverAddress().toString(), QRemoteObjectHost::AllowExternalRegistration);
+</db:programlisting>
+<db:para>A lambda is used to handle the errorOccurred signal by outputting the error to the terminal. A second lambda is connected to the pendingConnectionAvailable signal, which connects an error handler, and calls addHostSideConnection on the <db:link xlink:href="qremoteobjecthost.xml">QRemoteObjectHost</db:link> object with the incoming socket as argument to make the host object use the socket for communication.</db:para>
+<db:programlisting language="cpp">QObject::connect(&amp;amp;server, &amp;amp;QSslServer::errorOccurred,
+                 [](QSslSocket *socket, QAbstractSocket::SocketError error) {
+                     Q_UNUSED(socket);
+                     qDebug() &amp;lt;&amp;lt; &quot;QSslServer::errorOccurred&quot; &amp;lt;&amp;lt; error;
+                 });
+QObject::connect(&amp;amp;server, &amp;amp;QSslServer::pendingConnectionAvailable, [&amp;amp;server, &amp;amp;host]() {
+    qDebug() &amp;lt;&amp;lt; &quot;New connection available&quot;;
+    QSslSocket *socket = qobject_cast&amp;lt;QSslSocket *&amp;gt;(server.nextPendingConnection());
+    Q_ASSERT(socket);
+    QObject::connect(socket, &amp;amp;QSslSocket::errorOccurred,
+                     [](QAbstractSocket::SocketError error) {
+                         qDebug() &amp;lt;&amp;lt; &quot;QSslSocket::error&quot; &amp;lt;&amp;lt; error;
+                     });
+    host.addHostSideConnection(socket);
+});
+</db:programlisting>
+<db:para>Finally, a MinuteTimer object is created and enableRemoting is called on the <db:link xlink:href="qremoteobjecthost.xml">QRemoteObjectHost</db:link> object with the MinuteTimer object as argument to enable it to be shared.</db:para>
+<db:programlisting language="cpp">MinuteTimer timer;
+host.enableRemoting(&amp;amp;timer);
+</db:programlisting>
+</db:section>
+<db:section xml:id="ssl-client">
+<db:title>SSL Client</db:title>
+<db:para>The <db:emphasis>sslcppclient</db:emphasis> sets the root CA certificate and then creates a Tester object.</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QCoreApplication a(argc, argv);
+
+    auto config = QSslConfiguration::defaultConfiguration();
+    config.setCaCertificates(QSslCertificate::fromPath(QStringLiteral(&quot;:/sslcert/rootCA.pem&quot;)));
+    QSslConfiguration::setDefaultConfiguration(config);
+
+    Tester t;
+    return a.exec();
+}
+</db:programlisting>
+<db:para>In the Tester constructor a temporary <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> object is created, and setupConnection is used to create and configure a <db:link xlink:href="qsslsocket.xml">QSslSocket</db:link> object. An error handler is connected, and the <db:link xlink:href="qsslsocket.xml">QSslSocket</db:link> is used by the <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> object by calling addClientSideConnection on it.</db:para>
+<db:programlisting language="cpp">QRemoteObjectNode m_client;
+auto socket = setupConnection();
+connect(socket, &amp;amp;QSslSocket::errorOccurred,
+        socket, [](QAbstractSocket::SocketError error){
+    qDebug() &amp;lt;&amp;lt; &quot;QSslSocket::error&quot; &amp;lt;&amp;lt; error;
+}) ;
+m_client.addClientSideConnection(socket);
+</db:programlisting>
+<db:para>Then three <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> that are members of the Tester class are connected to three replicas of MinuteTimer by using acquire on the <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> object. Finally <db:link xlink:href="qtimer.xml#singleShot">QTimer::singleShot</db:link> is used four times to call reset after a delay.</db:para>
+<db:programlisting language="cpp">ptr1.reset(m_client.acquire&amp;lt; MinuteTimerReplica &amp;gt;());
+ptr2.reset(m_client.acquire&amp;lt; MinuteTimerReplica &amp;gt;());
+ptr3.reset(m_client.acquire&amp;lt; MinuteTimerReplica &amp;gt;());
+QTimer::singleShot(0, this, &amp;amp;Tester::clear);
+QTimer::singleShot(1, this, &amp;amp;Tester::clear);
+QTimer::singleShot(10000, this, &amp;amp;Tester::clear);
+QTimer::singleShot(11000, this, &amp;amp;Tester::clear);
+</db:programlisting>
+<db:para>When Tester::clear is called for the first three times, one pointer is checked that it is bound and then reset, for a different pointer each time. When it is called for the fourth time it causes the application to quit.</db:para>
+<db:programlisting language="cpp">void clear()
+{
+    static int i = 0;
+    if (i == 0) {
+        i++;
+        if (ptr1.isNull())
+            qCritical() &amp;lt;&amp;lt; &quot;Pointer 1 was not set&quot;;
+        ptr1.reset();
+    } else if (i == 1) {
+        i++;
+        if (ptr2.isNull())
+            qCritical() &amp;lt;&amp;lt; &quot;Pointer 2 was not set&quot;;
+        ptr2.reset();
+    } else if (i == 2) {
+        i++;
+        if (ptr3.isNull())
+            qCritical() &amp;lt;&amp;lt; &quot;Pointer 3 was not set&quot;;
+        ptr3.reset();
+    } else {
+        qApp-&amp;gt;quit();
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtremoteobjects.git/tree/examples/remoteobjects/ssl?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

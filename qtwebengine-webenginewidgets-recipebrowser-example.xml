@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Recipe Browser</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Injecting custom stylsheets into web pages and providing a rich text preview tool for a custom markup language.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/recipebrowser.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Recipe Browser</db:emphasis> is a small hybrid web browser application. It demonstrates how to use the <db:link xlink:href="qtwebenginewidgets-module.xml">Qt WebEngine C++ classes</db:link> to combine C++ and JavaScript logic in the following ways.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Running arbitrary JavaScript code via <db:code>QWebEnginePage::runJavaScript()</db:code> to inject custom CSS stylesheets</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Using <db:link xlink:href="qwebenginescript.xml">QWebEngineScript</db:link> and <db:link xlink:href="qwebenginescriptcollection.xml">QWebEngineScriptCollection</db:link> to persist the JavaScript code and inject it to every page</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Using <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link> to interact with and provide a rich text preview for a custom markup language</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para><db:link xlink:href="http://daringfireball.net/projects/markdown/">Markdown</db:link> is a lightweight markup language with a plain text formatting syntax. Some services, such as <db:link xlink:href="http://github.com">github</db:link>, acknowledge the format, and render the content as rich text when viewed in a browser.</db:para>
+<db:para>The Recipe Browser main window is split into a navigation on the left and a preview area on the right. The preview area on the right switches to an editor when the user clicks the Edit button on the top left of the main window. The editor supports the Markdown syntax and is implemented by using <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>. The document is rendered as rich text in the preview area, once the user clicks the View button,to which the Edit button transforms to. This rendering is implemented by using <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>. To render the text, a JavaScript library inside the web engine converts the Markdown text to HTML. The preview is updated from the editor through <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link>.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="exposing-document-text">
+<db:title>Exposing Document Text</db:title>
+<db:para>To render the current Markdown text it needs to be exposed to the web engine through <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link>. To achieve this it has to be part of Qt metatype system. This is done by using a dedicated <db:code>Document</db:code> class that exposes the document text as a <db:code>Q_PROPERTY</db:code>:</db:para>
+<db:programlisting language="cpp">class Document : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text MEMBER m_currentText NOTIFY textChanged FINAL)
+public:
+    explicit Document(QObject *parent = nullptr);
+
+    void setTextEdit(QPlainTextEdit *textEdit);
+    void setCurrentPage(const QString &amp;amp;page);
+
+public slots:
+    void setInitialText(const QString &amp;amp;text);
+    void setText(const QString &amp;amp;text);
+
+signals:
+    void textChanged(const QString &amp;amp;text);
+
+private:
+    QPlainTextEdit *m_textEdit;
+
+    QString m_currentText;
+    QString m_currentPage;
+    QMap&amp;lt;QString, QString&amp;gt; m_textCollection;
+};
+</db:programlisting>
+<db:para>The <db:code>Document</db:code> class wraps a <db:link xlink:href="qstring.xml">QString</db:link> <db:code>m_currentText</db:code> to be set on the C++ side with the <db:code>setText()</db:code> method and exposes it at runtime as a <db:code>text</db:code> property with a <db:code>textChanged</db:code> signal. We define the <db:code>setText</db:code> method as follows:</db:para>
+<db:programlisting language="cpp">void Document::setText(const QString &amp;amp;text)
+{
+    if (text == m_currentText)
+        return;
+    m_currentText = text;
+    emit textChanged(m_currentText);
+
+    QSettings settings;
+    settings.beginGroup(&quot;textCollection&quot;);
+    settings.setValue(m_currentPage, text);
+    m_textCollection.insert(m_currentPage, text);
+    settings.endGroup();
+}
+</db:programlisting>
+<db:para>Additionally, the <db:code>Document</db:code> class keeps track of the current recipe via <db:code>m_currentPage</db:code>. We call the recipes pages here, because each recipe has its distinct HTML document that contains the initial text content. Furthermore, <db:code>m_textCollection</db:code> is a <db:link xlink:href="qmap.xml">QMap</db:link>&lt;<db:link xlink:href="qstring.xml">QString</db:link>, <db:link xlink:href="qstring.xml">QString</db:link>&gt; that contains the key/value pairs {page, text}, so that changes made to the text content of a page is persisted between navigation. Nevertheless, we do not write the modified text contents to the drive, but instead we persist them between application start and shutdown via <db:link xlink:href="qsettings.xml">QSettings</db:link>.</db:para>
+</db:section>
+<db:section xml:id="creating-the-main-window">
+<db:title>Creating the Main Window</db:title>
+<db:para>The <db:code>MainWindow</db:code> class inherits the <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> class:</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+    void insertStyleSheet(const QString &amp;amp;name, const QString &amp;amp;source, bool immediately);
+    void removeStyleSheet(const QString &amp;amp;name, bool immediately);
+    bool hasStyleSheet(const QString &amp;amp;name);
+    void loadDefaultStyleSheets();
+
+private slots:
+    void showStyleSheetsDialog();
+    void toggleEditView();
+
+private:
+    Ui::MainWindow *ui;
+
+    bool m_isEditMode;
+    Document m_content;
+};
+</db:programlisting>
+<db:para>The class declares private slots that match the two buttons on the top left, over the navigation list view. Additionally, helper methods for custom CSS stylesheets are declared.</db:para>
+<db:para>The actual layout of the main window is specified in a <db:code>.ui</db:code> file. The widgets and actions are available at runtime in the <db:code>ui</db:code> member variable.</db:para>
+<db:para><db:code>m_isEditMode</db:code> is a boolean that toggles between the editor and the preview area. <db:code>m_content</db:code> is an instance of the <db:code>Document</db:code> class.</db:para>
+<db:para>The actual setup of the different objects is done in the <db:code>MainWindow</db:code> constructor:</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent), ui(new Ui::MainWindow), m_isEditMode(false)
+{
+    ui-&amp;gt;setupUi(this);
+    ui-&amp;gt;textEdit-&amp;gt;setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    ui-&amp;gt;textEdit-&amp;gt;hide();
+    ui-&amp;gt;webEngineView-&amp;gt;setContextMenuPolicy(Qt::NoContextMenu);
+</db:programlisting>
+<db:para>The constructor first calls <db:code>setupUi</db:code> to construct the widgets and menu actions according to the UI file. The text editor font is set to one with a fixed character width, and the <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> widget is told not to show a context menu. Furthermore, the editor is hidden away.</db:para>
+<db:programlisting language="cpp">    connect(ui-&amp;gt;stylesheetsButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::showStyleSheetsDialog);
+    connect(ui-&amp;gt;editViewButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::toggleEditView);
+</db:programlisting>
+<db:para>Here the <db:code>clicked</db:code> signals of <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> are connected to respective functions that show the stylesheets dialog or toggle between edit and view mode, that is, hide and show the editor and preview area respectively.</db:para>
+<db:programlisting language="cpp">    ui-&amp;gt;recipes-&amp;gt;insertItem(0, &quot;Burger&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(1, &quot;Cupcakes&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(2, &quot;Pasta&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(3, &quot;Pizza&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(4, &quot;Skewers&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(5, &quot;Soup&quot;);
+    ui-&amp;gt;recipes-&amp;gt;insertItem(6, &quot;Steak&quot;);
+    connect(ui-&amp;gt;recipes, &amp;amp;QListWidget::currentItemChanged, this,
+            [this](QListWidgetItem *current, QListWidgetItem * /* previous */) {
+                const QString page = current-&amp;gt;text().toLower();
+                const QString url = QStringLiteral(&quot;qrc:/pages/&quot;) + page + QStringLiteral(&quot;.html&quot;);
+                ui-&amp;gt;webEngineView-&amp;gt;setUrl(QUrl(url));
+                m_content.setCurrentPage(page);
+            });
+</db:programlisting>
+<db:para>Here the navigation <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> on the left is setup with the 7 recipes. Also, the currentItemChanged signal of <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> is connected to a lambda that loads the new, current recipe page and updates the page in <db:code>m_content</db:code>.</db:para>
+<db:programlisting language="cpp">    m_content.setTextEdit(ui-&amp;gt;textEdit);
+</db:programlisting>
+<db:para>Next, the pointer to the ui editor, a <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>, is passed to <db:code>m_content</db:code> to ensure that calls to <db:code>Document::setInitialText()</db:code> work properly.</db:para>
+<db:programlisting language="cpp">    connect(ui-&amp;gt;textEdit, &amp;amp;QPlainTextEdit::textChanged, this,
+            [this]() { m_content.setText(ui-&amp;gt;textEdit-&amp;gt;toPlainText()); });
+
+    QWebChannel *channel = new QWebChannel(this);
+    channel-&amp;gt;registerObject(QStringLiteral(&quot;content&quot;), &amp;amp;m_content);
+    ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;setWebChannel(channel);
+</db:programlisting>
+<db:para>Here the <db:code>textChanged</db:code> signal of the editor is connected to a lambda that updates the text in <db:code>m_content</db:code>. This object is then exposed to the JS side by <db:code>QWebChannel</db:code> under the name <db:code>content</db:code>.</db:para>
+<db:programlisting language="cpp">    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    QStringList styleSheets = settings.allKeys();
+    if (styleSheets.empty()) {
+        // Add back default style sheets if the user cleared them out
+        loadDefaultStyleSheets();
+    } else {
+        for (const auto &amp;amp;name : std::as_const(styleSheets)) {
+            StyleSheet styleSheet = settings.value(name).value&amp;lt;StyleSheet&amp;gt;();
+            if (styleSheet.second)
+                insertStyleSheet(name, styleSheet.first, false);
+        }
+    }
+    settings.endGroup();
+</db:programlisting>
+<db:para>By using <db:link xlink:href="qsettings.xml">QSettings</db:link> we persist stylesheets between application runs. If there should be no stylesheets configured, for example, because the user deleted all of them in a previous run, we load default ones.</db:para>
+<db:programlisting language="cpp">    ui-&amp;gt;recipes-&amp;gt;setCurrentItem(ui-&amp;gt;recipes-&amp;gt;item(0));
+</db:programlisting>
+<db:para>Finally, we set the currently selected list item to the first contained in the navigation list widget. This triggers the previously mentioned <db:link xlink:href="qlistwidget.xml#currentItemChanged">QListWidget::currentItemChanged</db:link> signal and navigates to the page of the list item.</db:para>
+</db:section>
+<db:section xml:id="working-with-stylesheets">
+<db:title>Working With Stylesheets</db:title>
+<db:para>We use JavaScript to create and append CSS elements to the documents. After declaring the script source, <db:link xlink:href="qwebenginepage.xml#runJavaScript">QWebEnginePage::runJavaScript</db:link>() can run it immediately and apply newly created styles on the current content of the web view. Encapsulating the script into a <db:link xlink:href="qwebenginescript.xml">QWebEngineScript</db:link> and adding it to the script collection of <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> makes its effect permanent.</db:para>
+<db:programlisting language="cpp">void MainWindow::insertStyleSheet(const QString &amp;amp;name, const QString &amp;amp;source, bool immediately)
+{
+    QWebEngineScript script;
+    QString s = QString::fromLatin1(&quot;(function() {&quot;
+                                    &quot;    css = document.createElement('style');&quot;
+                                    &quot;    css.type = 'text/css';&quot;
+                                    &quot;    css.id = '%1';&quot;
+                                    &quot;    document.head.appendChild(css);&quot;
+                                    &quot;    css.innerText = '%2';&quot;
+                                    &quot;})()&quot;)
+                        .arg(name, source.simplified());
+    if (immediately)
+        ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;runJavaScript(s, QWebEngineScript::ApplicationWorld);
+
+    script.setName(name);
+    script.setSourceCode(s);
+    script.setInjectionPoint(QWebEngineScript::DocumentReady);
+    script.setRunsOnSubFrames(true);
+    script.setWorldId(QWebEngineScript::ApplicationWorld);
+    ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().insert(script);
+}
+</db:programlisting>
+<db:para>Removing stylesheets can be done similarly:</db:para>
+<db:programlisting language="cpp">void MainWindow::removeStyleSheet(const QString &amp;amp;name, bool immediately)
+{
+    QString s = QString::fromLatin1(&quot;(function() {&quot;
+                                    &quot;    var element = document.getElementById('%1');&quot;
+                                    &quot;    element.outerHTML = '';&quot;
+                                    &quot;    delete element;&quot;
+                                    &quot;})()&quot;)
+                        .arg(name);
+    if (immediately)
+        ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;runJavaScript(s, QWebEngineScript::ApplicationWorld);
+
+    const QList&amp;lt;QWebEngineScript&amp;gt; scripts = ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().find(name);
+    if (!scripts.isEmpty())
+        ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().remove(scripts.first());
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="creating-a-recipe-file">
+<db:title>Creating a recipe file</db:title>
+<db:programlisting language="cpp">&amp;lt;!doctype html&amp;gt;
+&amp;lt;html lang=&quot;en&quot;&amp;gt;
+&amp;lt;head&amp;gt;
+  &amp;lt;meta charset=&quot;utf-8&quot;&amp;gt;
+  &amp;lt;title&amp;gt;Insanity Burger&amp;lt;/title&amp;gt;
+  &amp;lt;link rel=&quot;stylesheet&quot; type=&quot;text/css&quot; href=&quot;../3rdparty/markdown.css&quot;&amp;gt;
+  &amp;lt;link rel=&quot;stylesheet&quot; type=&quot;text/css&quot; href=&quot;../custom.css&quot;&amp;gt;
+  &amp;lt;script src=&quot;../3rdparty/marked.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+  &amp;lt;script src=&quot;../custom.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+  &amp;lt;script src=&quot;qrc:/qtwebchannel/qwebchannel.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+&amp;lt;/head&amp;gt;
+&amp;lt;body&amp;gt;
+  &amp;lt;div id=&quot;placeholder&quot;&amp;gt;&amp;lt;/div&amp;gt;
+  &amp;lt;div id=&quot;content&quot;&amp;gt;
+
+&amp;lt;img src=&quot;images/burger.jpg&quot; alt=&quot;Insanity Burger&quot; title=&quot;Insanity Burger&quot; /&amp;gt;
+
+Insanity burger
+===============
+
+### Ingredients
+
+* 800 g minced chuck steak
+* olive oil
+* 1 large red onion
+* 1 splash of white wine vinegar
+* 2 large gherkins
+* 4 sesame-topped brioche burger buns
+* 4-8 rashers of smoked streaky bacon
+* 4 teaspoons American mustard
+* Tabasco Chipotle sauce
+* 4 thin slices of Red Leicester cheese
+* 4 teaspoons tomato ketchup
+
+#### For the burger sauce
+* ¼ of an iceberg lettuce
+* 2 heaped tablespoons mayonnaise
+* 1 heaped tablespoon tomato ketchup
+* 1 teaspoon Tabasco Chipotle sauce
+* 1 teaspoon Worcestershire sauce
+* 1 teaspoon brandy, or bourbon (optional)
+
+### Instructions
+For the best burger, go to your butcher’s and ask them to mince 800g of chuck steak for you.
+This cut has a really good balance of fat and flavoursome meat. Divide it into 4 and, with wet
+hands, roll each piece into a ball, then press into flat patties roughly 12cm wide and about 2cm
+wider than your buns. Place on an oiled plate and chill in the fridge. Next, finely slice the red
+onion, then dress in a bowl with the vinegar and a pinch of sea salt. Slice the gherkins and halve
+the buns. Finely chop the lettuce and mix with the rest of the burger sauce ingredients in a bowl,
+then season to taste.
+
+I like to only cook 2 burgers at a time to achieve perfection, so get two pans on the go – a large
+non-stick pan on a high heat for your burgers and another on a medium heat for the bacon. Pat your
+burgers with oil and season them with salt and pepper. Put 2 burgers into the first pan, pressing
+down on them with a fish slice, then put half the bacon into the other pan. After 1 minute, flip
+the burgers and brush each cooked side with ½ a teaspoon of mustard and a dash of Tabasco. After
+another minute, flip onto the mustard side and brush again with another ½ teaspoon of mustard and
+a second dash of Tabasco on the other side. Cook for one more minute, by which point you can place
+some crispy bacon on top of each burger with a slice of cheese. Add a tiny splash of water to the
+pan and place a heatproof bowl over the burgers to melt the cheese – 30 seconds should do it. At the
+same time, toast 2 split buns in the bacon fat in the other pan until lightly golden. Repeat with
+the remaining two burgers.
+
+To build each burger, add a quarter of the burger sauce to the bun base, then top with a cheesy
+bacon burger, a quarter of the onions and gherkins. Rub the bun top with a teaspoon of ketchup,
+then gently press together. As the burger rests, juices will soak into the bun, so serve right
+away, which is great, or for an extra filthy experience, wrap each one in greaseproof paper, then
+give it a minute to go gorgeous and sloppy.
+
+**Enjoy!**
+
+  &amp;lt;/div&amp;gt;&amp;lt;!--End of content--&amp;gt;
+
+  &amp;lt;script&amp;gt;
+    'use strict';
+
+    var jsContent = document.getElementById('content');
+    var placeholder = document.getElementById('placeholder');
+
+    var updateText = function(text) {
+      placeholder.innerHTML = marked.parse(text);
+    }
+
+    new QWebChannel(qt.webChannelTransport,
+      function(channel) {
+        var content = channel.objects.content;
+        content.setInitialText(jsContent.innerHTML);
+        content.textChanged.connect(updateText);
+      }
+    );
+  &amp;lt;/script&amp;gt;
+&amp;lt;/body&amp;gt;
+&amp;lt;/html&amp;gt;
+</db:programlisting>
+<db:para>All the different recipe pages are set up the same way.</db:para>
+<db:para>In the <db:code>&lt;head&gt;</db:code> part they include two CSS files: <db:code>markdown.css</db:code>, that styles the markdown, and custom.css, that does some further styling but most importantly hides the <db:code>&lt;div&gt;</db:code> with id <db:emphasis>content</db:emphasis>, as this <db:code>&lt;div&gt;</db:code> only contains the unmodified, initial content text. Also, three JS scripts are included. <db:code>marked.js</db:code> is responsible for parsing the markdown and transforming it into HTML. <db:code>custom.js</db:code> does some configuration of <db:code>marked.js</db:code>, and <db:code>qwebchannel.js</db:code> exposes the <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link> JavaScript API.</db:para>
+<db:para>In the body there are two <db:code>&lt;div&gt;</db:code> elements. The <db:code>&lt;div&gt;</db:code> with id <db:emphasis>placeholder</db:emphasis> gets the markdown text injected that is rendered and visible. The <db:code>&lt;div&gt;</db:code> with id <db:emphasis>content</db:emphasis> is hidden by <db:code>custom.css</db:code> and only contains the original, unmodified text content of the recipe.</db:para>
+<db:para>Finally, on the bottom of each recipe HTML file is a script that is responsible for the communication between the C++ and JavaScript side via <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link>. The original, unmodified text content inside the <db:code>&lt;div&gt;</db:code> with id <db:emphasis>content</db:emphasis> is passed to the C++ side and a callback is setup that is invoked when the <db:code>textChanged</db:code> signal of <db:code>m_content</db:code> is emitted. The callback then updates the contents of the <db:code>&lt;div&gt;</db:code> <db:emphasis>placeholder</db:emphasis> with the parsed markdown.</db:para>
+</db:section>
+<db:section xml:id="files-and-attributions">
+<db:title>Files and Attributions</db:title>
+<db:para>The example bundles the following code with third-party licenses:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>Marked</db:para>
+</db:td>
+<db:td>
+<db:para>MIT License</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="">Markdown.css</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Apache License 2.0</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/recipebrowser?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

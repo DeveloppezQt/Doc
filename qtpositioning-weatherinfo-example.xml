@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Weather Info (C++/QML)</db:title>
+<db:productname>QtPositioning</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Positioning Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Weather Info example shows how to use the user's current position to retrieve local content from a web service in a C++ plugin for QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Key <db:link xlink:href="qtpositioning-index.xml">Qt Positioning</db:link> classes used in this example:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfo.xml">QGeoPositionInfo</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qgeopositioninfosource.xml">QGeoPositionInfoSource</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/example-weatherinfo.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="weather-data-providers">
+<db:title>Weather Data Providers</db:title>
+<db:para>The example uses several unrelated weather data providers:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="http://www.openweathermap.org">OpenWeather</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="https://www.weatherapi.com/">WeatherAPI.com</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="https://open-meteo.com/">Open-Meteo</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The provider to be used is selected automatically at runtime and can be changed if the selected provider is not available. However, it can't be specified manually.</db:para>
+<db:note>
+<db:para>Free plans are used for all providers, which implies certain limitations on the amount of weather requests. If the limits are exceeded, the providers become temporary unavailable. When all providers are unavailable, the application would not be able to show any weather information. In this case it is required to wait until at least one of the providers becomes available again.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="application-data-models">
+<db:title>Application Data Models</db:title>
+<db:para>The key part of this example is the application's data model, contained in the <db:code>WeatherData</db:code> and <db:code>AppModel</db:code> classes. <db:code>WeatherData</db:code> represents the weather information taken from the HTTP service. It is a simple data class, but we use <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> to expose it nicely to QML later. It also uses <db:link xlink:href="qqmlengine.xml#QML_ANONYMOUS">QML_ANONYMOUS</db:link> macro, which makes it recognized in QML.</db:para>
+<db:programlisting language="cpp">class WeatherData : public QObject {
+    Q_OBJECT
+    Q_PROPERTY(QString dayOfWeek
+               READ dayOfWeek WRITE setDayOfWeek
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString weatherIcon
+               READ weatherIcon WRITE setWeatherIcon
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString weatherDescription
+               READ weatherDescription WRITE setWeatherDescription
+               NOTIFY dataChanged)
+    Q_PROPERTY(QString temperature
+               READ temperature WRITE setTemperature
+               NOTIFY dataChanged)
+    QML_ANONYMOUS
+
+public:
+    explicit WeatherData(QObject *parent = 0);
+    WeatherData(const WeatherData &amp;amp;other);
+    WeatherData(const WeatherInfo &amp;amp;other);
+
+    QString dayOfWeek() const;
+    QString weatherIcon() const;
+    QString weatherDescription() const;
+    QString temperature() const;
+
+    void setDayOfWeek(const QString &amp;amp;value);
+    void setWeatherIcon(const QString &amp;amp;value);
+    void setWeatherDescription(const QString &amp;amp;value);
+    void setTemperature(const QString &amp;amp;value);
+
+signals:
+    void dataChanged();
+};
+</db:programlisting>
+<db:para><db:code>AppModel</db:code> models the state of the entire application. At startup, we get the platform's default position source using <db:link xlink:href="qgeopositioninfosource.xml#createDefaultSource">QGeoPositionInfoSource::createDefaultSource</db:link>().</db:para>
+<db:programlisting language="cpp">AppModel::AppModel(QObject *parent) :
+        QObject(parent),
+        d(new AppModelPrivate)
+{
+    d-&amp;gt;src = QGeoPositionInfoSource::createDefaultSource(this);
+
+    if (d-&amp;gt;src) {
+        d-&amp;gt;useGps = true;
+        connect(d-&amp;gt;src, &amp;amp;QGeoPositionInfoSource::positionUpdated,
+                this, &amp;amp;AppModel::positionUpdated);
+        connect(d-&amp;gt;src, &amp;amp;QGeoPositionInfoSource::errorOccurred,
+                this, &amp;amp;AppModel::positionError);
+#if QT_CONFIG(permissions)
+        QLocationPermission permission;
+        permission.setAccuracy(QLocationPermission::Precise);
+        permission.setAvailability(QLocationPermission::WhenInUse);
+
+        switch (qApp-&amp;gt;checkPermission(permission)) {
+        case Qt::PermissionStatus::Undetermined:
+            qApp-&amp;gt;requestPermission(permission, [this] (const QPermission&amp;amp; permission) {
+                if (permission.status() == Qt::PermissionStatus::Granted)
+                    d-&amp;gt;src-&amp;gt;startUpdates();
+                else
+                    positionError(QGeoPositionInfoSource::AccessError);
+            });
+            break;
+        case Qt::PermissionStatus::Denied:
+            qWarning(&quot;Location permission is denied&quot;);
+            positionError(QGeoPositionInfoSource::AccessError);
+            break;
+        case Qt::PermissionStatus::Granted:
+            d-&amp;gt;src-&amp;gt;startUpdates();
+            break;
+        }
+#else
+        d-&amp;gt;src-&amp;gt;startUpdates();
+#endif
+    } else {
+        d-&amp;gt;useGps = false;
+        d-&amp;gt;city = &quot;Brisbane&quot;;
+        emit cityChanged();
+        requestWeatherByCity();
+    }
+}
+</db:programlisting>
+<db:para>If no default source is available, we take a static position and fetch weather for that. If, however, we do have a position source, we connect its <db:link xlink:href="qgeopositioninfosource.xml#positionUpdated">positionUpdated</db:link>() signal to a slot on the <db:code>AppModel</db:code> and call <db:link xlink:href="qgeopositioninfosource.xml#startUpdates">startUpdates</db:link>(), which begins regular updates of device position.</db:para>
+<db:para>When a position update is received, we use the longitude and latitude of the returned coordinate to retrieve weather data for the specified location.</db:para>
+<db:programlisting language="cpp">void AppModel::positionUpdated(QGeoPositionInfo gpsPos)
+{
+    d-&amp;gt;coord = gpsPos.coordinate();
+
+    if (!d-&amp;gt;useGps)
+        return;
+
+    requestWeatherByCoordinates();
+}
+</db:programlisting>
+<db:para>To inform the UI about this process, the <db:code>cityChanged()</db:code> signal is emitted when a new city is used, and the <db:code>weatherChanged()</db:code> signal whenever a weather update occurs.</db:para>
+<db:para>The model also uses <db:link xlink:href="qqmlengine.xml#QML_ELEMENT">QML_ELEMENT</db:link> macro, which makes it available in QML.</db:para>
+<db:programlisting language="cpp">class AppModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool ready
+               READ ready
+               NOTIFY readyChanged)
+    Q_PROPERTY(bool hasSource
+               READ hasSource
+               NOTIFY readyChanged)
+    Q_PROPERTY(bool hasValidCity
+               READ hasValidCity
+               NOTIFY cityChanged)
+    Q_PROPERTY(bool hasValidWeather
+               READ hasValidWeather
+               NOTIFY weatherChanged)
+    Q_PROPERTY(bool useGps
+               READ useGps WRITE setUseGps
+               NOTIFY useGpsChanged)
+    Q_PROPERTY(QString city
+               READ city WRITE setCity
+               NOTIFY cityChanged)
+    Q_PROPERTY(WeatherData *weather
+               READ weather
+               NOTIFY weatherChanged)
+    Q_PROPERTY(QQmlListProperty&amp;lt;WeatherData&amp;gt; forecast
+               READ forecast
+               NOTIFY weatherChanged)
+    QML_ELEMENT
+
+public:
+    explicit AppModel(QObject *parent = 0);
+    ~AppModel();
+
+    bool ready() const;
+    bool hasSource() const;
+    bool useGps() const;
+    bool hasValidCity() const;
+    bool hasValidWeather() const;
+    void setUseGps(bool value);
+
+    QString city() const;
+    void setCity(const QString &amp;amp;value);
+
+    WeatherData *weather() const;
+    QQmlListProperty&amp;lt;WeatherData&amp;gt; forecast() const;
+
+public slots:
+    Q_INVOKABLE void refreshWeather();
+
+signals:
+    void readyChanged();
+    void useGpsChanged();
+    void cityChanged();
+    void weatherChanged();
+};
+</db:programlisting>
+<db:para>We use a <db:link xlink:href="qqmllistproperty.xml">QQmlListProperty</db:link> for the weather forecast information, which contains the weather forecast for the next days (the number of days is provider-specific). This makes it easy to access the forecast from QML.</db:para>
+</db:section>
+<db:section xml:id="expose-custom-models-to-qml">
+<db:title>Expose Custom Models to QML</db:title>
+<db:para>To expose the models to the QML UI layer, we use the <db:link xlink:href="qqmlengine.xml#QML_ELEMENT">QML_ELEMENT</db:link> and <db:link xlink:href="qqmlengine.xml#QML_ANONYMOUS">QML_ANONYMOUS</db:link> macros. See the <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> class description for more details on these macros.</db:para>
+<db:para>To make the types available in QML, we need to update our build accordingly.</db:para>
+<db:section xml:id="cmake-build">
+<db:title>CMake Build</db:title>
+<db:para>For a CMake-based build, we need to add the following to the <db:code>CMakeLists.txt</db:code>:</db:para>
+<db:programlisting language="cpp">qt_add_qml_module(weatherinfo
+    URI Weather
+    VERSION 1.0
+    SOURCES
+        appmodel.cpp appmodel.h
+        openmeteobackend.cpp openmeteobackend.h
+        openweathermapbackend.cpp openweathermapbackend.h
+        providerbackend.cpp providerbackend.h
+        weatherapibackend.cpp weatherapibackend.h
+    QML_FILES
+        BigForecastIcon.qml
+        ForecastIcon.qml
+        WeatherIcon.qml
+        WeatherInfo.qml
+    RESOURCES
+        icons/weather-few-clouds.png
+        icons/weather-fog.png
+        icons/weather-haze.png
+        icons/weather-icy.png
+        icons/weather-overcast.png
+        icons/weather-showers.png
+        icons/weather-sleet.png
+        icons/weather-snow.png
+        icons/weather-storm.png
+        icons/weather-sunny-very-few-clouds.png
+        icons/weather-sunny.png
+        icons/weather-thundershower.png
+        icons/weather-showers-scattered.png
+)
+</db:programlisting>
+</db:section>
+<db:section xml:id="qmake-build">
+<db:title>qmake Build</db:title>
+<db:para>For a qmake build, we need to modify the <db:code>weatherinfo.pro</db:code> file in the following way:</db:para>
+<db:programlisting language="cpp">CONFIG += qmltypes
+QML_IMPORT_NAME = Weather
+QML_IMPORT_MAJOR_VERSION = 1
+
+qml_resources.files = \
+    qmldir \
+    BigForecastIcon.qml \
+    ForecastIcon.qml \
+    WeatherIcon.qml \
+    WeatherInfo.qml \
+    icons/weather-few-clouds.png \
+    icons/weather-fog.png \
+    icons/weather-haze.png \
+    icons/weather-icy.png \
+    icons/weather-overcast.png \
+    icons/weather-showers.png \
+    icons/weather-showers-scattered.png \
+    icons/weather-sleet.png \
+    icons/weather-snow.png \
+    icons/weather-storm.png \
+    icons/weather-sunny-very-few-clouds.png \
+    icons/weather-sunny.png \
+    icons/weather-thundershower.png
+
+qml_resources.prefix = /qt/qml/Weather
+
+RESOURCES += qml_resources
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="instantiate-the-models-in-qml">
+<db:title>Instantiate the Models in QML</db:title>
+<db:para>Finally, in the actual QML, we instantiate the <db:code>AppModel</db:code>:</db:para>
+<db:programlisting language="qml">Window {
+    id: window
+    AppModel {
+        id: appModel
+        onReadyChanged: {
+            if (appModel.ready)
+                statesItem.state = &quot;ready&quot;
+            else
+                statesItem.state = &quot;loading&quot;
+        }
+    }
+}
+</db:programlisting>
+<db:para>Once the model is instantiated like this, we can use its properties elsewhere in the QML document:</db:para>
+<db:programlisting language="qml">    BigForecastIcon {
+        id: current
+
+        width: main.width -12
+        height: 2 * (main.height - 25 - 12) / 3
+
+        weatherIcon: (appModel.hasValidWeather
+                      ? appModel.weather.weatherIcon
+                      : &quot;sunny&quot;)
+    }
+</db:programlisting>
+</db:section>
+<db:section xml:id="files-and-attributions">
+<db:title>Files and Attributions</db:title>
+<db:para>The example bundles the following images from Third-Party sources:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qtpositioning-attribution-weatherinfo-tango-icons.xml#weatherinfo-tango-icons">Tango Icons</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Public Domain</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qtpositioning-attribution-weatherinfo-tango-weather-pack.xml#weatherinfo-tango-weather-pack">Tango Weather Icon Pack by Darkobra</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Public Domain</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtpositioning.git/tree/examples/positioning/weatherinfo?h=6.6">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

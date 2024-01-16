@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Building Qt for QNX</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qnx-support.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Qt for QNX Support"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qnx-target-requirements.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Qt for QNX Runtime Target Requirements"/></db:extendedlink>
+<db:abstract>
+<db:para>Describes required packages and necessary configuration for building.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="setting-up-qnx-sdp">
+<db:title>Setting up QNX SDP</db:title>
+<db:para>Building Qt 6 requires downloading and installing QNX SDP 7.1 from the <db:link xlink:href="http://www.qnx.com/">QNX website</db:link>.</db:para>
+<db:note>
+<db:para>A suitable license is required. <db:link xlink:href="mailto://info@qnx.com">Contact QNX</db:link> for more information.</db:para>
+</db:note>
+<db:para>The compiler and other parts of the toolchain are provided in the SDP packages. Initialize your build environment by running the QNX setup script from your SDP installation folder in a terminal as follows:</db:para>
+<db:programlisting language="cpp" role="bad">source qnxsdp-env.sh
+</db:programlisting>
+</db:section>
+<db:section xml:id="host-build">
+<db:title>Host build</db:title>
+<db:para>A host build of Qt needs to be available to cross-compile Qt. This is because, during the build, certain tools (such as moc, rcc, qmlcachegen, and qsb) are invoked from the host build. You have two options:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="build-sources.xml">Building Qt Sources</db:link> for the host or</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>installing host build using Qt Online Installer.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>However, it is advisable to ensure that you can build Qt for the desktop target on the host as well since the same tools are also needed when compiling for QNX.</db:para>
+</db:section>
+<db:section xml:id="creating-a-toolchain-file-for-qnx">
+<db:title>Creating a toolchain file for QNX</db:title>
+<db:para>To cross-compile a project with CMake, you need a toolchain file. This CMake language file sets the correct values for the platform name, compiler/linker, and many other toolchain-specific things. For reference, you can find toolchain files used in CI from source package <db:link xlink:href="https://code.qt.io/cgit/qt/qt5.git/tree/coin/provisioning/common/shared/cmake_toolchain_files">coin/provisioning/common/shared/cmake_toolchain_files</db:link></db:para>
+<db:programlisting language="cpp" role="bad">set(CMAKE_SYSTEM_NAME QNX)
+set(CMAKE_SYSTEM_PROCESSOR armv7le)
+set(arch gcc_ntoarmv7le)
+
+set(CMAKE_C_COMPILER qcc)
+set(CMAKE_C_COMPILER_TARGET ${arch})
+set(CMAKE_CXX_COMPILER q++)
+set(CMAKE_CXX_COMPILER_TARGET ${arch})
+
+set(CMAKE_FIND_ROOT_PATH $ENV{QNX_TARGET};$ENV{QNX_TARGET}/${CMAKE_SYSTEM_PROCESSOR})
+
+set(CMAKE_SYSROOT $ENV{QNX_TARGET})
+</db:programlisting>
+<db:para>The example file is for armv7le. The other possibilities are aarch64le and x86_64, depending on your target architecture.</db:para>
+</db:section>
+<db:section xml:id="configuring-and-building-qt-for-qnx">
+<db:title>Configuring and building Qt for QNX</db:title>
+<db:para>To configure and build Qt for QNX, you need the following:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Tools for building Qt, as described in <db:link xlink:href="build-sources.xml">Building Qt Sources</db:link>, are in place and functional for your host platform.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The toolchain file, $HOME/qnx.cmake.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The Qt source code checked out or installed under $HOME/qt.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>There is a host build of Qt in $HOME/qt-host.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The installation location on the local system is set to $HOME/qnx-install.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>After creating and switching to the build directory, run the following:</db:para>
+<db:programlisting language="cpp" role="bad">$HOME/qt/configure -nomake examples -nomake tests \
+-qt-host-path $HOME/qt_host \
+-extprefix qnx_install \
+-prefix /qt \
+-- -DCMAKE_TOOLCHAIN_FILE=$HOME/qnx.cmake  \
+$HOME/qt
+</db:programlisting>
+<db:para>Since Qt 6, the configure tool is a wrapper around CMake and in practice, this configure command is equivalent to the following direct CMake call:</db:para>
+<db:programlisting language="cpp" role="bad">cmake -GNinja -DQT_BUILD_EXAMPLES=OFF -DQT_BUILD_TESTS=OFF \
+-DQT_HOST_PATH=$HOME/qt_host \
+-DCMAKE_STAGING_PREFIX=$HOME/qnx_install \
+-DCMAKE_INSTALL_PREFIX=/qt \
+-DCMAKE_TOOLCHAIN_FILE=$HOME/qnx.cmake  \
+$HOME/qt
+</db:programlisting>
+<db:note>
+<db:para>When building on Windows, PCH (Precompiled Headers) needs to be explicitly disabled, as enabling it causes the QNX compiler to crash. To disable PCH, use the configuration option -no-pch.</db:para>
+</db:note>
+<db:para>Once the configuration completes without errors, build Qt by running the following:</db:para>
+<db:programlisting language="cpp">cmake --build . --parallel
+</db:programlisting>
+<db:note>
+<db:para>QNX compiler may require more memory than the compiler used for host build. Use --parallel &lt;numOfProcesses&gt; to limit the maximum number of concurrent processes when building.</db:para>
+</db:note>
+<db:para>Once built, run the following:</db:para>
+<db:programlisting language="cpp">cmake --install .
+</db:programlisting>
+<db:para>This installs the results to $HOME/qnx_install.</db:para>
+</db:section>
+<db:section xml:id="building-applications-for-the-target-device">
+<db:title>Building Applications for the Target Device</db:title>
+<db:para>When you have finished the Qt build and it's installed in the staging location, you can build examples or applications.</db:para>
+<db:para>With CMake, use the generated qt-cmake script in the bin directory of the staging location ($HOME/qnx_install in the example) to configure, then run ninja. For example:</db:para>
+<db:programlisting language="cpp" role="bad">$HOME/qnx_install/bin/qt-cmake .
+cmake --build .
+</db:programlisting>
+<db:para>You can then deploy the resulting application binary to the device. Using the qt-cmake helper script is convenient because the script ensures the toolchain file that was used for building Qt is loaded, so there is no need to repeatedly specify it for each application.</db:para>
+<db:para>If you are using a Qt installation that has not been built on your machine, qt-cmake needs to know the location of the CMake toolchain file for the target platform.</db:para>
+<db:para>In such a case, instruct qt-cmake to chain load a custom toolchain file by setting the QT_CHAINLOAD_TOOLCHAIN_FILE variable as follows:</db:para>
+<db:programlisting language="cpp" role="bad">$HOME/qnx_install/bin/qt-cmake -DQT_CHAINLOAD_TOOLCHAIN_FILE=$HOME/qnx.cmake .
+</db:programlisting>
+<db:para>When building applications in Qt Creator using Qt installation that has not been built in your machine, the CMAKE_TOOLCHAIN_FILE variable, pointing to local toolchain file, needs to be added to kit configuration (<db:emphasis role="bold">Edit &gt; Preferences &gt; Kits</db:emphasis>).</db:para>
+<db:para>For more information on connecting and adding kits for QNX devices while using Qt Creator, see <db:link xlink:href="https://doc.qt.io/qtcreator/creator-developing-qnx.html">Connecting QNX devices</db:link>.</db:para>
+</db:section>
+<db:section xml:id="third-party-libraries">
+<db:title>Third party libraries</db:title>
+<db:para>Make sure that your system image contains the following additional third-party libraries which are not always included in minimal QNX Neutrino RTOS images:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>libfontconfig</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libfreetype</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libiconv</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libicui18n</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libicudata</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libicuuc</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libpng14</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libxml2</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libsqlite3</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libssl</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>libcrypto</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:note>
+<db:para>This is not a complete list of shared libraries used by Qt on QNX Neutrino OS. Multiple shared libraries are already available in a typical OS image, or included by other parts of the system, for example Screen.</db:para>
+</db:note>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="configure-options.xml">Qt Configure Options</db:link></db:member>
+<db:member><db:link xlink:href="configure-linux-device.xml#configuring-qt">Configuring Qt</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

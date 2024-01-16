@@ -1,0 +1,398 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QDtlsClientVerifier Class</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 6.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This class implements server-side DTLS cookie generation and verification.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>QDtlsClientVerifier</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>CMake</db:term>
+<db:listitem>
+<db:para>find_package(Qt6 REQUIRED COMPONENTS Network)</db:para>
+<db:para>target_link_libraries(mytarget PRIVATE Qt6::Network)</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += network</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherits</db:term>
+<db:listitem>
+<db:para><db:link xlink:href="qobject.xml" xlink:role="class">QObject</db:link></db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Group</db:term>
+<db:listitem>
+<db:para>QDtlsClientVerifier is part of <db:simplelist><db:member><db:link xlink:href="network.xml">Network Programming API</db:link></db:member><db:member>ssl</db:member></db:simplelist></db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para>The <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> class implements server-side DTLS cookie generation and verification. Datagram security protocols are highly susceptible to a variety of Denial-of-Service attacks. According to <db:link xlink:href="https://datatracker.ietf.org/doc/html/rfc6347#section-4.2.1">RFC 6347, section 4.2.1</db:link>, these are two of the more common types of attack:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>An attacker transmits a series of handshake initiation requests, causing a server to allocate excessive resources and potentially perform expensive cryptographic operations.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An attacker transmits a series of handshake initiation requests with a forged source of the victim, making the server act as an amplifier. Normally, the server would reply to the victim machine with a Certificate message, which can be quite large, thus flooding the victim machine with datagrams.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>As a countermeasure to these attacks, <db:link xlink:href="https://datatracker.ietf.org/doc/html/rfc6347#section-4.2.1">RFC 6347, section 4.2.1</db:link> proposes a stateless cookie technique that a server may deploy:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>In response to the initial ClientHello message, the server sends a HelloVerifyRequest, which contains a cookie. This cookie is a cryptographic hash and is generated using the client's address, port number, and the server's secret (which is a cryptographically strong pseudo-random sequence of bytes).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A reachable DTLS client is expected to reply with a new ClientHello message containing this cookie.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>When the server receives the ClientHello message with a cookie, it generates a new cookie as described above. This new cookie is compared to the one found in the ClientHello message.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>In the cookies are equal, the client is considered to be real, and the server can continue with a TLS handshake procedure.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:note>
+<db:para>A DTLS server is not required to use DTLS cookies.</db:para>
+</db:note>
+<db:para><db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> is designed to work in pair with <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link>, as shown in the following code-excerpt:</db:para>
+<db:programlisting language="cpp">class DtlsServer : public QObject
+{
+public:
+    bool listen(const QHostAddress &amp;amp;address, quint16 port);
+    // ...
+
+private:
+    void readyRead();
+    // ...
+
+    QUdpSocket serverSocket;
+    QDtlsClientVerifier verifier;
+    // ...
+};
+
+bool DtlsServer::listen(const QHostAddress &amp;amp;serverAddress, quint16 serverPort)
+{
+    if (serverSocket.bind(serverAddress, serverPort))
+        connect(&amp;amp;serverSocket, &amp;amp;QUdpSocket::readyRead, this, &amp;amp;DtlsServer::readyRead);
+    return serverSocket.state() == QAbstractSocket::BoundState;
+}
+
+void DtlsServer::readyRead()
+{
+    QByteArray dgram(serverSocket.pendingDatagramSize(), Qt::Uninitialized);
+    QHostAddress address;
+    quint16 port = {};
+    serverSocket.readDatagram(dgram.data(), dgram.size(), &amp;amp;address, &amp;amp;port);
+    if (verifiedClients.contains({address, port}) {
+        // This client was verified previously, we either continue the
+        // handshake or decrypt the incoming message.
+    } else if (verifier.verifyClient(&amp;amp;serverSocket, dgram, address, port)) {
+        // Apparently we have a real DTLS client who wants to send us
+        // encrypted datagrams. Remember this client as verified
+        // and proceed with a handshake.
+    } else {
+        // No matching cookie was found in the incoming datagram,
+        // verifyClient() has sent a ClientVerify message.
+        // We'll hear from the client again soon, if they're real.
+    }
+}
+</db:programlisting>
+<db:para><db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> does not impose any restrictions on how the application uses <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link>. For example, it is possible to have a server with a single <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link> in state <db:link xlink:href="qabstractsocket.xml#SocketState-enum">QAbstractSocket::BoundState</db:link>, handling multiple DTLS clients simultaneously:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Testing if new clients are real DTLS-capable clients.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Completing TLS handshakes with the verified clients (see <db:link xlink:href="qdtls.xml">QDtls</db:link>).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Decrypting datagrams coming from the connected clients (see <db:link xlink:href="qdtls.xml">QDtls</db:link>).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Sending encrypted datagrams to the connected clients (see <db:link xlink:href="qdtls.xml">QDtls</db:link>).</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>This implies that <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> does not read directly from a socket, instead it expects the application to read an incoming datagram, extract the sender's address, and port, and then pass this data to <db:link xlink:href="qdtlsclientverifier.xml#verifyClient">verifyClient</db:link>(). To send a HelloVerifyRequest message, <db:link xlink:href="qdtlsclientverifier.xml#verifyClient">verifyClient</db:link>() can write to the <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link>.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> does not take ownership of the <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link> object.</db:para>
+</db:note>
+<db:para>By default <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> obtains its secret from a cryptographically strong pseudorandom number generator.</db:para>
+<db:note>
+<db:para>The default secret is shared by all objects of the classes <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> and <db:link xlink:href="qdtls.xml">QDtls</db:link>. Since this can impose security risks, RFC 6347 recommends to change the server's secret frequently. Please see <db:link xlink:href="https://datatracker.ietf.org/doc/html/rfc6347#section-4.2.1">RFC 6347, section 4.2.1</db:link> for hints about possible server implementations. Cookie generator parameters can be set using the class <db:link xlink:href="qdtlsclientverifier-generatorparameters.xml">QDtlsClientVerifier::GeneratorParameters</db:link> and <db:link xlink:href="qdtlsclientverifier.xml#setCookieGeneratorParameters">setCookieGeneratorParameters</db:link>():</db:para>
+</db:note>
+<db:programlisting language="cpp">void DtlsServer::updateServerSecret()
+{
+    const QByteArray newSecret(generateCryptoStrongSecret());
+    if (newSecret.size()) {
+        usedCookies.append(newSecret);
+        verifier.setCookieGeneratorParameters({QCryptographicHash::Sha1, newSecret});
+    }
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qtnetwork-secureudpserver-example.xml">DTLS server</db:link> example illustrates how to use <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> in a server application.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link></db:member>
+<db:member><db:link xlink:href="qabstractsocket.xml#SocketState-enum">QAbstractSocket::BoundState</db:link></db:member>
+<db:member><db:link xlink:href="qdtls.xml">QDtls</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#verifyClient">verifyClient</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier-generatorparameters.xml">GeneratorParameters</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#setCookieGeneratorParameters">setCookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#cookieGeneratorParameters">cookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtls.xml#setCookieGeneratorParameters">QDtls::setCookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtls.xml#cookieGeneratorParameters">QDtls::cookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qcryptographichash.xml#Algorithm-enum">QCryptographicHash::Algorithm</db:link></db:member>
+<db:member><db:link xlink:href="qdtls.xml#QDtlsError-enum">QDtlsError</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#dtlsError">dtlsError</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#dtlsErrorString">dtlsErrorString</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="QDtlsClientVerifier">
+<db:title>[explicit] QDtlsClientVerifier::QDtlsClientVerifier(QObject *<db:emphasis>parent</db:emphasis> = nullptr)</db:title>
+<db:constructorsynopsis>
+<db:methodname>QDtlsClientVerifier</db:methodname>
+<db:methodparam>
+<db:type>QObject *</db:type>
+<db:parameter>parent</db:parameter>
+<db:initializer>nullptr</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">constructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">QDtlsClientVerifier(QObject *parent)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:constructorsynopsis>
+<db:para>Constructs a <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> object, <db:code role="parameter">parent</db:code> is passed to <db:link xlink:href="qobject.xml">QObject</db:link>'s constructor.</db:para>
+</db:section>
+<db:section xml:id="dtor.QDtlsClientVerifier">
+<db:title>[virtual] QDtlsClientVerifier::~QDtlsClientVerifier()</db:title>
+<db:destructorsynopsis>
+<db:modifier>virtual</db:modifier>
+<db:methodname>~QDtlsClientVerifier</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">destructor</db:synopsisinfo>
+<db:synopsisinfo role="signature">~QDtlsClientVerifier()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:destructorsynopsis>
+<db:para>Destroys the <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> object.</db:para>
+</db:section>
+<db:section xml:id="cookieGeneratorParameters">
+<db:title>QDtlsClientVerifier::GeneratorParameters QDtlsClientVerifier::cookieGeneratorParameters() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QDtlsClientVerifier::GeneratorParameters</db:type>
+<db:methodname>cookieGeneratorParameters</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QDtlsClientVerifier::GeneratorParameters cookieGeneratorParameters() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the current secret and hash algorithm used to generate cookies. The default hash algorithm is <db:link xlink:href="qcryptographichash.xml#Algorithm-enum">QCryptographicHash::Sha256</db:link> if Qt was configured to support it, <db:link xlink:href="qcryptographichash.xml#Algorithm-enum">QCryptographicHash::Sha1</db:link> otherwise. The default secret is obtained from the backend-specific cryptographically strong pseudorandom number generator.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qcryptographichash.xml#Algorithm-enum">QCryptographicHash::Algorithm</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier-generatorparameters.xml">QDtlsClientVerifier::GeneratorParameters</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#setCookieGeneratorParameters">setCookieGeneratorParameters</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="dtlsError">
+<db:title>QDtlsError QDtlsClientVerifier::dtlsError() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QDtlsError</db:type>
+<db:methodname>dtlsError</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QDtlsError dtlsError() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns the last error that occurred or <db:link xlink:href="qdtls.xml#QDtlsError-enum">QDtlsError::NoError</db:link>.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qdtls.xml#QDtlsError-enum">QDtlsError</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#dtlsErrorString">dtlsErrorString</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="dtlsErrorString">
+<db:title>QString QDtlsClientVerifier::dtlsErrorString() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QString</db:type>
+<db:methodname>dtlsErrorString</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QString dtlsErrorString() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Returns a textual description of the last error, or an empty string.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#dtlsError">dtlsError</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setCookieGeneratorParameters">
+<db:title>bool QDtlsClientVerifier::setCookieGeneratorParameters(const QDtlsClientVerifier::GeneratorParameters &amp;<db:emphasis>params</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>setCookieGeneratorParameters</db:methodname>
+<db:methodparam>
+<db:type>const QDtlsClientVerifier::GeneratorParameters &amp;</db:type>
+<db:parameter>params</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool setCookieGeneratorParameters(const QDtlsClientVerifier::GeneratorParameters &amp;params)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Sets the secret and the cryptographic hash algorithm from <db:code role="parameter">params</db:code>. This <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link> will use these to generate cookies. If the new secret has size zero, this function returns false and does not change the cookie generator parameters.</db:para>
+<db:note>
+<db:para>The secret is supposed to be a cryptographically secure sequence of bytes.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qdtlsclientverifier-generatorparameters.xml">QDtlsClientVerifier::GeneratorParameters</db:link></db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#cookieGeneratorParameters">cookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qcryptographichash.xml#Algorithm-enum">QCryptographicHash::Algorithm</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="verifiedHello">
+<db:title>QByteArray QDtlsClientVerifier::verifiedHello() const</db:title>
+<db:methodsynopsis>
+<db:modifier>const</db:modifier>
+<db:type>QByteArray</db:type>
+<db:methodname>verifiedHello</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">QByteArray verifiedHello() const</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Convenience function. Returns the last ClientHello message that was successfully verified, or an empty <db:link xlink:href="qbytearray.xml">QByteArray</db:link> if no verification has completed.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#verifyClient">verifyClient</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="verifyClient">
+<db:title>bool QDtlsClientVerifier::verifyClient(QUdpSocket *<db:emphasis>socket</db:emphasis>, const QByteArray &amp;<db:emphasis>dgram</db:emphasis>, const QHostAddress &amp;<db:emphasis>address</db:emphasis>, quint16 <db:emphasis>port</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>verifyClient</db:methodname>
+<db:methodparam>
+<db:type>QUdpSocket *</db:type>
+<db:parameter>socket</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QByteArray &amp;</db:type>
+<db:parameter>dgram</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>const QHostAddress &amp;</db:type>
+<db:parameter>address</db:parameter>
+</db:methodparam>
+<db:methodparam>
+<db:type>quint16</db:type>
+<db:parameter>port</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool verifyClient(QUdpSocket *socket, const QByteArray &amp;dgram, const QHostAddress &amp;address, quint16 port)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para><db:code role="parameter">socket</db:code> must be a valid pointer, <db:code role="parameter">dgram</db:code> must be a non-empty datagram, <db:code role="parameter">address</db:code> cannot be null, broadcast, or multicast. <db:code role="parameter">port</db:code> is the remote peer's port. This function returns true if <db:code role="parameter">dgram</db:code> contains a ClientHello message with a valid cookie. If no matching cookie is found, verifyClient() will send a HelloVerifyRequest message using <db:code role="parameter">socket</db:code> and return false.</db:para>
+<db:para>The following snippet shows how a server application may check for errors:</db:para>
+<db:programlisting language="cpp">if (!verifier.verifyClient(&amp;amp;socket, message, address, port)) {
+    switch (verifyClient.dtlsError()) {
+    case QDtlsError::NoError:
+        // Not verified yet, but no errors found and we have to wait for the next
+        // message from this client.
+        return;
+    case QDtlsError::TlsInitializationError:
+        // This error is fatal, nothing we can do about it.
+        // Probably, quit the server after reporting the error.
+        return;
+    case QDtlsError::UnderlyingSocketError:
+        // There is some problem in QUdpSocket, handle it (see QUdpSocket::error())
+        return;
+    case QDtlsError::InvalidInputParameters:
+    default:
+        Q_UNREACHABLE();
+    }
+}
+</db:programlisting>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qhostaddress.xml#isNull">QHostAddress::isNull</db:link>()</db:member>
+<db:member><db:link xlink:href="qhostaddress.xml#isBroadcast">QHostAddress::isBroadcast</db:link>()</db:member>
+<db:member><db:link xlink:href="qhostaddress.xml#isMulticast">QHostAddress::isMulticast</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#setCookieGeneratorParameters">setCookieGeneratorParameters</db:link>()</db:member>
+<db:member><db:link xlink:href="qdtlsclientverifier.xml#cookieGeneratorParameters">cookieGeneratorParameters</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+</db:section>
+</db:article>
