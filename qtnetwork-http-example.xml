@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>HTTP Client</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates a simple HTTP client.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This example demonstrates how a simple HTTP client can fetch files from remote hosts.</db:para>
+<db:mediaobject>
+<db:alt>{The user enters the URL, file name, and download location in the main window. The QNetworkAccessManager class uses this information to download the file}</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/http-example.webp"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The main work of this example is done in the HttpWindow class. Thus we will focus on that.</db:para>
+<db:programlisting language="cpp">reply.reset(qnam.get(QNetworkRequest(url)));
+</db:programlisting>
+<db:para>Using <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link>, we begin the download of a resource as pointed to by the url. If you are unfamiliar with it or the function used, <db:link xlink:href="qnetworkaccessmanager.xml#get">QNetworkAccessManager::get</db:link>(), or simply want to look into it in more detail, take a look at its documentation and the documentation for <db:link xlink:href="qnetworkreply.xml">QNetworkReply</db:link> and <db:link xlink:href="qnetworkrequest.xml">QNetworkRequest</db:link>.</db:para>
+<db:programlisting language="cpp">connect(reply.get(), &amp;QNetworkReply::finished, this, &amp;HttpWindow::httpFinished);
+connect(reply.get(), &amp;QIODevice::readyRead, this, &amp;HttpWindow::httpReadyRead);
+#if QT_CONFIG(ssl)
+connect(reply.get(), &amp;QNetworkReply::sslErrors, this, &amp;HttpWindow::sslErrors);
+#endif
+</db:programlisting>
+<db:para>Above, we connect some of the reply's signals to slots in the class. These slots will take care of both incoming data and finalizing the download/handling errors.</db:para>
+<db:programlisting language="cpp">connect(reply.get(), &amp;QIODevice::readyRead, this, &amp;HttpWindow::httpReadyRead);
+</db:programlisting>
+<db:para>As for handling the incoming data, since we don't know the maximum download size of any potential input and we don't want to exhaust the memory of any computer which might run the example program, we handle incoming data in <db:link xlink:href="qiodevice.xml#readyRead">QNetworkReply::readyRead</db:link>() instead of in <db:link xlink:href="qnetworkreply.xml#finished">QNetworkReply::finished</db:link>().</db:para>
+<db:programlisting language="cpp">void HttpWindow::httpReadyRead()
+{
+    // This slot gets called every time the QNetworkReply has new data.
+    // We read all of its new data and write it into the file.
+    // That way we use less RAM than when reading it at the finished()
+    // signal of the QNetworkReply
+    if (file)
+        file-&gt;write(reply-&gt;readAll());
+}
+</db:programlisting>
+<db:para>Then we write the data to file as it arrives. It is less convenient, but the application will consume less memory at its peak!</db:para>
+<db:programlisting language="cpp">connect(reply.get(), &amp;QNetworkReply::sslErrors, this, &amp;HttpWindow::sslErrors);
+</db:programlisting>
+<db:para>With the <db:link xlink:href="qnetworkreply.xml#sslErrors">QNetworkReply::sslErrors</db:link>() signal we can also handle errors that may occur during the TLS handshake when connecting to secure websites (i.e. HTTPS).</db:para>
+<db:programlisting language="cpp">void HttpWindow::sslErrors(const QList&lt;QSslError&gt; &amp;errors)
+{
+    QString errorString;
+    for (const QSslError &amp;error : errors) {
+        if (!errorString.isEmpty())
+            errorString += '\n';
+        errorString += error.errorString();
+    }
+
+    if (QMessageBox::warning(this, tr(&quot;TLS Errors&quot;),
+                             tr(&quot;One or more TLS errors has occurred:\n%1&quot;).arg(errorString),
+                             QMessageBox::Ignore | QMessageBox::Abort)
+        == QMessageBox::Ignore) {
+        reply-&gt;ignoreSslErrors();
+    }
+}
+</db:programlisting>
+<db:para>In this example, we show a dialog to the user so that they can choose whether or not to ignore the errors.</db:para>
+<db:programlisting language="cpp">QNetworkReply::NetworkError error = reply-&gt;error();
+const QString &amp;errorString = reply-&gt;errorString();
+if (error != QNetworkReply::NoError) {
+    QFile::remove(fi.absoluteFilePath());
+    // For &quot;request aborted&quot; we handle the label and button in cancelDownload()
+    if (!httpRequestAborted) {
+        statusLabel-&gt;setText(tr(&quot;Download failed:\n%1.&quot;).arg(errorString));
+        downloadButton-&gt;setEnabled(true);
+    }
+    return;
+}
+</db:programlisting>
+<db:para>If an error occurs then <db:link xlink:href="qnetworkreply.xml">QNetworkReply</db:link> will emit the <db:link xlink:href="qnetworkreply.xml#errorOccurred">QNetworkReply::errorOccurred</db:link>() signal, followed by the <db:link xlink:href="qnetworkreply.xml#finished">QNetworkReply::finished</db:link>() signal. In this example, we only connect to the latter. We handle any potential error(s) in the respective slot by deleting the file we were writing to, and display the error with our status label.</db:para>
+<db:programlisting language="cpp">connect(&amp;qnam, &amp;QNetworkAccessManager::authenticationRequired,
+        this, &amp;HttpWindow::slotAuthenticationRequired);
+</db:programlisting>
+<db:para>If you connect to a website that uses <db:link xlink:href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Authentication">HTTP authentication</db:link>, assuming you didn't supply the credentials that should be used ahead of time, you can handle missing credentials when the website requests it. With <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link>, we do this in a slot connected to the signal <db:link xlink:href="qnetworkaccessmanager.xml#authenticationRequired">QNetworkAccessManager::authenticationRequired</db:link>(). We make this connection once, in the constructor.</db:para>
+<db:programlisting language="cpp">void HttpWindow::slotAuthenticationRequired(QNetworkReply *, QAuthenticator *authenticator)
+{
+    QDialog authenticationDialog;
+    Ui::Dialog ui;
+    ui.setupUi(&amp;authenticationDialog);
+    authenticationDialog.adjustSize();
+    ui.siteDescription-&gt;setText(tr(&quot;%1 at %2&quot;).arg(authenticator-&gt;realm(), url.host()));
+
+    // Did the URL have information? Fill the UI.
+    // This is only relevant if the URL-supplied credentials were wrong
+    ui.userEdit-&gt;setText(url.userName());
+    ui.passwordEdit-&gt;setText(url.password());
+
+    if (authenticationDialog.exec() == QDialog::Accepted) {
+        authenticator-&gt;setUser(ui.userEdit-&gt;text());
+        authenticator-&gt;setPassword(ui.passwordEdit-&gt;text());
+    }
+}
+</db:programlisting>
+<db:para>In this example, we show a dialog where the user can either insert a username and password, or cancel. Canceling causes the request to fail.</db:para>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/network/http?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

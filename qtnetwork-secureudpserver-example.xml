@@ -1,0 +1,277 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>DTLS server</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This examples demonstrates how to implement a simple DTLS server.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the DTLS server example.</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/secureudpserver-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>The DTLS server example is intended to be run alongside the <db:link xlink:href="qtnetwork-secureudpclient-example.xml">DTLS client</db:link> example.</db:para>
+</db:note>
+<db:para>The server is implemented by the DtlsServer class. It uses <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link>, <db:link xlink:href="qdtlsclientverifier.xml">QDtlsClientVerifier</db:link>, and <db:link xlink:href="qdtls.xml">QDtls</db:link> to test each client's reachability, complete a handshake, and read and write encrypted messages.</db:para>
+<db:programlisting language="cpp">class DtlsServer : public QObject
+{
+    Q_OBJECT
+
+public:
+    DtlsServer();
+    ~DtlsServer();
+
+    bool listen(const QHostAddress &amp;address, quint16 port);
+    bool isListening() const;
+    void close();
+
+signals:
+    void errorMessage(const QString &amp;message);
+    void warningMessage(const QString &amp;message);
+    void infoMessage(const QString &amp;message);
+
+    void datagramReceived(const QString &amp;peerInfo, const QByteArray &amp;cipherText,
+                          const QByteArray &amp;plainText);
+
+private slots:
+    void readyRead();
+    void pskRequired(QSslPreSharedKeyAuthenticator *auth);
+
+private:
+    void handleNewConnection(const QHostAddress &amp;peerAddress, quint16 peerPort,
+                             const QByteArray &amp;clientHello);
+
+    void doHandshake(QDtls *newConnection, const QByteArray &amp;clientHello);
+    void decryptDatagram(QDtls *connection, const QByteArray &amp;clientMessage);
+    void shutdown();
+
+    bool listening = false;
+    QUdpSocket serverSocket;
+
+    QSslConfiguration serverConfiguration;
+    QDtlsClientVerifier cookieSender;
+    std::vector&lt;std::unique_ptr&lt;QDtls&gt;&gt; knownClients;
+
+    Q_DISABLE_COPY(DtlsServer)
+};
+</db:programlisting>
+<db:para>The constructor connects the <db:link xlink:href="qiodevice.xml#readyRead">QUdpSocket::readyRead</db:link>() signal to its readyRead() slot and sets the minimal needed TLS configuration:</db:para>
+<db:programlisting language="cpp">DtlsServer::DtlsServer()
+{
+    connect(&amp;serverSocket, &amp;QAbstractSocket::readyRead, this, &amp;DtlsServer::readyRead);
+
+    serverConfiguration = QSslConfiguration::defaultDtlsConfiguration();
+    serverConfiguration.setPreSharedKeyIdentityHint(&quot;Qt DTLS example server&quot;);
+    serverConfiguration.setPeerVerifyMode(QSslSocket::VerifyNone);
+}
+</db:programlisting>
+<db:note>
+<db:para>The server is not using a certificate and is relying on Pre-Shared Key (PSK) handshake.</db:para>
+</db:note>
+<db:para>listen() binds <db:link xlink:href="qudpsocket.xml">QUdpSocket</db:link>:</db:para>
+<db:programlisting language="cpp">bool DtlsServer::listen(const QHostAddress &amp;address, quint16 port)
+{
+    if (address != serverSocket.localAddress() || port != serverSocket.localPort()) {
+        shutdown();
+        listening = serverSocket.bind(address, port);
+        if (!listening)
+            emit errorMessage(serverSocket.errorString());
+    } else {
+        listening = true;
+    }
+
+    return listening;
+}
+</db:programlisting>
+<db:para>The readyRead() slot processes incoming datagrams:</db:para>
+<db:programlisting language="cpp">    ...
+const qint64 bytesToRead = serverSocket.pendingDatagramSize();
+if (bytesToRead &lt;= 0) {
+    emit warningMessage(tr(&quot;A spurious read notification&quot;));
+    return;
+}
+
+QByteArray dgram(bytesToRead, Qt::Uninitialized);
+QHostAddress peerAddress;
+quint16 peerPort = 0;
+const qint64 bytesRead = serverSocket.readDatagram(dgram.data(), dgram.size(),
+                                                   &amp;peerAddress, &amp;peerPort);
+if (bytesRead &lt;= 0) {
+    emit warningMessage(tr(&quot;Failed to read a datagram: &quot;) + serverSocket.errorString());
+    return;
+}
+
+dgram.resize(bytesRead);
+    ...
+</db:programlisting>
+<db:para>After extracting an address and a port number, the server first tests if it's a datagram from an already known peer:</db:para>
+<db:programlisting language="cpp">    ...
+if (peerAddress.isNull() || !peerPort) {
+    emit warningMessage(tr(&quot;Failed to extract peer info (address, port)&quot;));
+    return;
+}
+
+const auto client = std::find_if(knownClients.begin(), knownClients.end(),
+                                 [&amp;](const std::unique_ptr&lt;QDtls&gt; &amp;connection){
+    return connection-&gt;peerAddress() == peerAddress
+           &amp;&amp; connection-&gt;peerPort() == peerPort;
+});
+    ...
+</db:programlisting>
+<db:para>If it is a new, unknown address and port, the datagram is processed as a potential ClientHello message, sent by a DTLS client:</db:para>
+<db:programlisting language="cpp">    ...
+if (client == knownClients.end())
+    return handleNewConnection(peerAddress, peerPort, dgram);
+    ...
+</db:programlisting>
+<db:para>If it's a known DTLS client, the server either decrypts the datagram:</db:para>
+<db:programlisting language="cpp">    ...
+if ((*client)-&gt;isConnectionEncrypted()) {
+    decryptDatagram(client-&gt;get(), dgram);
+    if ((*client)-&gt;dtlsError() == QDtlsError::RemoteClosedConnectionError)
+        knownClients.erase(client);
+    return;
+}
+    ...
+</db:programlisting>
+<db:para>or continues a handshake with this peer:</db:para>
+<db:programlisting language="cpp">    ...
+doHandshake(client-&gt;get(), dgram);
+    ...
+</db:programlisting>
+<db:para>handleNewConnection() verifies it's a reachable DTLS client, or sends a HelloVerifyRequest:</db:para>
+<db:programlisting language="cpp">void DtlsServer::handleNewConnection(const QHostAddress &amp;peerAddress,
+                                     quint16 peerPort, const QByteArray &amp;clientHello)
+{
+    if (!listening)
+        return;
+
+    const QString peerInfo = peer_info(peerAddress, peerPort);
+    if (cookieSender.verifyClient(&amp;serverSocket, clientHello, peerAddress, peerPort)) {
+        emit infoMessage(peerInfo + tr(&quot;: verified, starting a handshake&quot;));
+    ...
+</db:programlisting>
+<db:para>If the new client was verified to be a reachable DTLS client, the server creates and configures a new <db:link xlink:href="qdtls.xml">QDtls</db:link> object, and starts a server-side handshake:</db:para>
+<db:programlisting language="cpp">    ...
+    std::unique_ptr&lt;QDtls&gt; newConnection{new QDtls{QSslSocket::SslServerMode}};
+    newConnection-&gt;setDtlsConfiguration(serverConfiguration);
+    newConnection-&gt;setPeer(peerAddress, peerPort);
+    newConnection-&gt;connect(newConnection.get(), &amp;QDtls::pskRequired,
+                           this, &amp;DtlsServer::pskRequired);
+    knownClients.push_back(std::move(newConnection));
+    doHandshake(knownClients.back().get(), clientHello);
+    ...
+</db:programlisting>
+<db:para>doHandshake() progresses through the handshake phase:</db:para>
+<db:programlisting language="cpp">void DtlsServer::doHandshake(QDtls *newConnection, const QByteArray &amp;clientHello)
+{
+    const bool result = newConnection-&gt;doHandshake(&amp;serverSocket, clientHello);
+    if (!result) {
+        emit errorMessage(newConnection-&gt;dtlsErrorString());
+        return;
+    }
+
+    const QString peerInfo = peer_info(newConnection-&gt;peerAddress(),
+                                       newConnection-&gt;peerPort());
+    switch (newConnection-&gt;handshakeState()) {
+    case QDtls::HandshakeInProgress:
+        emit infoMessage(peerInfo + tr(&quot;: handshake is in progress ...&quot;));
+        break;
+    case QDtls::HandshakeComplete:
+        emit infoMessage(tr(&quot;Connection with %1 encrypted. %2&quot;)
+                         .arg(peerInfo, connection_info(newConnection)));
+        break;
+    default:
+        Q_UNREACHABLE();
+    }
+}
+</db:programlisting>
+<db:para>During the handshake phase, the <db:link xlink:href="qdtls.xml#pskRequired">QDtls::pskRequired</db:link>() signal is emitted and the pskRequired() slot provides the preshared key:</db:para>
+<db:programlisting language="cpp">void DtlsServer::pskRequired(QSslPreSharedKeyAuthenticator *auth)
+{
+    Q_ASSERT(auth);
+
+    emit infoMessage(tr(&quot;PSK callback, received a client's identity: '%1'&quot;)
+                     .arg(QString::fromLatin1(auth-&gt;identity())));
+    auth-&gt;setPreSharedKey(QByteArrayLiteral(&quot;\x1a\x2b\x3c\x4d\x5e\x6f&quot;));
+}
+</db:programlisting>
+<db:note>
+<db:para>For the sake of brevity, the definition of pskRequired() is oversimplified. The documentation for the <db:link xlink:href="qsslpresharedkeyauthenticator.xml">QSslPreSharedKeyAuthenticator</db:link> class explains in detail how this slot can be properly implemented.</db:para>
+</db:note>
+<db:para>After the handshake is completed for the network peer, an encrypted DTLS connection is considered to be established and the server decrypts subsequent datagrams, sent by the peer, by calling decryptDatagram(). The server also sends an encrypted response to the peer:</db:para>
+<db:programlisting language="cpp">void DtlsServer::decryptDatagram(QDtls *connection, const QByteArray &amp;clientMessage)
+{
+    Q_ASSERT(connection-&gt;isConnectionEncrypted());
+
+    const QString peerInfo = peer_info(connection-&gt;peerAddress(), connection-&gt;peerPort());
+    const QByteArray dgram = connection-&gt;decryptDatagram(&amp;serverSocket, clientMessage);
+    if (dgram.size()) {
+        emit datagramReceived(peerInfo, clientMessage, dgram);
+        connection-&gt;writeDatagramEncrypted(&amp;serverSocket, tr(&quot;to %1: ACK&quot;).arg(peerInfo).toLatin1());
+    } else if (connection-&gt;dtlsError() == QDtlsError::NoError) {
+        emit warningMessage(peerInfo + &quot;: &quot; + tr(&quot;0 byte dgram, could be a re-connect attempt?&quot;));
+    } else {
+        emit errorMessage(peerInfo + &quot;: &quot; + connection-&gt;dtlsErrorString());
+    }
+}
+</db:programlisting>
+<db:para>The server closes its DTLS connections by calling <db:link xlink:href="qdtls.xml#shutdown">QDtls::shutdown</db:link>():</db:para>
+<db:programlisting language="cpp">void DtlsServer::shutdown()
+{
+    for (const auto &amp;connection : std::exchange(knownClients, {}))
+        connection-&gt;shutdown(&amp;serverSocket);
+
+    serverSocket.close();
+}
+</db:programlisting>
+<db:para>During its operation, the server reports errors, informational messages, and decrypted datagrams, by emitting signals errorMessage(), warningMessage(), infoMessage(), and datagramReceived(). These messages are logged by the server's UI:</db:para>
+<db:programlisting language="cpp">const QString colorizer(QStringLiteral(&quot;&lt;font color=\&quot;%1\&quot;&gt;%2&lt;/font&gt;&lt;br&gt;&quot;));
+
+void MainWindow::addErrorMessage(const QString &amp;message)
+{
+    ui-&gt;serverInfo-&gt;insertHtml(colorizer.arg(QStringLiteral(&quot;Crimson&quot;), message));
+}
+
+void MainWindow::addWarningMessage(const QString &amp;message)
+{
+    ui-&gt;serverInfo-&gt;insertHtml(colorizer.arg(QStringLiteral(&quot;DarkOrange&quot;), message));
+}
+
+void MainWindow::addInfoMessage(const QString &amp;message)
+{
+    ui-&gt;serverInfo-&gt;insertHtml(colorizer.arg(QStringLiteral(&quot;DarkBlue&quot;), message));
+}
+
+void MainWindow::addClientMessage(const QString &amp;peerInfo, const QByteArray &amp;datagram,
+                                  const QByteArray &amp;plainText)
+{
+    static const QString messageColor = QStringLiteral(&quot;DarkMagenta&quot;);
+    static const QString formatter = QStringLiteral(&quot;&lt;br&gt;---------------&quot;
+                                                    &quot;&lt;br&gt;A message from %1&quot;
+                                                    &quot;&lt;br&gt;DTLS datagram:&lt;br&gt; %2&quot;
+                                                    &quot;&lt;br&gt;As plain text:&lt;br&gt; %3&quot;);
+
+    const QString html = formatter.arg(peerInfo, QString::fromUtf8(datagram.toHex(' ')),
+                                       QString::fromUtf8(plainText));
+    ui-&gt;messages-&gt;insertHtml(colorizer.arg(messageColor, html));
+}
+</db:programlisting>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/network/secureudpserver?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
