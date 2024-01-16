@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Wayland Compositor Examples - Custom Shell</db:title>
+<db:productname>QtWaylandCompositor</db:productname>
+<db:edition>Qt Wayland Compositor | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Wayland Compositor Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Custom Shell shows how to implement a custom shell extension.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:link xlink:href="qtwaylandcompositor-shellextensions.xml">Shell extensions</db:link> to Wayland are protocols that manage window state, position and size. Most compositors will support one or more of built-in extensions, but in some circumstances it can be useful to be able to write a custom one which contains the exact features your applications need.</db:para>
+<db:para>This requires that you implement the shell extension on both the server-side and client-side of the Wayland connection, so it is mainly useful when you are building a platform and are in control of both the compositor and its client applications.</db:para>
+<db:para>The Custom Shell example shows the implementation of a simple shell extension. It is divided into three parts:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A protocol description for a custom shell interface.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A plugin for connecting to the interface in a client application.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An example compositor with a server-side implementation of the interface.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The protocol description follows the standard XML format read by <db:code>wayland-scanner</db:code>. It will not be covered in detail here, but it covers the following features:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>An interface for creating a shell surfaces for a <db:code>wl_surface</db:code>. This allows the protocol to add functionality on top of the existing <db:code>wl_surface</db:code> APIs.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A request to set a window title on the shell surface.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A request to minimize/de-minimize the shell surface.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An event informing the client of the shell surface's current minimized state.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="the-client-plugin">
+<db:title>The Client Plugin</db:title>
+<db:para>In order for the shell integration to be discovered by a Qt client, we must reimplement the QWaylandShellIntegrationPlugin.</db:para>
+<db:programlisting language="cpp">class QWaylandExampleShellIntegrationPlugin : public QWaylandShellIntegrationPlugin
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID QWaylandShellIntegrationFactoryInterface_iid FILE &quot;example-shell.json&quot;)
+
+public:
+    QWaylandShellIntegration *create(const QString &amp;amp;key, const QStringList &amp;amp;paramList) override;
+};
+
+QWaylandShellIntegration *QWaylandExampleShellIntegrationPlugin::create(const QString &amp;amp;key, const QStringList &amp;amp;paramList)
+{
+    Q_UNUSED(key);
+    Q_UNUSED(paramList);
+    return new ExampleShellIntegration();
+}
+</db:programlisting>
+<db:para>This attaches the &quot;example-shell&quot; key to the shell integration and provides a way for the <db:code>ExampleShellIntegration</db:code> class to be instantiated when a client connects to the interface.</db:para>
+<db:para>The APIs for creating shell extensions are available in the header <db:code>qwaylandclientshellapi_p.h</db:code>.</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QtWaylandClient/private/qwaylandclientshellapi_p.h&amp;gt;
+</db:programlisting>
+<db:para>This header requires including private API because unlike public Qt APIs, it does not come with binary compatibility guarantees. The APIs are still considered stable and will remain source compatible, and are similar in this respect to other plugin APIs in Qt.</db:para>
+<db:para>The <db:code>ExampleShellIntegration</db:code> is the client-side entry point for creating shell surfaces as described above. It extends the QWaylandShellIntegrationTemplate class, using the <db:link xlink:href="https://en.wikipedia.org/wiki/Curiously_recurring_template_pattern">Curiously Recurring Template Pattern</db:link>.</db:para>
+<db:programlisting language="cpp">class Q_WAYLANDCLIENT_EXPORT ExampleShellIntegration
+        : public QWaylandShellIntegrationTemplate&amp;lt;ExampleShellIntegration&amp;gt;
+        , public QtWayland::qt_example_shell
+{
+public:
+    ExampleShellIntegration();
+
+    QWaylandShellSurface *createShellSurface(QWaylandWindow *window) override;
+};
+</db:programlisting>
+<db:para>It also inherits from the <db:code>QtWayland::qt_example_shell</db:code> class, which is generated by <db:code>qtwaylandscanner</db:code> based on the XML description of the protocol.</db:para>
+<db:para>The constructor specifies the version of the protocol that we support:</db:para>
+<db:programlisting language="cpp">ExampleShellIntegration::ExampleShellIntegration()
+    : QWaylandShellIntegrationTemplate(/* Supported protocol version */ 1)
+{
+}
+</db:programlisting>
+<db:para>The example_shell protocol is currently at version one, so we pass a <db:code>1</db:code> to the parent class. This is used in protocol negotiation, and makes sure that older clients will continue working if the compositor uses a newer version of the protocol.</db:para>
+<db:para>When the <db:code>ExampleShellIntegration</db:code> is initialized, the application is connected to the server, and has received the broadcast of global interfaces the compositor supports. If successful, it can issue requests for the interface. In this case, there is only one request to support: Creating a shell surface. It uses the built-in function <db:code>wlSurfaceForWindow()</db:code> to convert the QWaylandWindow to a <db:code>wl_surface</db:code>, then it issues the request. It then extends the returned surface with a <db:code>ExampleShellSurface</db:code> object which will handle the requests and events on the <db:code>qt_example_shell_surface</db:code> interface.</db:para>
+<db:programlisting language="cpp">QWaylandShellSurface *ExampleShellIntegration::createShellSurface(QWaylandWindow *window)
+{
+    if (!isActive())
+        return nullptr;
+    auto *surface = surface_create(wlSurfaceForWindow(window));
+    return new ExampleShellSurface(surface, window);
+}
+</db:programlisting>
+<db:para>The <db:code>ExampleShellSurface</db:code> extends two classes.</db:para>
+<db:programlisting language="cpp">class ExampleShellSurface : public QWaylandShellSurface
+        , public QtWayland::qt_example_shell_surface
+</db:programlisting>
+<db:para>The first is the <db:code>QtWayland::qt_example_shell_surface</db:code> class which is generated based on the XML description of the protocol. This provides virtual functions for events and ordinary member functions for the requests in the protocol.</db:para>
+<db:para>The <db:code>QtWayland::qt_example_shell_surface</db:code> class only has a single event.</db:para>
+<db:programlisting language="cpp">    void example_shell_surface_minimize(uint32_t minimized) override;
+</db:programlisting>
+<db:para>The <db:code>ExampleShellSurface</db:code> reimplements this to update its internal window state. When the window state is change, it stores the pending state until later and calls <db:code>applyConfigureWhenPossible()</db:code> in QWaylandShellSurface. State, size and position changes should be organized like this. That way, we ensure that changes do not interfere with rendering to the surface, and multiple related changes can easily be applied as one.</db:para>
+<db:para>When it is safe to reconfigure the surface, the virtual <db:code>applyConfigure()</db:code> function is called.</db:para>
+<db:programlisting language="cpp">void ExampleShellSurface::applyConfigure()
+{
+    if (m_stateChanged)
+        QWindowSystemInterface::handleWindowStateChanged(platformWindow()-&amp;gt;window(), m_pendingStates);
+    m_stateChanged = false;
+}
+</db:programlisting>
+<db:para>This is where we actually commit the new (minimized or de-minimized) state to the window.</db:para>
+<db:para>The second super class is QWaylandShellSurface. This is the interface used by Wayland's QPA plugin and QWaylandWindow to communicate with the shell. The <db:code>ExampleShellSurface</db:code> reimplements a few virtual functions from this interface as well.</db:para>
+<db:programlisting language="cpp">    bool wantsDecorations() const override;
+    void setTitle(const QString &amp;amp;) override;
+    void requestWindowStates(Qt::WindowStates states) override;
+    void applyConfigure() override;
+</db:programlisting>
+<db:para>For example, when the Qt applications sets the title of a window, this translates into a call to the virtual <db:code>setTitle()</db:code> function.</db:para>
+<db:programlisting language="cpp">void ExampleShellSurface::setTitle(const QString &amp;amp;windowTitle)
+{
+    set_window_title(windowTitle);
+}
+</db:programlisting>
+<db:para>In the <db:code>ExampleShellSurface</db:code> this in turn translates to a request on our custom shell surface interface.</db:para>
+</db:section>
+<db:section xml:id="the-compositor">
+<db:title>The Compositor</db:title>
+<db:para>The final part of the example is the compositor itself. This has the same general structure as the other compositor examples. See the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">Minimal QML example</db:link> for more details on the building blocks of a <db:link xlink:href="qtwaylandcompositor-index.xml">Qt Wayland Compositor</db:link>.</db:para>
+<db:para>One notable difference in the Custom Shell compositor is the instantiation of the shell extension. Where the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">the Minimal QML example</db:link> instantiates the shell extensions <db:link xlink:href="qml-qtwayland-compositor-iviapplication-iviapplication.xml">IviApplication</db:link>, <db:link xlink:href="qml-qtwayland-compositor-xdgshell-xdgshell.xml">XdgShell</db:link> and <db:link xlink:href="qml-qtwayland-compositor-wlshell-wlshell.xml">WlShell</db:link>, the Custom Shell example only creates an instance of the <db:code>ExampleShell</db:code> extension.</db:para>
+<db:programlisting language="qml">ExampleShell {
+    id: shell
+    onShellSurfaceCreated: (shellSurface) =&amp;gt; {
+        shellSurfaces.append({shellSurface: shellSurface});
+    }
+}
+</db:programlisting>
+<db:para>We create the instance of the shell extension as a direct child of the <db:link xlink:href="qml-qtwayland-compositor-waylandcompositor.xml">WaylandCompositor</db:link> in order to have it registered as a global interface. This will be broadcasted to clients as they connect, and they will be able to attach to the interface as outlined in the previous section.</db:para>
+<db:para>The <db:code>ExampleShell</db:code> is a subclass of the generated <db:code>QtWaylandServer::qt_example_shell</db:code> interface, which contains the API defined in the protocol XML. It is also a subclass of QWaylandCompositorExtensionTemplate, which ensures the objects are recognized by QWaylandCompositor as extensions.</db:para>
+<db:programlisting language="cpp">class ExampleShell
+        : public QWaylandCompositorExtensionTemplate&amp;lt;ExampleShell&amp;gt;
+        , QtWaylandServer::qt_example_shell
+</db:programlisting>
+<db:para>This dual inheritance is a typical pattern in Qt Wayland Compositor when building extensions. The QWaylandCompositorExtensionTemplate class creates the connection between QWaylandCompositorExtension and the <db:code>qt_example_shell</db:code> class generated by <db:code>qtwaylandscanner</db:code>.</db:para>
+<db:para>Equivalently, the <db:code>ExampleShellSurface</db:code> class extends the generated <db:code>QtWaylandServer::qt_example_shell_surface</db:code> class as well as QWaylandShellSurfaceTemplate, which makes it a subclass of the <db:link xlink:href="qml-qtwayland-compositor-shellsurface.xml">ShellSurface</db:link> class and establishes the connection between Qt Wayland Compositor and the generated protocol code.</db:para>
+<db:para>To make the type available to Qt Quick, we use the <db:link xlink:href="qwaylandquickextension.xml#Q_COMPOSITOR_DECLARE_QUICK_EXTENSION_CLASS">Q_COMPOSITOR_DECLARE_QUICK_EXTENSION_CLASS</db:link> preprocessor macro for the convenience. Among other things, this handles automatically initializing the extension when it has been added to the Qt Quick graph.</db:para>
+<db:programlisting language="cpp">void ExampleShell::initialize()
+{
+    QWaylandCompositorExtensionTemplate::initialize();
+
+    QWaylandCompositor *compositor = static_cast&amp;lt;QWaylandCompositor *&amp;gt;(extensionContainer());
+    if (!compositor) {
+        qWarning() &amp;lt;&amp;lt; &quot;Failed to find QWaylandCompositor when initializing ExampleShell&quot;;
+        return;
+    }
+
+    init(compositor-&amp;gt;display(), 1);
+}
+</db:programlisting>
+<db:para>The default implementation of the <db:code>initialize()</db:code> function register the extension with the compositor. In addition to this, we initialize the protocol extension itself. We do this by calling the generated <db:code>init()</db:code> function in the <db:code>QtWaylandServer::qt_example_shell_surface</db:code> class.</db:para>
+<db:para>We also reimplement the virtual function generated for the <db:code>surface_create</db:code> request.</db:para>
+<db:programlisting language="cpp">void ExampleShell::example_shell_surface_create(Resource *resource, wl_resource *surfaceResource, uint32_t id)
+{
+    QWaylandSurface *surface = QWaylandSurface::fromResource(surfaceResource);
+
+    if (!surface-&amp;gt;setRole(ExampleShellSurface::role(), resource-&amp;gt;handle, QT_EXAMPLE_SHELL_ERROR_ROLE))
+        return;
+
+    QWaylandResource shellSurfaceResource(wl_resource_create(resource-&amp;gt;client(), &amp;amp;::qt_example_shell_surface_interface,
+                                                           wl_resource_get_version(resource-&amp;gt;handle), id));
+
+    auto *shellSurface = new ExampleShellSurface(this, surface, shellSurfaceResource);
+    emit shellSurfaceCreated(shellSurface);
+}
+</db:programlisting>
+<db:para>This virtual function is called whenever a client issues the request on the connection.</db:para>
+<db:para>Our shell extension only supports a single <db:link xlink:href="qwaylandsurfacerole.xml">QWaylandSurfaceRole</db:link>, but it is still important that we assign it to the QWaylandSurface when we create a shell surface for it. The primary reason for this is that assigning conflicting roles to the same surface is considered a protocol error, and it is the compositor's responsibility to issue this error if it happens. Setting a role on the surface when we adopt it, ensures that the protocol error will be issued if the surface is reused with a different role later.</db:para>
+<db:para>We use built-in functions to convert between Wayland and Qt types, and create an <db:code>ExampleShellSurface</db:code> object. When everything is prepared, we emit the <db:code>shellSurfaceCreated()</db:code> signal, which in turn is intercepted in the QML code and added to the list of shell surfaces.</db:para>
+<db:programlisting language="qml">ExampleShell {
+    id: shell
+    onShellSurfaceCreated: (shellSurface) =&amp;gt; {
+        shellSurfaces.append({shellSurface: shellSurface});
+    }
+}
+</db:programlisting>
+<db:para>In <db:code>ExampleShellSurface</db:code>, we equivalently enable the shell surface part of the protocol extension.</db:para>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the example</db:title>
+<db:para>In order to have a client successfully connect to the new shell extension, there is a couple of configuration details to be handled.</db:para>
+<db:para>First of all, the client has to be able to find the shell extension's plugin. One simple way of doing this is to set the <db:code>QT_PLUGIN_PATH</db:code> to point to the plugin install directory. Since Qt will look up plugins by category, the plugin path should point to the parent directory that contains the directory for category <db:code>wayland-shell-integration</db:code>. So if the installed file is <db:code>/path/to/build/plugins/wayland-shell-integration/libexampleshellplugin.so</db:code>, then you should set <db:code>QT_PLUGIN_PATH</db:code> as follows:</db:para>
+<db:programlisting language="cpp" role="bad">export QT_PLUGIN_PATH=/path/to/build/plugins
+</db:programlisting>
+<db:para>For other ways to configure the plugin directory, see the <db:link xlink:href="deployment-plugins.xml">plugin documentation</db:link>.</db:para>
+<db:para>The final step is to make sure the client actually attaches to the correct shell extension. Qt clients will automatically try to attach to the built-in shell extensions, but this can be overridden by setting the <db:code>QT_WAYLAND_SHELL_INTEGRATION</db:code> environment variable to the name of the extension to load.</db:para>
+<db:programlisting language="cpp" role="bad">export QT_WAYLAND_SHELL_INTEGRATION=example-shell
+</db:programlisting>
+<db:para>And that is all there is to it. The Custom Shell example is a limited shell extension with only a very few features, but it can be used as a starting point for building specialized extensions.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwayland.git/tree/examples/wayland/custom-shell?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

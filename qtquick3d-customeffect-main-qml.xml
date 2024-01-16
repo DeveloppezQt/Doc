@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Custom Effect Example</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates writing custom post-processing effects.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+import QtQuick
+import QtQuick3D
+import QtQuick3D.Helpers
+import QtQuick3D.Effects
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Window {
+    id: window
+    width: 1280
+    height: 720
+    visible: true
+    title: &quot;Custom Post-Processing Effect Example&quot;
+    color: &quot;#848895&quot;
+
+    View3D {
+        id: view3d
+
+        Effect {
+            id: eff1
+            property TextureInput tex: TextureInput {
+                id: qtLogo
+                texture: Texture { source: &quot;qt_logo_rect.png&quot; }
+            }
+            passes: Pass {
+                shaders: Shader {
+                    id: fs1
+                    stage: Shader.Fragment
+                    shader: &quot;effect.frag&quot;
+                }
+            }
+        }
+
+        Effect {
+            id: eff2
+            property real uRed: 0.0
+            SequentialAnimation on uRed {
+                running: radioEff2.checked || radioEff3.checked
+                loops: -1
+                NumberAnimation { from: 0; to: 1; duration: 2000 }
+                NumberAnimation { from: 1; to: 0; duration: 2000 }
+            }
+            property real uGreen: 1.0
+            Shader {
+                id: vs2
+                stage: Shader.Vertex
+                shader: &quot;effect2.vert&quot;
+            }
+            Shader {
+                id: fs2
+                stage: Shader.Fragment
+                shader: &quot;effect2.frag&quot;
+            }
+            passes: Pass {
+                shaders: [ vs2, fs2 ]
+            }
+        }
+
+        Effect {
+            id: eff3
+
+            property TextureInput tex: qtLogo
+            property real uRed: 1.0
+            property real uGreen: 0.0
+            SequentialAnimation on uGreen {
+                running: radioEff4.checked
+                loops: -1
+                NumberAnimation { from: 0; to: 1; duration: 2000 }
+                NumberAnimation { from: 1; to: 0; duration: 2000 }
+            }
+
+            Buffer {
+                id: intermediateTexture
+                name: &quot;intermediateTexture&quot;
+                format: Buffer.RGBA8
+                textureFilterOperation: Buffer.Linear
+                textureCoordOperation: Buffer.ClampToEdge
+                sizeMultiplier: 2 // just for fun upscale and then downscale
+            }
+
+            passes: [
+                Pass {
+                    shaders: [ fs1 ]
+                    output: intermediateTexture
+                },
+                Pass {
+                    shaders: [ vs2, fs2 ]
+                    commands: [
+                        BufferInput {
+                            buffer: intermediateTexture
+                        }
+                    ]
+                }
+            ]
+        }
+
+        anchors.fill: parent
+        renderMode: View3D.Offscreen
+
+        environment: SceneEnvironment {
+            id: env
+            clearColor: &quot;skyblue&quot;
+            backgroundMode: SceneEnvironment.Color
+            effects: [ eff1 ]
+        }
+
+        PerspectiveCamera {
+            id: camera
+            position: Qt.vector3d(0, 200, 300)
+            eulerRotation.x: -20
+        }
+
+        DirectionalLight {
+            eulerRotation.x: -20
+            eulerRotation.y: 20
+            ambientColor: Qt.rgba(0.8, 0.8, 0.8, 1.0);
+        }
+
+        Texture {
+            id: checkers
+            source: &quot;checkers2.png&quot;
+            scaleU: 20
+            scaleV: 20
+            tilingModeHorizontal: Texture.Repeat
+            tilingModeVertical: Texture.Repeat
+        }
+
+        Model {
+            source: &quot;#Rectangle&quot;
+            scale.x: 10
+            scale.y: 10
+            eulerRotation.x: -90
+            materials: [ DefaultMaterial { diffuseMap: checkers } ]
+        }
+
+        Model {
+            source: &quot;#Cone&quot;
+            position: Qt.vector3d(100, 0, -200)
+            scale.y: 3
+            materials: [ DefaultMaterial { diffuseColor: &quot;green&quot; } ]
+        }
+
+        Model {
+            id: sphere
+            source: &quot;#Sphere&quot;
+            position: Qt.vector3d(-100, 200, -200)
+            materials: [ DefaultMaterial { diffuseColor: &quot;#808000&quot; } ]
+        }
+
+        Model {
+            source: &quot;#Cube&quot;
+            position.y: 50
+            eulerRotation.y: 20
+            materials: [ DefaultMaterial { diffuseColor: &quot;gray&quot; } ]
+        }
+    }
+
+    WasdController {
+        controlledObject: camera
+    }
+
+    ColumnLayout {
+        Label {
+            text: &quot;Use WASD and mouse to navigate&quot;
+            font.bold: true
+        }
+        ButtonGroup {
+            buttons: [ radioEff1, radioEff2, radioEff3, radioEff4, radioEff5 ]
+        }
+        RadioButton {
+            id: radioEff1
+            text: &quot;Custom effect with fragment shader only&quot;
+            checked: true
+            focusPolicy: Qt.NoFocus
+            onCheckedChanged: {
+                if (checked)
+                    env.effects = [ eff1 ];
+            }
+        }
+        RadioButton {
+            id: radioEff2
+            text: &quot;Custom effect with vertex and fragment shaders&quot;
+            checked: false
+            focusPolicy: Qt.NoFocus
+            onCheckedChanged: {
+                if (checked)
+                    env.effects = [ eff2 ];
+            }
+        }
+        RadioButton {
+            id: radioEff3
+            text: &quot;Both effects chained&quot;
+            checked: false
+            focusPolicy: Qt.NoFocus
+            onCheckedChanged: {
+                if (checked)
+                    env.effects = [ eff1, eff2 ];
+            }
+        }
+        RadioButton {
+            id: radioEff4
+            text: &quot;As one single, multi-pass effect&quot;
+            checked: false
+            focusPolicy: Qt.NoFocus
+            onCheckedChanged: {
+                if (checked)
+                    env.effects = [ eff3 ];
+            }
+        }
+        RadioButton {
+            id: radioEff5
+            text: &quot;No effects&quot;
+            checked: false
+            focusPolicy: Qt.NoFocus
+            onCheckedChanged: {
+                if (checked)
+                    env.effects = [];
+            }
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

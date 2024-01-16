@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Spellchecker Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Integrates a spellchecker into a simple HTML form.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/spellchecker-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Spellchecker</db:emphasis> demonstrates how to integrate spellchecking support into an HTML form that enables users to submit spellchecked messages.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="dictionaries">
+<db:title>Dictionaries</db:title>
+<db:para>To be able to check the spelling, we need to provide the spellchecker with dictionaries. The Qt WebEngine spellchecker supports dictionaries provided by the <db:link xlink:href="https://sourceforge.net/projects/hunspell/">Hunspell project</db:link> on all platforms and native dictionaries provided by macOS. In this example, we want to support the English and German languages.</db:para>
+<db:para>For Hunspell dictionaries to be supported they have to be compiled into a special binary format. A Hunspell dictionary consists of two files:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A <db:code>.dic</db:code> file that is a dictionary containing words for the language</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>An <db:code>.aff</db:code> file that defines the meaning of special flags in the dictionary</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>These two files can be converted into the <db:code>bdic</db:code> format by using the <db:code>qwebengine_convert_dict</db:code> tool that is shipped together with Qt.</db:para>
+<db:para>In this example, we are going to compile en_US and de_DE dictionaries. However, the real full dictionaries would take too much space for the purposes of this example. Therefore, we have created two dummy dictionaries that contain the following words and can be used to demonstrate the conversion process:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>English dictionary: I, you, he, she, it, we, they, love, loves, qt</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>German dictionary: ich, du, er, sie, es, wir, ihr, sie, Sie, liebe, liebst, liebt, lieben, liebt, qt</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Each word in a dictionary can be prefixed with <db:code>q</db:code>. For more information about how to create <db:code>dic</db:code> and <db:code>aff</db:code> files, see the Hunspell dictionary file format specification in the <db:link xlink:href="https://sourceforge.net/projects/hunspell/">Hunspell Project</db:link>.</db:para>
+<db:para>See the <db:link xlink:href="qtwebengine-features.xml#spellchecker">Spellchecker feature documentation</db:link> for how dictionary files are searched.</db:para>
+<db:para>We specify the QMAKE_EXTRA_COMPILERS parameter in the project file to add a conversion step to the build process:</db:para>
+<db:programlisting language="cpp">qtPrepareTool(CONVERT_TOOL, qwebengine_convert_dict, &quot;&quot;, &quot;&quot;, $$[QT_INSTALL_LIBEXECS])
+
+debug_and_release {
+    CONFIG(debug, debug|release): DICTIONARIES_DIR = debug/qtwebengine_dictionaries
+    else: DICTIONARIES_DIR = release/qtwebengine_dictionaries
+} else {
+    DICTIONARIES_DIR = qtwebengine_dictionaries
+}
+
+dict_base_paths = en/en-US de/de-DE
+for (base_path, dict_base_paths) {
+    dict.files += $$PWD/dict/$${base_path}.dic
+}
+
+dictoolbuild.input = dict.files
+dictoolbuild.output = $${DICTIONARIES_DIR}/${QMAKE_FILE_BASE}.bdic
+dictoolbuild.depends = ${QMAKE_FILE_PATH}/${QMAKE_FILE_BASE}.aff
+dictoolbuild.commands = $${CONVERT_TOOL} ${QMAKE_FILE_IN} ${QMAKE_FILE_OUT}
+dictoolbuild.name = Build ${QMAKE_FILE_IN_BASE}
+dictoolbuild.CONFIG = no_link target_predeps
+QMAKE_EXTRA_COMPILERS += dictoolbuild
+</db:programlisting>
+<db:para>To set up a dictionary, we run <db:code>qwebengine_convert_dict</db:code> passing the file path of the dictionary <db:code>dic</db:code> and <db:code>bdic</db:code> files. The <db:code>aff</db:code> file and optional <db:code>delta</db:code> file are also picked up by the <db:code>convert</db:code> process. The output <db:code>bdic</db:code> file is placed into the <db:emphasis>qtwebengine_dictionaries</db:emphasis> local directory (or Resources directory), which the application binary will run from.</db:para>
+</db:section>
+<db:section xml:id="setting-the-spellchecker">
+<db:title>Setting the Spellchecker</db:title>
+<db:para>The constructor of our class is trivial.</db:para>
+<db:programlisting language="cpp">WebView::WebView(QWidget *parent)
+    : QWebEngineView(parent)
+{
+    m_spellCheckLanguages[&quot;English&quot;] = &quot;en-US&quot;;
+    m_spellCheckLanguages[&quot;German&quot;] = &quot;de-DE&quot;;
+    QWebEngineProfile *profile = page()-&amp;gt;profile();
+    profile-&amp;gt;setSpellCheckEnabled(true);
+    profile-&amp;gt;setSpellCheckLanguages({&quot;en-US&quot;});
+</db:programlisting>
+<db:para>We define simple mapping between our dictionary filenames and the actual language display name. We will use that mapping to display names of dictionaries in the context menu. Spellchecking is disabled by default. Therefore we also enable spellchecker and set the <db:emphasis>English</db:emphasis> dictionary. When Qt WebEngine's spellcheck service initializes, it will try to load the <db:code>bdict</db:code> dictionaries and to check them for consistency. Any errors are logged by using the <db:link xlink:href="qtglobal.xml#qWarning">qWarning</db:link>() function.</db:para>
+</db:section>
+<db:section xml:id="switching-the-spellchecking-language">
+<db:title>Switching the Spellchecking Language</db:title>
+<db:para>The current language used for spellchecking is defined per profile, and can get set using the QWebEngineProfile::setSpellCheckLanguage method. When the user clicks on an underlined misspelled word, the default context menu displays up to four suggestions. Selecting one will replace the misspelled word. We could reimplement a number of suggestions, by overriding <db:link xlink:href="qwebengineview.xml#contextMenuEvent">QWebEngineView::contextMenuEvent</db:link> and using QWebEngineContextMenuData::spellCheckerSuggestions, but we will demonstrate how to add langague options in the context menu instead:</db:para>
+<db:programlisting language="cpp">void WebView::contextMenuEvent(QContextMenuEvent *event)
+{
+    QWebEngineContextMenuRequest *data = lastContextMenuRequest();
+    Q_ASSERT(data);
+
+    if (!data-&amp;gt;isContentEditable()) {
+        QWebEngineView::contextMenuEvent(event);
+        return;
+    }
+
+    QWebEngineProfile *profile = page()-&amp;gt;profile();
+    const QStringList &amp;amp;languages = profile-&amp;gt;spellCheckLanguages();
+    QMenu *menu = createStandardContextMenu();
+    menu-&amp;gt;addSeparator();
+
+    QAction *spellcheckAction = new QAction(tr(&quot;Check Spelling&quot;), nullptr);
+    spellcheckAction-&amp;gt;setCheckable(true);
+    spellcheckAction-&amp;gt;setChecked(profile-&amp;gt;isSpellCheckEnabled());
+    connect(spellcheckAction, &amp;amp;QAction::toggled, this, [profile](bool toogled) {
+        profile-&amp;gt;setSpellCheckEnabled(toogled);
+    });
+    menu-&amp;gt;addAction(spellcheckAction);
+
+    if (profile-&amp;gt;isSpellCheckEnabled()) {
+        QMenu *subMenu = menu-&amp;gt;addMenu(tr(&quot;Select Language&quot;));
+        const QStringList keys = m_spellCheckLanguages.keys();
+        for (const QString &amp;amp;str : keys) {
+            QAction *action = subMenu-&amp;gt;addAction(str);
+            action-&amp;gt;setCheckable(true);
+            QString lang = m_spellCheckLanguages[str];
+            action-&amp;gt;setChecked(languages.contains(lang));
+            connect(action, &amp;amp;QAction::triggered, this, [profile, lang](){
+               profile-&amp;gt;setSpellCheckLanguages(QStringList()&amp;lt;&amp;lt;lang);
+            });
+        }
+    }
+    connect(menu, &amp;amp;QMenu::aboutToHide, menu, &amp;amp;QObject::deleteLater);
+    menu-&amp;gt;popup(event-&amp;gt;globalPos());
+}
+</db:programlisting>
+<db:para>Above, we get the QWebEngineContextMenuData instance using the QWebEnginePage::contextMenuData method. We use it to be notified when the user clicks on an editable field and show the <db:guilabel>Check Spelling</db:guilabel> item in the context menu. Moreover, if spellchecking is enabled, we also add the <db:guilabel>Select Language</db:guilabel> submenu with the supported languages. When an action is triggered, we set the language with the QWebEngineProfile::setSpellCheckLanguage call.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/spellchecker?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

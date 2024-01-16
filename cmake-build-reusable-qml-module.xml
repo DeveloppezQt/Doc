@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Building a reusable QML module</db:title>
+<db:productname>QtCMake</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Using Qt with CMake</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="cmake-build-qml-application.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Building a QML application"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="cmake-build-on-cmdline.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Building projects on the command line"/></db:extendedlink>
+<db:abstract>
+<db:para>Using Qt with CMake.</db:para></db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The example below demonstrates how to create a library which exposes C++ to QML. The directory structure for the example looks like this:</db:para>
+<db:programlisting language="cpp" role="bad">├── CMakeLists.txt
+└── example
+    └── mylib
+        ├── CMakeLists.txt
+        ├── mytype.cpp
+        ├── mytype.h
+</db:programlisting>
+<db:para>The toplevel <db:code>CMakeLists.txt</db:code> file does some basic setup, and then uses <db:code>add_subdirectory</db:code> to include the one in mylib. The subdirectory structure corresponds to the QML module’s URI, but with the dots replaced by slashes. That’s the same logic the engine uses when it searches for a module in the <db:link xlink:href="qtqml-syntax-imports.xml">import paths</db:link>. <db:code>mytype.h</db:code> declares a class and uses the declarative registration macros to expose it to the engine.</db:para>
+<db:para>In the subdirectory’s <db:code>CMakeLists.txt</db:code> we again call <db:code>qt6_add_qml_module</db:code>. However, the invocation is slightly different:</db:para>
+<db:programlisting language="cpp">qt6_add_qml_module(mylib
+    URI example.mylib
+    VERSION 1.0
+    SOURCES
+        mytype.h mytype.cpp
+)
+</db:programlisting>
+<db:para>To add C++ types, the SOURCES parameter needs to be specified. The target for mylib is not created. Therefore, if the target passed to <db:code>qt6_add_qml_module</db:code> does not exist, a library target is automatically created, which is needed in this case.</db:para>
+<db:para>When the project is built, in addition to the library, a QML plugin is also built. The plugin's auto-generated class extends from <db:code>QQmlEngineExtensionPlugin</db:code>. The mylib library itself already contains the code to register the types with the engine. However, that is only useful in cases where we can link against the library. To make the module usable in a QML file loaded by <db:code>qml</db:code>, the <db:link xlink:href="qtquick-qml-runtime.xml#qml-runtime-tool">QML Runtime Tool</db:link>, a plugin is needed that can be loaded. The plugin is then responsible for actually linking against the library, and ensuring that the types get registered.</db:para>
+<db:para>Note that the automatic plugin generation is only possible if the module does not do anything besides registering the types. If it needs to do something more advanced like registering an image provider in <db:code>initializeEngine</db:code>, you still need to manually write the plugin. <db:link xlink:href="qt-add-qml-module.xml#qt6-add-qml-module">qt6_add_qml_module</db:link> has support for this with <db:code>NO_GENERATE_PLUGIN_SOURCE</db:code>.</db:para>
+<db:para>Also, following the directory layout convention helps tooling. That layout is mirrored in the build directory. Which means that you can pass the path to your build directory to the QML tool (via the -I flag), and it will find the plugin.</db:para>
+<db:para>Before concluding add a QML file to the module. In the lib subfolder, add a <db:code>Mistake.qml</db:code> file</db:para>
+<db:programlisting language="cpp">import example.mylib
+
+MyType{
+    answer: 43
+}
+</db:programlisting>
+<db:para>and adjust the <db:code>qt6_add_qml_module</db:code> call:</db:para>
+<db:programlisting language="cpp">qt6_add_qml_module(mylib
+    URI example.mylib
+    VERSION 1.0
+    SOURCES
+        mytype.h mytype.cpp
+    QML_FILES
+        Mistake.qml
+)
+</db:programlisting>
+<db:para>As mentioned, we made a mistake because <db:code>answer</db:code> is actually a read-only property. This illustrates <db:code>qmllint</db:code> integration: CMake creates a <db:code>qmllint</db:code> target, and once we run it, <db:code>qmllint</db:code> warns about the issue:</db:para>
+<db:programlisting language="cpp" role="bad">$&amp;gt; cmake --build . --target mylib_qmllint
+...
+Warning: Mistake.qml:4:13: Cannot assign to read-only property answer
+    answer: 43
+            ^^
+</db:programlisting>
+</db:article>

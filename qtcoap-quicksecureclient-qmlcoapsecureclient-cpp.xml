@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Quick Secure CoAP Client Example</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Securing the CoAP client and using it with a Qt Quick user interface.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;qmlcoapsecureclient.h&quot;
+
+#include &amp;lt;QCoapReply&amp;gt;
+#include &amp;lt;QFile&amp;gt;
+#include &amp;lt;QLoggingCategory&amp;gt;
+#include &amp;lt;QMetaEnum&amp;gt;
+#include &amp;lt;QUrl&amp;gt;
+
+Q_LOGGING_CATEGORY(lcCoapClient, &quot;qt.coap.client&quot;)
+
+QmlCoapSecureClient::QmlCoapSecureClient(QObject *parent)
+    : QObject(parent)
+    , m_coapClient(nullptr)
+    , m_securityMode(QtCoap::SecurityMode::NoSecurity)
+{
+}
+
+QmlCoapSecureClient::~QmlCoapSecureClient()
+{
+    if (m_coapClient) {
+        delete m_coapClient;
+        m_coapClient = nullptr;
+    }
+}
+
+static QString errorMessage(QtCoap::Error errorCode)
+{
+    const auto error = QMetaEnum::fromType&amp;lt;QtCoap::Error&amp;gt;().valueToKey(static_cast&amp;lt;int&amp;gt;(errorCode));
+    return QString(&quot;Request failed with error: %1\n&quot;).arg(error);
+}
+
+void QmlCoapSecureClient::setSecurityMode(QtCoap::SecurityMode mode)
+{
+    // Create a new client, if the security mode has changed
+    if (m_coapClient &amp;amp;&amp;amp; mode != m_securityMode) {
+        delete m_coapClient;
+        m_coapClient = nullptr;
+    }
+
+    if (!m_coapClient) {
+        m_coapClient = new QCoapClient(mode);
+        m_securityMode = mode;
+
+        connect(m_coapClient, &amp;amp;QCoapClient::finished, this,
+                [this](QCoapReply *reply) {
+                    if (!reply)
+                        emit finished(&quot;Something went wrong, received a null reply&quot;);
+                    else if (reply-&amp;gt;errorReceived() != QtCoap::Error::Ok)
+                        emit finished(errorMessage(reply-&amp;gt;errorReceived()));
+                    else
+                        emit finished(reply-&amp;gt;message().payload());
+                });
+
+        connect(m_coapClient, &amp;amp;QCoapClient::error, this,
+                [this](QCoapReply *, QtCoap::Error errorCode) {
+                    emit finished(errorMessage(errorCode));
+                });
+    }
+}
+
+void QmlCoapSecureClient::sendGetRequest(const QString &amp;amp;host, const QString &amp;amp;path, int port)
+{
+    if (!m_coapClient)
+        return;
+
+    m_coapClient-&amp;gt;setSecurityConfiguration(m_configuration);
+
+    QUrl url;
+    url.setHost(host);
+    url.setPath(path);
+    url.setPort(port);
+    m_coapClient-&amp;gt;get(url);
+}
+
+void
+QmlCoapSecureClient::setSecurityConfiguration(const QString &amp;amp;preSharedKey, const QString &amp;amp;identity)
+{
+    QCoapSecurityConfiguration configuration;
+    configuration.setPreSharedKey(preSharedKey.toUtf8());
+    configuration.setPreSharedKeyIdentity(identity.toUtf8());
+    m_configuration = configuration;
+}
+
+void QmlCoapSecureClient::setSecurityConfiguration(const QString &amp;amp;localCertificatePath,
+                                                   const QString &amp;amp;caCertificatePath,
+                                                   const QString &amp;amp;privateKeyPath)
+{
+    QCoapSecurityConfiguration configuration;
+
+    const auto localCerts =
+            QSslCertificate::fromPath(QUrl(localCertificatePath).toLocalFile(), QSsl::Pem,
+                                      QSslCertificate::PatternSyntax::FixedString);
+    if (localCerts.isEmpty())
+        qCWarning(lcCoapClient, &quot;The specified local certificate file is not valid.&quot;);
+    else
+        configuration.setLocalCertificateChain(localCerts.toVector());
+
+    const auto caCerts = QSslCertificate::fromPath(QUrl(caCertificatePath).toLocalFile(), QSsl::Pem,
+                                                   QSslCertificate::PatternSyntax::FixedString);
+    if (caCerts.isEmpty())
+        qCWarning(lcCoapClient, &quot;The specified CA certificate file is not valid.&quot;);
+    else
+        configuration.setCaCertificates(caCerts.toVector());
+
+    QFile privateKey(QUrl(privateKeyPath).toLocalFile());
+    if (privateKey.open(QIODevice::ReadOnly)) {
+        QCoapPrivateKey key(privateKey.readAll(), QSsl::Ec);
+        configuration.setPrivateKey(key);
+    } else {
+        qCWarning(lcCoapClient) &amp;lt;&amp;lt; &quot;Unable to read the specified private key file&quot;
+                                &amp;lt;&amp;lt; privateKeyPath;
+    }
+    m_configuration = configuration;
+}
+
+void QmlCoapSecureClient::disconnect()
+{
+    if (m_coapClient)
+        m_coapClient-&amp;gt;disconnect();
+}
+
+</db:programlisting>
+</db:article>

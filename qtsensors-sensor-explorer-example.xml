@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Sensors - Explorer QML Example</db:title>
+<db:productname>QtSensors</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Sensors Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read the meta-data of available sensors.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qtsensors-examples-sensor-explorer.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The example is implemented as a typical model-view application. The models are written with C++ and exposed to QML, and the views are implemented as QML types in the QML application.</db:para>
+<db:section xml:id="exposing-and-importing-the-models">
+<db:title>Exposing and Importing the Models</db:title>
+<db:para>The QML models written in C++ are exposed in the project build files as a <db:code>SensorModels</db:code> QML module.</db:para>
+<db:para><db:emphasis>CMake</db:emphasis>:</db:para>
+<db:programlisting language="cpp">qt_add_qml_module(sensor_explorer
+    URI SensorModels
+    VERSION 1.0
+)
+</db:programlisting>
+<db:para><db:emphasis>qmake</db:emphasis>:</db:para>
+<db:programlisting language="cpp">CONFIG += qmltypes
+QML_IMPORT_NAME = SensorModels
+QML_IMPORT_MAJOR_VERSION = 1
+</db:programlisting>
+<db:para>The individual model elements are exposed as part of the model code by using the <db:code>QML_ELEMENT</db:code> macro as illustrated here:</db:para>
+<db:programlisting language="cpp">class AvailableSensorsModel: public QAbstractListModel
+{
+    Q_OBJECT
+    QML_ELEMENT
+</db:programlisting>
+<db:para>To access the models in the QML application, the module is imported by the application QML:</db:para>
+<db:programlisting language="qml">import SensorModels
+</db:programlisting>
+</db:section>
+<db:section xml:id="populating-the-model-of-available-sensors">
+<db:title>Populating the Model of Available Sensors</db:title>
+<db:para>The <db:code>AvailableSensorsModel</db:code> is a list model that provides information on available sensors on the device. The model is populated once at the element's construction time:</db:para>
+<db:programlisting language="cpp">beginResetModel();
+m_availableSensors.clear();
+
+for (const QByteArray &amp;amp;type : QSensor::sensorTypes()) {
+    for (const QByteArray &amp;amp;identifier : QSensor::sensorsForType(type)) {
+        QSensor* sensor = new QSensor(type, this);
+        sensor-&amp;gt;setIdentifier(identifier);
+        // Don't put in sensors we can't connect to
+        if (!sensor-&amp;gt;connectToBackend())
+            continue;
+        m_availableSensors.append(sensor);
+    }
+}
+endResetModel();
+</db:programlisting>
+<db:para>The model's <db:code>data()</db:code> function returns a pointer to the requested sensor object.</db:para>
+<db:programlisting language="cpp">QVariant AvailableSensorsModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+    return QVariant::fromValue&amp;lt;QSensor*&amp;gt;(m_availableSensors.at(index.row()));
+}
+</db:programlisting>
+<db:para>Since the sensor (<db:link xlink:href="qsensor.xml">QSensor</db:link>) is a <db:link xlink:href="qobject.xml">QObject</db:link>, the QML is then able to directly access all metaproperties and -functions directly.</db:para>
+<db:note>
+<db:para>It would be possible to refresh the sensor list later at will, but for the simplicity of the example such functionality is not exposed to QML.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="populating-the-model-of-sensor-properties">
+<db:title>Populating the Model of Sensor Properties</db:title>
+<db:para>The <db:code>SensorPropertyModel</db:code> is a table model that provides individual sensor's property-value pairs as columns. The column <db:code>0</db:code> provides the property's name and the column <db:code>1</db:code> provides the property's value. The population of the properties is done by reading the metadata of the sensors. The model reads both the sensor's metadata as well as the sensor's reading's metadata. The code below illustrates the reading of the <db:code>reading</db:code> metadata:</db:para>
+<db:programlisting language="cpp">int firstProperty = QSensorReading::staticMetaObject.propertyOffset();
+QSensorReading *reading = m_sensor-&amp;gt;reading();
+if (reading) {
+    const QMetaObject *mo = reading-&amp;gt;metaObject();
+    for (int i = firstProperty; i &amp;lt; mo-&amp;gt;propertyCount(); ++i) {
+        QByteArray name = mo-&amp;gt;property(i).name();
+        m_values.append(std::tuple&amp;lt;QByteArray, QByteArray&amp;gt;
+                        (name, reading-&amp;gt;property(name).toByteArray()));
+    }
+}
+</db:programlisting>
+<db:para>This metadata access allows providing the model data for all sensors without prior compile-time understanding of their properties.</db:para>
+<db:para>Once the metadata is set, the code then subscribes to the <db:link xlink:href="qsensor.xml#readingChanged">QSensor::readingChanged</db:link>() signal to detect sensor reading changes. Upon such changes (for example a rotation value changes), the model data is updated accordingly.</db:para>
+</db:section>
+<db:section xml:id="viewing-the-models">
+<db:title>Viewing the Models</db:title>
+<db:para>The QML application is based on two views. The first view shows the available sensors as a selectable list. The second view shows the selected sensor's properties and their values. The delegates for viewing the individual items are simplistic <db:emphasis>rectangle and text</db:emphasis> items.</db:para>
+<db:para>Binding the two views functionally together is done by binding the property model's <db:code>sensor</db:code> property to the current selection of the available sensors model:</db:para>
+<db:programlisting language="qml">SensorPropertyModel {
+    id: propertyModel
+    sensor: availableSensorsModel.get(sensorsView.currentIndex)
+}
+</db:programlisting>
+<db:para>When the selected sensor changes, the <db:code>sensor</db:code> of the property model changes accordingly.</db:para>
+<db:para>The following snippet illustrates how the property view is implemented. For more details about QML models and views, please see <db:link xlink:href="qtquick-modelviewsdata-modelview.xml">Models and Views in Qt Quick</db:link>.</db:para>
+<db:programlisting language="qml">TableView {
+    id: propertyView
+    anchors.fill: parent
+    model: propertyModel
+    columnSpacing: 1
+    rowSpacing: 1
+    boundsMovement: Flickable.StopAtBounds
+    clip: true
+
+    delegate: Rectangle {
+        implicitHeight: 30
+        implicitWidth: propertyView.width * 0.5
+        color: (model.row % 2 == 0) ? &quot;#CCCCCC&quot; : &quot;#AAAAAA&quot;
+        Text {
+            anchors.centerIn: parent
+            text: display
+        }
+    }
+}
+</db:programlisting>
+<db:para>For clarity it should be mentioned that the <db:code>display</db:code> attribute used by the text element refers to the <db:link xlink:href="qt.xml#ItemDataRole-enum">Qt::DisplayRole</db:link> role of the model, which is provided by default by Qt models.</db:para>
+</db:section>
+<db:section xml:id="activating-the-sensors">
+<db:title>Activating the Sensors</db:title>
+<db:para>The example has a button for activating and deactivating the currently selected sensor. The button is enabled only if a sensor is currently selected, as illustrated below.</db:para>
+<db:programlisting language="qml">Button {
+    id: activateButton
+    Layout.preferredHeight: 30
+    Layout.alignment: Qt.AlignCenter
+    enabled: propertyModel.sensor
+    text: !propertyModel.sensor ? qsTr(&quot;Select sensor&quot;)
+                                : (propertyModel.sensor.active ? qsTr(&quot;Deactivate sensor&quot;)
+                                                               : qsTr(&quot;Activate sensor&quot;))
+    onClicked: propertyModel.sensor.active = !propertyModel.sensor.active
+}
+</db:programlisting>
+<db:para>On clicking the button, the sensor's active property is toggled on/off.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtsensors.git/tree/examples/sensors/sensor_explorer?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

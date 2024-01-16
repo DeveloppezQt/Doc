@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt 5 and Qt 6 compatibility</db:title>
+<db:productname>QtCMake</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Using Qt with CMake</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="cmake-imported-targets.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Imported targets"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="cmake-command-reference.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="CMake Command Reference"/></db:extendedlink>
+<db:abstract>
+<db:para>Using Qt with CMake.</db:para></db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The semantics of the CMake API in Qt 5 and Qt 6 are largely compatible. However, up to Qt 5.14, all imported Qt library targets and commands contained the version number as part of the name. This makes writing CMake code that should work with both Qt 5 and Qt 6 somewhat cumbersome. Qt 5.15 therefore introduced <db:emphasis>versionless</db:emphasis> targets and commands to enable writing CMake code that is largely agnostic to the different Qt versions.</db:para>
+<db:section xml:id="versionless-targets">
+<db:title>Versionless targets</db:title>
+<db:para>In addition to the existing imported targets, Qt 5.15 introduced <db:emphasis>versionless</db:emphasis> targets. That is, to link against <db:link xlink:href="qtcore-index.xml">Qt Core</db:link> one can both reference <db:code>Qt6::Core</db:code>, or <db:code>Qt::Core</db:code>:</db:para>
+<db:programlisting language="cpp">find_package(Qt6 COMPONENTS Core)
+if (NOT Qt6_FOUND)
+    find_package(Qt5 5.15 REQUIRED COMPONENTS Core)
+endif()
+
+add_executable(helloworld
+    ...
+)
+
+target_link_libraries(helloworld PRIVATE Qt::Core)
+</db:programlisting>
+<db:para>Above snippet first tries to find a Qt 6 installation. If that fails, it tries to find a Qt 5.15 package. Independent of whether Qt 6 or Qt 5 is used, we can use the imported <db:code>Qt::Core</db:code> target.</db:para>
+<db:para>The versionless targets are defined by default. Set <db:link xlink:href="cmake-variable-reference.xml#qt-no-create-versionless-targets">QT_NO_CREATE_VERSIONLESS_TARGETS</db:link> before the first <db:code>find_package()</db:code> call to disable them.</db:para>
+<db:note>
+<db:para>The imported Qt::Core target will not feature the target properties that are available in the Qt6::Core target.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="versionless-commands">
+<db:title>Versionless commands</db:title>
+<db:para>Since Qt 5.15, the Qt modules also provide versionless variants of their <db:link xlink:href="cmake-command-reference.xml">commands</db:link>. You can for instance now use <db:link xlink:href="qtlinguist-cmake-qt-add-translation.xml">qt_add_translation</db:link> to compile translation files, independent of whether you use Qt 5 or Qt 6.</db:para>
+<db:para>Set <db:link xlink:href="cmake-variable-reference.xml#qt-no-create-versionless-functions">QT_NO_CREATE_VERSIONLESS_FUNCTIONS</db:link> before the first <db:code>find_package()</db:code> call to prevent the creation of versionless commands.</db:para>
+</db:section>
+<db:section xml:id="mixing-qt-5-and-qt-6">
+<db:title>Mixing Qt 5 and Qt 6</db:title>
+<db:para>There might be projects that need to load both Qt 5 and Qt 6 in one CMake context (though mixing Qt versions in one library or executable is not supported, so be careful there).</db:para>
+<db:para>In such a setup the versionless targets and commands will be implicitly referring to the first Qt version that was found via <db:code>find_package</db:code>. Set the <db:link xlink:href="cmake-variable-reference.xml#qt-default-major-version">QT_DEFAULT_MAJOR_VERSION</db:link> CMake variable before the first <db:code>find_package</db:code> call to make the version explicit.</db:para>
+</db:section>
+<db:section xml:id="supporting-older-qt-5-versions">
+<db:title>Supporting older Qt 5 versions</db:title>
+<db:para>If you need to support also Qt 5 versions older than Qt 5.15, you can do so by storing the current version in an CMake variable:</db:para>
+<db:programlisting language="cpp">find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core)
+
+add_executable(helloworld
+    ...
+)
+
+target_link_libraries(helloworld PRIVATE Qt${QT_VERSION_MAJOR}::Core)
+</db:programlisting>
+<db:para>Here we let <db:code>find_package(&lt;PackageName&gt;...)</db:code> try to find first Qt 6, and if that fails Qt 5, under the name <db:code>QT</db:code>. If either of them is found, <db:code>find_package</db:code> will succeed, and the CMake variable <db:code>QT_VERSION_MAJOR</db:code> will be defined to either <db:code>5</db:code> or <db:code>6</db:code>.</db:para>
+<db:para>We then do load the package for the determined Qt version again by creating the name <db:code>Qt${QT_VERSION_MAJOR}</db:code> on the fly. This is needed because <db:code>CMAKE_AUTOMOC</db:code> expects the package name to be either <db:code>Qt5</db:code> or <db:code>Qt6</db:code>, and will print an error otherwise.</db:para>
+<db:para>We can use the same pattern to also specify the name of the imported library. Before calling <db:code>target_link_libraries</db:code>, CMake will resolve <db:code>Qt${QT_VERSION_MAJOR}::Widgets</db:code> to either <db:code>Qt5::Widgets</db:code> or <db:code>Qt6::Widgets</db:code>.</db:para>
+</db:section>
+<db:section xml:id="recommended-practices">
+<db:title>Recommended practices</db:title>
+<db:para>Use the versionless variants of the CMake commands where possible.</db:para>
+<db:para>Versionless imported targets are mostly useful for projects that need to compile with both Qt 5 and Qt 6. Because of the missing target properties, we do not recommend using them by default.</db:para>
+<db:para>Use the versioned versions of the CMake commands and targets if you need to support Qt 5 versions older than Qt 5.15, or if you cannot control whether your CMake code is loaded in a context where <db:link xlink:href="cmake-variable-reference.xml#qt-no-create-versionless-functions">QT_NO_CREATE_VERSIONLESS_FUNCTIONS</db:link> or <db:link xlink:href="cmake-variable-reference.xml#qt-no-create-versionless-targets">QT_NO_CREATE_VERSIONLESS_TARGETS</db:link> might be defined. In this case you can still simplify your code by determining the actual command or target name through a variable.</db:para>
+</db:section>
+<db:section xml:id="unicode-support-in-windows">
+<db:title>Unicode support in Windows</db:title>
+<db:para>In Qt 6, the <db:code>UNICODE</db:code> and <db:code>_UNICODE</db:code> compiler definitions are set by default for targets that link against Qt modules. This is in line with the qmake behavior, but it is a change compared to the CMake API behavior in Qt 5.</db:para>
+<db:para>Call <db:link xlink:href="qt-disable-unicode-defines.xml#qt6-disable-unicode-defines">qt_disable_unicode_defines()</db:link> on the target to not set the definitions.</db:para>
+<db:programlisting language="cpp">find_package(Qt6 COMPONENTS Core)
+
+add_executable(helloworld
+    ...
+)
+
+qt_disable_unicode_defines(helloworld)
+</db:programlisting>
+</db:section>
+</db:article>

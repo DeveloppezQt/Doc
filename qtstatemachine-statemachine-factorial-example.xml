@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Factorial States Example</db:title>
+<db:productname>QtStateMachine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt State Machine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Factorial States example shows how to use <db:link xlink:href="qtstatemachine-overview.xml">Qt State Machine Overview</db:link> to calculate the factorial of an integer.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The statechart for calculating the factorial looks as follows:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/factorial-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In other words, the state machine calculates the factorial of 6 and prints the result.</db:para>
+<db:programlisting language="cpp">class Factorial : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int x READ x WRITE setX)
+    Q_PROPERTY(int fac READ fac WRITE setFac)
+public:
+    using QObject::QObject;
+
+    int x() const
+    {
+        return m_x;
+    }
+
+    void setX(int x)
+    {
+        if (x == m_x)
+            return;
+        m_x = x;
+        emit xChanged(x);
+    }
+
+    int fac() const
+    {
+        return m_fac;
+    }
+
+    void setFac(int fac)
+    {
+        m_fac = fac;
+    }
+
+Q_SIGNALS:
+    void xChanged(int value);
+
+private:
+    int m_x = -1;
+    int m_fac = 1;
+};
+</db:programlisting>
+<db:para>The Factorial class is used to hold the data of the computation, <db:code>x</db:code> and <db:code>fac</db:code>. It also provides a signal that's emitted whenever the value of <db:code>x</db:code> changes.</db:para>
+<db:programlisting language="cpp">class FactorialLoopTransition : public QSignalTransition
+{
+public:
+    FactorialLoopTransition(Factorial *fact)
+        : QSignalTransition(fact, &amp;amp;Factorial::xChanged), m_fact(fact)
+    {}
+
+    bool eventTest(QEvent *e) override
+    {
+        if (!QSignalTransition::eventTest(e))
+            return false;
+        QStateMachine::SignalEvent *se = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(e);
+        return se-&amp;gt;arguments().at(0).toInt() &amp;gt; 1;
+    }
+
+    void onTransition(QEvent *e) override
+    {
+        QStateMachine::SignalEvent *se = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(e);
+        int x = se-&amp;gt;arguments().at(0).toInt();
+        int fac = m_fact-&amp;gt;property(&quot;fac&quot;).toInt();
+        m_fact-&amp;gt;setProperty(&quot;fac&quot;,  x * fac);
+        m_fact-&amp;gt;setProperty(&quot;x&quot;,  x - 1);
+    }
+
+private:
+    Factorial *m_fact;
+};
+</db:programlisting>
+<db:para>The FactorialLoopTransition class implements the guard (<db:code>x</db:code> &gt; 1) and calculations (<db:code>fac</db:code> = <db:code>x</db:code> * <db:code>fac</db:code>; <db:code>x</db:code> = <db:code>x</db:code> - 1) of the factorial loop.</db:para>
+<db:programlisting language="cpp">class FactorialDoneTransition : public QSignalTransition
+{
+public:
+    FactorialDoneTransition(Factorial *fact)
+        : QSignalTransition(fact, &amp;amp;Factorial::xChanged), m_fact(fact)
+    {}
+
+    bool eventTest(QEvent *e) override
+    {
+        if (!QSignalTransition::eventTest(e))
+            return false;
+        QStateMachine::SignalEvent *se = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(e);
+        return se-&amp;gt;arguments().at(0).toInt() &amp;lt;= 1;
+    }
+
+    void onTransition(QEvent *) override
+    {
+        qInfo() &amp;lt;&amp;lt; m_fact-&amp;gt;property(&quot;fac&quot;).toInt();
+    }
+
+private:
+    Factorial *m_fact;
+};
+</db:programlisting>
+<db:para>The FactorialDoneTransition class implements the guard (<db:code>x</db:code> &lt;= 1) that terminates the factorial computation. It also prints the final result to standard output.</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+    Factorial factorial;
+    QStateMachine machine;
+</db:programlisting>
+<db:para>The application's main() function first creates the application object, a Factorial object and a state machine.</db:para>
+<db:programlisting language="cpp">    QState *compute = new QState(&amp;amp;machine);
+    compute-&amp;gt;assignProperty(&amp;amp;factorial, &quot;fac&quot;, 1);
+    compute-&amp;gt;assignProperty(&amp;amp;factorial, &quot;x&quot;, 6);
+    compute-&amp;gt;addTransition(new FactorialLoopTransition(&amp;amp;factorial));
+</db:programlisting>
+<db:para>The <db:code>compute</db:code> state is created, and the initial values of <db:code>x</db:code> and <db:code>fac</db:code> are defined. A FactorialLoopTransition object is created and added to the state.</db:para>
+<db:programlisting language="cpp">    QFinalState *done = new QFinalState(&amp;amp;machine);
+    FactorialDoneTransition *doneTransition = new FactorialDoneTransition(&amp;amp;factorial);
+    doneTransition-&amp;gt;setTargetState(done);
+    compute-&amp;gt;addTransition(doneTransition);
+</db:programlisting>
+<db:para>A final state, <db:code>done</db:code>, is created, and a FactorialDoneTransition object is created with <db:code>done</db:code> as its target state. The transition is then added to the <db:code>compute</db:code> state.</db:para>
+<db:programlisting language="cpp">    machine.setInitialState(compute);
+    QObject::connect(&amp;amp;machine, &amp;amp;QStateMachine::finished, &amp;amp;app, QCoreApplication::quit);
+    machine.start();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The machine's initial state is set to be the <db:code>compute</db:code> state. We connect the <db:link xlink:href="qstate.xml#finished">QStateMachine::finished</db:link>() signal to the <db:link xlink:href="qcoreapplication.xml#quit">QCoreApplication::quit</db:link>() slot, so the application will quit when the state machine's work is done. Finally, the state machine is started, and the application's event loop is entered.</db:para>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtscxml.git/tree/examples/statemachine/statemachine/factorial?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

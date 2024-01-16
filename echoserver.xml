@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebSocket server example</db:title>
+<db:productname>QtWebSockets</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebSockets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A sample WebSocket server echoing back messages sent to it.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="description">
+<db:title>Description</db:title>
+<db:para>The echoserver example implements a WebSocket server that echoes back everything that is sent to it.</db:para>
+</db:section>
+<db:section xml:id="code">
+<db:title>Code</db:title>
+<db:para>We start by creating a <db:link xlink:href="qwebsocketserver.xml">QWebSocketServer</db:link> (`new QWebSocketServer()`). After the creation, we listen on all local network interfaces (`<db:link xlink:href="qhostaddress.xml#SpecialAddress-enum">QHostAddress::Any</db:link>`) on the specified <db:code role="parameter">port</db:code>.</db:para>
+<db:programlisting language="cpp">EchoServer::EchoServer(quint16 port, bool debug, QObject *parent) :
+    QObject(parent),
+    m_pWebSocketServer(new QWebSocketServer(QStringLiteral(&quot;Echo Server&quot;),
+                                            QWebSocketServer::NonSecureMode, this)),
+    m_debug(debug)
+{
+    if (m_pWebSocketServer-&amp;gt;listen(QHostAddress::Any, port)) {
+        if (m_debug)
+            qDebug() &amp;lt;&amp;lt; &quot;Echoserver listening on port&quot; &amp;lt;&amp;lt; port;
+        connect(m_pWebSocketServer, &amp;amp;QWebSocketServer::newConnection,
+                this, &amp;amp;EchoServer::onNewConnection);
+        connect(m_pWebSocketServer, &amp;amp;QWebSocketServer::closed, this, &amp;amp;EchoServer::closed);
+    }
+}
+</db:programlisting>
+<db:para>If listening is successful, we connect the `newConnection()` signal to the slot `onNewConnection()`. The `newConnection()` signal will be thrown whenever a new WebSocket client is connected to our server.</db:para>
+<db:programlisting language="cpp">void EchoServer::onNewConnection()
+{
+    QWebSocket *pSocket = m_pWebSocketServer-&amp;gt;nextPendingConnection();
+
+    connect(pSocket, &amp;amp;QWebSocket::textMessageReceived, this, &amp;amp;EchoServer::processTextMessage);
+    connect(pSocket, &amp;amp;QWebSocket::binaryMessageReceived, this, &amp;amp;EchoServer::processBinaryMessage);
+    connect(pSocket, &amp;amp;QWebSocket::disconnected, this, &amp;amp;EchoServer::socketDisconnected);
+
+    m_clients &amp;lt;&amp;lt; pSocket;
+}
+</db:programlisting>
+<db:para>When a new connection is received, the client <db:link xlink:href="qwebsocket.xml">QWebSocket</db:link> is retrieved (`nextPendingConnection()`), and the signals we are interested in are connected to our slots (`textMessageReceived()`, `binaryMessageReceived()` and `disconnected()`). The client socket is remembered in a list, in case we would like to use it later (in this example, nothing is done with it).</db:para>
+<db:programlisting language="cpp">void EchoServer::processTextMessage(QString message)
+{
+    QWebSocket *pClient = qobject_cast&amp;lt;QWebSocket *&amp;gt;(sender());
+    if (m_debug)
+        qDebug() &amp;lt;&amp;lt; &quot;Message received:&quot; &amp;lt;&amp;lt; message;
+    if (pClient) {
+        pClient-&amp;gt;sendTextMessage(message);
+    }
+}
+</db:programlisting>
+<db:para>Whenever `processTextMessage()` is triggered, we retrieve the sender, and if valid, send back the original message (`sendTextMessage()`). The same is done with binary messages.</db:para>
+<db:programlisting language="cpp">void EchoServer::processBinaryMessage(QByteArray message)
+{
+    QWebSocket *pClient = qobject_cast&amp;lt;QWebSocket *&amp;gt;(sender());
+    if (m_debug)
+        qDebug() &amp;lt;&amp;lt; &quot;Binary Message received:&quot; &amp;lt;&amp;lt; message;
+    if (pClient) {
+        pClient-&amp;gt;sendBinaryMessage(message);
+    }
+}
+</db:programlisting>
+<db:para>The only difference is that the message now is a <db:link xlink:href="qbytearray.xml">QByteArray</db:link> instead of a <db:link xlink:href="qstring.xml">QString</db:link>.</db:para>
+<db:programlisting language="cpp">void EchoServer::socketDisconnected()
+{
+    QWebSocket *pClient = qobject_cast&amp;lt;QWebSocket *&amp;gt;(sender());
+    if (m_debug)
+        qDebug() &amp;lt;&amp;lt; &quot;socketDisconnected:&quot; &amp;lt;&amp;lt; pClient;
+    if (pClient) {
+        m_clients.removeAll(pClient);
+        pClient-&amp;gt;deleteLater();
+    }
+}
+</db:programlisting>
+<db:para>Whenever a socket is disconnected, we remove it from the clients list and delete the socket. Note: it is best to use `deleteLater()` to delete the socket.</db:para>
+</db:section>
+</db:article>
