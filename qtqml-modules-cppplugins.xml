@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Creating C++ Plugins for QML</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 5.11.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how to write C++ plugins for QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="creating-a-plugin">
+<db:title>Creating a Plugin</db:title>
+<db:para>The <db:link xlink:href="qqmlengine.xml">QML engine</db:link> loads C++ plugins for QML. Such plugins are usually provided in a QML extension module, and can provide types for use by clients in QML documents which import the module. A module requires at least one type registered in order to be considered valid.</db:para>
+<db:para><db:link xlink:href="qqmlextensionplugin.xml">QQmlExtensionPlugin</db:link> is a plugin interface that makes it possible to create QML extensions that can be loaded dynamically into QML applications. These extensions allow custom QML types to be made available to the QML engine.</db:para>
+<db:para>To write a QML extension plugin:</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Subclass <db:link xlink:href="qqmlextensionplugin.xml">QQmlExtensionPlugin</db:link></db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Use the <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() macro to register the plugin with the Qt meta object system</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Override the <db:link xlink:href="qqmlextensionplugin.xml#registerTypes">registerTypes</db:link>() method and call <db:link xlink:href="qqmlengine.xml#qmlRegisterType-2">qmlRegisterType</db:link>() to register the types to be exported by the plugin</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:listitem>
+<db:listitem>
+<db:para>Write a project file for the plugin</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Create a <db:link xlink:href="qtqml-modules-qmldir.xml">qmldir file</db:link> to describe the plugin</db:para>
+</db:listitem>
+</db:orderedlist>
+<db:para>QML extension plugins are for either application-specific or library-like plugins. Library plugins should limit themselves to registering types, as any manipulation of the engine's root context may cause conflicts or other issues in the library user's code.</db:para>
+</db:section>
+<db:section xml:id="plugin-example">
+<db:title>Plugin Example</db:title>
+<db:para>Suppose there is a new TimeModel C++ class that should be made available as a new QML type. It provides the current time through hour and minute properties.</db:para>
+<db:programlisting language="cpp">class TimeModel : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int hour READ hour NOTIFY timeChanged)
+    Q_PROPERTY(int minute READ minute NOTIFY timeChanged)
+    ...
+</db:programlisting>
+<db:para>To make this type available, we create a plugin class named QExampleQmlPlugin which is a subclass of <db:link xlink:href="qqmlextensionplugin.xml">QQmlExtensionPlugin</db:link>. It overrides the <db:link xlink:href="qqmlextensionplugin.xml#registerTypes">registerTypes</db:link>() method in order to register the TimeModel type using <db:link xlink:href="qqmlengine.xml#qmlRegisterType-2">qmlRegisterType</db:link>(). It also uses the <db:link xlink:href="qtplugin.xml#Q_PLUGIN_METADATA">Q_PLUGIN_METADATA</db:link>() macro in the class definition to register the plugin with the Qt meta object system using a unique identifier for the plugin.</db:para>
+<db:programlisting language="cpp">class QExampleQmlPlugin : public QQmlExtensionPlugin
+{
+    Q_OBJECT
+    Q_PLUGIN_METADATA(IID QQmlExtensionInterface_iid)
+
+public:
+    void registerTypes(const char *uri) override
+    {
+        Q_ASSERT(uri == QLatin1String(&quot;TimeExample&quot;));
+        qmlRegisterType&amp;lt;TimeModel&amp;gt;(uri, 1, 0, &quot;Time&quot;);
+    }
+};
+</db:programlisting>
+<db:para>This registers the TimeModel class with version 1.0 of this plugin library, as a QML type called Time. The <db:link xlink:href="qtglobal.xml#Q_ASSERT">Q_ASSERT</db:link>() macro can ensure the type namespace is imported correctly by any QML components that use this plugin. The <db:link xlink:href="qtqml-cppintegration-definetypes.xml">Defining QML Types from C++</db:link> article has more information about registering C++ types into the runtime.</db:para>
+<db:para>Additionally, the project file (.pro) defines the project as a plugin library, specifies it should be built into the imports/TimeExample directory, and registers the plugin target name and various other details:</db:para>
+<db:programlisting language="cpp">TEMPLATE = lib
+CONFIG += qt plugin
+QT += qml
+
+DESTDIR = imports/TimeExample
+TARGET = qmlqtimeexampleplugin
+SOURCES += qexampleqmlplugin.cpp
+</db:programlisting>
+<db:para>Finally, a <db:link xlink:href="qtqml-modules-qmldir.xml">qmldir file</db:link> is required in the imports/TimeExample directory to describe the plugin and the types that it exports. The plugin includes a Clock.qml file along with the qmlqtimeexampleplugin that is built by the project (as shown above in the .pro file) so both of these need to be specified in the qmldir file:</db:para>
+<db:programlisting language="cpp">module TimeExample
+Clock 1.0 Clock.qml
+plugin qmlqtimeexampleplugin
+</db:programlisting>
+<db:para>To make things easier for this example, the TimeExample source directory is in imports/TimeExample, and we build <db:link xlink:href="configure-options.xml#source-build-and-install-directories">in-source</db:link>. However, the structure of the source directory is not so important, as the qmldir file can specify paths to installed QML files.</db:para>
+<db:para>What is important is the name of the directory that the qmldir is installed into. When the user imports our module, the QML engine uses the <db:link xlink:href="qtqml-modules-qmldir.xml#contents-of-a-module-definition-qmldir-file">module identifier</db:link> (TimeExample) to find the plugin, and so the directory in which it is installed must match the module identifier.</db:para>
+<db:para>Once the project is built and installed, the new Time component is accessible by any QML component that imports the TimeExample module</db:para>
+<db:programlisting language="qml">import TimeExample 1.0 // import types from the plugin
+
+Clock { // this class is defined in QML (imports/TimeExample/Clock.qml)
+
+    Time { // this class is defined in C++ (plugin.cpp)
+        id: time
+    }
+
+    hours: time.hour
+    minutes: time.minute
+
+}
+</db:programlisting>
+<db:para>The full source code is available in the <db:link xlink:href="qtqml-qmlextensionplugins-example.xml">plugins example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="reference">
+<db:title>Reference</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qtqml-tutorials-extending-qml-example.xml">Writing QML Extensions with C++</db:link> - contains a chapter on creating QML plugins.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qtqml-cppintegration-definetypes.xml">Defining QML Types from C++</db:link> - information about registering C++ types into the runtime.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="plugins-howto.xml">How to Create Qt Plugins</db:link> - information about Qt plugins</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:article>

@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Defining JavaScript Resources in QML</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 5.11.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of how JavaScript files may be defined for use in QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The program logic for a QML application may be defined in JavaScript. The JavaScript code may either be defined in-line in QML documents, or separated into JavaScript files (known as JavaScript Resources in QML).</db:para>
+<db:para>There are two different kinds of JavaScript resources which are supported in QML: code-behind implementation files, and shared (library) files. Both kinds of JavaScript resource may be <db:link xlink:href="qtqml-javascript-imports.xml">imported</db:link> by other JavaScript resources, or included in <db:link xlink:href="qtqml-modules-topic.xml">QML modules</db:link>.</db:para>
+<db:section xml:id="code-behind-implementation-resource">
+<db:title>Code-Behind Implementation Resource</db:title>
+<db:para>Most JavaScript files imported into a QML document are stateful implementations for the QML document importing them. In these cases, each instance of the QML object type defined in the document requires a separate copy of the JavaScript objects and state in order to behave correctly.</db:para>
+<db:para>The default behavior when importing JavaScript files is to provide a unique, isolated copy for each QML component instance. If that JavaScript file does not import any resources or modules with a .import statement, its code will run in the same scope as the QML component instance and consequently can access and manipulate the objects and properties declared in that QML component. Otherwise, it will have its own unique scope, and objects and properties of the QML component should be passed to the functions of the JavaScript file as parameters if they are required.</db:para>
+<db:para>An example of a code-behind implementation resource follows:</db:para>
+<db:programlisting language="cpp">// MyButton.qml
+import QtQuick 2.0
+import &quot;my_button_impl.js&quot; as Logic // A new instance of this JavaScript resource
+                                    // is loaded for each instance of Button.qml.
+
+Rectangle {
+    id: rect
+    width: 200
+    height: 100
+    color: &quot;red&quot;
+
+    MouseArea {
+        id: mousearea
+        anchors.fill: parent
+        onClicked: Logic.onClicked(rect)
+    }
+}
+</db:programlisting>
+<db:programlisting language="cpp">// my_button_impl.js
+var clickCount = 0;   // this state is separate for each instance of MyButton
+function onClicked(button) {
+    clickCount += 1;
+    if ((clickCount % 5) == 0) {
+        button.color = Qt.rgba(1,0,0,1);
+    } else {
+        button.color = Qt.rgba(0,1,0,1);
+    }
+}
+</db:programlisting>
+<db:para>In general, simple logic should be defined in-line in the QML file, but more complex logic should be separated into code-behind implementation resources for maintainability and readability.</db:para>
+</db:section>
+<db:section xml:id="shared-javascript-resources-libraries">
+<db:title>Shared JavaScript Resources (Libraries)</db:title>
+<db:para>By default, JavaScript files imported from QML share their context with the QML component. That means the JavaScript files have access to the same QML objects and can modify them. As a consequence, each import must have a unique copy of these files.</db:para>
+<db:para><db:link xlink:href="qtqml-javascript-resources.xml#code-behind-implementation-resource">The previous section</db:link> covers stateful imports of JavaScript files. However, some JavaScript files are stateless and act more like reusable libraries, in the sense that they provide a set of helper functions that do not require anything from where they were imported from. You can save significant amounts of memory and speed up the instantiation of QML components if you mark such libraries with a special pragma, as shown in the following example.</db:para>
+<db:programlisting language="cpp">// factorial.js
+.pragma library
+
+var factorialCount = 0;
+
+function factorial(a) {
+    a = parseInt(a);
+
+    // factorial recursion
+    if (a &amp;gt; 0)
+        return a * factorial(a - 1);
+
+    // shared state
+    factorialCount += 1;
+
+    // recursion base-case.
+    return 1;
+}
+
+function factorialCallCount() {
+    return factorialCount;
+}
+</db:programlisting>
+<db:para>The pragma declaration must appear before any JavaScript code excluding comments.</db:para>
+<db:para>Note that multiple QML documents can import &quot;factorial.js&quot; and call the factorial and factorialCallCount functions that it provides. The state of the JavaScript import is shared across the QML documents which import it, and thus the return value of the factorialCallCount function may be non-zero when called within a QML document which never calls the factorial function.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">// Calculator.qml
+import QtQuick 2.0
+import &quot;factorial.js&quot; as FactorialCalculator // This JavaScript resource is only
+                                             // ever loaded once by the engine,
+                                             // even if multiple instances of
+                                             // Calculator.qml are created.
+
+Text {
+    width: 500
+    height: 100
+    property int input: 17
+    text: &quot;The factorial of &quot; + input + &quot; is: &quot; + FactorialCalculator.factorial(input)
+}
+</db:programlisting>
+<db:para>As they are shared, .pragma library files cannot access QML component instance objects or properties directly, although QML values can be passed as function parameters.</db:para>
+</db:section>
+</db:article>
