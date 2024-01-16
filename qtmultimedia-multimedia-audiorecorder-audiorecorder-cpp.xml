@@ -1,0 +1,393 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Audio Recorder Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Discovering the available devices and supported codecs.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;audiorecorder.h&quot;
+#include &quot;audiolevel.h&quot;
+
+#include &quot;ui_audiorecorder.h&quot;
+
+#include &amp;lt;QAudioProbe&amp;gt;
+#include &amp;lt;QAudioRecorder&amp;gt;
+#include &amp;lt;QDir&amp;gt;
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QMediaRecorder&amp;gt;
+#include &amp;lt;QStandardPaths&amp;gt;
+
+static qreal getPeakValue(const QAudioFormat &amp;amp;format);
+static QVector&amp;lt;qreal&amp;gt; getBufferLevels(const QAudioBuffer &amp;amp;buffer);
+
+template &amp;lt;class T&amp;gt;
+static QVector&amp;lt;qreal&amp;gt; getBufferLevels(const T *buffer, int frames, int channels);
+
+AudioRecorder::AudioRecorder()
+    : ui(new Ui::AudioRecorder)
+{
+    ui-&amp;gt;setupUi(this);
+
+    m_audioRecorder = new QAudioRecorder(this);
+    m_probe = new QAudioProbe(this);
+    connect(m_probe, &amp;amp;QAudioProbe::audioBufferProbed,
+            this, &amp;amp;AudioRecorder::processBuffer);
+    m_probe-&amp;gt;setSource(m_audioRecorder);
+
+    //audio devices
+    ui-&amp;gt;audioDeviceBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(QString()));
+    for (auto &amp;amp;device: m_audioRecorder-&amp;gt;audioInputs()) {
+        ui-&amp;gt;audioDeviceBox-&amp;gt;addItem(device, QVariant(device));
+    }
+
+    //audio codecs
+    ui-&amp;gt;audioCodecBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(QString()));
+    for (auto &amp;amp;codecName: m_audioRecorder-&amp;gt;supportedAudioCodecs()) {
+        ui-&amp;gt;audioCodecBox-&amp;gt;addItem(codecName, QVariant(codecName));
+    }
+
+    //containers
+    ui-&amp;gt;containerBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(QString()));
+    for (auto &amp;amp;containerName: m_audioRecorder-&amp;gt;supportedContainers()) {
+        ui-&amp;gt;containerBox-&amp;gt;addItem(containerName, QVariant(containerName));
+    }
+
+    //sample rate
+    ui-&amp;gt;sampleRateBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(0));
+    for (int sampleRate: m_audioRecorder-&amp;gt;supportedAudioSampleRates()) {
+        ui-&amp;gt;sampleRateBox-&amp;gt;addItem(QString::number(sampleRate), QVariant(
+                sampleRate));
+    }
+
+    //channels
+    ui-&amp;gt;channelsBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(-1));
+    ui-&amp;gt;channelsBox-&amp;gt;addItem(QStringLiteral(&quot;1&quot;), QVariant(1));
+    ui-&amp;gt;channelsBox-&amp;gt;addItem(QStringLiteral(&quot;2&quot;), QVariant(2));
+    ui-&amp;gt;channelsBox-&amp;gt;addItem(QStringLiteral(&quot;4&quot;), QVariant(4));
+
+    //quality
+    ui-&amp;gt;qualitySlider-&amp;gt;setRange(0, int(QMultimedia::VeryHighQuality));
+    ui-&amp;gt;qualitySlider-&amp;gt;setValue(int(QMultimedia::NormalQuality));
+
+    //bitrates:
+    ui-&amp;gt;bitrateBox-&amp;gt;addItem(tr(&quot;Default&quot;), QVariant(0));
+    ui-&amp;gt;bitrateBox-&amp;gt;addItem(QStringLiteral(&quot;32000&quot;), QVariant(32000));
+    ui-&amp;gt;bitrateBox-&amp;gt;addItem(QStringLiteral(&quot;64000&quot;), QVariant(64000));
+    ui-&amp;gt;bitrateBox-&amp;gt;addItem(QStringLiteral(&quot;96000&quot;), QVariant(96000));
+    ui-&amp;gt;bitrateBox-&amp;gt;addItem(QStringLiteral(&quot;128000&quot;), QVariant(128000));
+
+    connect(m_audioRecorder, &amp;amp;QAudioRecorder::durationChanged, this, &amp;amp;AudioRecorder::updateProgress);
+    connect(m_audioRecorder, &amp;amp;QAudioRecorder::statusChanged, this, &amp;amp;AudioRecorder::updateStatus);
+    connect(m_audioRecorder, &amp;amp;QAudioRecorder::stateChanged, this, &amp;amp;AudioRecorder::onStateChanged);
+    connect(m_audioRecorder, QOverload&amp;lt;QMediaRecorder::Error&amp;gt;::of(&amp;amp;QAudioRecorder::error), this,
+            &amp;amp;AudioRecorder::displayErrorMessage);
+}
+
+void AudioRecorder::updateProgress(qint64 duration)
+{
+    if (m_audioRecorder-&amp;gt;error() != QMediaRecorder::NoError || duration &amp;lt; 2000)
+        return;
+
+    ui-&amp;gt;statusbar-&amp;gt;showMessage(tr(&quot;Recorded %1 sec&quot;).arg(duration / 1000));
+}
+
+void AudioRecorder::updateStatus(QMediaRecorder::Status status)
+{
+    QString statusMessage;
+
+    switch (status) {
+    case QMediaRecorder::RecordingStatus:
+        statusMessage = tr(&quot;Recording to %1&quot;).arg(m_audioRecorder-&amp;gt;actualLocation().toString());
+        break;
+    case QMediaRecorder::PausedStatus:
+        clearAudioLevels();
+        statusMessage = tr(&quot;Paused&quot;);
+        break;
+    case QMediaRecorder::UnloadedStatus:
+    case QMediaRecorder::LoadedStatus:
+        clearAudioLevels();
+        statusMessage = tr(&quot;Stopped&quot;);
+    default:
+        break;
+    }
+
+    if (m_audioRecorder-&amp;gt;error() == QMediaRecorder::NoError)
+        ui-&amp;gt;statusbar-&amp;gt;showMessage(statusMessage);
+}
+
+void AudioRecorder::onStateChanged(QMediaRecorder::State state)
+{
+    switch (state) {
+    case QMediaRecorder::RecordingState:
+        ui-&amp;gt;recordButton-&amp;gt;setText(tr(&quot;Stop&quot;));
+        ui-&amp;gt;pauseButton-&amp;gt;setText(tr(&quot;Pause&quot;));
+        break;
+    case QMediaRecorder::PausedState:
+        ui-&amp;gt;recordButton-&amp;gt;setText(tr(&quot;Stop&quot;));
+        ui-&amp;gt;pauseButton-&amp;gt;setText(tr(&quot;Resume&quot;));
+        break;
+    case QMediaRecorder::StoppedState:
+        ui-&amp;gt;recordButton-&amp;gt;setText(tr(&quot;Record&quot;));
+        ui-&amp;gt;pauseButton-&amp;gt;setText(tr(&quot;Pause&quot;));
+        break;
+    }
+
+    ui-&amp;gt;pauseButton-&amp;gt;setEnabled(m_audioRecorder-&amp;gt;state() != QMediaRecorder::StoppedState);
+}
+
+static QVariant boxValue(const QComboBox *box)
+{
+    int idx = box-&amp;gt;currentIndex();
+    if (idx == -1)
+        return QVariant();
+
+    return box-&amp;gt;itemData(idx);
+}
+
+void AudioRecorder::toggleRecord()
+{
+    if (m_audioRecorder-&amp;gt;state() == QMediaRecorder::StoppedState) {
+        m_audioRecorder-&amp;gt;setAudioInput(boxValue(ui-&amp;gt;audioDeviceBox).toString());
+
+        QAudioEncoderSettings settings;
+        settings.setCodec(boxValue(ui-&amp;gt;audioCodecBox).toString());
+        settings.setSampleRate(boxValue(ui-&amp;gt;sampleRateBox).toInt());
+        settings.setBitRate(boxValue(ui-&amp;gt;bitrateBox).toInt());
+        settings.setChannelCount(boxValue(ui-&amp;gt;channelsBox).toInt());
+        settings.setQuality(QMultimedia::EncodingQuality(ui-&amp;gt;qualitySlider-&amp;gt;value()));
+        settings.setEncodingMode(ui-&amp;gt;constantQualityRadioButton-&amp;gt;isChecked() ?
+                                 QMultimedia::ConstantQualityEncoding :
+                                 QMultimedia::ConstantBitRateEncoding);
+
+        QString container = boxValue(ui-&amp;gt;containerBox).toString();
+
+        m_audioRecorder-&amp;gt;setEncodingSettings(settings, QVideoEncoderSettings(), container);
+        m_audioRecorder-&amp;gt;record();
+    }
+    else {
+        m_audioRecorder-&amp;gt;stop();
+    }
+}
+
+void AudioRecorder::togglePause()
+{
+    if (m_audioRecorder-&amp;gt;state() != QMediaRecorder::PausedState)
+        m_audioRecorder-&amp;gt;pause();
+    else
+        m_audioRecorder-&amp;gt;record();
+}
+
+void AudioRecorder::setOutputLocation()
+{
+#ifdef Q_OS_WINRT
+    // UWP does not allow to store outside the sandbox
+    const QString cacheDir = QStandardPaths::writableLocation(QStandardPaths::CacheLocation);
+    if (!QDir().mkpath(cacheDir)) {
+        qWarning() &amp;lt;&amp;lt; &quot;Failed to create cache directory&quot;;
+        return;
+    }
+    QString fileName = cacheDir + QLatin1String(&quot;/output.wav&quot;);
+#else
+    QString fileName = QFileDialog::getSaveFileName();
+#endif
+    m_audioRecorder-&amp;gt;setOutputLocation(QUrl::fromLocalFile(fileName));
+    m_outputLocationSet = true;
+}
+
+void AudioRecorder::displayErrorMessage()
+{
+    ui-&amp;gt;statusbar-&amp;gt;showMessage(m_audioRecorder-&amp;gt;errorString());
+}
+
+void AudioRecorder::clearAudioLevels()
+{
+    for (int i = 0; i &amp;lt; m_audioLevels.size(); ++i)
+        m_audioLevels.at(i)-&amp;gt;setLevel(0);
+}
+
+// This function returns the maximum possible sample value for a given audio format
+qreal getPeakValue(const QAudioFormat&amp;amp; format)
+{
+    // Note: Only the most common sample formats are supported
+    if (!format.isValid())
+        return qreal(0);
+
+    if (format.codec() != &quot;audio/pcm&quot;)
+        return qreal(0);
+
+    switch (format.sampleType()) {
+    case QAudioFormat::Unknown:
+        break;
+    case QAudioFormat::Float:
+        if (format.sampleSize() != 32) // other sample formats are not supported
+            return qreal(0);
+        return qreal(1.00003);
+    case QAudioFormat::SignedInt:
+        if (format.sampleSize() == 32)
+            return qreal(INT_MAX);
+        if (format.sampleSize() == 16)
+            return qreal(SHRT_MAX);
+        if (format.sampleSize() == 8)
+            return qreal(CHAR_MAX);
+        break;
+    case QAudioFormat::UnSignedInt:
+        if (format.sampleSize() == 32)
+            return qreal(UINT_MAX);
+        if (format.sampleSize() == 16)
+            return qreal(USHRT_MAX);
+        if (format.sampleSize() == 8)
+            return qreal(UCHAR_MAX);
+        break;
+    }
+
+    return qreal(0);
+}
+
+// returns the audio level for each channel
+QVector&amp;lt;qreal&amp;gt; getBufferLevels(const QAudioBuffer&amp;amp; buffer)
+{
+    QVector&amp;lt;qreal&amp;gt; values;
+
+    if (!buffer.format().isValid() || buffer.format().byteOrder() != QAudioFormat::LittleEndian)
+        return values;
+
+    if (buffer.format().codec() != &quot;audio/pcm&quot;)
+        return values;
+
+    int channelCount = buffer.format().channelCount();
+    values.fill(0, channelCount);
+    qreal peak_value = getPeakValue(buffer.format());
+    if (qFuzzyCompare(peak_value, qreal(0)))
+        return values;
+
+    switch (buffer.format().sampleType()) {
+    case QAudioFormat::Unknown:
+    case QAudioFormat::UnSignedInt:
+        if (buffer.format().sampleSize() == 32)
+            values = getBufferLevels(buffer.constData&amp;lt;quint32&amp;gt;(), buffer.frameCount(), channelCount);
+        if (buffer.format().sampleSize() == 16)
+            values = getBufferLevels(buffer.constData&amp;lt;quint16&amp;gt;(), buffer.frameCount(), channelCount);
+        if (buffer.format().sampleSize() == 8)
+            values = getBufferLevels(buffer.constData&amp;lt;quint8&amp;gt;(), buffer.frameCount(), channelCount);
+        for (int i = 0; i &amp;lt; values.size(); ++i)
+            values[i] = qAbs(values.at(i) - peak_value / 2) / (peak_value / 2);
+        break;
+    case QAudioFormat::Float:
+        if (buffer.format().sampleSize() == 32) {
+            values = getBufferLevels(buffer.constData&amp;lt;float&amp;gt;(), buffer.frameCount(), channelCount);
+            for (int i = 0; i &amp;lt; values.size(); ++i)
+                values[i] /= peak_value;
+        }
+        break;
+    case QAudioFormat::SignedInt:
+        if (buffer.format().sampleSize() == 32)
+            values = getBufferLevels(buffer.constData&amp;lt;qint32&amp;gt;(), buffer.frameCount(), channelCount);
+        if (buffer.format().sampleSize() == 16)
+            values = getBufferLevels(buffer.constData&amp;lt;qint16&amp;gt;(), buffer.frameCount(), channelCount);
+        if (buffer.format().sampleSize() == 8)
+            values = getBufferLevels(buffer.constData&amp;lt;qint8&amp;gt;(), buffer.frameCount(), channelCount);
+        for (int i = 0; i &amp;lt; values.size(); ++i)
+            values[i] /= peak_value;
+        break;
+    }
+
+    return values;
+}
+
+template &amp;lt;class T&amp;gt;
+QVector&amp;lt;qreal&amp;gt; getBufferLevels(const T *buffer, int frames, int channels)
+{
+    QVector&amp;lt;qreal&amp;gt; max_values;
+    max_values.fill(0, channels);
+
+    for (int i = 0; i &amp;lt; frames; ++i) {
+        for (int j = 0; j &amp;lt; channels; ++j) {
+            qreal value = qAbs(qreal(buffer[i * channels + j]));
+            if (value &amp;gt; max_values.at(j))
+                max_values.replace(j, value);
+        }
+    }
+
+    return max_values;
+}
+
+void AudioRecorder::processBuffer(const QAudioBuffer&amp;amp; buffer)
+{
+    if (m_audioLevels.count() != buffer.format().channelCount()) {
+        qDeleteAll(m_audioLevels);
+        m_audioLevels.clear();
+        for (int i = 0; i &amp;lt; buffer.format().channelCount(); ++i) {
+            AudioLevel *level = new AudioLevel(ui-&amp;gt;centralwidget);
+            m_audioLevels.append(level);
+            ui-&amp;gt;levelsLayout-&amp;gt;addWidget(level);
+        }
+    }
+
+    QVector&amp;lt;qreal&amp;gt; levels = getBufferLevels(buffer);
+    for (int i = 0; i &amp;lt; levels.count(); ++i)
+        m_audioLevels.at(i)-&amp;gt;setLevel(levels.at(i));
+}
+
+</db:programlisting>
+</db:article>

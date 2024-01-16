@@ -1,0 +1,435 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Music Player</db:title>
+<db:productname>QtWinExtras</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Windows Extras Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates managing Windows DWM features, jump lists, taskbar button overlay, and thumbnail toolbar.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;musicplayer.h&quot;
+#include &quot;volumebutton.h&quot;
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtWinExtras&amp;gt;
+
+MusicPlayer::MusicPlayer(QWidget *parent) : QWidget(parent)
+{
+    createWidgets();
+    createShortcuts();
+    createJumpList();
+    createTaskbar();
+    createThumbnailToolBar();
+
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::positionChanged, this, &amp;amp;MusicPlayer::updatePosition);
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::durationChanged, this, &amp;amp;MusicPlayer::updateDuration);
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaObject::metaDataAvailableChanged, this, &amp;amp;MusicPlayer::updateInfo);
+
+    connect(&amp;amp;mediaPlayer, QOverload&amp;lt;QMediaPlayer::Error&amp;gt;::of(&amp;amp;QMediaPlayer::error),
+            this, &amp;amp;MusicPlayer::handleError);
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::stateChanged,
+            this, &amp;amp;MusicPlayer::updateState);
+
+    stylize();
+    setAcceptDrops(true);
+}
+
+QStringList MusicPlayer::supportedMimeTypes()
+{
+    QStringList result = QMediaPlayer::supportedMimeTypes();
+    if (result.isEmpty())
+        result.append(QStringLiteral(&quot;audio/mpeg&quot;));
+    return result;
+}
+
+void MusicPlayer::openFile()
+{
+    QFileDialog fileDialog(this);
+    fileDialog.setAcceptMode(QFileDialog::AcceptOpen);
+    fileDialog.setWindowTitle(tr(&quot;Open File&quot;));
+    fileDialog.setMimeTypeFilters(MusicPlayer::supportedMimeTypes());
+    fileDialog.setDirectory(QStandardPaths::standardLocations(QStandardPaths::MusicLocation).value(0, QDir::homePath()));
+    if (fileDialog.exec() == QDialog::Accepted)
+        playUrl(fileDialog.selectedUrls().constFirst());
+}
+
+void MusicPlayer::playUrl(const QUrl &amp;amp;url)
+{
+    playButton-&amp;gt;setEnabled(true);
+    if (url.isLocalFile()) {
+        const QString filePath = url.toLocalFile();
+        setWindowFilePath(filePath);
+        infoLabel-&amp;gt;setText(QDir::toNativeSeparators(filePath));
+        fileName = QFileInfo(filePath).fileName();
+    } else {
+        setWindowFilePath(QString());
+        infoLabel-&amp;gt;setText(url.toString());
+        fileName.clear();
+    }
+    mediaPlayer.setMedia(url);
+    mediaPlayer.play();
+}
+
+void MusicPlayer::togglePlayback()
+{
+    if (mediaPlayer.mediaStatus() == QMediaPlayer::NoMedia)
+        openFile();
+    else if (mediaPlayer.state() == QMediaPlayer::PlayingState)
+        mediaPlayer.pause();
+    else
+        mediaPlayer.play();
+}
+
+void MusicPlayer::seekForward()
+{
+    positionSlider-&amp;gt;triggerAction(QSlider::SliderPageStepAdd);
+}
+
+void MusicPlayer::seekBackward()
+{
+    positionSlider-&amp;gt;triggerAction(QSlider::SliderPageStepSub);
+}
+
+bool MusicPlayer::event(QEvent *event)
+{
+    if (event-&amp;gt;type() == QWinEvent::CompositionChange || event-&amp;gt;type() == QWinEvent::ColorizationChange)
+        stylize();
+    return QWidget::event(event);
+}
+
+static bool canHandleDrop(const QDropEvent *event)
+{
+    const QList&amp;lt;QUrl&amp;gt; urls = event-&amp;gt;mimeData()-&amp;gt;urls();
+    if (urls.size() != 1)
+        return false;
+    QMimeDatabase mimeDatabase;
+    return MusicPlayer::supportedMimeTypes().
+        contains(mimeDatabase.mimeTypeForUrl(urls.constFirst()).name());
+}
+
+void MusicPlayer::dragEnterEvent(QDragEnterEvent *event)
+{
+    event-&amp;gt;setAccepted(canHandleDrop(event));
+}
+
+void MusicPlayer::dropEvent(QDropEvent *event)
+{
+    event-&amp;gt;accept();
+    playUrl(event-&amp;gt;mimeData()-&amp;gt;urls().constFirst());
+}
+
+void MusicPlayer::mousePressEvent(QMouseEvent *event)
+{
+    offset = event-&amp;gt;globalPos() - pos();
+    event-&amp;gt;accept();
+}
+
+void MusicPlayer::mouseMoveEvent(QMouseEvent *event)
+{
+    move(event-&amp;gt;globalPos() - offset);
+    event-&amp;gt;accept();
+}
+
+void MusicPlayer::mouseReleaseEvent(QMouseEvent *event)
+{
+    offset = QPoint();
+    event-&amp;gt;accept();
+}
+
+void MusicPlayer::stylize()
+{
+    if (QOperatingSystemVersion::current() &amp;lt; QOperatingSystemVersion::Windows8) {
+        // Set styling options relevant only to Windows 7.
+        if (QtWin::isCompositionEnabled()) {
+            QtWin::extendFrameIntoClientArea(this, -1, -1, -1, -1);
+            setAttribute(Qt::WA_TranslucentBackground, true);
+            setAttribute(Qt::WA_NoSystemBackground, false);
+            setStyleSheet(QStringLiteral(&quot;MusicPlayer { background: transparent; }&quot;));
+        } else {
+            QtWin::resetExtendedFrame(this);
+            setAttribute(Qt::WA_TranslucentBackground, false);
+            setStyleSheet(QStringLiteral(&quot;MusicPlayer { background: %1; }&quot;).arg(QtWin::realColorizationColor().name()));
+        }
+        volumeButton-&amp;gt;stylize();
+    }
+}
+
+void MusicPlayer::updateState(QMediaPlayer::State state)
+{
+    if (state == QMediaPlayer::PlayingState) {
+        playButton-&amp;gt;setToolTip(tr(&quot;Pause&quot;));
+        playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPause));
+    } else {
+        playButton-&amp;gt;setToolTip(tr(&quot;Play&quot;));
+        playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+    }
+}
+
+static QString formatTime(qint64 timeMilliSeconds)
+{
+    qint64 seconds = timeMilliSeconds / 1000;
+    const qint64 minutes = seconds / 60;
+    seconds -= minutes * 60;
+    return QStringLiteral(&quot;%1:%2&quot;)
+        .arg(minutes, 2, 10, QLatin1Char('0'))
+        .arg(seconds, 2, 10, QLatin1Char('0'));
+}
+
+void MusicPlayer::updatePosition(qint64 position)
+{
+    positionSlider-&amp;gt;setValue(position);
+    positionLabel-&amp;gt;setText(formatTime(position));
+}
+
+void MusicPlayer::updateDuration(qint64 duration)
+{
+    positionSlider-&amp;gt;setRange(0, duration);
+    positionSlider-&amp;gt;setEnabled(duration &amp;gt; 0);
+    positionSlider-&amp;gt;setPageStep(duration / 10);
+    updateInfo();
+}
+
+void MusicPlayer::setPosition(int position)
+{
+    // avoid seeking when the slider value change is triggered from updatePosition()
+    if (qAbs(mediaPlayer.position() - position) &amp;gt; 99)
+        mediaPlayer.setPosition(position);
+}
+
+void MusicPlayer::updateInfo()
+{
+    QStringList info;
+    if (!fileName.isEmpty())
+        info.append(fileName);
+    if (mediaPlayer.isMetaDataAvailable()) {
+        QString author = mediaPlayer.metaData(QStringLiteral(&quot;Author&quot;)).toString();
+        if (!author.isEmpty())
+            info.append(author);
+        QString title = mediaPlayer.metaData(QStringLiteral(&quot;Title&quot;)).toString();
+        if (!title.isEmpty())
+            info.append(title);
+    }
+    info.append(formatTime(mediaPlayer.duration()));
+    infoLabel-&amp;gt;setText(info.join(tr(&quot; - &quot;)));
+}
+
+void MusicPlayer::handleError()
+{
+    playButton-&amp;gt;setEnabled(false);
+    const QString errorString = mediaPlayer.errorString();
+    infoLabel-&amp;gt;setText(errorString.isEmpty()
+                       ? tr(&quot;Unknown error #%1&quot;).arg(int(mediaPlayer.error()))
+                       : tr(&quot;Error: %1&quot;).arg(errorString));
+}
+
+void MusicPlayer::updateTaskbar()
+{
+    switch (mediaPlayer.state()) {
+    case QMediaPlayer::PlayingState:
+        taskbarButton-&amp;gt;setOverlayIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+        taskbarProgress-&amp;gt;show();
+        taskbarProgress-&amp;gt;resume();
+        break;
+    case QMediaPlayer::PausedState:
+        taskbarButton-&amp;gt;setOverlayIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPause));
+        taskbarProgress-&amp;gt;show();
+        taskbarProgress-&amp;gt;pause();
+        break;
+    case QMediaPlayer::StoppedState:
+        taskbarButton-&amp;gt;setOverlayIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaStop));
+        taskbarProgress-&amp;gt;hide();
+        break;
+    }
+}
+
+void MusicPlayer::updateThumbnailToolBar()
+{
+    playToolButton-&amp;gt;setEnabled(mediaPlayer.duration() &amp;gt; 0);
+    backwardToolButton-&amp;gt;setEnabled(mediaPlayer.position() &amp;gt; 0);
+    forwardToolButton-&amp;gt;setEnabled(mediaPlayer.position() &amp;lt; mediaPlayer.duration());
+
+    if (mediaPlayer.state() == QMediaPlayer::PlayingState) {
+        playToolButton-&amp;gt;setToolTip(tr(&quot;Pause&quot;));
+        playToolButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPause));
+    } else {
+        playToolButton-&amp;gt;setToolTip(tr(&quot;Play&quot;));
+        playToolButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+    }
+}
+
+void MusicPlayer::createWidgets()
+{
+    playButton = new QToolButton(this);
+    playButton-&amp;gt;setEnabled(false);
+    playButton-&amp;gt;setToolTip(tr(&quot;Play&quot;));
+    playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+    connect(playButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;MusicPlayer::togglePlayback);
+
+    QAbstractButton *openButton = new QToolButton(this);
+    openButton-&amp;gt;setText(tr(&quot;...&quot;));
+    openButton-&amp;gt;setToolTip(tr(&quot;Open a file...&quot;));
+    openButton-&amp;gt;setFixedSize(playButton-&amp;gt;sizeHint());
+    connect(openButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;MusicPlayer::openFile);
+
+    volumeButton = new VolumeButton(this);
+    volumeButton-&amp;gt;setToolTip(tr(&quot;Adjust volume&quot;));
+    volumeButton-&amp;gt;setVolume(mediaPlayer.volume());
+    connect(volumeButton, &amp;amp;VolumeButton::volumeChanged, &amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::setVolume);
+
+    positionSlider = new QSlider(Qt::Horizontal, this);
+    positionSlider-&amp;gt;setEnabled(false);
+    positionSlider-&amp;gt;setToolTip(tr(&quot;Seek&quot;));
+    connect(positionSlider, &amp;amp;QAbstractSlider::valueChanged, this, &amp;amp;MusicPlayer::setPosition);
+
+    infoLabel = new QLabel(this);
+    positionLabel = new QLabel(tr(&quot;00:00&quot;), this);
+    positionLabel-&amp;gt;setMinimumWidth(positionLabel-&amp;gt;sizeHint().width());
+
+    QBoxLayout *controlLayout = new QHBoxLayout;
+    controlLayout-&amp;gt;setMargin(0);
+    controlLayout-&amp;gt;addWidget(openButton);
+    controlLayout-&amp;gt;addWidget(playButton);
+    controlLayout-&amp;gt;addWidget(positionSlider);
+    controlLayout-&amp;gt;addWidget(positionLabel);
+    controlLayout-&amp;gt;addWidget(volumeButton);
+
+    QBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout-&amp;gt;addWidget(infoLabel);
+    mainLayout-&amp;gt;addLayout(controlLayout);
+}
+
+void MusicPlayer::createShortcuts()
+{
+    QShortcut *quitShortcut = new QShortcut(QKeySequence::Quit, this);
+    connect(quitShortcut, &amp;amp;QShortcut::activated, QCoreApplication::quit);
+
+    QShortcut *openShortcut = new QShortcut(QKeySequence::Open, this);
+    connect(openShortcut, &amp;amp;QShortcut::activated, this, &amp;amp;MusicPlayer::openFile);
+
+    QShortcut *toggleShortcut = new QShortcut(Qt::Key_Space, this);
+    connect(toggleShortcut, &amp;amp;QShortcut::activated, this, &amp;amp;MusicPlayer::togglePlayback);
+
+    QShortcut *forwardShortcut = new QShortcut(Qt::Key_Right, this);
+    connect(forwardShortcut, &amp;amp;QShortcut::activated, this, &amp;amp;MusicPlayer::seekForward);
+
+    QShortcut *backwardShortcut = new QShortcut(Qt::Key_Left, this);
+    connect(backwardShortcut, &amp;amp;QShortcut::activated, this, &amp;amp;MusicPlayer::seekBackward);
+
+    QShortcut *increaseShortcut = new QShortcut(Qt::Key_Up, this);
+    connect(increaseShortcut, &amp;amp;QShortcut::activated, volumeButton, &amp;amp;VolumeButton::increaseVolume);
+
+    QShortcut *decreaseShortcut = new QShortcut(Qt::Key_Down, this);
+    connect(decreaseShortcut, &amp;amp;QShortcut::activated, volumeButton, &amp;amp;VolumeButton::descreaseVolume);
+}
+
+void MusicPlayer::createJumpList()
+{
+    QWinJumpList jumplist;
+    jumplist.recent()-&amp;gt;setVisible(true);
+}
+
+void MusicPlayer::createTaskbar()
+{
+    taskbarButton = new QWinTaskbarButton(this);
+    taskbarButton-&amp;gt;setWindow(windowHandle());
+
+    taskbarProgress = taskbarButton-&amp;gt;progress();
+    connect(positionSlider, &amp;amp;QAbstractSlider::valueChanged, taskbarProgress, &amp;amp;QWinTaskbarProgress::setValue);
+    connect(positionSlider, &amp;amp;QAbstractSlider::rangeChanged, taskbarProgress, &amp;amp;QWinTaskbarProgress::setRange);
+
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::stateChanged, this, &amp;amp;MusicPlayer::updateTaskbar);
+}
+
+void MusicPlayer::createThumbnailToolBar()
+{
+    thumbnailToolBar = new QWinThumbnailToolBar(this);
+    thumbnailToolBar-&amp;gt;setWindow(windowHandle());
+
+    playToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    playToolButton-&amp;gt;setEnabled(false);
+    playToolButton-&amp;gt;setToolTip(tr(&quot;Play&quot;));
+    playToolButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+    connect(playToolButton, &amp;amp;QWinThumbnailToolButton::clicked, this, &amp;amp;MusicPlayer::togglePlayback);
+
+    forwardToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    forwardToolButton-&amp;gt;setEnabled(false);
+    forwardToolButton-&amp;gt;setToolTip(tr(&quot;Fast forward&quot;));
+    forwardToolButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaSeekForward));
+    connect(forwardToolButton, &amp;amp;QWinThumbnailToolButton::clicked, this, &amp;amp;MusicPlayer::seekForward);
+
+    backwardToolButton = new QWinThumbnailToolButton(thumbnailToolBar);
+    backwardToolButton-&amp;gt;setEnabled(false);
+    backwardToolButton-&amp;gt;setToolTip(tr(&quot;Rewind&quot;));
+    backwardToolButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaSeekBackward));
+    connect(backwardToolButton, &amp;amp;QWinThumbnailToolButton::clicked, this, &amp;amp;MusicPlayer::seekBackward);
+
+    thumbnailToolBar-&amp;gt;addButton(backwardToolButton);
+    thumbnailToolBar-&amp;gt;addButton(playToolButton);
+    thumbnailToolBar-&amp;gt;addButton(forwardToolButton);
+
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::positionChanged, this, &amp;amp;MusicPlayer::updateThumbnailToolBar);
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::durationChanged, this, &amp;amp;MusicPlayer::updateThumbnailToolBar);
+    connect(&amp;amp;mediaPlayer, &amp;amp;QMediaPlayer::stateChanged, this, &amp;amp;MusicPlayer::updateThumbnailToolBar);
+}
+
+</db:programlisting>
+</db:article>

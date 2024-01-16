@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Axis Range Dragging With Labels Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Implementing a custom input handler to support axis dragging.</db:para>
+<db:para>This documentation was introduced in QtDataVisualization 1.1.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Axis Range Dragging example shows how to customize the 3D graph controls in a widget application to allow changing axis ranges by clicking on an axis label and dragging. This is done by implementing a custom input handler to react to selection signals emitted from the graph.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/draggableaxes-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="replacing-default-input-handling">
+<db:title>Replacing Default Input Handling</db:title>
+<db:para>The default input handling mechanism is replaced by setting the active input handler of <db:link xlink:href="q3dscatter.xml">Q3DScatter</db:link> to <db:code>AxesInputHandler</db:code> that implements the custom behavior:</db:para>
+<db:programlisting language="cpp">// Give ownership of the handler to the graph and make it the active handler
+m_graph-&amp;gt;setActiveInputHandler(m_inputHandler);
+</db:programlisting>
+<db:para><db:code>m_inputHandler</db:code> was initialized in the constructor:</db:para>
+<db:programlisting language="cpp">m_inputHandler(new AxesInputHandler(scatter)),
+</db:programlisting>
+<db:para>We will also need the pointers to the axes, so we will pass them to our input handler too:</db:para>
+<db:programlisting language="cpp">// Give our axes to the input handler
+m_inputHandler-&amp;gt;setAxes(m_graph-&amp;gt;axisX(), m_graph-&amp;gt;axisZ(), m_graph-&amp;gt;axisY());
+</db:programlisting>
+</db:section>
+<db:section xml:id="extending-mouse-event-handling">
+<db:title>Extending Mouse Event Handling</db:title>
+<db:para>First of all, we inherited our input handler from <db:link xlink:href="q3dinputhandler.xml">Q3DInputHandler</db:link> instead of <db:link xlink:href="qabstract3dinputhandler.xml">QAbstract3DInputHandler</db:link>. The reason for doing this is to keep all the functionality of the default input handling, and to add our own functionality on top of it:</db:para>
+<db:programlisting language="cpp">class AxesInputHandler : public Q3DInputHandler
+</db:programlisting>
+<db:para>We start extending the default functionality by re-implementing some of the mouse events. Let's start with <db:code>mousePressEvent</db:code>. We'll just add button pressed flag for left mouse button into it, and keep the rest of the default functionality:</db:para>
+<db:programlisting language="cpp">void AxesInputHandler::mousePressEvent(QMouseEvent *event, const QPoint &amp;amp;mousePos)
+{
+    Q3DInputHandler::mousePressEvent(event, mousePos);
+    if (Qt::LeftButton == event-&amp;gt;button())
+        m_mousePressed = true;
+}
+</db:programlisting>
+<db:para>We'll need to modify <db:code>mouseReleaseEvent</db:code> too to clear the flag and reset the internal state:</db:para>
+<db:programlisting language="cpp">void AxesInputHandler::mouseReleaseEvent(QMouseEvent *event, const QPoint &amp;amp;mousePos)
+{
+    Q3DInputHandler::mouseReleaseEvent(event, mousePos);
+    m_mousePressed = false;
+    m_state = StateNormal;
+}
+</db:programlisting>
+<db:para>Then we'll modify <db:code>mouseMoveEvent</db:code>. Here we check if the <db:code>m_mousePressed</db:code> is <db:code>true</db:code> and our internal state is something other than <db:code>StateNormal</db:code>. If so, we'll set the input positions for mouse move distance calculations and call the axis dragging function (see <db:link xlink:href="qtdatavisualization-draggableaxes-example.xml#implementing-axis-dragging">Implementing axis dragging</db:link> for details):</db:para>
+<db:programlisting language="cpp">void AxesInputHandler::mouseMoveEvent(QMouseEvent *event, const QPoint &amp;amp;mousePos)
+{
+    // Check if we're trying to drag axis label
+    if (m_mousePressed &amp;amp;&amp;amp; m_state != StateNormal) {
+        setPreviousInputPos(inputPosition());
+        setInputPosition(mousePos);
+        handleAxisDragging();
+    } else {
+        Q3DInputHandler::mouseMoveEvent(event, mousePos);
+    }
+}
+</db:programlisting>
+<db:para>We don't need to change the functionality of mouse wheel, so we will not re-implement that.</db:para>
+</db:section>
+<db:section xml:id="implementing-axis-dragging">
+<db:title>Implementing Axis Dragging</db:title>
+<db:para>First we need to start listening to the selection signal from the graph. We do that in the constructor, and connect it to <db:code>handleElementSelected</db:code> method:</db:para>
+<db:programlisting language="cpp">// Connect to the item selection signal from graph
+connect(graph, &amp;amp;QAbstract3DGraph::selectedElementChanged, this,
+        &amp;amp;AxesInputHandler::handleElementSelected);
+</db:programlisting>
+<db:para>In <db:code>handleElementSelected</db:code> we check the type of the selection and set our internal state based on it:</db:para>
+<db:programlisting language="cpp">switch (type) {
+case QAbstract3DGraph::ElementAxisXLabel:
+    m_state = StateDraggingX;
+    break;
+case QAbstract3DGraph::ElementAxisYLabel:
+    m_state = StateDraggingY;
+    break;
+case QAbstract3DGraph::ElementAxisZLabel:
+    m_state = StateDraggingZ;
+    break;
+default:
+    m_state = StateNormal;
+    break;
+}
+</db:programlisting>
+<db:para>The actual dragging logic is implemented in <db:code>handleAxisDragging</db:code> method, which we call from <db:code>mouseMoveEvent</db:code> in case the required conditions are met:</db:para>
+<db:programlisting language="cpp">// Check if we're trying to drag axis label
+if (m_mousePressed &amp;amp;&amp;amp; m_state != StateNormal) {
+</db:programlisting>
+<db:para>In <db:code>handleAxisDragging</db:code> we first get the scene orientation from our active camera:</db:para>
+<db:programlisting language="cpp">// Get scene orientation from active camera
+float xRotation = scene()-&amp;gt;activeCamera()-&amp;gt;xRotation();
+float yRotation = scene()-&amp;gt;activeCamera()-&amp;gt;yRotation();
+</db:programlisting>
+<db:para>Then we calculate the modifiers to mouse move direction based on the orientation:</db:para>
+<db:programlisting language="cpp">// Calculate directional drag multipliers based on rotation
+float xMulX = qCos(qDegreesToRadians(xRotation));
+float xMulY = qSin(qDegreesToRadians(xRotation));
+float zMulX = qSin(qDegreesToRadians(xRotation));
+float zMulY = qCos(qDegreesToRadians(xRotation));
+</db:programlisting>
+<db:para>After that, we calculate the mouse movement, and modify it based on the y rotation of the camera:</db:para>
+<db:programlisting language="cpp">// Get the drag amount
+QPoint move = inputPosition() - previousInputPos();
+
+// Flip the effect of y movement if we're viewing from below
+float yMove = (yRotation &amp;lt; 0) ? -move.y() : move.y();
+</db:programlisting>
+<db:para>And finally apply the moved distance to the correct axis:</db:para>
+<db:programlisting language="cpp">// Adjust axes
+switch (m_state) {
+case StateDraggingX:
+    distance = (move.x() * xMulX - yMove * xMulY) / m_speedModifier;
+    m_axisX-&amp;gt;setRange(m_axisX-&amp;gt;min() - distance, m_axisX-&amp;gt;max() - distance);
+    break;
+case StateDraggingZ:
+    distance = (move.x() * zMulX + yMove * zMulY) / m_speedModifier;
+    m_axisZ-&amp;gt;setRange(m_axisZ-&amp;gt;min() + distance, m_axisZ-&amp;gt;max() + distance);
+    break;
+case StateDraggingY:
+    distance = move.y() / m_speedModifier; // No need to use adjusted y move here
+    m_axisY-&amp;gt;setRange(m_axisY-&amp;gt;min() + distance, m_axisY-&amp;gt;max() + distance);
+    break;
+default:
+    break;
+}
+</db:programlisting>
+<db:para>We also have a function for setting the dragging speed:</db:para>
+<db:programlisting language="cpp">inline void setDragSpeedModifier(float modifier) { m_speedModifier = modifier; }
+</db:programlisting>
+<db:para>This is needed, as the mouse movement distance is absolute (in screen coordinates) and we need to adjust it to the axis range. The larger the value, the slower the dragging will be. Note that on this example we do not take scene zoom level into account when determining the drag speed, so you'll notice changes in the range adjustment as you change the zoom level.</db:para>
+<db:para>The modifier could be adjusted automatically based on the axis range and camera zoom level, but we'll leave implementing that as an excercise for the reader.</db:para>
+</db:section>
+<db:section xml:id="example-contents">
+<db:title>Example Contents</db:title>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/axesinputhandler.cpp">draggableaxes/axesinputhandler.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/axesinputhandler.h">draggableaxes/axesinputhandler.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/data.cpp">draggableaxes/data.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/data.h">draggableaxes/data.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/draggableaxes.pro">draggableaxes/draggableaxes.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draggableaxes/main.cpp">draggableaxes/main.cpp</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+</db:section></db:article>

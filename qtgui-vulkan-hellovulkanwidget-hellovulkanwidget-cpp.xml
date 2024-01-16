@@ -1,0 +1,206 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Hello Vulkan Widget Example</db:title>
+<db:productname>QtGui</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt GUI Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows the usage of <db:link xlink:href="qvulkanwindow.xml">QVulkanWindow</db:link> in <db:link xlink:href="qwidget.xml">QWidget</db:link> applications.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;hellovulkanwidget.h&quot;
+#include &amp;lt;QVulkanFunctions&amp;gt;
+#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QVBoxLayout&amp;gt;
+#include &amp;lt;QPlainTextEdit&amp;gt;
+#include &amp;lt;QPushButton&amp;gt;
+#include &amp;lt;QLCDNumber&amp;gt;
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QTabWidget&amp;gt;
+
+MainWindow::MainWindow(VulkanWindow *w, QPlainTextEdit *logWidget)
+    : m_window(w)
+{
+    QWidget *wrapper = QWidget::createWindowContainer(w);
+
+    m_info = new QPlainTextEdit;
+    m_info-&amp;gt;setReadOnly(true);
+
+    m_number = new QLCDNumber(3);
+    m_number-&amp;gt;setSegmentStyle(QLCDNumber::Filled);
+
+    QPushButton *grabButton = new QPushButton(tr(&quot;&amp;amp;Grab&quot;));
+    grabButton-&amp;gt;setFocusPolicy(Qt::NoFocus);
+
+    connect(grabButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::onGrabRequested);
+
+    QPushButton *quitButton = new QPushButton(tr(&quot;&amp;amp;Quit&quot;));
+    quitButton-&amp;gt;setFocusPolicy(Qt::NoFocus);
+
+    connect(quitButton, &amp;amp;QPushButton::clicked, qApp, &amp;amp;QCoreApplication::quit);
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    m_infoTab = new QTabWidget(this);
+    m_infoTab-&amp;gt;addTab(m_info, tr(&quot;Vulkan Info&quot;));
+    m_infoTab-&amp;gt;addTab(logWidget, tr(&quot;Debug Log&quot;));
+    layout-&amp;gt;addWidget(m_infoTab, 2);
+    layout-&amp;gt;addWidget(m_number, 1);
+    layout-&amp;gt;addWidget(wrapper, 5);
+    layout-&amp;gt;addWidget(grabButton, 1);
+    layout-&amp;gt;addWidget(quitButton, 1);
+    setLayout(layout);
+}
+
+void MainWindow::onVulkanInfoReceived(const QString &amp;amp;text)
+{
+    m_info-&amp;gt;setPlainText(text);
+}
+
+void MainWindow::onFrameQueued(int colorValue)
+{
+    m_number-&amp;gt;display(colorValue);
+}
+
+void MainWindow::onGrabRequested()
+{
+    if (!m_window-&amp;gt;supportsGrab()) {
+        QMessageBox::warning(this, tr(&quot;Cannot grab&quot;), tr(&quot;This swapchain does not support readbacks.&quot;));
+        return;
+    }
+
+    QImage img = m_window-&amp;gt;grab();
+
+    // Our startNextFrame() implementation is synchronous so img is ready to be
+    // used right here.
+
+    QFileDialog fd(this);
+    fd.setAcceptMode(QFileDialog::AcceptSave);
+    fd.setDefaultSuffix(&quot;png&quot;);
+    fd.selectFile(&quot;test.png&quot;);
+    if (fd.exec() == QDialog::Accepted)
+        img.save(fd.selectedFiles().first());
+}
+
+QVulkanWindowRenderer *VulkanWindow::createRenderer()
+{
+    return new VulkanRenderer(this);
+}
+
+VulkanRenderer::VulkanRenderer(VulkanWindow *w)
+    : TriangleRenderer(w)
+{
+}
+
+void VulkanRenderer::initResources()
+{
+    TriangleRenderer::initResources();
+
+    QVulkanInstance *inst = m_window-&amp;gt;vulkanInstance();
+    m_devFuncs = inst-&amp;gt;deviceFunctions(m_window-&amp;gt;device());
+
+    QString info;
+    info += QString().sprintf(&quot;Number of physical devices: %d\n&quot;, m_window-&amp;gt;availablePhysicalDevices().count());
+
+    QVulkanFunctions *f = inst-&amp;gt;functions();
+    VkPhysicalDeviceProperties props;
+    f-&amp;gt;vkGetPhysicalDeviceProperties(m_window-&amp;gt;physicalDevice(), &amp;amp;props);
+    info += QString().sprintf(&quot;Active physical device name: '%s' version %d.%d.%d\nAPI version %d.%d.%d\n&quot;,
+                              props.deviceName,
+                              VK_VERSION_MAJOR(props.driverVersion), VK_VERSION_MINOR(props.driverVersion),
+                              VK_VERSION_PATCH(props.driverVersion),
+                              VK_VERSION_MAJOR(props.apiVersion), VK_VERSION_MINOR(props.apiVersion),
+                              VK_VERSION_PATCH(props.apiVersion));
+
+    info += QStringLiteral(&quot;Supported instance layers:\n&quot;);
+    for (const QVulkanLayer &amp;amp;layer : inst-&amp;gt;supportedLayers())
+        info += QString().sprintf(&quot;    %s v%u\n&quot;, layer.name.constData(), layer.version);
+    info += QStringLiteral(&quot;Enabled instance layers:\n&quot;);
+    for (const QByteArray &amp;amp;layer : inst-&amp;gt;layers())
+        info += QString().sprintf(&quot;    %s\n&quot;, layer.constData());
+
+    info += QStringLiteral(&quot;Supported instance extensions:\n&quot;);
+    for (const QVulkanExtension &amp;amp;ext : inst-&amp;gt;supportedExtensions())
+        info += QString().sprintf(&quot;    %s v%u\n&quot;, ext.name.constData(), ext.version);
+    info += QStringLiteral(&quot;Enabled instance extensions:\n&quot;);
+    for (const QByteArray &amp;amp;ext : inst-&amp;gt;extensions())
+        info += QString().sprintf(&quot;    %s\n&quot;, ext.constData());
+
+    info += QString().sprintf(&quot;Color format: %u\nDepth-stencil format: %u\n&quot;,
+                              m_window-&amp;gt;colorFormat(), m_window-&amp;gt;depthStencilFormat());
+
+    info += QStringLiteral(&quot;Supported sample counts:&quot;);
+    const QVector&amp;lt;int&amp;gt; sampleCounts = m_window-&amp;gt;supportedSampleCounts();
+    for (int count : sampleCounts)
+        info += QLatin1Char(' ') + QString::number(count);
+    info += QLatin1Char('\n');
+
+    emit static_cast&amp;lt;VulkanWindow *&amp;gt;(m_window)-&amp;gt;vulkanInfoReceived(info);
+}
+
+void VulkanRenderer::startNextFrame()
+{
+    TriangleRenderer::startNextFrame();
+    emit static_cast&amp;lt;VulkanWindow *&amp;gt;(m_window)-&amp;gt;frameQueued(int(m_rotation) % 360);
+}
+
+</db:programlisting>
+</db:article>

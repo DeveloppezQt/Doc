@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>One Qt Example</db:title>
+<db:productname>QtCanvas3D</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Canvas 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates combining Qt Quick and three.js rendering.</db:para>
+<db:para>This documentation was introduced in QtCanvas3D 1.0.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>One Qt example demonstrates how to implement a simple QML 3D control that combines the use of <db:code>three.js</db:code> library-based Canvas3D rendering with Qt Quick 2D elements. The example shows a view with various benefits of using Qt with related images picked from <db:link xlink:href="http://qt.io">http://qt.io</db:link>. The images are displayed on the side of a spinning 3D cube that spins to show the correct image when the tabs at the top of the application are selected. You can also use swipe gestures to spin the cube to navigate between the tabs. The 3D cube control has been implemented as a simple QML type that internaly uses <db:code>three.js</db:code> library and <db:link xlink:href="qtcanvas3d-index.xml">Qt Canvas 3D</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/oneqt-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="main-qml-file">
+<db:title>Main QML File</db:title>
+<db:para>In <db:link xlink:href="">oneqt.qml</db:link>, we build the 2D content as normal in QML. Then we add a custom <db:code>ImageCube</db:code> type into the scene behind the text elements. This custom type, implemented using <db:code>three.js</db:code> library, handles the painting of the 3D cube.</db:para>
+<db:programlisting language="qml">ImageCube {
+    id: imageCube
+    width: 512 * (parent.width / 1280)
+    height: 512 * (parent.height / 768)
+    anchors.bottom: parent.bottom
+    anchors.right: parent.right
+    ...
+</db:programlisting>
+<db:note>
+<db:para>The <db:code>ImageCube</db:code> 3D UI component can be created and anchored just like any other QML type.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="the-custom-3d-qml-control">
+<db:title>The Custom 3D QML Control</db:title>
+<db:para>The <db:link xlink:href="">ImageCube.qml</db:link> takes six images that it loads and places to the sides of the cube. In addition, the type has a state that defines which of these images are visible and a <db:code>backgroundColor</db:code> property that is used when painting the 3D cube. The <db:code>angleOffset</db:code> property can be used to adjust the cube's direction when displaying the selected image. In this example the cube component sits on the right edge of the screen so we twist it slightly to the left so that it appears to be facing the rest of the content. This angle is also used by the 3D light so that the light always illuminates the selected face of the cube.</db:para>
+<db:programlisting language="qml">state: &quot;image6&quot;
+property color backgroundColor: &quot;#FCFCFC&quot;
+property real angleOffset: -180 / 8.0
+property string image1: &quot;&quot;
+    ...
+</db:programlisting>
+<db:para>The custom type defines six states, one for each side of the cube along with the x-, y-, and z-rotations, that must be set to show the face of the cube corresponding to the state.</db:para>
+<db:programlisting language="qml">states: [
+    State {
+        name: &quot;image1&quot;
+        PropertyChanges { target: cube; xRotation: 0; }
+        PropertyChanges { target: cube; yRotation: 180 * 1.5 + angleOffset; }
+        PropertyChanges { target: cube; zRotation: 0 }
+    },
+    ...
+</db:programlisting>
+<db:para>We use <db:code>RotationAnimation</db:code> to animate the transition between angles. It enables us to get smooth transitions between different cube orientations and to always rotate the cube along the shortest possible angle distance.</db:para>
+<db:programlisting language="qml">transitions: [
+    Transition {
+        id: turnTransition
+        from: &quot;*&quot;
+        to: &quot;*&quot;
+        RotationAnimation {
+            properties: &quot;xRotation,yRotation,zRotation&quot;
+            easing.type: Easing.InOutCubic
+            direction: RotationAnimation.Shortest
+            duration: 450
+        }
+    }
+]
+    ...
+</db:programlisting>
+<db:para>We call the JavaScript code that uses <db:code>three.js</db:code> to do the rendering of the cube, calling it on the <db:code>initializeGL</db:code>, <db:code>paintGL</db:code>, and <db:code>resizeGL</db:code> signals.</db:para>
+<db:programlisting language="qml">onInitializeGL: {
+    GLCode.initializeGL(cube);
+}
+
+onPaintGL: {
+    GLCode.paintGL(cube);
+}
+
+onResizeGL: {
+    GLCode.resizeGL(cube);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-javascript-code">
+<db:title>The JavaScript Code</db:title>
+<db:para>The JavaScript side of the implementation, <db:link xlink:href="">imagecube.js</db:link>, is done using a version of <db:code>three.js</db:code> that is ported for <db:link xlink:href="qtcanvas3d-index.xml">Qt Canvas 3D</db:link>: <db:link xlink:href="https://github.com/tronlec/three.js">three.js</db:link>.</db:para>
+<db:para>In <db:link xlink:href="">imagecube.js</db:link>, we start by creating the camera and the scene that contains all the rest of the <db:code>three.js</db:code> objects.</db:para>
+<db:programlisting language="cpp">camera = new THREE.PerspectiveCamera(50, canvas.width / canvas.height, 1, 2000);
+camera.position.z = 400;
+camera.position.y = 140;
+
+scene = new THREE.Scene();
+    ...
+</db:programlisting>
+<db:para>Then we start the asynchronous loading of the textures and create a material array for the sides of the cube (note that the cube needs 12 materials as each side consists of two triangles).</db:para>
+<db:programlisting language="cpp">// Load textures
+var textureLoader = new THREE.TextureLoader();
+var textureCase1 = textureLoader.load(canvas.image1);
+var textureCase2 = textureLoader.load(canvas.image2);
+var textureCase3 = textureLoader.load(canvas.image3);
+var textureCase4 = textureLoader.load(canvas.image4);
+var textureCase5 = textureLoader.load(canvas.image5);
+var textureCase6 = textureLoader.load(canvas.image6);
+
+// Materials
+var materials = [];
+materials.push(new THREE.MeshLambertMaterial({ map: textureCase1 }));
+materials.push(new THREE.MeshLambertMaterial({ map: textureCase1 }));
+    ...
+</db:programlisting>
+<db:para>We then create the needed geometry as <db:code>BoxGeometry</db:code> binding the created materials to the faces of the cube. We then create a <db:code>MeshFaceMaterial</db:code> from the array of materials.</db:para>
+<db:programlisting language="cpp">var geometry = new THREE.BoxGeometry(200, 200, 200);
+for (var i = 0, len = geometry.faces.length; i &amp;lt; len; i ++) {
+    geometry.faces[ i ].materialIndex = i;
+}
+geometry.materials = materials;
+var faceMaterial = new THREE.MeshFaceMaterial(materials);
+</db:programlisting>
+<db:para>Finally we create the cube mesh from the geometry and material, position it, and add it to the 3D scene.</db:para>
+<db:programlisting language="cpp">cube = new THREE.Mesh(geometry, faceMaterial);
+scene.add(cube);
+</db:programlisting>
+<db:para>Next we create and add some lights to the scene. <db:code>AmbientLight</db:code> defines the surrounding light amount and the directional light is positioned so that it highlights the face of the cube that is currently selected.</db:para>
+<db:programlisting language="cpp">scene.add(new THREE.AmbientLight(0x444444));
+
+var directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+
+directionalLight.position.y = 130;
+directionalLight.position.z = 700;
+directionalLight.position.x = Math.tan(canvas.angleOffset) * directionalLight.position.z;
+directionalLight.position.normalize();
+scene.add(directionalLight);
+</db:programlisting>
+<db:para>Final step in the initialization phase is to create the <db:code>Canvas3D</db:code> renderer and set the initial size and clear color (color of the background) to the renderer.</db:para>
+<db:programlisting language="cpp">renderer = new THREE.Canvas3DRenderer(
+            { canvas: canvas, antialias: true, devicePixelRatio: canvas.devicePixelRatio });
+renderer.setPixelRatio(canvas.devicePixelRatio);
+renderer.setSize(canvas.width, canvas.height);
+setBackgroundColor(canvas.backgroundColor);
+</db:programlisting>
+<db:para>When we need to render the scene in response to the <db:code>paintGL</db:code> signal from Canvas3D, we just copy the current rotation values from the QML side to the cube mesh in the <db:code>paintGL()</db:code> method.</db:para>
+<db:programlisting language="cpp">function paintGL(canvas) {
+    cube.rotation.x = canvas.xRotation * Math.PI / 180;
+    cube.rotation.y = canvas.yRotation * Math.PI / 180;
+    cube.rotation.z = canvas.zRotation * Math.PI / 180;
+    renderer.render(scene, camera);
+}
+</db:programlisting>
+<db:para>For more information on how to use <db:code>three.js</db:code> the documentation is available here: <db:link xlink:href="http://threejs.org/docs/">three.js/docs</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ImageCube.qml">threejs/oneqt/ImageCube.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/InfoSheet.qml">threejs/oneqt/InfoSheet.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/Navibutton.qml">threejs/oneqt/Navibutton.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/SwipeArea.qml">threejs/oneqt/SwipeArea.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/imagecube.js">threejs/oneqt/imagecube.js</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/main.cpp">threejs/oneqt/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/oneqt.pro">threejs/oneqt/oneqt.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/oneqt.qml">threejs/oneqt/oneqt.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/oneqt.qrc">threejs/oneqt/oneqt.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon29x29.png">threejs/oneqt/ios/OneQtIcon29x29.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon29x29@2x.png">threejs/oneqt/ios/OneQtIcon29x29@2x.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon29x29@2x~ipad.png">threejs/oneqt/ios/OneQtIcon29x29@2x~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon29x29~ipad.png">threejs/oneqt/ios/OneQtIcon29x29~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon40x40@2x.png">threejs/oneqt/ios/OneQtIcon40x40@2x.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon40x40@2x~ipad.png">threejs/oneqt/ios/OneQtIcon40x40@2x~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon40x40~ipad.png">threejs/oneqt/ios/OneQtIcon40x40~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon50x50@2x~ipad.png">threejs/oneqt/ios/OneQtIcon50x50@2x~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon50x50~ipad.png">threejs/oneqt/ios/OneQtIcon50x50~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon57x57.png">threejs/oneqt/ios/OneQtIcon57x57.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon57x57@2x.png">threejs/oneqt/ios/OneQtIcon57x57@2x.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon60x60@2x.png">threejs/oneqt/ios/OneQtIcon60x60@2x.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon72x72@2x~ipad.png">threejs/oneqt/ios/OneQtIcon72x72@2x~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon72x72~ipad.png">threejs/oneqt/ios/OneQtIcon72x72~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon76x76@2x~ipad.png">threejs/oneqt/ios/OneQtIcon76x76@2x~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/ios/OneQtIcon76x76~ipad.png">threejs/oneqt/ios/OneQtIcon76x76~ipad.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/dataviz.jpg">threejs/oneqt/textures/dataviz.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/devices.png">threejs/oneqt/textures/devices.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/embedded.png">threejs/oneqt/textures/embedded.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/iot.png">threejs/oneqt/textures/iot.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/multiscreen.png">threejs/oneqt/textures/multiscreen.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/puzzle-pieces.png">threejs/oneqt/textures/puzzle-pieces.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/qtlogo.png">threejs/oneqt/textures/qtlogo.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="threejs/oneqt/textures/qtlogosmall.png">threejs/oneqt/textures/qtlogosmall.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

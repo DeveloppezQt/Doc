@@ -1,0 +1,313 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Hello GLES3 Example</db:title>
+<db:productname>QtOpenGL</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>QtOpenGL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Hello GLES3 example demonstrates easy, cross-platform usage of OpenGL ES 3.0 functions via <db:link xlink:href="qopenglextrafunctions.xml">QOpenGLExtraFunctions</db:link> in an application that works identically on desktop platforms with OpenGL 3.3 and mobile/embedded devices with OpenGL ES 3.0.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;glwindow.h&quot;
+#include &amp;lt;QImage&amp;gt;
+#include &amp;lt;QOpenGLTexture&amp;gt;
+#include &amp;lt;QOpenGLShaderProgram&amp;gt;
+#include &amp;lt;QOpenGLBuffer&amp;gt;
+#include &amp;lt;QOpenGLContext&amp;gt;
+#include &amp;lt;QOpenGLVertexArrayObject&amp;gt;
+#include &amp;lt;QOpenGLExtraFunctions&amp;gt;
+#include &amp;lt;QPropertyAnimation&amp;gt;
+#include &amp;lt;QPauseAnimation&amp;gt;
+#include &amp;lt;QSequentialAnimationGroup&amp;gt;
+#include &amp;lt;QTimer&amp;gt;
+
+GLWindow::GLWindow()
+    : m_texture(0),
+      m_program(0),
+      m_vbo(0),
+      m_vao(0),
+      m_target(0, 0, -1),
+      m_uniformsDirty(true),
+      m_r(0),
+      m_r2(0)
+{
+    m_world.setToIdentity();
+    m_world.translate(0, 0, -1);
+    m_world.rotate(180, 1, 0, 0);
+
+    QSequentialAnimationGroup *animGroup = new QSequentialAnimationGroup(this);
+    animGroup-&amp;gt;setLoopCount(-1);
+    QPropertyAnimation *zAnim0 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim0-&amp;gt;setStartValue(1.5f);
+    zAnim0-&amp;gt;setEndValue(10.0f);
+    zAnim0-&amp;gt;setDuration(2000);
+    animGroup-&amp;gt;addAnimation(zAnim0);
+    QPropertyAnimation *zAnim1 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim1-&amp;gt;setStartValue(10.0f);
+    zAnim1-&amp;gt;setEndValue(50.0f);
+    zAnim1-&amp;gt;setDuration(4000);
+    zAnim1-&amp;gt;setEasingCurve(QEasingCurve::OutElastic);
+    animGroup-&amp;gt;addAnimation(zAnim1);
+    QPropertyAnimation *zAnim2 = new QPropertyAnimation(this, QByteArrayLiteral(&quot;z&quot;));
+    zAnim2-&amp;gt;setStartValue(50.0f);
+    zAnim2-&amp;gt;setEndValue(1.5f);
+    zAnim2-&amp;gt;setDuration(2000);
+    animGroup-&amp;gt;addAnimation(zAnim2);
+    animGroup-&amp;gt;start();
+
+    QPropertyAnimation* rAnim = new QPropertyAnimation(this, QByteArrayLiteral(&quot;r&quot;));
+    rAnim-&amp;gt;setStartValue(0.0f);
+    rAnim-&amp;gt;setEndValue(360.0f);
+    rAnim-&amp;gt;setDuration(2000);
+    rAnim-&amp;gt;setLoopCount(-1);
+    rAnim-&amp;gt;start();
+
+    QTimer::singleShot(4000, this, &amp;amp;GLWindow::startSecondStage);
+}
+
+GLWindow::~GLWindow()
+{
+    makeCurrent();
+    delete m_texture;
+    delete m_program;
+    delete m_vbo;
+    delete m_vao;
+}
+
+void GLWindow::startSecondStage()
+{
+    QPropertyAnimation* r2Anim = new QPropertyAnimation(this, QByteArrayLiteral(&quot;r2&quot;));
+    r2Anim-&amp;gt;setStartValue(0.0f);
+    r2Anim-&amp;gt;setEndValue(360.0f);
+    r2Anim-&amp;gt;setDuration(20000);
+    r2Anim-&amp;gt;setLoopCount(-1);
+    r2Anim-&amp;gt;start();
+}
+
+void GLWindow::setZ(float v)
+{
+    m_eye.setZ(v);
+    m_uniformsDirty = true;
+    update();
+}
+
+void GLWindow::setR(float v)
+{
+    m_r = v;
+    m_uniformsDirty = true;
+    update();
+}
+
+void GLWindow::setR2(float v)
+{
+    m_r2 = v;
+    m_uniformsDirty = true;
+    update();
+}
+
+static const char *vertexShaderSource =
+    &quot;layout(location = 0) in vec4 vertex;\n&quot;
+    &quot;layout(location = 1) in vec3 normal;\n&quot;
+    &quot;out vec3 vert;\n&quot;
+    &quot;out vec3 vertNormal;\n&quot;
+    &quot;out vec3 color;\n&quot;
+    &quot;uniform mat4 projMatrix;\n&quot;
+    &quot;uniform mat4 camMatrix;\n&quot;
+    &quot;uniform mat4 worldMatrix;\n&quot;
+    &quot;uniform mat4 myMatrix;\n&quot;
+    &quot;uniform sampler2D sampler;\n&quot;
+    &quot;void main() {\n&quot;
+    &quot;   ivec2 pos = ivec2(gl_InstanceID % 32, gl_InstanceID / 32);\n&quot;
+    &quot;   vec2 t = vec2(float(-16 + pos.x) * 0.8, float(-18 + pos.y) * 0.6);\n&quot;
+    &quot;   float val = 2.0 * length(texelFetch(sampler, pos, 0).rgb);\n&quot;
+    &quot;   mat4 wm = myMatrix * mat4(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, t.x, t.y, val, 1) * worldMatrix;\n&quot;
+    &quot;   color = texelFetch(sampler, pos, 0).rgb * vec3(0.4, 1.0, 0.0);\n&quot;
+    &quot;   vert = vec3(wm * vertex);\n&quot;
+    &quot;   vertNormal = mat3(transpose(inverse(wm))) * normal;\n&quot;
+    &quot;   gl_Position = projMatrix * camMatrix * wm * vertex;\n&quot;
+    &quot;}\n&quot;;
+
+static const char *fragmentShaderSource =
+    &quot;in highp vec3 vert;\n&quot;
+    &quot;in highp vec3 vertNormal;\n&quot;
+    &quot;in highp vec3 color;\n&quot;
+    &quot;out highp vec4 fragColor;\n&quot;
+    &quot;uniform highp vec3 lightPos;\n&quot;
+    &quot;void main() {\n&quot;
+    &quot;   highp vec3 L = normalize(lightPos - vert);\n&quot;
+    &quot;   highp float NL = max(dot(normalize(vertNormal), L), 0.0);\n&quot;
+    &quot;   highp vec3 col = clamp(color * 0.2 + color * 0.8 * NL, 0.0, 1.0);\n&quot;
+    &quot;   fragColor = vec4(col, 1.0);\n&quot;
+    &quot;}\n&quot;;
+
+QByteArray versionedShaderCode(const char *src)
+{
+    QByteArray versionedSrc;
+
+    if (QOpenGLContext::currentContext()-&amp;gt;isOpenGLES())
+        versionedSrc.append(QByteArrayLiteral(&quot;#version 300 es\n&quot;));
+    else
+        versionedSrc.append(QByteArrayLiteral(&quot;#version 330\n&quot;));
+
+    versionedSrc.append(src);
+    return versionedSrc;
+}
+
+void GLWindow::initializeGL()
+{
+    QOpenGLFunctions *f = QOpenGLContext::currentContext()-&amp;gt;functions();
+
+    if (m_texture) {
+        delete m_texture;
+        m_texture = 0;
+    }
+    QImage img(&quot;:/qtlogo.png&quot;);
+    Q_ASSERT(!img.isNull());
+    m_texture = new QOpenGLTexture(img.scaled(32, 36).mirrored());
+
+    if (m_program) {
+        delete m_program;
+        m_program = 0;
+    }
+    m_program = new QOpenGLShaderProgram;
+    // Prepend the correct version directive to the sources. The rest is the
+    // same, thanks to the common GLSL syntax.
+    m_program-&amp;gt;addShaderFromSourceCode(QOpenGLShader::Vertex, versionedShaderCode(vertexShaderSource));
+    m_program-&amp;gt;addShaderFromSourceCode(QOpenGLShader::Fragment, versionedShaderCode(fragmentShaderSource));
+    m_program-&amp;gt;link();
+
+    m_projMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;projMatrix&quot;);
+    m_camMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;camMatrix&quot;);
+    m_worldMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;worldMatrix&quot;);
+    m_myMatrixLoc = m_program-&amp;gt;uniformLocation(&quot;myMatrix&quot;);
+    m_lightPosLoc = m_program-&amp;gt;uniformLocation(&quot;lightPos&quot;);
+
+    // Create a VAO. Not strictly required for ES 3, but it is for plain OpenGL.
+    if (m_vao) {
+        delete m_vao;
+        m_vao = 0;
+    }
+    m_vao = new QOpenGLVertexArrayObject;
+    if (m_vao-&amp;gt;create())
+        m_vao-&amp;gt;bind();
+
+    if (m_vbo) {
+        delete m_vbo;
+        m_vbo = 0;
+    }
+    m_program-&amp;gt;bind();
+    m_vbo = new QOpenGLBuffer;
+    m_vbo-&amp;gt;create();
+    m_vbo-&amp;gt;bind();
+    m_vbo-&amp;gt;allocate(m_logo.constData(), m_logo.count() * sizeof(GLfloat));
+    f-&amp;gt;glEnableVertexAttribArray(0);
+    f-&amp;gt;glEnableVertexAttribArray(1);
+    f-&amp;gt;glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat), 0);
+    f-&amp;gt;glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(GLfloat),
+                             reinterpret_cast&amp;lt;void *&amp;gt;(3 * sizeof(GLfloat)));
+    m_vbo-&amp;gt;release();
+
+    f-&amp;gt;glEnable(GL_DEPTH_TEST);
+    f-&amp;gt;glEnable(GL_CULL_FACE);
+}
+
+void GLWindow::resizeGL(int w, int h)
+{
+    m_proj.setToIdentity();
+    m_proj.perspective(45.0f, GLfloat(w) / h, 0.01f, 100.0f);
+    m_uniformsDirty = true;
+}
+
+void GLWindow::paintGL()
+{
+    // Now use QOpenGLExtraFunctions instead of QOpenGLFunctions as we want to
+    // do more than what GL(ES) 2.0 offers.
+    QOpenGLExtraFunctions *f = QOpenGLContext::currentContext()-&amp;gt;extraFunctions();
+
+    f-&amp;gt;glClearColor(0, 0, 0, 1);
+    f-&amp;gt;glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    m_program-&amp;gt;bind();
+    m_texture-&amp;gt;bind();
+
+    if (m_uniformsDirty) {
+        m_uniformsDirty = false;
+        QMatrix4x4 camera;
+        camera.lookAt(m_eye, m_eye + m_target, QVector3D(0, 1, 0));
+        m_program-&amp;gt;setUniformValue(m_projMatrixLoc, m_proj);
+        m_program-&amp;gt;setUniformValue(m_camMatrixLoc, camera);
+        QMatrix4x4 wm = m_world;
+        wm.rotate(m_r, 1, 1, 0);
+        m_program-&amp;gt;setUniformValue(m_worldMatrixLoc, wm);
+        QMatrix4x4 mm;
+        mm.setToIdentity();
+        mm.rotate(-m_r2, 1, 0, 0);
+        m_program-&amp;gt;setUniformValue(m_myMatrixLoc, mm);
+        m_program-&amp;gt;setUniformValue(m_lightPosLoc, QVector3D(0, 0, 70));
+    }
+
+    // Now call a function introduced in OpenGL 3.1 / OpenGL ES 3.0. We
+    // requested a 3.3 or ES 3.0 context, so we know this will work.
+    f-&amp;gt;glDrawArraysInstanced(GL_TRIANGLES, 0, m_logo.vertexCount(), 32 * 36);
+}
+
+</db:programlisting>
+</db:article>

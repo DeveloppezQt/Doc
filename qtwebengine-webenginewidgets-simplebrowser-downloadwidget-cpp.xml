@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Simple Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple browser based on Qt WebEngine Widgets.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;downloadwidget.h&quot;
+
+#include &amp;lt;QFileInfo&amp;gt;
+#include &amp;lt;QUrl&amp;gt;
+#include &amp;lt;QWebEngineDownloadItem&amp;gt;
+
+DownloadWidget::DownloadWidget(QWebEngineDownloadItem *download, QWidget *parent)
+    : QFrame(parent)
+    , m_download(download)
+    , m_timeAdded(QTime::currentTime())
+{
+    setupUi(this);
+    m_dstName-&amp;gt;setText(QFileInfo(m_download-&amp;gt;path()).fileName());
+    m_srcUrl-&amp;gt;setText(m_download-&amp;gt;url().toDisplayString());
+
+    connect(m_cancelButton, &amp;amp;QPushButton::clicked,
+            [this](bool) {
+        if (m_download-&amp;gt;state() == QWebEngineDownloadItem::DownloadInProgress)
+            m_download-&amp;gt;cancel();
+        else
+            emit removeClicked(this);
+    });
+
+    connect(m_download, &amp;amp;QWebEngineDownloadItem::downloadProgress,
+            this, &amp;amp;DownloadWidget::updateWidget);
+
+    connect(m_download, &amp;amp;QWebEngineDownloadItem::stateChanged,
+            this, &amp;amp;DownloadWidget::updateWidget);
+
+    updateWidget();
+}
+
+inline QString DownloadWidget::withUnit(qreal bytes)
+{
+    if (bytes &amp;lt; (1 &amp;lt;&amp;lt; 10))
+        return tr(&quot;%L1 B&quot;).arg(bytes);
+    else if (bytes &amp;lt; (1 &amp;lt;&amp;lt; 20))
+        return tr(&quot;%L1 KiB&quot;).arg(bytes / (1 &amp;lt;&amp;lt; 10), 0, 'f', 2);
+    else if (bytes &amp;lt; (1 &amp;lt;&amp;lt; 30))
+        return tr(&quot;%L1 MiB&quot;).arg(bytes / (1 &amp;lt;&amp;lt; 20), 0, 'f', 2);
+    else
+        return tr(&quot;%L1 GiB&quot;).arg(bytes / (1 &amp;lt;&amp;lt; 30), 0, 'f', 2);
+}
+
+void DownloadWidget::updateWidget()
+{
+    qreal totalBytes = m_download-&amp;gt;totalBytes();
+    qreal receivedBytes = m_download-&amp;gt;receivedBytes();
+    qreal bytesPerSecond = receivedBytes / m_timeAdded.elapsed() * 1000;
+
+    auto state = m_download-&amp;gt;state();
+    switch (state) {
+    case QWebEngineDownloadItem::DownloadRequested:
+        Q_UNREACHABLE();
+        break;
+    case QWebEngineDownloadItem::DownloadInProgress:
+        if (totalBytes &amp;gt;= 0) {
+            m_progressBar-&amp;gt;setValue(qRound(100 * receivedBytes / totalBytes));
+            m_progressBar-&amp;gt;setDisabled(false);
+            m_progressBar-&amp;gt;setFormat(
+                tr(&quot;%p% - %1 of %2 downloaded - %3/s&quot;)
+                .arg(withUnit(receivedBytes))
+                .arg(withUnit(totalBytes))
+                .arg(withUnit(bytesPerSecond)));
+        } else {
+            m_progressBar-&amp;gt;setValue(0);
+            m_progressBar-&amp;gt;setDisabled(false);
+            m_progressBar-&amp;gt;setFormat(
+                tr(&quot;unknown size - %1 downloaded - %2/s&quot;)
+                .arg(withUnit(receivedBytes))
+                .arg(withUnit(bytesPerSecond)));
+        }
+        break;
+    case QWebEngineDownloadItem::DownloadCompleted:
+        m_progressBar-&amp;gt;setValue(100);
+        m_progressBar-&amp;gt;setDisabled(true);
+        m_progressBar-&amp;gt;setFormat(
+            tr(&quot;completed - %1 downloaded - %2/s&quot;)
+            .arg(withUnit(receivedBytes))
+            .arg(withUnit(bytesPerSecond)));
+        break;
+    case QWebEngineDownloadItem::DownloadCancelled:
+        m_progressBar-&amp;gt;setValue(0);
+        m_progressBar-&amp;gt;setDisabled(true);
+        m_progressBar-&amp;gt;setFormat(
+            tr(&quot;cancelled - %1 downloaded - %2/s&quot;)
+            .arg(withUnit(receivedBytes))
+            .arg(withUnit(bytesPerSecond)));
+        break;
+    case QWebEngineDownloadItem::DownloadInterrupted:
+        m_progressBar-&amp;gt;setValue(0);
+        m_progressBar-&amp;gt;setDisabled(true);
+        m_progressBar-&amp;gt;setFormat(
+            tr(&quot;interrupted: %1&quot;)
+            .arg(m_download-&amp;gt;interruptReasonString()));
+        break;
+    }
+
+    if (state == QWebEngineDownloadItem::DownloadInProgress) {
+        static QIcon cancelIcon(QStringLiteral(&quot;:process-stop.png&quot;));
+        m_cancelButton-&amp;gt;setIcon(cancelIcon);
+        m_cancelButton-&amp;gt;setToolTip(tr(&quot;Stop downloading&quot;));
+    } else {
+        static QIcon removeIcon(QStringLiteral(&quot;:edit-clear.png&quot;));
+        m_cancelButton-&amp;gt;setIcon(removeIcon);
+        m_cancelButton-&amp;gt;setToolTip(tr(&quot;Remove from list&quot;));
+    }
+}
+
+</db:programlisting>
+</db:article>

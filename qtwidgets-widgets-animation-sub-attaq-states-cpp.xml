@@ -1,0 +1,361 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Sub-Attaq</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows Qt's ability to combine <db:link xlink:href="animation-overview.xml">the animation framework</db:link> and <db:link xlink:href="statemachine-api.xml">the state machine framework</db:link> to create a game.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtCore module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+//Own
+#include &quot;states.h&quot;
+#include &quot;graphicsscene.h&quot;
+#include &quot;boat.h&quot;
+#include &quot;submarine.h&quot;
+#include &quot;torpedo.h&quot;
+#include &quot;animationmanager.h&quot;
+#include &quot;progressitem.h&quot;
+#include &quot;textinformationitem.h&quot;
+
+//Qt
+#include &amp;lt;QtWidgets/QMessageBox&amp;gt;
+#include &amp;lt;QtWidgets/QGraphicsView&amp;gt;
+#include &amp;lt;QtCore/QStateMachine&amp;gt;
+#include &amp;lt;QtWidgets/QKeyEventTransition&amp;gt;
+#include &amp;lt;QtCore/QFinalState&amp;gt;
+#include &amp;lt;QtCore/QRandomGenerator&amp;gt;
+
+PlayState::PlayState(GraphicsScene *scene, QState *parent)
+    : QState(parent),
+    scene(scene),
+    machine(0),
+    currentLevel(0),
+    score(0)
+{
+}
+
+PlayState::~PlayState()
+{
+    delete machine;
+}
+
+void PlayState::onEntry(QEvent *)
+{
+    //We are now playing?
+    if (machine) {
+        machine-&amp;gt;stop();
+        //we hide the information
+        scene-&amp;gt;textInformationItem-&amp;gt;hide();
+        scene-&amp;gt;clearScene();
+        currentLevel = 0;
+        score = 0;
+        delete machine;
+    }
+
+    machine = new QStateMachine;
+
+    //This state is when player is playing
+    LevelState *levelState = new LevelState(scene, this, machine);
+
+    //This state is when the player is actually playing but the game is not paused
+    QState *playingState = new QState(levelState);
+    levelState-&amp;gt;setInitialState(playingState);
+
+    //This state is when the game is paused
+    PauseState *pauseState = new PauseState(scene, levelState);
+
+    //We have one view, it receive the key press event
+    QKeyEventTransition *pressPplay = new QKeyEventTransition(scene-&amp;gt;views().at(0), QEvent::KeyPress, Qt::Key_P);
+    pressPplay-&amp;gt;setTargetState(pauseState);
+    QKeyEventTransition *pressPpause = new QKeyEventTransition(scene-&amp;gt;views().at(0), QEvent::KeyPress, Qt::Key_P);
+    pressPpause-&amp;gt;setTargetState(playingState);
+
+    //Pause &quot;P&quot; is triggered, the player pause the game
+    playingState-&amp;gt;addTransition(pressPplay);
+
+    //To get back playing when the game has been paused
+    pauseState-&amp;gt;addTransition(pressPpause);
+
+    //This state is when player have lost
+    LostState *lostState = new LostState(scene, this, machine);
+
+    //This state is when player have won
+    WinState *winState = new WinState(scene, this, machine);
+
+    //The boat has been destroyed then the game is finished
+    levelState-&amp;gt;addTransition(scene-&amp;gt;boat, SIGNAL(boatExecutionFinished()),lostState);
+
+    //This transition check if we won or not
+    WinTransition *winTransition = new WinTransition(scene, this, winState);
+
+    //The boat has been destroyed then the game is finished
+    levelState-&amp;gt;addTransition(winTransition);
+
+    //This state is an animation when the score changed
+    UpdateScoreState *scoreState = new UpdateScoreState(levelState);
+
+    //This transition update the score when a submarine die
+    UpdateScoreTransition *scoreTransition = new UpdateScoreTransition(scene, this, levelState);
+    scoreTransition-&amp;gt;setTargetState(scoreState);
+
+    //The boat has been destroyed then the game is finished
+    playingState-&amp;gt;addTransition(scoreTransition);
+
+    //We go back to play state
+    scoreState-&amp;gt;addTransition(playingState);
+
+    //We start playing!!!
+    machine-&amp;gt;setInitialState(levelState);
+
+    //Final state
+    QFinalState *final = new QFinalState(machine);
+
+    //This transition is triggered when the player press space after completing a level
+    CustomSpaceTransition *spaceTransition = new CustomSpaceTransition(scene-&amp;gt;views().at(0), this, QEvent::KeyPress, Qt::Key_Space);
+    spaceTransition-&amp;gt;setTargetState(levelState);
+    winState-&amp;gt;addTransition(spaceTransition);
+
+    //We lost we should reach the final state
+    lostState-&amp;gt;addTransition(lostState, SIGNAL(finished()), final);
+
+    machine-&amp;gt;start();
+}
+
+LevelState::LevelState(GraphicsScene *scene, PlayState *game, QState *parent) : QState(parent), scene(scene), game(game)
+{
+}
+void LevelState::onEntry(QEvent *)
+{
+    initializeLevel();
+}
+
+void LevelState::initializeLevel()
+{
+    //we re-init the boat
+    scene-&amp;gt;boat-&amp;gt;setPos(scene-&amp;gt;width()/2, scene-&amp;gt;sealLevel() - scene-&amp;gt;boat-&amp;gt;size().height());
+    scene-&amp;gt;boat-&amp;gt;setCurrentSpeed(0);
+    scene-&amp;gt;boat-&amp;gt;setCurrentDirection(Boat::None);
+    scene-&amp;gt;boat-&amp;gt;setBombsLaunched(0);
+    scene-&amp;gt;boat-&amp;gt;show();
+    scene-&amp;gt;setFocusItem(scene-&amp;gt;boat, Qt::OtherFocusReason);
+    scene-&amp;gt;boat-&amp;gt;run();
+
+    scene-&amp;gt;progressItem-&amp;gt;setScore(game-&amp;gt;score);
+    scene-&amp;gt;progressItem-&amp;gt;setLevel(game-&amp;gt;currentLevel + 1);
+
+    GraphicsScene::LevelDescription currentLevelDescription = scene-&amp;gt;levelsData.value(game-&amp;gt;currentLevel);
+
+    for (int i = 0; i &amp;lt; currentLevelDescription.submarines.size(); ++i ) {
+
+        QPair&amp;lt;int,int&amp;gt; subContent = currentLevelDescription.submarines.at(i);
+        GraphicsScene::SubmarineDescription submarineDesc = scene-&amp;gt;submarinesData.at(subContent.first);
+
+        for (int j = 0; j &amp;lt; subContent.second; ++j ) {
+            SubMarine *sub = new SubMarine(submarineDesc.type, submarineDesc.name, submarineDesc.points);
+            scene-&amp;gt;addItem(sub);
+            int random = QRandomGenerator::global()-&amp;gt;bounded(15) + 1;
+            qreal x = random == 13 || random == 5 ? 0 : scene-&amp;gt;width() - sub-&amp;gt;size().width();
+            qreal y = scene-&amp;gt;height() -(QRandomGenerator::global()-&amp;gt;bounded(150) + 1) - sub-&amp;gt;size().height();
+            sub-&amp;gt;setPos(x,y);
+            sub-&amp;gt;setCurrentDirection(x == 0 ? SubMarine::Right : SubMarine::Left);
+            sub-&amp;gt;setCurrentSpeed(QRandomGenerator::global()-&amp;gt;bounded(3) + 1);
+        }
+    }
+}
+
+/** Pause State */
+PauseState::PauseState(GraphicsScene *scene, QState *parent) : QState(parent),scene(scene)
+{
+}
+void PauseState::onEntry(QEvent *)
+{
+    AnimationManager::self()-&amp;gt;pauseAll();
+    scene-&amp;gt;boat-&amp;gt;setEnabled(false);
+}
+void PauseState::onExit(QEvent *)
+{
+    AnimationManager::self()-&amp;gt;resumeAll();
+    scene-&amp;gt;boat-&amp;gt;setEnabled(true);
+    scene-&amp;gt;boat-&amp;gt;setFocus();
+}
+
+/** Lost State */
+LostState::LostState(GraphicsScene *scene, PlayState *game, QState *parent) : QState(parent), scene(scene), game(game)
+{
+}
+
+void LostState::onEntry(QEvent *)
+{
+    //The message to display
+    QString message = QString(&quot;You lose on level %1. Your score is %2.&quot;).arg(game-&amp;gt;currentLevel+1).arg(game-&amp;gt;score);
+
+    //We set the level back to 0
+    game-&amp;gt;currentLevel = 0;
+
+    //We set the score back to 0
+    game-&amp;gt;score = 0;
+
+    //We clear the scene
+    scene-&amp;gt;clearScene();
+
+    //We inform the player
+    scene-&amp;gt;textInformationItem-&amp;gt;setMessage(message);
+    scene-&amp;gt;textInformationItem-&amp;gt;show();
+}
+
+void LostState::onExit(QEvent *)
+{
+    //we hide the information
+    scene-&amp;gt;textInformationItem-&amp;gt;hide();
+}
+
+/** Win State */
+WinState::WinState(GraphicsScene *scene, PlayState *game, QState *parent) : QState(parent), scene(scene), game(game)
+{
+}
+
+void WinState::onEntry(QEvent *)
+{
+    //We clear the scene
+    scene-&amp;gt;clearScene();
+
+    QString message;
+    if (scene-&amp;gt;levelsData.size() - 1 != game-&amp;gt;currentLevel) {
+        message = QString(&quot;You win the level %1. Your score is %2.\nPress Space to continue.&quot;).arg(game-&amp;gt;currentLevel+1).arg(game-&amp;gt;score);
+        //We increment the level number
+        game-&amp;gt;currentLevel++;
+    } else {
+        message = QString(&quot;You finish the game on level %1. Your score is %2.&quot;).arg(game-&amp;gt;currentLevel+1).arg(game-&amp;gt;score);
+        //We set the level back to 0
+        game-&amp;gt;currentLevel = 0;
+        //We set the score back to 0
+        game-&amp;gt;score = 0;
+    }
+
+    //We inform the player
+    scene-&amp;gt;textInformationItem-&amp;gt;setMessage(message);
+    scene-&amp;gt;textInformationItem-&amp;gt;show();
+}
+
+void WinState::onExit(QEvent *)
+{
+    //we hide the information
+    scene-&amp;gt;textInformationItem-&amp;gt;hide();
+}
+
+/** UpdateScore State */
+UpdateScoreState::UpdateScoreState(QState *parent) : QState(parent)
+{
+}
+
+/** Win transition */
+UpdateScoreTransition::UpdateScoreTransition(GraphicsScene *scene, PlayState *game, QAbstractState *target)
+    : QSignalTransition(scene,SIGNAL(subMarineDestroyed(int))),
+    game(game), scene(scene)
+{
+    setTargetState(target);
+}
+
+bool UpdateScoreTransition::eventTest(QEvent *event)
+{
+    if (!QSignalTransition::eventTest(event))
+        return false;
+    QStateMachine::SignalEvent *se = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(event);
+    game-&amp;gt;score += se-&amp;gt;arguments().at(0).toInt();
+    scene-&amp;gt;progressItem-&amp;gt;setScore(game-&amp;gt;score);
+    return true;
+}
+
+/** Win transition */
+WinTransition::WinTransition(GraphicsScene *scene, PlayState *game, QAbstractState *target)
+    : QSignalTransition(scene,SIGNAL(allSubMarineDestroyed(int))),
+    game(game), scene(scene)
+{
+    setTargetState(target);
+}
+
+bool WinTransition::eventTest(QEvent *event)
+{
+    if (!QSignalTransition::eventTest(event))
+        return false;
+    QStateMachine::SignalEvent *se = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(event);
+    game-&amp;gt;score += se-&amp;gt;arguments().at(0).toInt();
+    scene-&amp;gt;progressItem-&amp;gt;setScore(game-&amp;gt;score);
+    return true;
+}
+
+/** Space transition */
+CustomSpaceTransition::CustomSpaceTransition(QWidget *widget, PlayState *game, QEvent::Type type, int key)
+    :   QKeyEventTransition(widget, type, key),
+        game(game)
+{
+}
+
+bool CustomSpaceTransition::eventTest(QEvent *event)
+{
+    if (!QKeyEventTransition::eventTest(event))
+        return false;
+    return (game-&amp;gt;currentLevel != 0);
+}
+
+</db:programlisting>
+</db:article>

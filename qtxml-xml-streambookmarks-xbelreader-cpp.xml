@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QXmlStream Bookmarks Example</db:title>
+<db:productname>QtXml</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read and write to XBEL files.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+
+#include &quot;xbelreader.h&quot;
+
+XbelReader::XbelReader(QTreeWidget *treeWidget)
+    : treeWidget(treeWidget)
+{
+    QStyle *style = treeWidget-&amp;gt;style();
+
+    folderIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_DirClosedIcon),
+                         QIcon::Normal, QIcon::Off);
+    folderIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_DirOpenIcon),
+                         QIcon::Normal, QIcon::On);
+    bookmarkIcon.addPixmap(style-&amp;gt;standardPixmap(QStyle::SP_FileIcon));
+}
+
+bool XbelReader::read(QIODevice *device)
+{
+    xml.setDevice(device);
+
+    if (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;xbel&quot;)
+            &amp;amp;&amp;amp; xml.attributes().value(versionAttribute()) == QLatin1String(&quot;1.0&quot;)) {
+            readXBEL();
+        } else {
+            xml.raiseError(QObject::tr(&quot;The file is not an XBEL version 1.0 file.&quot;));
+        }
+    }
+
+    return !xml.error();
+}
+
+QString XbelReader::errorString() const
+{
+    return QObject::tr(&quot;%1\nLine %2, column %3&quot;)
+            .arg(xml.errorString())
+            .arg(xml.lineNumber())
+            .arg(xml.columnNumber());
+}
+
+void XbelReader::readXBEL()
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;xbel&quot;));
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;folder&quot;))
+            readFolder(0);
+        else if (xml.name() == QLatin1String(&quot;bookmark&quot;))
+            readBookmark(0);
+        else if (xml.name() == QLatin1String(&quot;separator&quot;))
+            readSeparator(0);
+        else
+            xml.skipCurrentElement();
+    }
+}
+
+void XbelReader::readTitle(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;title&quot;));
+
+    QString title = xml.readElementText();
+    item-&amp;gt;setText(0, title);
+}
+
+void XbelReader::readSeparator(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;separator&quot;));
+
+    QTreeWidgetItem *separator = createChildItem(item);
+    separator-&amp;gt;setFlags(item-&amp;gt;flags() &amp;amp; ~Qt::ItemIsSelectable);
+    separator-&amp;gt;setText(0, QString(30, 0xB7));
+    xml.skipCurrentElement();
+}
+
+void XbelReader::readFolder(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;folder&quot;));
+
+    QTreeWidgetItem *folder = createChildItem(item);
+    bool folded = (xml.attributes().value(foldedAttribute()) != QLatin1String(&quot;no&quot;));
+    treeWidget-&amp;gt;setItemExpanded(folder, !folded);
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;title&quot;))
+            readTitle(folder);
+        else if (xml.name() == QLatin1String(&quot;folder&quot;))
+            readFolder(folder);
+        else if (xml.name() == QLatin1String(&quot;bookmark&quot;))
+            readBookmark(folder);
+        else if (xml.name() == QLatin1String(&quot;separator&quot;))
+            readSeparator(folder);
+        else
+            xml.skipCurrentElement();
+    }
+}
+
+void XbelReader::readBookmark(QTreeWidgetItem *item)
+{
+    Q_ASSERT(xml.isStartElement() &amp;amp;&amp;amp; xml.name() == QLatin1String(&quot;bookmark&quot;));
+
+    QTreeWidgetItem *bookmark = createChildItem(item);
+    bookmark-&amp;gt;setFlags(bookmark-&amp;gt;flags() | Qt::ItemIsEditable);
+    bookmark-&amp;gt;setIcon(0, bookmarkIcon);
+    bookmark-&amp;gt;setText(0, QObject::tr(&quot;Unknown title&quot;));
+    bookmark-&amp;gt;setText(1, xml.attributes().value(hrefAttribute()).toString());
+
+    while (xml.readNextStartElement()) {
+        if (xml.name() == QLatin1String(&quot;title&quot;))
+            readTitle(bookmark);
+        else
+            xml.skipCurrentElement();
+    }
+}
+
+QTreeWidgetItem *XbelReader::createChildItem(QTreeWidgetItem *item)
+{
+    QTreeWidgetItem *childItem;
+    if (item) {
+        childItem = new QTreeWidgetItem(item);
+    } else {
+        childItem = new QTreeWidgetItem(treeWidget);
+    }
+    childItem-&amp;gt;setData(0, Qt::UserRole, xml.name().toString());
+    return childItem;
+}
+
+</db:programlisting>
+</db:article>

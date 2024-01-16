@@ -1,0 +1,493 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth QML Ping Pong example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A QML example showing Bluetooth communication.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/***************************************************************************
+**
+** Copyright (C) 2014 BlackBerry Limited. All rights reserved.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;pingpong.h&quot;
+#include &amp;lt;QDebug&amp;gt;
+#ifdef Q_OS_ANDROID
+#include &amp;lt;QtAndroid&amp;gt;
+#endif
+
+PingPong::PingPong():
+    m_serverInfo(0), socket(0), discoveryAgent(0), interval(5), m_resultLeft(0), m_resultRight(0),
+    m_showDialog(false), m_role(0), m_proportionX(0), m_proportionY(0), m_serviceFound(false)
+{
+    m_timer = new QTimer(this);
+    connect(m_timer, &amp;amp;QTimer::timeout, this, &amp;amp;PingPong::update);
+}
+
+PingPong::~PingPong()
+{
+    delete m_timer;
+    delete m_serverInfo;
+    delete socket;
+    delete discoveryAgent;
+}
+
+void PingPong::startGame()
+{
+    m_showDialog = false;
+    emit showDialogChanged();
+    if (m_role == 1)
+        updateDirection();
+
+    m_timer-&amp;gt;start(50);
+}
+
+void PingPong::update()
+{
+    QByteArray size;
+    // Server is only updating the coordinates
+    if (m_role == 1) {
+        checkBoundaries();
+        m_ballPreviousX = m_ballX;
+        m_ballPreviousY = m_ballY;
+        m_ballY = m_direction*(m_ballX+interval) - m_direction*m_ballX + m_ballY;
+        m_ballX = m_ballX + interval;
+
+        size.setNum(m_ballX);
+        size.append(' ');
+        QByteArray size1;
+        size1.setNum(m_ballY);
+        size.append(size1);
+        size.append(' ');
+        size1.setNum(m_leftBlockY);
+        size.append(size1);
+        size.append(&quot; \n&quot;);
+        socket-&amp;gt;write(size.constData());
+        emit ballChanged();
+    }
+    else if (m_role == 2) {
+        size.setNum(m_rightBlockY);
+        size.append(&quot; \n&quot;);
+        socket-&amp;gt;write(size.constData());
+    }
+}
+
+void PingPong::setSize(const float &amp;amp;x, const float &amp;amp;y)
+{
+    m_boardWidth = x;
+    m_boardHeight = y;
+    m_targetX = m_boardWidth;
+    m_targetY = m_boardHeight/2;
+    m_ballPreviousX = m_ballX = m_boardWidth/2;
+    m_ballPreviousY = m_ballY = m_boardHeight - m_boardWidth/54;
+    emit ballChanged();
+}
+
+void PingPong::updateBall(const float &amp;amp;bX, const float &amp;amp;bY)
+{
+    m_ballX = bX;
+    m_ballY = bY;
+}
+
+void PingPong::updateLeftBlock(const float &amp;amp;lY)
+{
+    m_leftBlockY = lY;
+}
+
+void PingPong::updateRightBlock(const float &amp;amp;rY)
+{
+    m_rightBlockY = rY;
+}
+
+void PingPong::checkBoundaries()
+{
+    float ballWidth = m_boardWidth/54;
+    float blockSize = m_boardWidth/27;
+    float blockHeight = m_boardHeight/5;
+    if (((m_ballX + ballWidth) &amp;gt; (m_boardWidth - blockSize)) &amp;amp;&amp;amp; ((m_ballY + ballWidth) &amp;lt; (m_rightBlockY + blockHeight))
+            &amp;amp;&amp;amp; (m_ballY &amp;gt; m_rightBlockY)) {
+        m_targetY = 2 * m_ballY - m_ballPreviousY;
+        m_targetX = m_ballPreviousX;
+        interval = -5;
+        updateDirection();
+    }
+    else if ((m_ballX &amp;lt; blockSize) &amp;amp;&amp;amp; ((m_ballY + ballWidth) &amp;lt; (m_leftBlockY + blockHeight))
+             &amp;amp;&amp;amp; (m_ballY &amp;gt; m_leftBlockY)) {
+        m_targetY = 2 * m_ballY - m_ballPreviousY;
+        m_targetX = m_ballPreviousX;
+        interval = 5;
+        updateDirection();
+    }
+    else if (m_ballY &amp;lt; 0 || (m_ballY + ballWidth &amp;gt; m_boardHeight)) {
+        m_targetY = m_ballPreviousY;
+        m_targetX = m_ballX + interval;
+        updateDirection();
+    }
+    else if ((m_ballX + ballWidth) &amp;gt; m_boardWidth) {
+        m_resultLeft++;
+        m_targetX = m_boardWidth;
+        m_targetY = m_boardHeight/2;
+        m_ballPreviousX = m_ballX = m_boardWidth/2;
+        m_ballPreviousY = m_ballY = m_boardHeight - m_boardWidth/54;
+
+        updateDirection();
+        checkResult();
+        QByteArray result;
+        result.append(&quot;result &quot;);
+        QByteArray res;
+        res.setNum(m_resultLeft);
+        result.append(res);
+        result.append(' ');
+        res.setNum(m_resultRight);
+        result.append(res);
+        result.append(&quot; \n&quot;);
+        socket-&amp;gt;write(result);
+        qDebug() &amp;lt;&amp;lt; result;
+        emit resultChanged();
+    }
+    else if (m_ballX &amp;lt; 0) {
+        m_resultRight++;
+        m_targetX = 0;
+        m_targetY = m_boardHeight/2;
+        m_ballPreviousX = m_ballX = m_boardWidth/2;
+        m_ballPreviousY = m_ballY = m_boardHeight - m_boardWidth/54;
+        updateDirection();
+        checkResult();
+        QByteArray result;
+        result.append(&quot;result &quot;);
+        QByteArray res;
+        res.setNum(m_resultLeft);
+        result.append(res);
+        result.append(' ');
+        res.setNum(m_resultRight);
+        result.append(res);
+        result.append(&quot; \n&quot;);
+        socket-&amp;gt;write(result);
+        emit resultChanged();
+    }
+}
+
+void PingPong::checkResult()
+{
+    if (m_resultRight == 10 &amp;amp;&amp;amp; m_role == 2) {
+        setMessage(&quot;Game over. You win!&quot;);
+        m_timer-&amp;gt;stop();
+    }
+    else if (m_resultRight == 10 &amp;amp;&amp;amp; m_role == 1) {
+        setMessage(&quot;Game over. You lose!&quot;);
+        m_timer-&amp;gt;stop();
+    }
+    else if (m_resultLeft == 10 &amp;amp;&amp;amp; m_role == 1) {
+        setMessage(&quot;Game over. You win!&quot;);
+        m_timer-&amp;gt;stop();
+    }
+    else if (m_resultLeft == 10 &amp;amp;&amp;amp; m_role == 2) {
+        setMessage(&quot;Game over. You lose!&quot;);
+        m_timer-&amp;gt;stop();
+    }
+}
+
+void PingPong::updateDirection()
+{
+    m_direction = (m_targetY - m_ballY)/(m_targetX - m_ballX);
+}
+
+void PingPong::startServer()
+{
+    setMessage(QStringLiteral(&quot;Starting the server&quot;));
+    m_serverInfo = new QBluetoothServer(QBluetoothServiceInfo::RfcommProtocol, this);
+    connect(m_serverInfo, &amp;amp;QBluetoothServer::newConnection,
+            this, &amp;amp;PingPong::clientConnected);
+    connect(m_serverInfo, QOverload&amp;lt;QBluetoothServer::Error&amp;gt;::of(&amp;amp;QBluetoothServer::error),
+            this, &amp;amp;PingPong::serverError);
+    const QBluetoothUuid uuid(serviceUuid);
+
+    m_serverInfo-&amp;gt;listen(uuid, QStringLiteral(&quot;PingPong server&quot;));
+    setMessage(QStringLiteral(&quot;Server started, waiting for the client. You are the left player.&quot;));
+    // m_role is set to 1 if it is a server
+    m_role = 1;
+    emit roleChanged();
+}
+
+void PingPong::startClient()
+{
+    discoveryAgent = new QBluetoothServiceDiscoveryAgent(QBluetoothAddress());
+
+    connect(discoveryAgent, &amp;amp;QBluetoothServiceDiscoveryAgent::serviceDiscovered,
+            this, &amp;amp;PingPong::addService);
+    connect(discoveryAgent, &amp;amp;QBluetoothServiceDiscoveryAgent::finished,
+            this, &amp;amp;PingPong::done);
+    connect(discoveryAgent, QOverload&amp;lt;QBluetoothServiceDiscoveryAgent::Error&amp;gt;::of(&amp;amp;QBluetoothServiceDiscoveryAgent::error),
+            this, &amp;amp;PingPong::serviceScanError);
+#ifdef Q_OS_ANDROID //see QTBUG-61392
+    if (QtAndroid::androidSdkVersion() &amp;gt;= 23)
+        discoveryAgent-&amp;gt;setUuidFilter(QBluetoothUuid(androidUuid));
+    else
+        discoveryAgent-&amp;gt;setUuidFilter(QBluetoothUuid(serviceUuid));
+#else
+    discoveryAgent-&amp;gt;setUuidFilter(QBluetoothUuid(serviceUuid));
+#endif
+    discoveryAgent-&amp;gt;start(QBluetoothServiceDiscoveryAgent::FullDiscovery);
+
+    setMessage(QStringLiteral(&quot;Starting server discovery. You are the right player&quot;));
+    // m_role is set to 2 if it is a client
+    m_role = 2;
+    emit roleChanged();
+}
+
+void PingPong::clientConnected()
+{
+    if (!m_serverInfo-&amp;gt;hasPendingConnections()) {
+        setMessage(&quot;FAIL: expected pending server connection&quot;);
+        return;
+    }
+    socket = m_serverInfo-&amp;gt;nextPendingConnection();
+    if (!socket)
+        return;
+    socket-&amp;gt;setParent(this);
+    connect(socket, &amp;amp;QBluetoothSocket::readyRead,
+            this, &amp;amp;PingPong::readSocket);
+    connect(socket, &amp;amp;QBluetoothSocket::disconnected,
+            this, &amp;amp;PingPong::clientDisconnected);
+    connect(socket, QOverload&amp;lt;QBluetoothSocket::SocketError&amp;gt;::of(&amp;amp;QBluetoothSocket::error),
+            this, &amp;amp;PingPong::socketError);
+
+    setMessage(QStringLiteral(&quot;Client connected.&quot;));
+
+    QByteArray size;
+    size.setNum(m_boardWidth);
+    size.append(' ');
+    QByteArray size1;
+    size1.setNum(m_boardHeight);
+    size.append(size1);
+    size.append(&quot; \n&quot;);
+    socket-&amp;gt;write(size.constData());
+
+}
+
+void PingPong::clientDisconnected()
+{
+    setMessage(QStringLiteral(&quot;Client disconnected&quot;));
+    m_timer-&amp;gt;stop();
+}
+
+void PingPong::socketError(QBluetoothSocket::SocketError error)
+{
+    Q_UNUSED(error);
+    m_timer-&amp;gt;stop();
+}
+
+void PingPong::serverError(QBluetoothServer::Error error)
+{
+    Q_UNUSED(error);
+    m_timer-&amp;gt;stop();
+}
+
+void PingPong::done()
+{
+    qDebug() &amp;lt;&amp;lt; &quot;Service scan done&quot;;
+    if (!m_serviceFound)
+        setMessage(&quot;PingPong service not found&quot;);
+}
+
+void PingPong::addService(const QBluetoothServiceInfo &amp;amp;service)
+{
+    setMessage(&quot;Service found. Setting parameters...&quot;);
+    socket = new QBluetoothSocket(QBluetoothServiceInfo::RfcommProtocol);
+    socket-&amp;gt;connectToService(service);
+
+    connect(socket, &amp;amp;QBluetoothSocket::readyRead, this, &amp;amp;PingPong::readSocket);
+    connect(socket, &amp;amp;QBluetoothSocket::connected, this, &amp;amp;PingPong::serverConnected);
+    connect(socket, &amp;amp;QBluetoothSocket::disconnected, this, &amp;amp;PingPong::serverDisconnected);
+    m_serviceFound = true;
+}
+
+void PingPong::serviceScanError(QBluetoothServiceDiscoveryAgent::Error error)
+{
+    setMessage(QStringLiteral(&quot;Scanning error&quot;) + error);
+}
+
+bool PingPong::showDialog() const
+{
+    return m_showDialog;
+}
+
+QString PingPong::message() const
+{
+    return m_message;
+}
+
+void PingPong::serverConnected()
+{
+    setMessage(&quot;Server Connected&quot;);
+    QByteArray size;
+    size.setNum(m_boardWidth);
+    size.append(' ');
+    QByteArray size1;
+    size1.setNum(m_boardHeight);
+    size.append(size1);
+    size.append(&quot; \n&quot;);
+    socket-&amp;gt;write(size.constData());
+}
+
+void PingPong::serverDisconnected()
+{
+    setMessage(&quot;Server Disconnected&quot;);
+    m_timer-&amp;gt;stop();
+}
+
+void PingPong::readSocket()
+{
+    if (!socket)
+        return;
+    const char sep = ' ';
+    QByteArray line;
+    while (socket-&amp;gt;canReadLine()) {
+        line = socket-&amp;gt;readLine();
+        //qDebug() &amp;lt;&amp;lt; QString::fromUtf8(line.constData(), line.length());
+        if (line.contains(&quot;result&quot;)) {
+            QList&amp;lt;QByteArray&amp;gt; result = line.split(sep);
+            if (result.size() &amp;gt; 2) {
+                QByteArray leftSide = result.at(1);
+                QByteArray rightSide = result.at(2);
+                m_resultLeft = leftSide.toInt();
+                m_resultRight = rightSide.toInt();
+                emit resultChanged();
+                checkResult();
+            }
+        }
+    }
+    if ((m_proportionX == 0 || m_proportionY == 0)) {
+        QList&amp;lt;QByteArray&amp;gt; boardSize = line.split(sep);
+        if (boardSize.size() &amp;gt; 1) {
+            QByteArray boardWidth = boardSize.at(0);
+            QByteArray boardHeight = boardSize.at(1);
+            m_proportionX = m_boardWidth/boardWidth.toFloat();
+            m_proportionY = m_boardHeight/boardHeight.toFloat();
+            setMessage(&quot;Screen adjusted. Get ready!&quot;);
+            QTimer::singleShot(3000, this, SLOT(startGame()));
+        }
+    }
+    else if (m_role == 1) {
+        QList&amp;lt;QByteArray&amp;gt; boardSize = line.split(sep);
+        if (boardSize.size() &amp;gt; 1) {
+            QByteArray rightBlockY = boardSize.at(0);
+            m_rightBlockY = m_proportionY * rightBlockY.toFloat();
+            emit rightBlockChanged();
+        }
+    }
+    else if (m_role == 2) {
+        QList&amp;lt;QByteArray&amp;gt; boardSize = line.split(sep);
+        if (boardSize.size() &amp;gt; 2) {
+            QByteArray ballX = boardSize.at(0);
+            QByteArray ballY = boardSize.at(1);
+            QByteArray leftBlockY = boardSize.at(2);
+            m_ballX = m_proportionX * ballX.toFloat();
+            m_ballY = m_proportionY * ballY.toFloat();
+            m_leftBlockY = m_proportionY * leftBlockY.toFloat();
+            emit leftBlockChanged();
+            emit ballChanged();
+        }
+    }
+}
+
+void PingPong::setMessage(const QString &amp;amp;message)
+{
+    m_showDialog = true;
+    m_message = message;
+    emit showDialogChanged();
+}
+
+int PingPong::role() const
+{
+    return m_role;
+}
+
+int PingPong::leftResult() const
+{
+    return m_resultLeft;
+}
+
+int PingPong::rightResult() const
+{
+    return m_resultRight;
+}
+
+float PingPong::ballX() const
+{
+    return m_ballX;
+}
+
+float PingPong::ballY() const
+{
+    return m_ballY;
+}
+
+float PingPong::leftBlockY() const
+{
+    return m_leftBlockY;
+}
+
+float PingPong::rightBlockY() const
+{
+    return m_rightBlockY;
+}
+
+</db:programlisting>
+</db:article>

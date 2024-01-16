@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Font Sampler Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Font Sampler example shows how to preview and print multi-page documents.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#if defined(QT_PRINTSUPPORT_LIB)
+#include &amp;lt;QtPrintSupport/qtprintsupportglobal.h&amp;gt;
+#if QT_CONFIG(printdialog)
+#include &amp;lt;QPrinter&amp;gt;
+#include &amp;lt;QPrintDialog&amp;gt;
+#if QT_CONFIG(printpreviewdialog)
+#include &amp;lt;QPrintPreviewDialog&amp;gt;
+#endif
+#endif
+#endif
+
+#include &quot;mainwindow.h&quot;
+
+MainWindow::MainWindow(QWidget *parent)
+   : QMainWindow(parent)
+{
+    setupUi(this);
+
+    sampleSizes &amp;lt;&amp;lt; 32 &amp;lt;&amp;lt; 24 &amp;lt;&amp;lt; 16 &amp;lt;&amp;lt; 14 &amp;lt;&amp;lt; 12 &amp;lt;&amp;lt; 8 &amp;lt;&amp;lt; 4 &amp;lt;&amp;lt; 2 &amp;lt;&amp;lt; 1;
+    markedCount = 0;
+    setupFontTree();
+
+    connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+    connect(fontTree, SIGNAL(currentItemChanged(QTreeWidgetItem*,QTreeWidgetItem*)),
+            this, SLOT(showFont(QTreeWidgetItem*)));
+    connect(fontTree, SIGNAL(itemChanged(QTreeWidgetItem*,int)),
+            this, SLOT(updateStyles(QTreeWidgetItem*,int)));
+
+    fontTree-&amp;gt;setItemSelected(fontTree-&amp;gt;topLevelItem(0), true);
+    showFont(fontTree-&amp;gt;topLevelItem(0));
+}
+
+void MainWindow::setupFontTree()
+{
+    QFontDatabase database;
+    fontTree-&amp;gt;setColumnCount(1);
+    fontTree-&amp;gt;setHeaderLabels(QStringList() &amp;lt;&amp;lt; tr(&quot;Font&quot;));
+
+    foreach (QString family, database.families()) {
+        const QStringList styles = database.styles(family);
+        if (styles.isEmpty())
+            continue;
+
+        QTreeWidgetItem *familyItem = new QTreeWidgetItem(fontTree);
+        familyItem-&amp;gt;setText(0, family);
+        familyItem-&amp;gt;setCheckState(0, Qt::Unchecked);
+        familyItem-&amp;gt;setFlags(familyItem-&amp;gt;flags() | Qt::ItemIsAutoTristate);
+
+        foreach (QString style, styles) {
+            QTreeWidgetItem *styleItem = new QTreeWidgetItem(familyItem);
+            styleItem-&amp;gt;setText(0, style);
+            styleItem-&amp;gt;setCheckState(0, Qt::Unchecked);
+            styleItem-&amp;gt;setData(0, Qt::UserRole, QVariant(database.weight(family, style)));
+            styleItem-&amp;gt;setData(0, Qt::UserRole + 1, QVariant(database.italic(family, style)));
+        }
+    }
+}
+
+void MainWindow::on_clearAction_triggered()
+{
+    QTreeWidgetItem *currentItem = fontTree-&amp;gt;currentItem();
+    foreach (QTreeWidgetItem *item, fontTree-&amp;gt;selectedItems())
+        fontTree-&amp;gt;setItemSelected(item, false);
+    fontTree-&amp;gt;setItemSelected(currentItem, true);
+}
+
+void MainWindow::on_markAction_triggered()
+{
+    markUnmarkFonts(Qt::Checked);
+}
+
+void MainWindow::on_unmarkAction_triggered()
+{
+    markUnmarkFonts(Qt::Unchecked);
+}
+
+void MainWindow::markUnmarkFonts(Qt::CheckState state)
+{
+    QList&amp;lt;QTreeWidgetItem *&amp;gt; items = fontTree-&amp;gt;selectedItems();
+    foreach (QTreeWidgetItem *item, items) {
+        if (item-&amp;gt;checkState(0) != state)
+            item-&amp;gt;setCheckState(0, state);
+    }
+}
+
+void MainWindow::showFont(QTreeWidgetItem *item)
+{
+    if (!item)
+        return;
+
+    QString family;
+    QString style;
+    int weight;
+    bool italic;
+
+    if (item-&amp;gt;parent()) {
+        family = item-&amp;gt;parent()-&amp;gt;text(0);
+        style = item-&amp;gt;text(0);
+        weight = item-&amp;gt;data(0, Qt::UserRole).toInt();
+        italic = item-&amp;gt;data(0, Qt::UserRole + 1).toBool();
+    } else {
+        family = item-&amp;gt;text(0);
+        style = item-&amp;gt;child(0)-&amp;gt;text(0);
+        weight = item-&amp;gt;child(0)-&amp;gt;data(0, Qt::UserRole).toInt();
+        italic = item-&amp;gt;child(0)-&amp;gt;data(0, Qt::UserRole + 1).toBool();
+    }
+
+    QString oldText = textEdit-&amp;gt;toPlainText().trimmed();
+    bool modified = textEdit-&amp;gt;document()-&amp;gt;isModified();
+    textEdit-&amp;gt;clear();
+    QFont font(family, 32, weight, italic);
+    font.setStyleName(style);
+    textEdit-&amp;gt;document()-&amp;gt;setDefaultFont(font);
+
+    QTextCursor cursor = textEdit-&amp;gt;textCursor();
+    QTextBlockFormat blockFormat;
+    blockFormat.setAlignment(Qt::AlignCenter);
+    cursor.insertBlock(blockFormat);
+
+    if (modified)
+        cursor.insertText(QString(oldText));
+    else
+        cursor.insertText(QString(&quot;%1 %2&quot;).arg(family).arg(style));
+
+    textEdit-&amp;gt;document()-&amp;gt;setModified(modified);
+}
+
+void MainWindow::updateStyles(QTreeWidgetItem *item, int column)
+{
+    if (!item || column != 0)
+        return;
+
+    Qt::CheckState state = item-&amp;gt;checkState(0);
+    QTreeWidgetItem *parent = item-&amp;gt;parent();
+
+    if (parent) {
+        // Only count style items.
+        if (state == Qt::Checked)
+            ++markedCount;
+        else
+            --markedCount;
+    }
+
+    printAction-&amp;gt;setEnabled(markedCount &amp;gt; 0);
+    printPreviewAction-&amp;gt;setEnabled(markedCount &amp;gt; 0);
+}
+
+QMap&amp;lt;QString, StyleItems&amp;gt; MainWindow::currentPageMap()
+{
+    QMap&amp;lt;QString, StyleItems&amp;gt; pageMap;
+
+    for (int row = 0; row &amp;lt; fontTree-&amp;gt;topLevelItemCount(); ++row) {
+        QTreeWidgetItem *familyItem = fontTree-&amp;gt;topLevelItem(row);
+        QString family;
+
+        if (familyItem-&amp;gt;checkState(0) == Qt::Checked) {
+            family = familyItem-&amp;gt;text(0);
+            pageMap[family] = StyleItems();
+        }
+
+        for (int childRow = 0; childRow &amp;lt; familyItem-&amp;gt;childCount(); ++childRow) {
+            QTreeWidgetItem *styleItem = familyItem-&amp;gt;child(childRow);
+            if (styleItem-&amp;gt;checkState(0) == Qt::Checked)
+                pageMap[family].append(styleItem);
+        }
+    }
+
+    return pageMap;
+}
+
+void MainWindow::on_printAction_triggered()
+{
+#if defined(QT_PRINTSUPPORT_LIB) &amp;amp;&amp;amp; QT_CONFIG(printdialog)
+    pageMap = currentPageMap();
+
+    if (pageMap.count() == 0)
+        return;
+
+    QPrinter printer(QPrinter::HighResolution);
+    QPrintDialog dialog(&amp;amp;printer, this);
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    int from = printer.fromPage();
+    int to = printer.toPage();
+    if (from &amp;lt;= 0 &amp;amp;&amp;amp; to &amp;lt;= 0)
+        printer.setFromTo(1, pageMap.keys().count());
+
+    printDocument(&amp;amp;printer);
+#endif
+}
+
+void MainWindow::printDocument(QPrinter *printer)
+{
+#if defined(QT_PRINTSUPPORT_LIB) &amp;amp;&amp;amp; QT_CONFIG(printdialog)
+    printer-&amp;gt;setFromTo(1, pageMap.count());
+
+    QProgressDialog progress(tr(&quot;Preparing font samples...&quot;), tr(&quot;&amp;amp;Cancel&quot;),
+                             0, pageMap.count(), this);
+    progress.setWindowModality(Qt::ApplicationModal);
+    progress.setWindowTitle(tr(&quot;Font Sampler&quot;));
+    progress.setMinimum(printer-&amp;gt;fromPage() - 1);
+    progress.setMaximum(printer-&amp;gt;toPage());
+
+    QPainter painter;
+    painter.begin(printer);
+    bool firstPage = true;
+
+    for (int page = printer-&amp;gt;fromPage(); page &amp;lt;= printer-&amp;gt;toPage(); ++page) {
+
+        if (!firstPage)
+            printer-&amp;gt;newPage();
+
+        qApp-&amp;gt;processEvents();
+        if (progress.wasCanceled())
+            break;
+
+        printPage(page - 1, &amp;amp;painter, printer);
+        progress.setValue(page);
+        firstPage = false;
+    }
+
+    painter.end();
+#endif
+}
+
+void MainWindow::on_printPreviewAction_triggered()
+{
+#if defined(QT_PRINTSUPPORT_LIB) &amp;amp;&amp;amp; QT_CONFIG(printpreviewdialog)
+    pageMap = currentPageMap();
+
+    if (pageMap.count() == 0)
+        return;
+
+    QPrinter printer(QPrinter::HighResolution);
+    QPrintPreviewDialog preview(&amp;amp;printer, this);
+    connect(&amp;amp;preview, SIGNAL(paintRequested(QPrinter*)),
+            this, SLOT(printDocument(QPrinter*)));
+    preview.exec();
+#endif
+}
+
+void MainWindow::printPage(int index, QPainter *painter, QPrinter *printer)
+{
+#if defined(QT_PRINTSUPPORT_LIB) &amp;amp;&amp;amp; QT_CONFIG(printdialog)
+    QString family = pageMap.keys()[index];
+    StyleItems items = pageMap[family];
+
+    // Find the dimensions of the text on each page.
+    qreal width = 0.0;
+    qreal height = 0.0;
+    foreach (QTreeWidgetItem *item, items) {
+        QString style = item-&amp;gt;text(0);
+        int weight = item-&amp;gt;data(0, Qt::UserRole).toInt();
+        bool italic = item-&amp;gt;data(0, Qt::UserRole + 1).toBool();
+
+        // Calculate the maximum width and total height of the text.
+        foreach (int size, sampleSizes) {
+            QFont font(family, size, weight, italic);
+            font.setStyleName(style);
+            font = QFont(font, painter-&amp;gt;device());
+            QFontMetricsF fontMetrics(font);
+            QRectF rect = fontMetrics.boundingRect(
+            QString(&quot;%1 %2&quot;).arg(family).arg(style));
+            width = qMax(rect.width(), width);
+            height += rect.height();
+        }
+    }
+
+    qreal xScale = printer-&amp;gt;pageRect().width() / width;
+    qreal yScale = printer-&amp;gt;pageRect().height() / height;
+    qreal scale = qMin(xScale, yScale);
+
+    qreal remainingHeight = printer-&amp;gt;pageRect().height()/scale - height;
+    qreal spaceHeight = (remainingHeight / 4.0) / (items.count() + 1);
+    qreal interLineHeight = (remainingHeight / 4.0) / (sampleSizes.count() * items.count());
+
+    painter-&amp;gt;save();
+    painter-&amp;gt;translate(printer-&amp;gt;pageRect().width() / 2.0, printer-&amp;gt;pageRect().height() / 2.0);
+    painter-&amp;gt;scale(scale, scale);
+    painter-&amp;gt;setBrush(QBrush(Qt::black));
+
+    qreal x = -width / 2.0;
+    qreal y = -height / 2.0 - remainingHeight / 4.0 + spaceHeight;
+
+    foreach (QTreeWidgetItem *item, items) {
+        QString style = item-&amp;gt;text(0);
+        int weight = item-&amp;gt;data(0, Qt::UserRole).toInt();
+        bool italic = item-&amp;gt;data(0, Qt::UserRole + 1).toBool();
+
+        // Draw each line of text.
+        foreach (int size, sampleSizes) {
+            QFont font(family, size, weight, italic);
+            font.setStyleName(style);
+            font = QFont(font, painter-&amp;gt;device());
+            QFontMetricsF fontMetrics(font);
+            QRectF rect = fontMetrics.boundingRect(QString(&quot;%1 %2&quot;).arg(
+                          font.family()).arg(style));
+            y += rect.height();
+            painter-&amp;gt;setFont(font);
+            painter-&amp;gt;drawText(QPointF(x, y), QString(&quot;%1 %2&quot;).arg(family).arg(style));
+            y += interLineHeight;
+        }
+        y += spaceHeight;
+    }
+
+    painter-&amp;gt;restore();
+#endif
+}
+
+</db:programlisting>
+</db:article>

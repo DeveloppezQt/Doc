@@ -1,0 +1,189 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine StyleSheet Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to inject CSS into web pages using user scripts.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;stylesheetdialog.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+
+static QMap&amp;lt;QString, QString&amp;gt; defaultStyleSheets = {
+    {&quot;Upside down&quot;, &quot;body { -webkit-transform: rotate(180deg); }&quot;}
+};
+
+MainWindow::MainWindow(const QUrl &amp;amp;url) :
+    QMainWindow(),
+    ui(new Ui::MainWindow)
+{
+    ui-&amp;gt;setupUi(this);
+
+    connect(ui-&amp;gt;urlBar, &amp;amp;QLineEdit::returnPressed, this, &amp;amp;MainWindow::urlEntered);
+    connect(ui-&amp;gt;webEngineView, &amp;amp;QWebEngineView::urlChanged, this, &amp;amp;MainWindow::urlChanged);
+    connect(ui-&amp;gt;settingsButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::showStyleSheetsDialog);
+    connect(ui-&amp;gt;reloadButton, &amp;amp;QPushButton::clicked, this, &amp;amp;MainWindow::reloadRequested);
+
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    QStringList styleSheets = settings.allKeys();
+    if (styleSheets.empty()) {
+        // Add back default style sheets if the user cleared them out
+        loadDefaultStyleSheets();
+    } else {
+        for (auto name : qAsConst(styleSheets)) {
+            StyleSheet styleSheet = settings.value(name).value&amp;lt;StyleSheet&amp;gt;();
+            if (styleSheet.second)
+                insertStyleSheet(name, styleSheet.first, false);
+        }
+    }
+    settings.endGroup();
+
+    ui-&amp;gt;webEngineView-&amp;gt;setUrl(url);
+}
+
+MainWindow::~MainWindow()
+{
+    delete ui;
+}
+
+void MainWindow::insertStyleSheet(const QString &amp;amp;name, const QString &amp;amp;source, bool immediately)
+{
+    QWebEngineScript script;
+    QString s = QString::fromLatin1(&quot;(function() {&quot;\
+                                    &quot;    css = document.createElement('style');&quot;\
+                                    &quot;    css.type = 'text/css';&quot;\
+                                    &quot;    css.id = '%1';&quot;\
+                                    &quot;    document.head.appendChild(css);&quot;\
+                                    &quot;    css.innerText = '%2';&quot;\
+                                    &quot;})()&quot;).arg(name).arg(source.simplified());
+    if (immediately)
+        ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;runJavaScript(s, QWebEngineScript::ApplicationWorld);
+
+    script.setName(name);
+    script.setSourceCode(s);
+    script.setInjectionPoint(QWebEngineScript::DocumentReady);
+    script.setRunsOnSubFrames(true);
+    script.setWorldId(QWebEngineScript::ApplicationWorld);
+    ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().insert(script);
+}
+
+void MainWindow::removeStyleSheet(const QString &amp;amp;name, bool immediately)
+{
+    QString s = QString::fromLatin1(&quot;(function() {&quot;\
+                                    &quot;    var element = document.getElementById('%1');&quot;\
+                                    &quot;    element.outerHTML = '';&quot;\
+                                    &quot;    delete element;&quot;\
+                                    &quot;})()&quot;).arg(name);
+    if (immediately)
+        ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;runJavaScript(s, QWebEngineScript::ApplicationWorld);
+
+    QWebEngineScript script = ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().findScript(name);
+    ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().remove(script);
+}
+
+bool MainWindow::hasStyleSheet(const QString &amp;amp;name)
+{
+    QWebEngineScript script = ui-&amp;gt;webEngineView-&amp;gt;page()-&amp;gt;scripts().findScript(name);
+    return !script.isNull();
+}
+
+void MainWindow::loadDefaultStyleSheets()
+{
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+
+    auto it = defaultStyleSheets.constBegin();
+    while (it != defaultStyleSheets.constEnd()) {
+        settings.setValue(it.key(), QVariant::fromValue(qMakePair(it.value(), true)));
+        insertStyleSheet(it.key(), it.value(), false);
+        ++it;
+    }
+
+    settings.endGroup();
+}
+
+void MainWindow::urlEntered()
+{
+    ui-&amp;gt;webEngineView-&amp;gt;setUrl(QUrl::fromUserInput(ui-&amp;gt;urlBar-&amp;gt;text()));
+}
+
+void MainWindow::urlChanged(const QUrl &amp;amp;url)
+{
+    ui-&amp;gt;urlBar-&amp;gt;setText(url.toString());
+}
+
+void MainWindow::showStyleSheetsDialog()
+{
+    StylesheetDialog *dialog = new StylesheetDialog(this);
+    dialog-&amp;gt;show();
+}
+
+void MainWindow::reloadRequested()
+{
+    ui-&amp;gt;webEngineView-&amp;gt;reload();
+}
+
+</db:programlisting>
+</db:article>

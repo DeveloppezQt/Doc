@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Content Manipulation Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to load and manipulate web content.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtWebEngineWidgets&amp;gt;
+#include &quot;mainwindow.h&quot;
+
+MainWindow::MainWindow(const QUrl&amp;amp; url)
+{
+    setAttribute(Qt::WA_DeleteOnClose, true);
+    progress = 0;
+
+    QFile file;
+    file.setFileName(&quot;:/jquery.min.js&quot;);
+    file.open(QIODevice::ReadOnly);
+    jQuery = file.readAll();
+    jQuery.append(&quot;\nvar qt = { 'jQuery': jQuery.noConflict(true) };&quot;);
+    file.close();
+
+    view = new QWebEngineView(this);
+    view-&amp;gt;load(url);
+    connect(view, &amp;amp;QWebEngineView::loadFinished, this, &amp;amp;MainWindow::adjustLocation);
+    connect(view, &amp;amp;QWebEngineView::titleChanged, this, &amp;amp;MainWindow::adjustTitle);
+    connect(view, &amp;amp;QWebEngineView::loadProgress, this, &amp;amp;MainWindow::setProgress);
+    connect(view, &amp;amp;QWebEngineView::loadFinished, this, &amp;amp;MainWindow::finishLoading);
+
+    locationEdit = new QLineEdit(this);
+    locationEdit-&amp;gt;setSizePolicy(QSizePolicy::Expanding, locationEdit-&amp;gt;sizePolicy().verticalPolicy());
+    connect(locationEdit, &amp;amp;QLineEdit::returnPressed, this, &amp;amp;MainWindow::changeLocation);
+
+    QToolBar *toolBar = addToolBar(tr(&quot;Navigation&quot;));
+    toolBar-&amp;gt;addAction(view-&amp;gt;pageAction(QWebEnginePage::Back));
+    toolBar-&amp;gt;addAction(view-&amp;gt;pageAction(QWebEnginePage::Forward));
+    toolBar-&amp;gt;addAction(view-&amp;gt;pageAction(QWebEnginePage::Reload));
+    toolBar-&amp;gt;addAction(view-&amp;gt;pageAction(QWebEnginePage::Stop));
+    toolBar-&amp;gt;addWidget(locationEdit);
+
+    QMenu *viewMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;View&quot;));
+    QAction *viewSourceAction = new QAction(tr(&quot;Page Source&quot;), this);
+    connect(viewSourceAction, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::viewSource);
+    viewMenu-&amp;gt;addAction(viewSourceAction);
+
+    QMenu *effectMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Effect&quot;));
+    effectMenu-&amp;gt;addAction(tr(&quot;Highlight all links&quot;), this, &amp;amp;MainWindow::highlightAllLinks);
+
+    rotateAction = new QAction(this);
+    rotateAction-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_FileDialogDetailedView));
+    rotateAction-&amp;gt;setCheckable(true);
+    rotateAction-&amp;gt;setText(tr(&quot;Turn images upside down&quot;));
+    connect(rotateAction, &amp;amp;QAction::toggled, this, &amp;amp;MainWindow::rotateImages);
+    effectMenu-&amp;gt;addAction(rotateAction);
+
+    QMenu *toolsMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Tools&quot;));
+    toolsMenu-&amp;gt;addAction(tr(&quot;Remove GIF images&quot;), this, &amp;amp;MainWindow::removeGifImages);
+    toolsMenu-&amp;gt;addAction(tr(&quot;Remove all inline frames&quot;), this, &amp;amp;MainWindow::removeInlineFrames);
+    toolsMenu-&amp;gt;addAction(tr(&quot;Remove all object elements&quot;), this, &amp;amp;MainWindow::removeObjectElements);
+    toolsMenu-&amp;gt;addAction(tr(&quot;Remove all embedded elements&quot;), this, &amp;amp;MainWindow::removeEmbeddedElements);
+
+    setCentralWidget(view);
+}
+
+void MainWindow::viewSource()
+{
+    QTextEdit *textEdit = new QTextEdit(nullptr);
+    textEdit-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+    textEdit-&amp;gt;adjustSize();
+    textEdit-&amp;gt;move(this-&amp;gt;geometry().center() - textEdit-&amp;gt;rect().center());
+    textEdit-&amp;gt;show();
+
+    view-&amp;gt;page()-&amp;gt;toHtml([textEdit](const QString &amp;amp;html){
+        textEdit-&amp;gt;setPlainText(html);
+    });
+}
+
+void MainWindow::adjustLocation()
+{
+    locationEdit-&amp;gt;setText(view-&amp;gt;url().toString());
+}
+
+void MainWindow::changeLocation()
+{
+    QUrl url = QUrl::fromUserInput(locationEdit-&amp;gt;text());
+    view-&amp;gt;load(url);
+    view-&amp;gt;setFocus();
+}
+
+void MainWindow::adjustTitle()
+{
+    if (progress &amp;lt;= 0 || progress &amp;gt;= 100)
+        setWindowTitle(view-&amp;gt;title());
+    else
+        setWindowTitle(QStringLiteral(&quot;%1 (%2%)&quot;).arg(view-&amp;gt;title()).arg(progress));
+}
+
+void MainWindow::setProgress(int p)
+{
+    progress = p;
+    adjustTitle();
+}
+
+void MainWindow::finishLoading(bool)
+{
+    progress = 100;
+    adjustTitle();
+    view-&amp;gt;page()-&amp;gt;runJavaScript(jQuery);
+
+    rotateImages(rotateAction-&amp;gt;isChecked());
+}
+
+void MainWindow::highlightAllLinks()
+{
+    QString code = QStringLiteral(&quot;qt.jQuery('a').each( function () { qt.jQuery(this).css('background-color', 'yellow') } )&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+void MainWindow::rotateImages(bool invert)
+{
+    QString code;
+
+    if (invert)
+        code = QStringLiteral(&quot;qt.jQuery('img').each( function () { qt.jQuery(this).css('transition', 'transform 2s'); qt.jQuery(this).css('transform', 'rotate(180deg)') } )&quot;);
+    else
+        code = QStringLiteral(&quot;qt.jQuery('img').each( function () { qt.jQuery(this).css('transition', 'transform 2s'); qt.jQuery(this).css('transform', 'rotate(0deg)') } )&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+void MainWindow::removeGifImages()
+{
+    QString code = QStringLiteral(&quot;qt.jQuery('[src*=gif]').remove()&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+void MainWindow::removeInlineFrames()
+{
+    QString code = QStringLiteral(&quot;qt.jQuery('iframe').remove()&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+void MainWindow::removeObjectElements()
+{
+    QString code = QStringLiteral(&quot;qt.jQuery('object').remove()&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+void MainWindow::removeEmbeddedElements()
+{
+    QString code = QStringLiteral(&quot;qt.jQuery('embed').remove()&quot;);
+    view-&amp;gt;page()-&amp;gt;runJavaScript(code);
+}
+
+</db:programlisting>
+</db:article>

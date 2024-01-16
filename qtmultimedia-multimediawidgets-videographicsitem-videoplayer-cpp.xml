@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Video Graphics Item Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Streaming video on a graphics scene.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;videoplayer.h&quot;
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QGraphicsVideoItem&amp;gt;
+
+VideoPlayer::VideoPlayer(QWidget *parent)
+    : QWidget(parent)
+{
+    m_mediaPlayer = new QMediaPlayer(this, QMediaPlayer::VideoSurface);
+    const QRect screenGeometry = QApplication::desktop()-&amp;gt;screenGeometry(this);
+    m_videoItem = new QGraphicsVideoItem;
+    m_videoItem-&amp;gt;setSize(QSizeF(screenGeometry.width() / 3, screenGeometry.height() / 2));
+
+    QGraphicsScene *scene = new QGraphicsScene(this);
+    QGraphicsView *graphicsView = new QGraphicsView(scene);
+
+    scene-&amp;gt;addItem(m_videoItem);
+
+    QSlider *rotateSlider = new QSlider(Qt::Horizontal);
+    rotateSlider-&amp;gt;setToolTip(tr(&quot;Rotate Video&quot;));
+    rotateSlider-&amp;gt;setRange(-180,  180);
+    rotateSlider-&amp;gt;setValue(0);
+
+    connect(rotateSlider, &amp;amp;QAbstractSlider::valueChanged,
+            this, &amp;amp;VideoPlayer::rotateVideo);
+
+    QAbstractButton *openButton = new QPushButton(tr(&quot;Open...&quot;));
+    connect(openButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;VideoPlayer::openFile);
+
+    m_playButton = new QPushButton;
+    m_playButton-&amp;gt;setEnabled(false);
+    m_playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+
+    connect(m_playButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;VideoPlayer::play);
+
+    m_positionSlider = new QSlider(Qt::Horizontal);
+    m_positionSlider-&amp;gt;setRange(0, 0);
+
+    connect(m_positionSlider, &amp;amp;QAbstractSlider::sliderMoved,
+            this, &amp;amp;VideoPlayer::setPosition);
+
+    QBoxLayout *controlLayout = new QHBoxLayout;
+    controlLayout-&amp;gt;setMargin(0);
+    controlLayout-&amp;gt;addWidget(openButton);
+    controlLayout-&amp;gt;addWidget(m_playButton);
+    controlLayout-&amp;gt;addWidget(m_positionSlider);
+
+    QBoxLayout *layout = new QVBoxLayout(this);
+    layout-&amp;gt;addWidget(graphicsView);
+    layout-&amp;gt;addWidget(rotateSlider);
+    layout-&amp;gt;addLayout(controlLayout);
+
+    m_mediaPlayer-&amp;gt;setVideoOutput(m_videoItem);
+    connect(m_mediaPlayer, &amp;amp;QMediaPlayer::stateChanged,
+            this, &amp;amp;VideoPlayer::mediaStateChanged);
+    connect(m_mediaPlayer, &amp;amp;QMediaPlayer::positionChanged, this, &amp;amp;VideoPlayer::positionChanged);
+    connect(m_mediaPlayer, &amp;amp;QMediaPlayer::durationChanged, this, &amp;amp;VideoPlayer::durationChanged);
+}
+
+VideoPlayer::~VideoPlayer()
+{
+}
+
+QSize VideoPlayer::sizeHint() const
+{
+    return (m_videoItem-&amp;gt;size() * qreal(3) / qreal(2)).toSize();
+}
+
+bool VideoPlayer::isPlayerAvailable() const
+{
+    return m_mediaPlayer-&amp;gt;isAvailable();
+}
+
+void VideoPlayer::openFile()
+{
+    QFileDialog fileDialog(this);
+    fileDialog.setAcceptMode(QFileDialog::AcceptOpen);
+    fileDialog.setWindowTitle(tr(&quot;Open Movie&quot;));
+    const QStringList supportedMimeTypes = m_mediaPlayer-&amp;gt;supportedMimeTypes();
+    if (!supportedMimeTypes.isEmpty())
+        fileDialog.setMimeTypeFilters(supportedMimeTypes);
+    fileDialog.setDirectory(QStandardPaths::standardLocations(QStandardPaths::MoviesLocation).value(0, QDir::homePath()));
+    if (fileDialog.exec() == QDialog::Accepted)
+        load(fileDialog.selectedUrls().constFirst());
+}
+
+void VideoPlayer::load(const QUrl &amp;amp;url)
+{
+    m_mediaPlayer-&amp;gt;setMedia(url);
+    m_playButton-&amp;gt;setEnabled(true);
+}
+
+void VideoPlayer::play()
+{
+    switch (m_mediaPlayer-&amp;gt;state()) {
+    case QMediaPlayer::PlayingState:
+        m_mediaPlayer-&amp;gt;pause();
+        break;
+    default:
+        m_mediaPlayer-&amp;gt;play();
+        break;
+    }
+}
+
+void VideoPlayer::mediaStateChanged(QMediaPlayer::State state)
+{
+    switch(state) {
+    case QMediaPlayer::PlayingState:
+        m_playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPause));
+        break;
+    default:
+        m_playButton-&amp;gt;setIcon(style()-&amp;gt;standardIcon(QStyle::SP_MediaPlay));
+        break;
+    }
+}
+
+void VideoPlayer::positionChanged(qint64 position)
+{
+    m_positionSlider-&amp;gt;setValue(position);
+}
+
+void VideoPlayer::durationChanged(qint64 duration)
+{
+    m_positionSlider-&amp;gt;setRange(0, duration);
+}
+
+void VideoPlayer::setPosition(int position)
+{
+    m_mediaPlayer-&amp;gt;setPosition(position);
+}
+
+void VideoPlayer::rotateVideo(int angle)
+{
+    //rotate around the center of video element
+    qreal x = m_videoItem-&amp;gt;boundingRect().width() / 2.0;
+    qreal y = m_videoItem-&amp;gt;boundingRect().height() / 2.0;
+    m_videoItem-&amp;gt;setTransform(QTransform().translate(x, y).rotate(angle).translate(-x, -y));
+}
+
+</db:programlisting>
+</db:article>

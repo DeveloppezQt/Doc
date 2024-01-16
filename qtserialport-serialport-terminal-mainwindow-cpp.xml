@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Terminal Example</db:title>
+<db:productname>QtSerialPort</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Port Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use various features of <db:link xlink:href="qserialport.xml">QSerialPort</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2012 Denis Shienkov &amp;lt;denis.shienkov@gmail.com&amp;gt;
+** Copyright (C) 2012 Laszlo Papp &amp;lt;lpapp@kde.org&amp;gt;
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtSerialPort module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;ui_mainwindow.h&quot;
+#include &quot;console.h&quot;
+#include &quot;settingsdialog.h&quot;
+
+#include &amp;lt;QLabel&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+
+MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    m_ui(new Ui::MainWindow),
+    m_status(new QLabel),
+    m_console(new Console),
+    m_settings(new SettingsDialog),
+    m_serial(new QSerialPort(this))
+{
+    m_ui-&amp;gt;setupUi(this);
+    m_console-&amp;gt;setEnabled(false);
+    setCentralWidget(m_console);
+
+    m_ui-&amp;gt;actionConnect-&amp;gt;setEnabled(true);
+    m_ui-&amp;gt;actionDisconnect-&amp;gt;setEnabled(false);
+    m_ui-&amp;gt;actionQuit-&amp;gt;setEnabled(true);
+    m_ui-&amp;gt;actionConfigure-&amp;gt;setEnabled(true);
+
+    m_ui-&amp;gt;statusBar-&amp;gt;addWidget(m_status);
+
+    initActionsConnections();
+
+    connect(m_serial, &amp;amp;QSerialPort::errorOccurred, this, &amp;amp;MainWindow::handleError);
+
+    connect(m_serial, &amp;amp;QSerialPort::readyRead, this, &amp;amp;MainWindow::readData);
+    connect(m_console, &amp;amp;Console::getData, this, &amp;amp;MainWindow::writeData);
+}
+
+MainWindow::~MainWindow()
+{
+    delete m_settings;
+    delete m_ui;
+}
+
+void MainWindow::openSerialPort()
+{
+    const SettingsDialog::Settings p = m_settings-&amp;gt;settings();
+    m_serial-&amp;gt;setPortName(p.name);
+    m_serial-&amp;gt;setBaudRate(p.baudRate);
+    m_serial-&amp;gt;setDataBits(p.dataBits);
+    m_serial-&amp;gt;setParity(p.parity);
+    m_serial-&amp;gt;setStopBits(p.stopBits);
+    m_serial-&amp;gt;setFlowControl(p.flowControl);
+    if (m_serial-&amp;gt;open(QIODevice::ReadWrite)) {
+        m_console-&amp;gt;setEnabled(true);
+        m_console-&amp;gt;setLocalEchoEnabled(p.localEchoEnabled);
+        m_ui-&amp;gt;actionConnect-&amp;gt;setEnabled(false);
+        m_ui-&amp;gt;actionDisconnect-&amp;gt;setEnabled(true);
+        m_ui-&amp;gt;actionConfigure-&amp;gt;setEnabled(false);
+        showStatusMessage(tr(&quot;Connected to %1 : %2, %3, %4, %5, %6&quot;)
+                          .arg(p.name).arg(p.stringBaudRate).arg(p.stringDataBits)
+                          .arg(p.stringParity).arg(p.stringStopBits).arg(p.stringFlowControl));
+    } else {
+        QMessageBox::critical(this, tr(&quot;Error&quot;), m_serial-&amp;gt;errorString());
+
+        showStatusMessage(tr(&quot;Open error&quot;));
+    }
+}
+
+void MainWindow::closeSerialPort()
+{
+    if (m_serial-&amp;gt;isOpen())
+        m_serial-&amp;gt;close();
+    m_console-&amp;gt;setEnabled(false);
+    m_ui-&amp;gt;actionConnect-&amp;gt;setEnabled(true);
+    m_ui-&amp;gt;actionDisconnect-&amp;gt;setEnabled(false);
+    m_ui-&amp;gt;actionConfigure-&amp;gt;setEnabled(true);
+    showStatusMessage(tr(&quot;Disconnected&quot;));
+}
+
+void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About Simple Terminal&quot;),
+                       tr(&quot;The &amp;lt;b&amp;gt;Simple Terminal&amp;lt;/b&amp;gt; example demonstrates how to &quot;
+                          &quot;use the Qt Serial Port module in modern GUI applications &quot;
+                          &quot;using Qt, with a menu bar, toolbars, and a status bar.&quot;));
+}
+
+void MainWindow::writeData(const QByteArray &amp;amp;data)
+{
+    m_serial-&amp;gt;write(data);
+}
+
+void MainWindow::readData()
+{
+    const QByteArray data = m_serial-&amp;gt;readAll();
+    m_console-&amp;gt;putData(data);
+}
+
+void MainWindow::handleError(QSerialPort::SerialPortError error)
+{
+    if (error == QSerialPort::ResourceError) {
+        QMessageBox::critical(this, tr(&quot;Critical Error&quot;), m_serial-&amp;gt;errorString());
+        closeSerialPort();
+    }
+}
+
+void MainWindow::initActionsConnections()
+{
+    connect(m_ui-&amp;gt;actionConnect, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::openSerialPort);
+    connect(m_ui-&amp;gt;actionDisconnect, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::closeSerialPort);
+    connect(m_ui-&amp;gt;actionQuit, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::close);
+    connect(m_ui-&amp;gt;actionConfigure, &amp;amp;QAction::triggered, m_settings, &amp;amp;SettingsDialog::show);
+    connect(m_ui-&amp;gt;actionClear, &amp;amp;QAction::triggered, m_console, &amp;amp;Console::clear);
+    connect(m_ui-&amp;gt;actionAbout, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::about);
+    connect(m_ui-&amp;gt;actionAboutQt, &amp;amp;QAction::triggered, qApp, &amp;amp;QApplication::aboutQt);
+}
+
+void MainWindow::showStatusMessage(const QString &amp;amp;message)
+{
+    m_status-&amp;gt;setText(message);
+}
+
+</db:programlisting>
+</db:article>

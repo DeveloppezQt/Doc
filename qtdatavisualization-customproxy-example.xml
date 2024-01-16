@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Custom Proxy Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using <db:link xlink:href="q3dbars.xml">Q3DBars</db:link> with a custom proxy.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The custom proxy example shows how to create a custom proxy to use with <db:link xlink:href="q3dbars.xml">Q3DBars</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/customproxy-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The interesting thing about custom proxy example is the custom dataset and the corresponding proxy usage, so we concentrate on that and skip explaining the basic <db:link xlink:href="q3dbars.xml">Q3DBars</db:link> functionality - for that see <db:link xlink:href="qtdatavisualization-bars-example.xml">Bars Example</db:link>.</db:para>
+<db:para>This example defines a simple flexible data set <db:code>VariantDataSet</db:code> where each data item is a a variant list. Each item can have multiple different values, identified by their index in the list. In this example, the data set is storing monthly rainfall data, where the value in index zero is the year, the value in index one is the month, and the value in index two is the amount of rainfall in that month.</db:para>
+<db:para>The custom proxy we provide here is similar to item model based proxies provided by Qt Data Visualization in that it requires a mapping to interpret the data.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="variantdataset">
+<db:title>VariantDataSet</db:title>
+<db:para><db:code>VariantDataSet</db:code> class provides a simple API:</db:para>
+<db:programlisting language="cpp">typedef QVariantList VariantDataItem;
+typedef QList&amp;lt;VariantDataItem *&amp;gt; VariantDataItemList;
+...
+
+void clear();
+
+int addItem(VariantDataItem *item);
+int addItems(VariantDataItemList *itemList);
+
+const VariantDataItemList &amp;amp;itemList() const;
+
+Q_SIGNALS:
+void itemsAdded(int index, int count);
+void dataCleared();
+</db:programlisting>
+<db:para>As you can see, the data items are simply <db:link xlink:href="qvariant.xml#QVariantList-typedef">QVariantList</db:link> objects, and the data can be added either singly or in lists. The only additional functionality provided is clearing the data set and querying for a reference to the data contained in the set. Signals are emitted when data is added or the set is cleared.</db:para>
+</db:section>
+<db:section xml:id="variantbardataproxy">
+<db:title>VariantBarDataProxy</db:title>
+<db:para><db:code>VariantBarDataProxy</db:code> is a subclass of <db:link xlink:href="qbardataproxy.xml">QBarDataProxy</db:link> and provides a simple API of just getters and setters for the data set and the mapping:</db:para>
+<db:programlisting language="cpp">class VariantBarDataProxy : public QBarDataProxy
+...
+
+// Doesn't gain ownership of the dataset, but does connect to it to listen for data changes.
+void setDataSet(VariantDataSet *newSet);
+VariantDataSet *dataSet();
+
+// Map key (row, column, value) to value index in data item (VariantItem).
+// Doesn't gain ownership of mapping, but does connect to it to listen for mapping changes.
+// Modifying mapping that is set to proxy will trigger dataset re-resolving.
+void setMapping(VariantBarDataMapping *mapping);
+VariantBarDataMapping *mapping();
+</db:programlisting>
+<db:para>On the implementation side, the proxy listens for the changes in the data set and the mapping, and resolves the data set if any changes are detected. It is not particularly efficient implementation in that any change will cause re-resolving of the entire data set, but that is not an issue for this example. The interesting part is the <db:code>resolveDataSet()</db:code> method:</db:para>
+<db:programlisting language="cpp">void VariantBarDataProxy::resolveDataSet()
+{
+    // If we have no data or mapping, or the categories are not defined, simply clear the array
+    if (m_dataSet.isNull() || m_mapping.isNull() || !m_mapping-&amp;gt;rowCategories().size()
+            || !m_mapping-&amp;gt;columnCategories().size()) {
+        resetArray(0);
+        return;
+    }
+    const VariantDataItemList &amp;amp;itemList = m_dataSet-&amp;gt;itemList();
+
+    int rowIndex = m_mapping-&amp;gt;rowIndex();
+    int columnIndex = m_mapping-&amp;gt;columnIndex();
+    int valueIndex = m_mapping-&amp;gt;valueIndex();
+    const QStringList &amp;amp;rowList = m_mapping-&amp;gt;rowCategories();
+    const QStringList &amp;amp;columnList = m_mapping-&amp;gt;columnCategories();
+
+    // Sort values into rows and columns
+    typedef QHash&amp;lt;QString, float&amp;gt; ColumnValueMap;
+    QHash &amp;lt;QString, ColumnValueMap&amp;gt; itemValueMap;
+    foreach (const VariantDataItem *item, itemList) {
+        itemValueMap[item-&amp;gt;at(rowIndex).toString()][item-&amp;gt;at(columnIndex).toString()]
+                = item-&amp;gt;at(valueIndex).toReal();
+    }
+
+    // Create a new data array in format the parent class understands
+    QBarDataArray *newProxyArray = new QBarDataArray;
+    foreach (QString rowKey, rowList) {
+        QBarDataRow *newProxyRow = new QBarDataRow(columnList.size());
+        for (int i = 0; i &amp;lt; columnList.size(); i++)
+            (*newProxyRow)[i].setValue(itemValueMap[rowKey][columnList.at(i)]);
+        newProxyArray-&amp;gt;append(newProxyRow);
+    }
+
+    // Finally, reset the data array in the parent class
+    resetArray(newProxyArray);
+}
+</db:programlisting>
+<db:para>In <db:code>resolveDataSet()</db:code> method we sort the variant data values into rows and columns based on the mapping. This is very similar to how <db:link xlink:href="qitemmodelbardataproxy.xml">QItemModelBarDataProxy</db:link> handles mapping, except we use list indexes instead of item model roles here. Once the values are sorted, we generate <db:code>QBarDataArray</db:code> out of them, and call <db:code>resetArray()</db:code> method on the parent class.</db:para>
+</db:section>
+<db:section xml:id="variantbardatamapping">
+<db:title>VariantBarDataMapping</db:title>
+<db:para><db:code>VariantBarDataMapping</db:code> stores the mapping information between <db:code>VariantDataSet</db:code> data item indexes and rows, columns, and values of <db:code>QBarDataArray</db:code>. It also contains the lists of rows and columns to be included in the resolved data:</db:para>
+<db:programlisting language="cpp">Q_PROPERTY(int rowIndex READ rowIndex WRITE setRowIndex)
+Q_PROPERTY(int columnIndex READ columnIndex WRITE setColumnIndex)
+Q_PROPERTY(int valueIndex READ valueIndex WRITE setValueIndex)
+Q_PROPERTY(QStringList rowCategories READ rowCategories WRITE setRowCategories)
+Q_PROPERTY(QStringList columnCategories READ columnCategories WRITE setColumnCategories)
+...
+
+VariantBarDataMapping(int rowIndex, int columnIndex, int valueIndex,
+                       const QStringList &amp;amp;rowCategories,
+                       const QStringList &amp;amp;columnCategories);
+...
+
+void remap(int rowIndex, int columnIndex, int valueIndex,
+           const QStringList &amp;amp;rowCategories,
+           const QStringList &amp;amp;columnCategories);
+...
+
+void mappingChanged();
+</db:programlisting>
+<db:para>The primary way to use a <db:code>VariantBarDataMapping</db:code> object is to give the mappings already at the constructor, though they can be set later individually or all together with the <db:code>remap()</db:code> method. A signal is emitted if mapping changes. It is basically a simplified version of the mapping functionality of <db:link xlink:href="qitemmodelbardataproxy.xml">QItemModelBarDataProxy</db:link> adapted to work with variant lists instead of item models.</db:para>
+</db:section>
+<db:section xml:id="rainfallgraph">
+<db:title>RainfallGraph</db:title>
+<db:para><db:code>RainfallGraph</db:code> class handles the setup of the graph. The interesting part is the <db:code>addDataSet()</db:code> method:</db:para>
+<db:programlisting language="cpp">void RainfallGraph::addDataSet()
+{
+    // Create a new variant data set and data item list
+    m_dataSet =  new VariantDataSet;
+    VariantDataItemList *itemList = new VariantDataItemList;
+
+    // Read data from a data file into the data item list
+    QTextStream stream;
+    QFile dataFile(&quot;:/data/raindata.txt&quot;);
+    if (dataFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        stream.setDevice(&amp;amp;dataFile);
+        while (!stream.atEnd()) {
+            QString line = stream.readLine();
+            if (line.startsWith(&quot;#&quot;)) // Ignore comments
+                continue;
+            QStringList strList = line.split(&quot;,&quot;, QString::SkipEmptyParts);
+            // Each line has three data items: Year, month, and rainfall value
+            if (strList.size() &amp;lt; 3) {
+                qWarning() &amp;lt;&amp;lt; &quot;Invalid row read from data:&quot; &amp;lt;&amp;lt; line;
+                continue;
+            }
+            // Store year and month as strings, and rainfall value as double
+            // into a variant data item and add the item to the item list.
+            VariantDataItem *newItem = new VariantDataItem;
+            for (int i = 0; i &amp;lt; 2; i++)
+                newItem-&amp;gt;append(strList.at(i).trimmed());
+            newItem-&amp;gt;append(strList.at(2).trimmed().toDouble());
+            itemList-&amp;gt;append(newItem);
+        }
+    } else {
+        qWarning() &amp;lt;&amp;lt; &quot;Unable to open data file:&quot; &amp;lt;&amp;lt; dataFile.fileName();
+    }
+
+    // Add items to the data set and set it to the proxy
+    m_dataSet-&amp;gt;addItems(itemList);
+    m_proxy-&amp;gt;setDataSet(m_dataSet);
+
+    // Create new mapping for the data and set it to the proxy
+    m_mapping =  new VariantBarDataMapping(0, 1, 2, m_years, m_numericMonths);
+    m_proxy-&amp;gt;setMapping(m_mapping);
+}
+</db:programlisting>
+<db:para>The bulk of that method is used for populating the variant data set. Once the set is populated, visualizing the data is trivial with the help of our custom proxy:</db:para>
+<db:programlisting language="cpp">// Add items to the data set and set it to the proxy
+m_dataSet-&amp;gt;addItems(itemList);
+m_proxy-&amp;gt;setDataSet(m_dataSet);
+
+// Create new mapping for the data and set it to the proxy
+m_mapping =  new VariantBarDataMapping(0, 1, 2, m_years, m_numericMonths);
+m_proxy-&amp;gt;setMapping(m_mapping);
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/customproxy.pro">customproxy/customproxy.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/customproxy.qrc">customproxy/customproxy.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/main.cpp">customproxy/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/rainfallgraph.cpp">customproxy/rainfallgraph.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/rainfallgraph.h">customproxy/rainfallgraph.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantbardatamapping.cpp">customproxy/variantbardatamapping.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantbardatamapping.h">customproxy/variantbardatamapping.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantbardataproxy.cpp">customproxy/variantbardataproxy.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantbardataproxy.h">customproxy/variantbardataproxy.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantdataset.cpp">customproxy/variantdataset.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="customproxy/variantdataset.h">customproxy/variantdataset.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

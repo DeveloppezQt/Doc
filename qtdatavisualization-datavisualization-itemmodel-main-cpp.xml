@@ -1,0 +1,295 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Item Model Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using an item model as data source for <db:link xlink:href="q3dbars.xml">Q3DBars</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtDataVisualization/q3dbars.h&amp;gt;
+#include &amp;lt;QtDataVisualization/qcategory3daxis.h&amp;gt;
+#include &amp;lt;QtDataVisualization/qitemmodelbardataproxy.h&amp;gt;
+#include &amp;lt;QtDataVisualization/qvalue3daxis.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dscene.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dcamera.h&amp;gt;
+#include &amp;lt;QtDataVisualization/qbar3dseries.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dtheme.h&amp;gt;
+
+#include &amp;lt;QtWidgets/QApplication&amp;gt;
+#include &amp;lt;QtWidgets/QVBoxLayout&amp;gt;
+#include &amp;lt;QtWidgets/QTableWidget&amp;gt;
+#include &amp;lt;QtGui/QScreen&amp;gt;
+#include &amp;lt;QtCore/QRandomGenerator&amp;gt;
+#include &amp;lt;QtCore/QTimer&amp;gt;
+#include &amp;lt;QtGui/QFont&amp;gt;
+#include &amp;lt;QtCore/QDebug&amp;gt;
+#include &amp;lt;QtWidgets/QHeaderView&amp;gt;
+#include &amp;lt;QtWidgets/QMessageBox&amp;gt;
+
+#define USE_STATIC_DATA
+
+using namespace QtDataVisualization;
+
+class GraphDataGenerator : public QObject
+{
+public:
+    explicit GraphDataGenerator(Q3DBars *bargraph, QTableWidget *tableWidget);
+    ~GraphDataGenerator();
+
+    void setupModel();
+    void addRow();
+    void changeStyle();
+    void changePresetCamera();
+    void changeTheme();
+    void start();
+    void selectFromTable(const QPoint &amp;amp;selection);
+    void selectedFromTable(int currentRow, int currentColumn, int previousRow, int previousColumn);
+    void fixTableSize();
+
+private:
+    Q3DBars *m_graph;
+    QTimer *m_dataTimer;
+    int m_columnCount;
+    int m_rowCount;
+    QTableWidget *m_tableWidget; // not owned
+};
+
+GraphDataGenerator::GraphDataGenerator(Q3DBars *bargraph, QTableWidget *tableWidget)
+    : m_graph(bargraph),
+      m_dataTimer(0),
+      m_columnCount(100),
+      m_rowCount(50),
+      m_tableWidget(tableWidget)
+{
+    // Set up bar specifications; make the bars as wide as they are deep,
+    // and add a small space between them
+    m_graph-&amp;gt;setBarThickness(1.0f);
+    m_graph-&amp;gt;setBarSpacing(QSizeF(0.2, 0.2));
+
+#ifndef USE_STATIC_DATA
+    // Set up sample space; make it as deep as it's wide
+    m_graph-&amp;gt;rowAxis()-&amp;gt;setRange(0, m_rowCount);
+    m_graph-&amp;gt;columnAxis()-&amp;gt;setRange(0, m_columnCount);
+    m_tableWidget-&amp;gt;setColumnCount(m_columnCount);
+
+    // Set selection mode to full
+    m_graph-&amp;gt;setSelectionMode(QAbstract3DGraph::SelectionItemRowAndColumn);
+
+    // Hide axis labels by explicitly setting one empty string as label list
+    m_graph-&amp;gt;rowAxis()-&amp;gt;setLabels(QStringList(QString()));
+    m_graph-&amp;gt;columnAxis()-&amp;gt;setLabels(QStringList(QString()));
+
+    m_graph-&amp;gt;seriesList().at(0)-&amp;gt;setItemLabelFormat(QStringLiteral(&quot;@valueLabel&quot;));
+#else
+    // Set selection mode to slice row
+    m_graph-&amp;gt;setSelectionMode(QAbstract3DGraph::SelectionItemAndRow | QAbstract3DGraph::SelectionSlice);
+
+#endif
+
+    // Set theme
+    m_graph-&amp;gt;activeTheme()-&amp;gt;setType(Q3DTheme::ThemeDigia);
+
+    // Set font
+    m_graph-&amp;gt;activeTheme()-&amp;gt;setFont(QFont(&quot;Impact&quot;, 20));
+
+    // Set preset camera position
+    m_graph-&amp;gt;scene()-&amp;gt;activeCamera()-&amp;gt;setCameraPreset(Q3DCamera::CameraPresetFront);
+}
+
+GraphDataGenerator::~GraphDataGenerator()
+{
+    if (m_dataTimer) {
+        m_dataTimer-&amp;gt;stop();
+        delete m_dataTimer;
+    }
+    delete m_graph;
+}
+
+void GraphDataGenerator::start()
+{
+#ifndef USE_STATIC_DATA
+    m_dataTimer = new QTimer();
+    m_dataTimer-&amp;gt;setTimerType(Qt::CoarseTimer);
+    QObject::connect(m_dataTimer, &amp;amp;QTimer::timeout, this, &amp;amp;GraphDataGenerator::addRow);
+    m_dataTimer-&amp;gt;start(0);
+    m_tableWidget-&amp;gt;setFixedWidth(m_graph-&amp;gt;width());
+#else
+    setupModel();
+
+    // Table needs to be shown before the size of its headers can be accurately obtained,
+    // so we postpone it a bit
+    m_dataTimer = new QTimer();
+    m_dataTimer-&amp;gt;setSingleShot(true);
+    QObject::connect(m_dataTimer, &amp;amp;QTimer::timeout, this, &amp;amp;GraphDataGenerator::fixTableSize);
+    m_dataTimer-&amp;gt;start(0);
+#endif
+}
+
+void GraphDataGenerator::setupModel()
+{
+    // Set up row and column names
+    QStringList days;
+    days &amp;lt;&amp;lt; &quot;Monday&quot; &amp;lt;&amp;lt; &quot;Tuesday&quot; &amp;lt;&amp;lt; &quot;Wednesday&quot; &amp;lt;&amp;lt; &quot;Thursday&quot; &amp;lt;&amp;lt; &quot;Friday&quot; &amp;lt;&amp;lt; &quot;Saturday&quot; &amp;lt;&amp;lt; &quot;Sunday&quot;;
+    QStringList weeks;
+    weeks &amp;lt;&amp;lt; &quot;week 1&quot; &amp;lt;&amp;lt; &quot;week 2&quot; &amp;lt;&amp;lt; &quot;week 3&quot; &amp;lt;&amp;lt; &quot;week 4&quot; &amp;lt;&amp;lt; &quot;week 5&quot;;
+
+    // Set up data         Mon  Tue  Wed  Thu  Fri  Sat  Sun
+    float hours[5][7] = {{2.0f, 1.0f, 3.0f, 0.2f, 1.0f, 5.0f, 10.0f},     // week 1
+                         {0.5f, 1.0f, 3.0f, 1.0f, 2.0f, 2.0f, 3.0f},      // week 2
+                         {1.0f, 1.0f, 2.0f, 1.0f, 4.0f, 4.0f, 4.0f},      // week 3
+                         {0.0f, 1.0f, 0.0f, 0.0f, 2.0f, 2.0f, 0.3f},      // week 4
+                         {3.0f, 3.0f, 6.0f, 2.0f, 2.0f, 1.0f, 1.0f}};     // week 5
+
+    // Add labels
+    m_graph-&amp;gt;rowAxis()-&amp;gt;setTitle(&quot;Week of year&quot;);
+    m_graph-&amp;gt;rowAxis()-&amp;gt;setTitleVisible(true);
+    m_graph-&amp;gt;columnAxis()-&amp;gt;setTitle(&quot;Day of week&quot;);
+    m_graph-&amp;gt;columnAxis()-&amp;gt;setTitleVisible(true);
+    m_graph-&amp;gt;valueAxis()-&amp;gt;setTitle(&quot;Hours spent on the Internet&quot;);
+    m_graph-&amp;gt;valueAxis()-&amp;gt;setTitleVisible(true);
+    m_graph-&amp;gt;valueAxis()-&amp;gt;setLabelFormat(&quot;%.1f h&quot;);
+
+    m_tableWidget-&amp;gt;setRowCount(5);
+    m_tableWidget-&amp;gt;setColumnCount(7);
+    m_tableWidget-&amp;gt;setHorizontalHeaderLabels(days);
+    m_tableWidget-&amp;gt;setVerticalHeaderLabels(weeks);
+    m_tableWidget-&amp;gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_tableWidget-&amp;gt;setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_tableWidget-&amp;gt;setCurrentCell(-1, -1);
+    m_tableWidget-&amp;gt;setSelectionMode(QAbstractItemView::SingleSelection);
+
+    for (int week = 0; week &amp;lt; weeks.size(); week++) {
+        for (int day = 0; day &amp;lt; days.size(); day++) {
+            QModelIndex index = m_tableWidget-&amp;gt;model()-&amp;gt;index(week, day);
+            m_tableWidget-&amp;gt;model()-&amp;gt;setData(index, hours[week][day]);
+        }
+    }
+}
+
+void GraphDataGenerator::addRow()
+{
+    m_tableWidget-&amp;gt;model()-&amp;gt;insertRow(0);
+    if (m_tableWidget-&amp;gt;model()-&amp;gt;rowCount() &amp;gt; m_rowCount)
+        m_tableWidget-&amp;gt;model()-&amp;gt;removeRow(m_rowCount);
+    for (int i = 0; i &amp;lt; m_columnCount; i++) {
+        QModelIndex index = m_tableWidget-&amp;gt;model()-&amp;gt;index(0, i);
+        m_tableWidget-&amp;gt;model()-&amp;gt;setData(index,
+            ((float)i / (float)m_columnCount) / 2.0f +
+                                        (float)(QRandomGenerator::global()-&amp;gt;bounded(30)) / 100.0f);
+    }
+    m_tableWidget-&amp;gt;resizeColumnsToContents();
+}
+
+void GraphDataGenerator::selectFromTable(const QPoint &amp;amp;selection)
+{
+    m_tableWidget-&amp;gt;setFocus();
+    m_tableWidget-&amp;gt;setCurrentCell(selection.x(), selection.y());
+}
+
+void GraphDataGenerator::selectedFromTable(int currentRow, int currentColumn,
+                                           int previousRow, int previousColumn)
+{
+    Q_UNUSED(previousRow)
+    Q_UNUSED(previousColumn)
+    m_graph-&amp;gt;seriesList().at(0)-&amp;gt;setSelectedBar(QPoint(currentRow, currentColumn));
+}
+
+void GraphDataGenerator::fixTableSize()
+{
+    int width = m_tableWidget-&amp;gt;horizontalHeader()-&amp;gt;length();
+    width += m_tableWidget-&amp;gt;verticalHeader()-&amp;gt;width();
+    m_tableWidget-&amp;gt;setFixedWidth(width + 2);
+    int height = m_tableWidget-&amp;gt;verticalHeader()-&amp;gt;length();
+    height += m_tableWidget-&amp;gt;horizontalHeader()-&amp;gt;height();
+    m_tableWidget-&amp;gt;setFixedHeight(height + 2);
+}
+
+int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+    Q3DBars *graph = new Q3DBars();
+    QWidget *container = QWidget::createWindowContainer(graph);
+
+    if (!graph-&amp;gt;hasContext()) {
+        QMessageBox msgBox;
+        msgBox.setText(&quot;Couldn't initialize the OpenGL context.&quot;);
+        msgBox.exec();
+        return -1;
+    }
+
+    QSize screenSize = graph-&amp;gt;screen()-&amp;gt;size();
+    container-&amp;gt;setMinimumSize(QSize(screenSize.width() / 2, screenSize.height() / 2));
+    container-&amp;gt;setMaximumSize(screenSize);
+    container-&amp;gt;setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
+    container-&amp;gt;setFocusPolicy(Qt::StrongFocus);
+
+    QWidget widget;
+    QVBoxLayout *layout = new QVBoxLayout(&amp;amp;widget);
+    QTableWidget *tableWidget = new QTableWidget(&amp;amp;widget);
+    layout-&amp;gt;addWidget(container, 1);
+    layout-&amp;gt;addWidget(tableWidget, 1, Qt::AlignHCenter);
+
+    tableWidget-&amp;gt;setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    tableWidget-&amp;gt;setAlternatingRowColors(true);
+    widget.setWindowTitle(QStringLiteral(&quot;Hours spent on the Internet&quot;));
+
+    // Since we are dealing with QTableWidget, the model will already have data sorted properly
+    // into rows and columns, so we simply set useModelCategories property to true to utilize this.
+    QItemModelBarDataProxy *proxy = new QItemModelBarDataProxy(tableWidget-&amp;gt;model());
+    proxy-&amp;gt;setUseModelCategories(true);
+    QBar3DSeries *series = new QBar3DSeries(proxy);
+    series-&amp;gt;setMesh(QAbstract3DSeries::MeshPyramid);
+    graph-&amp;gt;addSeries(series);
+
+    GraphDataGenerator generator(graph, tableWidget);
+    QObject::connect(series, &amp;amp;QBar3DSeries::selectedBarChanged, &amp;amp;generator,
+                     &amp;amp;GraphDataGenerator::selectFromTable);
+    QObject::connect(tableWidget, &amp;amp;QTableWidget::currentCellChanged, &amp;amp;generator,
+                     &amp;amp;GraphDataGenerator::selectedFromTable);
+
+    widget.show();
+    generator.start();
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

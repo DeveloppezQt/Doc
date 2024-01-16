@@ -1,0 +1,250 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Textures Example</db:title>
+<db:productname>QtOpenGL</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>QtOpenGL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Textures example demonstrates the use of Qt's image classes as textures in applications that use both OpenGL and Qt to display graphics.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;glwidget.h&quot;
+#include &amp;lt;QOpenGLShaderProgram&amp;gt;
+#include &amp;lt;QOpenGLTexture&amp;gt;
+#include &amp;lt;QMouseEvent&amp;gt;
+
+GLWidget::GLWidget(QWidget *parent)
+    : QOpenGLWidget(parent),
+      clearColor(Qt::black),
+      xRot(0),
+      yRot(0),
+      zRot(0),
+      program(0)
+{
+    memset(textures, 0, sizeof(textures));
+}
+
+GLWidget::~GLWidget()
+{
+    makeCurrent();
+    vbo.destroy();
+    for (int i = 0; i &amp;lt; 6; ++i)
+        delete textures[i];
+    delete program;
+    doneCurrent();
+}
+
+QSize GLWidget::minimumSizeHint() const
+{
+    return QSize(50, 50);
+}
+
+QSize GLWidget::sizeHint() const
+{
+    return QSize(200, 200);
+}
+
+void GLWidget::rotateBy(int xAngle, int yAngle, int zAngle)
+{
+    xRot += xAngle;
+    yRot += yAngle;
+    zRot += zAngle;
+    update();
+}
+
+void GLWidget::setClearColor(const QColor &amp;amp;color)
+{
+    clearColor = color;
+    update();
+}
+
+void GLWidget::initializeGL()
+{
+    initializeOpenGLFunctions();
+
+    makeObject();
+
+    glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
+
+#define PROGRAM_VERTEX_ATTRIBUTE 0
+#define PROGRAM_TEXCOORD_ATTRIBUTE 1
+
+    QOpenGLShader *vshader = new QOpenGLShader(QOpenGLShader::Vertex, this);
+    const char *vsrc =
+        &quot;attribute highp vec4 vertex;\n&quot;
+        &quot;attribute mediump vec4 texCoord;\n&quot;
+        &quot;varying mediump vec4 texc;\n&quot;
+        &quot;uniform mediump mat4 matrix;\n&quot;
+        &quot;void main(void)\n&quot;
+        &quot;{\n&quot;
+        &quot;    gl_Position = matrix * vertex;\n&quot;
+        &quot;    texc = texCoord;\n&quot;
+        &quot;}\n&quot;;
+    vshader-&amp;gt;compileSourceCode(vsrc);
+
+    QOpenGLShader *fshader = new QOpenGLShader(QOpenGLShader::Fragment, this);
+    const char *fsrc =
+        &quot;uniform sampler2D texture;\n&quot;
+        &quot;varying mediump vec4 texc;\n&quot;
+        &quot;void main(void)\n&quot;
+        &quot;{\n&quot;
+        &quot;    gl_FragColor = texture2D(texture, texc.st);\n&quot;
+        &quot;}\n&quot;;
+    fshader-&amp;gt;compileSourceCode(fsrc);
+
+    program = new QOpenGLShaderProgram;
+    program-&amp;gt;addShader(vshader);
+    program-&amp;gt;addShader(fshader);
+    program-&amp;gt;bindAttributeLocation(&quot;vertex&quot;, PROGRAM_VERTEX_ATTRIBUTE);
+    program-&amp;gt;bindAttributeLocation(&quot;texCoord&quot;, PROGRAM_TEXCOORD_ATTRIBUTE);
+    program-&amp;gt;link();
+
+    program-&amp;gt;bind();
+    program-&amp;gt;setUniformValue(&quot;texture&quot;, 0);
+}
+
+void GLWidget::paintGL()
+{
+    glClearColor(clearColor.redF(), clearColor.greenF(), clearColor.blueF(), clearColor.alphaF());
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    QMatrix4x4 m;
+    m.ortho(-0.5f, +0.5f, +0.5f, -0.5f, 4.0f, 15.0f);
+    m.translate(0.0f, 0.0f, -10.0f);
+    m.rotate(xRot / 16.0f, 1.0f, 0.0f, 0.0f);
+    m.rotate(yRot / 16.0f, 0.0f, 1.0f, 0.0f);
+    m.rotate(zRot / 16.0f, 0.0f, 0.0f, 1.0f);
+
+    program-&amp;gt;setUniformValue(&quot;matrix&quot;, m);
+    program-&amp;gt;enableAttributeArray(PROGRAM_VERTEX_ATTRIBUTE);
+    program-&amp;gt;enableAttributeArray(PROGRAM_TEXCOORD_ATTRIBUTE);
+    program-&amp;gt;setAttributeBuffer(PROGRAM_VERTEX_ATTRIBUTE, GL_FLOAT, 0, 3, 5 * sizeof(GLfloat));
+    program-&amp;gt;setAttributeBuffer(PROGRAM_TEXCOORD_ATTRIBUTE, GL_FLOAT, 3 * sizeof(GLfloat), 2, 5 * sizeof(GLfloat));
+
+    for (int i = 0; i &amp;lt; 6; ++i) {
+        textures[i]-&amp;gt;bind();
+        glDrawArrays(GL_TRIANGLE_FAN, i * 4, 4);
+    }
+}
+void GLWidget::resizeGL(int width, int height)
+{
+    int side = qMin(width, height);
+    glViewport((width - side) / 2, (height - side) / 2, side, side);
+}
+
+void GLWidget::mousePressEvent(QMouseEvent *event)
+{
+    lastPos = event-&amp;gt;pos();
+}
+
+void GLWidget::mouseMoveEvent(QMouseEvent *event)
+{
+    int dx = event-&amp;gt;x() - lastPos.x();
+    int dy = event-&amp;gt;y() - lastPos.y();
+
+    if (event-&amp;gt;buttons() &amp;amp; Qt::LeftButton) {
+        rotateBy(8 * dy, 8 * dx, 0);
+    } else if (event-&amp;gt;buttons() &amp;amp; Qt::RightButton) {
+        rotateBy(8 * dy, 0, 8 * dx);
+    }
+    lastPos = event-&amp;gt;pos();
+}
+
+void GLWidget::mouseReleaseEvent(QMouseEvent * /* event */)
+{
+    emit clicked();
+}
+
+void GLWidget::makeObject()
+{
+    static const int coords[6][4][3] = {
+        { { +1, -1, -1 }, { -1, -1, -1 }, { -1, +1, -1 }, { +1, +1, -1 } },
+        { { +1, +1, -1 }, { -1, +1, -1 }, { -1, +1, +1 }, { +1, +1, +1 } },
+        { { +1, -1, +1 }, { +1, -1, -1 }, { +1, +1, -1 }, { +1, +1, +1 } },
+        { { -1, -1, -1 }, { -1, -1, +1 }, { -1, +1, +1 }, { -1, +1, -1 } },
+        { { +1, -1, +1 }, { -1, -1, +1 }, { -1, -1, -1 }, { +1, -1, -1 } },
+        { { -1, -1, +1 }, { +1, -1, +1 }, { +1, +1, +1 }, { -1, +1, +1 } }
+    };
+
+    for (int j = 0; j &amp;lt; 6; ++j)
+        textures[j] = new QOpenGLTexture(QImage(QString(&quot;:/images/side%1.png&quot;).arg(j + 1)).mirrored());
+
+    QVector&amp;lt;GLfloat&amp;gt; vertData;
+    for (int i = 0; i &amp;lt; 6; ++i) {
+        for (int j = 0; j &amp;lt; 4; ++j) {
+            // vertex position
+            vertData.append(0.2 * coords[i][j][0]);
+            vertData.append(0.2 * coords[i][j][1]);
+            vertData.append(0.2 * coords[i][j][2]);
+            // texture coordinate
+            vertData.append(j == 0 || j == 3);
+            vertData.append(j == 0 || j == 1);
+        }
+    }
+
+    vbo.create();
+    vbo.bind();
+    vbo.allocate(vertData.constData(), vertData.count() * sizeof(GLfloat));
+}
+
+</db:programlisting>
+</db:article>

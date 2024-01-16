@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Using SocketCAN Plugin</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Overview of how to use the SocketCAN plugin.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The SocketCAN plugin encapsulates the Linux sockets API for accessing the CAN devices. This API is a set of open source CAN drivers and a networking stack contributed by Volkswagen Research to the Linux kernel.</db:para>
+<db:para>This plugin requires a Linux Kernel with SocketCAN support and SocketCAN device drivers for the used CAN hardware.</db:para>
+<db:section xml:id="socketcan-usage">
+<db:title>SocketCAN usage</db:title>
+<db:para>To list all (including unconfigured) network interfaces, the command <db:code>ifconfig -a</db:code> can be used.</db:para>
+<db:para>To use SocketCAN, the corresponding Linux Kernel modules must be loaded and the network interface must be configured.</db:para>
+<db:section xml:id="setting-up-real-can-hardware">
+<db:title>Setting up real CAN hardware</db:title>
+<db:para>This section assumes, that the device driver is already loaded (most likely automatically when connecting the CAN hardware).</db:para>
+<db:section xml:id="default-settings">
+<db:title>Default settings</db:title>
+<db:para>To set the device can0 to a bitrate of 250 kBit/s:</db:para>
+<db:programlisting language="cpp">sudo ip link set up can0 type can bitrate 250000
+</db:programlisting>
+<db:para>To automatically recover from &quot;bus off&quot; errors after 100 milliseconds, the following command can be used:</db:para>
+<db:programlisting language="cpp">sudo ip link set up can0 type can bitrate 250000 restart-ms 100
+</db:programlisting>
+</db:section>
+<db:section xml:id="can-fd-settings">
+<db:title>CAN FD settings</db:title>
+<db:para>To set the device can0 to an arbitration bitrate of 500 kBit/s and a data bitrate of 4 MBit/s (for frames with bitrate switch flag):</db:para>
+<db:programlisting language="cpp">sudo ip link set can0 up type can bitrate 500000 dbitrate 4000000 fd on
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="setting-up-a-virtual-can-bus">
+<db:title>Setting up a virtual CAN bus</db:title>
+<db:note>
+<db:para>For CAN FD usage, the MTU (Maximum Transmission Unit) has to be set to 72 byte.</db:para>
+</db:note>
+<db:programlisting language="cpp">sudo modprobe vcan
+sudo ip link add dev vcan0 type vcan
+sudo ip link set up vcan0 mtu 72
+</db:programlisting>
+<db:para>The command line test programs used in the following are from the <db:link xlink:href="https://github.com/linux-can/can-utils">can-utils</db:link> package:</db:para>
+<db:programlisting language="cpp"># Display received CAN messages with absolute timestamps and flags
+candump -ta -x vcan0
+
+# Send a CAN FD message with flags BRS and EFI set
+cansend vcan0 123##3112233445566778899aabbccddeeff
+
+# Generate random CAN messages
+cangen vcan0
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="creating-can-bus-devices">
+<db:title>Creating CAN Bus Devices</db:title>
+<db:para>At first it is necessary to check that <db:link xlink:href="qcanbus.xml">QCanBus</db:link> provides the desired plugin:</db:para>
+<db:programlisting language="cpp">if (QCanBus::instance()-&amp;gt;plugins().contains(QStringLiteral(&quot;socketcan&quot;))) {
+    // plugin available
+}
+</db:programlisting>
+<db:para>Where <db:emphasis>socketcan</db:emphasis> is the plugin name.</db:para>
+<db:para>Next, a connection to a specific interface can be established:</db:para>
+<db:programlisting language="cpp">QString errorString;
+QCanBusDevice *device = QCanBus::instance()-&amp;gt;createDevice(
+    QStringLiteral(&quot;socketcan&quot;), QStringLiteral(&quot;can0&quot;), &amp;amp;errorString);
+if (!device) {
+    // Error handling goes here
+    qDebug &amp;lt;&amp;lt; errorString;
+} else {
+    device-&amp;gt;connectDevice();
+}
+</db:programlisting>
+<db:para>Where <db:emphasis>can0</db:emphasis> is the active CAN interface name. CAN interfaces act like regular network interfaces on Linux systems and can be discovered using <db:code>ifconfig</db:code>. Also, the <db:link xlink:href="qcanbus.xml#availableDevices">availableDevices</db:link>() method returns a list of currently available devices.</db:para>
+<db:para>The device is now open for writing and reading CAN frames:</db:para>
+<db:programlisting language="cpp">QCanBusFrame frame;
+frame.setFrameId(8);
+QByteArray payload(&quot;A36E&quot;);
+frame.setPayload(payload);
+device-&amp;gt;writeFrame(frame);
+</db:programlisting>
+<db:para>The reading can be done using the <db:link xlink:href="qcanbusdevice.xml#readFrame">readFrame</db:link>() method. The <db:link xlink:href="qcanbusdevice.xml#framesReceived">framesReceived</db:link>() signal is emitted when at least one new frame is available for reading:</db:para>
+<db:programlisting language="cpp">QCanBusFrame frame = device-&amp;gt;readFrame();
+</db:programlisting>
+<db:para>SocketCAN supports the following configurations that can be controlled through <db:link xlink:href="qcanbusdevice.xml#setConfigurationParameter">setConfigurationParameter</db:link>():</db:para>
+<db:informaltable style="generic">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>Configuration parameter key</db:para>
+</db:th>
+<db:th>
+<db:para>Description</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::LoopbackKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>To meet the multiple-user needs, the local loopback is enabled by default. This means, whenever a CAN frame is transmitted on the CAN bus, a local echo of this frame is sent to all applications connected to this CAN device. If this option is enabled, the therefore received frames are marked with <db:link xlink:href="qcanbusframe.xml#hasLocalEcho">QCanBusFrame::hasLocalEcho</db:link>()</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::ReceiveOwnKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>The reception of the CAN frames on the same socket that was sending the CAN frame is disabled by default. When enabling this option, all CAN frames sent to the CAN bus immediately appear in the receive buffer. This can be used to check if sending was successful. If this option is enabled, the therefore received frames are marked with <db:link xlink:href="qcanbusframe.xml#hasLocalEcho">QCanBusFrame::hasLocalEcho</db:link>()</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::ErrorFilterKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>A CAN interface driver can generate so called <db:emphasis>Error Message Frames</db:emphasis> that can optionally be passed to the user application in the same way as other CAN frames. The possible errors are divided into different error classes that may be filtered using the appropriate error mask. The values for the error mask are defined in <db:code>linux/can/error.h</db:code>.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::RawFilterKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>This configuration can contain multiple filters of type <db:link xlink:href="qcanbusdevice-filter.xml">QCanBusDevice::Filter</db:link>. By default, the connection is configured to accept any CAN bus message.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::BitRateKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>This configuration is not supported by the socketcan plugin. However it is possible to set the rate when configuring the CAN network interface using the <db:code>ip link</db:code> command.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::CanFdKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>This configuration option determines whether CANFD frames may be sent or received. By default, this option is disabled. It controls the CAN_RAW_FD_FRAMES option of the CAN socket.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="qcanbusdevice.xml#ConfigurationKey-enum">QCanBusDevice::DataBitRateKey</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>This configuration is not supported by the socketcan plugin. However it is possible to set the data rate when configuring the CAN network interface using the <db:code>ip link</db:code> command.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QCanBusDevice::Filter&amp;gt; list;
+QCanBusDevice::Filter f;
+
+// only accept odd numbered frame id of type remote request
+// frame can utilize extended or base format
+f.frameId = 0x1;
+f.frameIdMask = 0x1;
+f.format = QCanBusDevice::Filter::MatchBaseAndExtendedFormat;
+f.type = QCanBusFrame::RemoteRequestFrame;
+list.append(f);
+
+device-&amp;gt;setConfigurationParameter(QCanBusDevice::RawFilterKey, QVariant::fromValue(list));
+device-&amp;gt;setConfigurationParameter(QCanBusDevice::ErrorFilterKey,
+                                  QVariant::fromValue(QCanBusFrame::FrameErrors(QCanBusFrame::AnyError)));
+</db:programlisting>
+<db:para>Extended frame format and flexible data-rate are supported in SocketCAN.</db:para>
+</db:section>
+</db:article>

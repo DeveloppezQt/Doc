@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>MDI Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The MDI example shows how to implement a Multiple Document Interface using Qt's <db:link xlink:href="qmdiarea.xml">QMdiArea</db:link> class.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+
+#include &quot;mainwindow.h&quot;
+#include &quot;mdichild.h&quot;
+
+MainWindow::MainWindow()
+    : mdiArea(new QMdiArea)
+{
+    mdiArea-&amp;gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    mdiArea-&amp;gt;setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setCentralWidget(mdiArea);
+    connect(mdiArea, &amp;amp;QMdiArea::subWindowActivated,
+            this, &amp;amp;MainWindow::updateMenus);
+
+    createActions();
+    createStatusBar();
+    updateMenus();
+
+    readSettings();
+
+    setWindowTitle(tr(&quot;MDI&quot;));
+    setUnifiedTitleAndToolBarOnMac(true);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    mdiArea-&amp;gt;closeAllSubWindows();
+    if (mdiArea-&amp;gt;currentSubWindow()) {
+        event-&amp;gt;ignore();
+    } else {
+        writeSettings();
+        event-&amp;gt;accept();
+    }
+}
+
+void MainWindow::newFile()
+{
+    MdiChild *child = createMdiChild();
+    child-&amp;gt;newFile();
+    child-&amp;gt;show();
+}
+
+void MainWindow::open()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this);
+    if (!fileName.isEmpty())
+        openFile(fileName);
+}
+
+bool MainWindow::openFile(const QString &amp;amp;fileName)
+{
+    if (QMdiSubWindow *existing = findMdiChild(fileName)) {
+        mdiArea-&amp;gt;setActiveSubWindow(existing);
+        return true;
+    }
+    const bool succeeded = loadFile(fileName);
+    if (succeeded)
+        statusBar()-&amp;gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+    return succeeded;
+}
+
+bool MainWindow::loadFile(const QString &amp;amp;fileName)
+{
+    MdiChild *child = createMdiChild();
+    const bool succeeded = child-&amp;gt;loadFile(fileName);
+    if (succeeded)
+        child-&amp;gt;show();
+    else
+        child-&amp;gt;close();
+    MainWindow::prependToRecentFiles(fileName);
+    return succeeded;
+}
+
+static inline QString recentFilesKey() { return QStringLiteral(&quot;recentFileList&quot;); }
+static inline QString fileKey() { return QStringLiteral(&quot;file&quot;); }
+
+static QStringList readRecentFiles(QSettings &amp;amp;settings)
+{
+    QStringList result;
+    const int count = settings.beginReadArray(recentFilesKey());
+    for (int i = 0; i &amp;lt; count; ++i) {
+        settings.setArrayIndex(i);
+        result.append(settings.value(fileKey()).toString());
+    }
+    settings.endArray();
+    return result;
+}
+
+static void writeRecentFiles(const QStringList &amp;amp;files, QSettings &amp;amp;settings)
+{
+    const int count = files.size();
+    settings.beginWriteArray(recentFilesKey());
+    for (int i = 0; i &amp;lt; count; ++i) {
+        settings.setArrayIndex(i);
+        settings.setValue(fileKey(), files.at(i));
+    }
+    settings.endArray();
+}
+
+bool MainWindow::hasRecentFiles()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    const int count = settings.beginReadArray(recentFilesKey());
+    settings.endArray();
+    return count &amp;gt; 0;
+}
+
+void MainWindow::prependToRecentFiles(const QString &amp;amp;fileName)
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+    const QStringList oldRecentFiles = readRecentFiles(settings);
+    QStringList recentFiles = oldRecentFiles;
+    recentFiles.removeAll(fileName);
+    recentFiles.prepend(fileName);
+    if (oldRecentFiles != recentFiles)
+        writeRecentFiles(recentFiles, settings);
+
+    setRecentFilesVisible(!recentFiles.isEmpty());
+}
+
+void MainWindow::setRecentFilesVisible(bool visible)
+{
+    recentFileSubMenuAct-&amp;gt;setVisible(visible);
+    recentFileSeparator-&amp;gt;setVisible(visible);
+}
+
+void MainWindow::updateRecentFileActions()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+
+    const QStringList recentFiles = readRecentFiles(settings);
+    const int count = qMin(int(MaxRecentFiles), recentFiles.size());
+    int i = 0;
+    for ( ; i &amp;lt; count; ++i) {
+        const QString fileName = QFileInfo(recentFiles.at(i)).fileName();
+        recentFileActs[i]-&amp;gt;setText(tr(&quot;&amp;amp;%1 %2&quot;).arg(i + 1).arg(fileName));
+        recentFileActs[i]-&amp;gt;setData(recentFiles.at(i));
+        recentFileActs[i]-&amp;gt;setVisible(true);
+    }
+    for ( ; i &amp;lt; MaxRecentFiles; ++i)
+        recentFileActs[i]-&amp;gt;setVisible(false);
+}
+
+void MainWindow::openRecentFile()
+{
+    if (const QAction *action = qobject_cast&amp;lt;const QAction *&amp;gt;(sender()))
+        openFile(action-&amp;gt;data().toString());
+}
+
+void MainWindow::save()
+{
+    if (activeMdiChild() &amp;amp;&amp;amp; activeMdiChild()-&amp;gt;save())
+        statusBar()-&amp;gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+
+void MainWindow::saveAs()
+{
+    MdiChild *child = activeMdiChild();
+    if (child &amp;amp;&amp;amp; child-&amp;gt;saveAs()) {
+        statusBar()-&amp;gt;showMessage(tr(&quot;File saved&quot;), 2000);
+        MainWindow::prependToRecentFiles(child-&amp;gt;currentFile());
+    }
+}
+
+#ifndef QT_NO_CLIPBOARD
+void MainWindow::cut()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&amp;gt;cut();
+}
+
+void MainWindow::copy()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&amp;gt;copy();
+}
+
+void MainWindow::paste()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&amp;gt;paste();
+}
+#endif
+
+void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About MDI&quot;),
+            tr(&quot;The &amp;lt;b&amp;gt;MDI&amp;lt;/b&amp;gt; example demonstrates how to write multiple &quot;
+               &quot;document interface applications using Qt.&quot;));
+}
+
+void MainWindow::updateMenus()
+{
+    bool hasMdiChild = (activeMdiChild() != 0);
+    saveAct-&amp;gt;setEnabled(hasMdiChild);
+    saveAsAct-&amp;gt;setEnabled(hasMdiChild);
+#ifndef QT_NO_CLIPBOARD
+    pasteAct-&amp;gt;setEnabled(hasMdiChild);
+#endif
+    closeAct-&amp;gt;setEnabled(hasMdiChild);
+    closeAllAct-&amp;gt;setEnabled(hasMdiChild);
+    tileAct-&amp;gt;setEnabled(hasMdiChild);
+    cascadeAct-&amp;gt;setEnabled(hasMdiChild);
+    nextAct-&amp;gt;setEnabled(hasMdiChild);
+    previousAct-&amp;gt;setEnabled(hasMdiChild);
+    windowMenuSeparatorAct-&amp;gt;setVisible(hasMdiChild);
+
+#ifndef QT_NO_CLIPBOARD
+    bool hasSelection = (activeMdiChild() &amp;amp;&amp;amp;
+                         activeMdiChild()-&amp;gt;textCursor().hasSelection());
+    cutAct-&amp;gt;setEnabled(hasSelection);
+    copyAct-&amp;gt;setEnabled(hasSelection);
+#endif
+}
+
+void MainWindow::updateWindowMenu()
+{
+    windowMenu-&amp;gt;clear();
+    windowMenu-&amp;gt;addAction(closeAct);
+    windowMenu-&amp;gt;addAction(closeAllAct);
+    windowMenu-&amp;gt;addSeparator();
+    windowMenu-&amp;gt;addAction(tileAct);
+    windowMenu-&amp;gt;addAction(cascadeAct);
+    windowMenu-&amp;gt;addSeparator();
+    windowMenu-&amp;gt;addAction(nextAct);
+    windowMenu-&amp;gt;addAction(previousAct);
+    windowMenu-&amp;gt;addAction(windowMenuSeparatorAct);
+
+    QList&amp;lt;QMdiSubWindow *&amp;gt; windows = mdiArea-&amp;gt;subWindowList();
+    windowMenuSeparatorAct-&amp;gt;setVisible(!windows.isEmpty());
+
+    for (int i = 0; i &amp;lt; windows.size(); ++i) {
+        QMdiSubWindow *mdiSubWindow = windows.at(i);
+        MdiChild *child = qobject_cast&amp;lt;MdiChild *&amp;gt;(mdiSubWindow-&amp;gt;widget());
+
+        QString text;
+        if (i &amp;lt; 9) {
+            text = tr(&quot;&amp;amp;%1 %2&quot;).arg(i + 1)
+                               .arg(child-&amp;gt;userFriendlyCurrentFile());
+        } else {
+            text = tr(&quot;%1 %2&quot;).arg(i + 1)
+                              .arg(child-&amp;gt;userFriendlyCurrentFile());
+        }
+        QAction *action = windowMenu-&amp;gt;addAction(text, mdiSubWindow, [this, mdiSubWindow]() {
+            mdiArea-&amp;gt;setActiveSubWindow(mdiSubWindow);
+        });
+        action-&amp;gt;setCheckable(true);
+        action -&amp;gt;setChecked(child == activeMdiChild());
+    }
+}
+
+MdiChild *MainWindow::createMdiChild()
+{
+    MdiChild *child = new MdiChild;
+    mdiArea-&amp;gt;addSubWindow(child);
+
+#ifndef QT_NO_CLIPBOARD
+    connect(child, &amp;amp;QTextEdit::copyAvailable, cutAct, &amp;amp;QAction::setEnabled);
+    connect(child, &amp;amp;QTextEdit::copyAvailable, copyAct, &amp;amp;QAction::setEnabled);
+#endif
+
+    return child;
+}
+
+void MainWindow::createActions()
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    QToolBar *fileToolBar = addToolBar(tr(&quot;File&quot;));
+
+    const QIcon newIcon = QIcon::fromTheme(&quot;document-new&quot;, QIcon(&quot;:/images/new.png&quot;));
+    newAct = new QAction(newIcon, tr(&quot;&amp;amp;New&quot;), this);
+    newAct-&amp;gt;setShortcuts(QKeySequence::New);
+    newAct-&amp;gt;setStatusTip(tr(&quot;Create a new file&quot;));
+    connect(newAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::newFile);
+    fileMenu-&amp;gt;addAction(newAct);
+    fileToolBar-&amp;gt;addAction(newAct);
+
+    const QIcon openIcon = QIcon::fromTheme(&quot;document-open&quot;, QIcon(&quot;:/images/open.png&quot;));
+    QAction *openAct = new QAction(openIcon, tr(&quot;&amp;amp;Open...&quot;), this);
+    openAct-&amp;gt;setShortcuts(QKeySequence::Open);
+    openAct-&amp;gt;setStatusTip(tr(&quot;Open an existing file&quot;));
+    connect(openAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::open);
+    fileMenu-&amp;gt;addAction(openAct);
+    fileToolBar-&amp;gt;addAction(openAct);
+
+    const QIcon saveIcon = QIcon::fromTheme(&quot;document-save&quot;, QIcon(&quot;:/images/save.png&quot;));
+    saveAct = new QAction(saveIcon, tr(&quot;&amp;amp;Save&quot;), this);
+    saveAct-&amp;gt;setShortcuts(QKeySequence::Save);
+    saveAct-&amp;gt;setStatusTip(tr(&quot;Save the document to disk&quot;));
+    connect(saveAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::save);
+    fileToolBar-&amp;gt;addAction(saveAct);
+
+    const QIcon saveAsIcon = QIcon::fromTheme(&quot;document-save-as&quot;);
+    saveAsAct = new QAction(saveAsIcon, tr(&quot;Save &amp;amp;As...&quot;), this);
+    saveAsAct-&amp;gt;setShortcuts(QKeySequence::SaveAs);
+    saveAsAct-&amp;gt;setStatusTip(tr(&quot;Save the document under a new name&quot;));
+    connect(saveAsAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::saveAs);
+    fileMenu-&amp;gt;addAction(saveAsAct);
+
+    fileMenu-&amp;gt;addSeparator();
+
+    QMenu *recentMenu = fileMenu-&amp;gt;addMenu(tr(&quot;Recent...&quot;));
+    connect(recentMenu, &amp;amp;QMenu::aboutToShow, this, &amp;amp;MainWindow::updateRecentFileActions);
+    recentFileSubMenuAct = recentMenu-&amp;gt;menuAction();
+
+    for (int i = 0; i &amp;lt; MaxRecentFiles; ++i) {
+        recentFileActs[i] = recentMenu-&amp;gt;addAction(QString(), this, &amp;amp;MainWindow::openRecentFile);
+        recentFileActs[i]-&amp;gt;setVisible(false);
+    }
+
+    recentFileSeparator = fileMenu-&amp;gt;addSeparator();
+
+    setRecentFilesVisible(MainWindow::hasRecentFiles());
+
+    fileMenu-&amp;gt;addAction(tr(&quot;Switch layout direction&quot;), this, &amp;amp;MainWindow::switchLayoutDirection);
+
+    fileMenu-&amp;gt;addSeparator();
+
+    const QIcon exitIcon = QIcon::fromTheme(&quot;application-exit&quot;);
+    QAction *exitAct = fileMenu-&amp;gt;addAction(exitIcon, tr(&quot;E&amp;amp;xit&quot;), qApp, &amp;amp;QApplication::closeAllWindows);
+    exitAct-&amp;gt;setShortcuts(QKeySequence::Quit);
+    exitAct-&amp;gt;setStatusTip(tr(&quot;Exit the application&quot;));
+    fileMenu-&amp;gt;addAction(exitAct);
+
+#ifndef QT_NO_CLIPBOARD
+    QMenu *editMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Edit&quot;));
+    QToolBar *editToolBar = addToolBar(tr(&quot;Edit&quot;));
+
+    const QIcon cutIcon = QIcon::fromTheme(&quot;edit-cut&quot;, QIcon(&quot;:/images/cut.png&quot;));
+    cutAct = new QAction(cutIcon, tr(&quot;Cu&amp;amp;t&quot;), this);
+    cutAct-&amp;gt;setShortcuts(QKeySequence::Cut);
+    cutAct-&amp;gt;setStatusTip(tr(&quot;Cut the current selection's contents to the &quot;
+                            &quot;clipboard&quot;));
+    connect(cutAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::cut);
+    editMenu-&amp;gt;addAction(cutAct);
+    editToolBar-&amp;gt;addAction(cutAct);
+
+    const QIcon copyIcon = QIcon::fromTheme(&quot;edit-copy&quot;, QIcon(&quot;:/images/copy.png&quot;));
+    copyAct = new QAction(copyIcon, tr(&quot;&amp;amp;Copy&quot;), this);
+    copyAct-&amp;gt;setShortcuts(QKeySequence::Copy);
+    copyAct-&amp;gt;setStatusTip(tr(&quot;Copy the current selection's contents to the &quot;
+                             &quot;clipboard&quot;));
+    connect(copyAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::copy);
+    editMenu-&amp;gt;addAction(copyAct);
+    editToolBar-&amp;gt;addAction(copyAct);
+
+    const QIcon pasteIcon = QIcon::fromTheme(&quot;edit-paste&quot;, QIcon(&quot;:/images/paste.png&quot;));
+    pasteAct = new QAction(pasteIcon, tr(&quot;&amp;amp;Paste&quot;), this);
+    pasteAct-&amp;gt;setShortcuts(QKeySequence::Paste);
+    pasteAct-&amp;gt;setStatusTip(tr(&quot;Paste the clipboard's contents into the current &quot;
+                              &quot;selection&quot;));
+    connect(pasteAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::paste);
+    editMenu-&amp;gt;addAction(pasteAct);
+    editToolBar-&amp;gt;addAction(pasteAct);
+#endif
+
+    windowMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Window&quot;));
+    connect(windowMenu, &amp;amp;QMenu::aboutToShow, this, &amp;amp;MainWindow::updateWindowMenu);
+
+    closeAct = new QAction(tr(&quot;Cl&amp;amp;ose&quot;), this);
+    closeAct-&amp;gt;setStatusTip(tr(&quot;Close the active window&quot;));
+    connect(closeAct, &amp;amp;QAction::triggered,
+            mdiArea, &amp;amp;QMdiArea::closeActiveSubWindow);
+
+    closeAllAct = new QAction(tr(&quot;Close &amp;amp;All&quot;), this);
+    closeAllAct-&amp;gt;setStatusTip(tr(&quot;Close all the windows&quot;));
+    connect(closeAllAct, &amp;amp;QAction::triggered, mdiArea, &amp;amp;QMdiArea::closeAllSubWindows);
+
+    tileAct = new QAction(tr(&quot;&amp;amp;Tile&quot;), this);
+    tileAct-&amp;gt;setStatusTip(tr(&quot;Tile the windows&quot;));
+    connect(tileAct, &amp;amp;QAction::triggered, mdiArea, &amp;amp;QMdiArea::tileSubWindows);
+
+    cascadeAct = new QAction(tr(&quot;&amp;amp;Cascade&quot;), this);
+    cascadeAct-&amp;gt;setStatusTip(tr(&quot;Cascade the windows&quot;));
+    connect(cascadeAct, &amp;amp;QAction::triggered, mdiArea, &amp;amp;QMdiArea::cascadeSubWindows);
+
+    nextAct = new QAction(tr(&quot;Ne&amp;amp;xt&quot;), this);
+    nextAct-&amp;gt;setShortcuts(QKeySequence::NextChild);
+    nextAct-&amp;gt;setStatusTip(tr(&quot;Move the focus to the next window&quot;));
+    connect(nextAct, &amp;amp;QAction::triggered, mdiArea, &amp;amp;QMdiArea::activateNextSubWindow);
+
+    previousAct = new QAction(tr(&quot;Pre&amp;amp;vious&quot;), this);
+    previousAct-&amp;gt;setShortcuts(QKeySequence::PreviousChild);
+    previousAct-&amp;gt;setStatusTip(tr(&quot;Move the focus to the previous &quot;
+                                 &quot;window&quot;));
+    connect(previousAct, &amp;amp;QAction::triggered, mdiArea, &amp;amp;QMdiArea::activatePreviousSubWindow);
+
+    windowMenuSeparatorAct = new QAction(this);
+    windowMenuSeparatorAct-&amp;gt;setSeparator(true);
+
+    updateWindowMenu();
+
+    menuBar()-&amp;gt;addSeparator();
+
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+
+    QAction *aboutAct = helpMenu-&amp;gt;addAction(tr(&quot;&amp;amp;About&quot;), this, &amp;amp;MainWindow::about);
+    aboutAct-&amp;gt;setStatusTip(tr(&quot;Show the application's About box&quot;));
+
+    QAction *aboutQtAct = helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, &amp;amp;QApplication::aboutQt);
+    aboutQtAct-&amp;gt;setStatusTip(tr(&quot;Show the Qt library's About box&quot;));
+}
+
+void MainWindow::createStatusBar()
+{
+    statusBar()-&amp;gt;showMessage(tr(&quot;Ready&quot;));
+}
+
+void MainWindow::readSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    const QByteArray geometry = settings.value(&quot;geometry&quot;, QByteArray()).toByteArray();
+    if (geometry.isEmpty()) {
+        const QRect availableGeometry = QApplication::desktop()-&amp;gt;availableGeometry(this);
+        resize(availableGeometry.width() / 3, availableGeometry.height() / 2);
+        move((availableGeometry.width() - width()) / 2,
+             (availableGeometry.height() - height()) / 2);
+    } else {
+        restoreGeometry(geometry);
+    }
+}
+
+void MainWindow::writeSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    settings.setValue(&quot;geometry&quot;, saveGeometry());
+}
+
+MdiChild *MainWindow::activeMdiChild() const
+{
+    if (QMdiSubWindow *activeSubWindow = mdiArea-&amp;gt;activeSubWindow())
+        return qobject_cast&amp;lt;MdiChild *&amp;gt;(activeSubWindow-&amp;gt;widget());
+    return 0;
+}
+
+QMdiSubWindow *MainWindow::findMdiChild(const QString &amp;amp;fileName) const
+{
+    QString canonicalFilePath = QFileInfo(fileName).canonicalFilePath();
+
+    foreach (QMdiSubWindow *window, mdiArea-&amp;gt;subWindowList()) {
+        MdiChild *mdiChild = qobject_cast&amp;lt;MdiChild *&amp;gt;(window-&amp;gt;widget());
+        if (mdiChild-&amp;gt;currentFile() == canonicalFilePath)
+            return window;
+    }
+    return 0;
+}
+
+void MainWindow::switchLayoutDirection()
+{
+    if (layoutDirection() == Qt::LeftToRight)
+        QGuiApplication::setLayoutDirection(Qt::RightToLeft);
+    else
+        QGuiApplication::setLayoutDirection(Qt::LeftToRight);
+}
+
+</db:programlisting>
+</db:article>

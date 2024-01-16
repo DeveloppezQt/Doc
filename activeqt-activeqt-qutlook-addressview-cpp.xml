@@ -1,0 +1,306 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qutlook Example (ActiveQt)</db:title>
+<db:productname>ActiveQt</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>ActiveQt</db:titleabbrev>
+<db:abstract>
+<db:para>The Qutlook example demonstrates the use of ActiveQt to automate Outlook. The example makes use of the <db:link xlink:href="activeqt-dumpcpp.xml">dumpcpp</db:link> tool to generate a C++ namespace for the type library describing the Outlook Object Model.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;addressview.h&quot;
+#include &quot;msoutl.h&quot;
+#include &amp;lt;QtWidgets&amp;gt;
+
+class AddressBookModel : public QAbstractListModel
+{
+public:
+    explicit AddressBookModel(AddressView *parent);
+    virtual ~AddressBookModel();
+
+    int rowCount(const QModelIndex &amp;amp;parent = QModelIndex()) const;
+    int columnCount(const QModelIndex &amp;amp;parent) const;
+    QVariant headerData(int section, Qt::Orientation orientation, int role) const;
+    QVariant data(const QModelIndex &amp;amp;index, int role) const;
+
+    void changeItem(const QModelIndex &amp;amp;index, const QString &amp;amp;firstName, const QString &amp;amp;lastName, const QString &amp;amp;address, const QString &amp;amp;email);
+    void addItem(const QString &amp;amp;firstName, const QString &amp;amp;lastName, const QString &amp;amp;address, const QString &amp;amp;email);
+    void update();
+
+private:
+    Outlook::Application outlook;
+    Outlook::Items * contactItems;
+
+    mutable QHash&amp;lt;QModelIndex, QStringList&amp;gt; cache;
+};
+
+AddressBookModel::AddressBookModel(AddressView *parent)
+: QAbstractListModel(parent)
+{
+    if (!outlook.isNull()) {
+        Outlook::NameSpace session(outlook.Session());
+        session.Logon();
+        Outlook::MAPIFolder *folder = session.GetDefaultFolder(Outlook::olFolderContacts);
+        contactItems = new Outlook::Items(folder-&amp;gt;Items());
+        connect(contactItems, SIGNAL(ItemAdd(IDispatch*)), parent, SLOT(updateOutlook()));
+        connect(contactItems, SIGNAL(ItemChange(IDispatch*)), parent, SLOT(updateOutlook()));
+        connect(contactItems, SIGNAL(ItemRemove()), parent, SLOT(updateOutlook()));
+
+        delete folder;
+    }
+}
+
+AddressBookModel::~AddressBookModel()
+{
+    delete contactItems;
+
+    if (!outlook.isNull())
+        Outlook::NameSpace(outlook.Session()).Logoff();
+}
+
+int AddressBookModel::rowCount(const QModelIndex &amp;amp;) const
+{
+    return contactItems ? contactItems-&amp;gt;Count() : 0;
+}
+
+int AddressBookModel::columnCount(const QModelIndex &amp;amp; /*parent*/) const
+{
+    return 4;
+}
+
+QVariant AddressBookModel::headerData(int section, Qt::Orientation /*orientation*/, int role) const
+{
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    switch (section) {
+    case 0:
+        return tr(&quot;First Name&quot;);
+    case 1:
+        return tr(&quot;Last Name&quot;);
+    case 2:
+        return tr(&quot;Address&quot;);
+    case 3:
+        return tr(&quot;Email&quot;);
+    default:
+        break;
+    }
+
+    return QVariant();
+}
+
+QVariant AddressBookModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid() || role != Qt::DisplayRole)
+        return QVariant();
+
+    QStringList data;
+    if (cache.contains(index)) {
+        data = cache.value(index);
+    } else {
+        Outlook::ContactItem contact(contactItems-&amp;gt;Item(index.row() + 1));
+        data &amp;lt;&amp;lt; contact.FirstName() &amp;lt;&amp;lt; contact.LastName() &amp;lt;&amp;lt; contact.HomeAddress() &amp;lt;&amp;lt; contact.Email1Address();
+        cache.insert(index, data);
+    }
+
+    if (index.column() &amp;lt; data.count())
+        return data.at(index.column());
+
+    return QVariant();
+}
+
+void AddressBookModel::changeItem(const QModelIndex &amp;amp;index, const QString &amp;amp;firstName, const QString &amp;amp;lastName, const QString &amp;amp;address, const QString &amp;amp;email)
+{
+    Outlook::ContactItem item(contactItems-&amp;gt;Item(index.row() + 1));
+
+    item.SetFirstName(firstName);
+    item.SetLastName(lastName);
+    item.SetHomeAddress(address);
+    item.SetEmail1Address(email);
+
+    item.Save();
+
+    cache.take(index);
+}
+
+void AddressBookModel::addItem(const QString &amp;amp;firstName, const QString &amp;amp;lastName, const QString &amp;amp;address, const QString &amp;amp;email)
+{
+    Outlook::ContactItem item(outlook.CreateItem(Outlook::olContactItem));
+    if (!item.isNull()) {
+        item.SetFirstName(firstName);
+        item.SetLastName(lastName);
+        item.SetHomeAddress(address);
+        item.SetEmail1Address(email);
+
+        item.Save();
+    }
+}
+
+void AddressBookModel::update()
+{
+    beginResetModel();
+    cache.clear();
+    endResetModel();
+}
+
+AddressView::AddressView(QWidget *parent)
+: QWidget(parent)
+{
+    QGridLayout *mainGrid = new QGridLayout(this);
+
+    QLabel *firstNameLabel = new QLabel(tr(&quot;First &amp;amp;Name&quot;), this);
+    firstNameLabel-&amp;gt;resize(firstNameLabel-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(firstNameLabel, 0, 0);
+
+    QLabel *lastNameLabel = new QLabel(tr(&quot;&amp;amp;Last Name&quot;), this);
+    lastNameLabel-&amp;gt;resize(lastNameLabel-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(lastNameLabel, 0, 1);
+
+    QLabel *addressLabel = new QLabel(tr(&quot;Add&amp;amp;ress&quot;), this);
+    addressLabel-&amp;gt;resize(addressLabel-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(addressLabel, 0, 2);
+
+    QLabel *emailLabel = new QLabel(tr(&quot;&amp;amp;E-Mail&quot;), this);
+    emailLabel-&amp;gt;resize(emailLabel-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(emailLabel, 0, 3);
+
+    m_addButton = new QPushButton(tr(&quot;A&amp;amp;dd&quot;), this);
+    m_addButton-&amp;gt;resize(m_addButton-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_addButton, 0, 4);
+    connect(m_addButton, &amp;amp;QPushButton::clicked, this, &amp;amp;AddressView::addEntry);
+
+    m_firstName = new QLineEdit(this);
+    m_firstName-&amp;gt;resize(m_firstName-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_firstName, 1, 0);
+    firstNameLabel-&amp;gt;setBuddy(m_firstName);
+
+    m_lastName = new QLineEdit(this);
+    m_lastName-&amp;gt;resize(m_lastName-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_lastName, 1, 1);
+    lastNameLabel-&amp;gt;setBuddy(m_lastName);
+
+    m_address = new QLineEdit(this);
+    m_address-&amp;gt;resize(m_address-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_address, 1, 2);
+    addressLabel-&amp;gt;setBuddy(m_address);
+
+    m_email = new QLineEdit(this);
+    m_email-&amp;gt;resize(m_email-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_email, 1, 3);
+    emailLabel-&amp;gt;setBuddy(m_email);
+
+    m_changeButton = new QPushButton(tr(&quot;&amp;amp;Change&quot;), this);
+    m_changeButton-&amp;gt;resize(m_changeButton-&amp;gt;sizeHint());
+    mainGrid-&amp;gt;addWidget(m_changeButton, 1, 4);
+    connect(m_changeButton, &amp;amp;QPushButton::clicked, this, &amp;amp;AddressView::changeEntry);
+
+    m_treeView = new QTreeView(this);
+    m_treeView-&amp;gt;setSelectionMode(QTreeView::SingleSelection);
+    m_treeView-&amp;gt;setRootIsDecorated(false);
+
+    model = new AddressBookModel(this);
+    m_treeView-&amp;gt;setModel(model);
+
+    connect(m_treeView-&amp;gt;selectionModel(), &amp;amp;QItemSelectionModel::currentChanged, this, &amp;amp;AddressView::itemSelected);
+
+    mainGrid-&amp;gt;addWidget(m_treeView, 2, 0, 1, 5);
+}
+
+void AddressView::updateOutlook()
+{
+    model-&amp;gt;update();
+}
+
+void AddressView::addEntry()
+{
+    if (!m_firstName-&amp;gt;text().isEmpty() || !m_lastName-&amp;gt;text().isEmpty() ||
+         !m_address-&amp;gt;text().isEmpty() || !m_email-&amp;gt;text().isEmpty()) {
+        model-&amp;gt;addItem(m_firstName-&amp;gt;text(), m_lastName-&amp;gt;text(), m_address-&amp;gt;text(), m_email-&amp;gt;text());
+    }
+
+    m_firstName-&amp;gt;clear();
+    m_lastName-&amp;gt;clear();
+    m_address-&amp;gt;clear();
+    m_email-&amp;gt;clear();
+}
+
+void AddressView::changeEntry()
+{
+    QModelIndex current = m_treeView-&amp;gt;currentIndex();
+
+    if (current.isValid())
+        model-&amp;gt;changeItem(current, m_firstName-&amp;gt;text(), m_lastName-&amp;gt;text(), m_address-&amp;gt;text(), m_email-&amp;gt;text());
+}
+
+void AddressView::itemSelected(const QModelIndex &amp;amp;index)
+{
+    if (!index.isValid())
+        return;
+
+    QAbstractItemModel *model = m_treeView-&amp;gt;model();
+    m_firstName-&amp;gt;setText(model-&amp;gt;data(model-&amp;gt;index(index.row(), 0)).toString());
+    m_lastName-&amp;gt;setText(model-&amp;gt;data(model-&amp;gt;index(index.row(), 1)).toString());
+    m_address-&amp;gt;setText(model-&amp;gt;data(model-&amp;gt;index(index.row(), 2)).toString());
+    m_email-&amp;gt;setText(model-&amp;gt;data(model-&amp;gt;index(index.row(), 3)).toString());
+}
+
+</db:programlisting>
+</db:article>

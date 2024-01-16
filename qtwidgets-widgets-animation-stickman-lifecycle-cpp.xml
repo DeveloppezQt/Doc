@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Stickman Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Stickman example shows how to animate transitions in a state machine to implement key frame animations.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtCore module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;lifecycle.h&quot;
+#include &quot;stickman.h&quot;
+#include &quot;node.h&quot;
+#include &quot;animation.h&quot;
+#include &quot;graphicsview.h&quot;
+
+#include &amp;lt;QtCore&amp;gt;
+#include &amp;lt;QtWidgets&amp;gt;
+
+class KeyPressTransition: public QSignalTransition
+{
+public:
+    KeyPressTransition(GraphicsView *receiver, Qt::Key key)
+        : QSignalTransition(receiver, SIGNAL(keyPressed(int))), m_key(key)
+    {
+    }
+    KeyPressTransition(GraphicsView *receiver, Qt::Key key, QAbstractState *target)
+        : QSignalTransition(receiver, SIGNAL(keyPressed(int))), m_key(key)
+    {
+        setTargetState(target);
+    }
+
+    bool eventTest(QEvent *e) override
+    {
+        if (QSignalTransition::eventTest(e)) {
+            QVariant key = static_cast&amp;lt;QStateMachine::SignalEvent*&amp;gt;(e)-&amp;gt;arguments().at(0);
+            return (key.toInt() == int(m_key));
+        }
+
+        return false;
+    }
+private:
+    Qt::Key m_key;
+};
+
+class LightningStrikesTransition: public QEventTransition
+{
+public:
+    LightningStrikesTransition(QAbstractState *target)
+        : QEventTransition(this, QEvent::Timer)
+    {
+        setTargetState(target);
+        startTimer(1000);
+    }
+
+    bool eventTest(QEvent *e) override
+    {
+        return QEventTransition::eventTest(e) &amp;amp;&amp;amp; QRandomGenerator::global()-&amp;gt;bounded(50) == 0;
+    }
+};
+
+LifeCycle::LifeCycle(StickMan *stickMan, GraphicsView *keyReceiver)
+    : m_stickMan(stickMan), m_keyReceiver(keyReceiver)
+{
+    // Create animation group to be used for all transitions
+    m_animationGroup = new QParallelAnimationGroup();
+    const int stickManNodeCount = m_stickMan-&amp;gt;nodeCount();
+    for (int i=0; i&amp;lt;stickManNodeCount; ++i) {
+        QPropertyAnimation *pa = new QPropertyAnimation(m_stickMan-&amp;gt;node(i), &quot;pos&quot;);
+        m_animationGroup-&amp;gt;addAnimation(pa);
+    }
+
+    // Set up initial state graph
+    m_machine = new QStateMachine();
+    m_machine-&amp;gt;addDefaultAnimation(m_animationGroup);
+
+    m_alive = new QState(m_machine);
+    m_alive-&amp;gt;setObjectName(&quot;alive&quot;);
+
+    // Make it blink when lightning strikes before entering dead animation
+    QState *lightningBlink = new QState(m_machine);
+    lightningBlink-&amp;gt;assignProperty(m_stickMan-&amp;gt;scene(), &quot;backgroundBrush&quot;, QColor(Qt::white));
+    lightningBlink-&amp;gt;assignProperty(m_stickMan, &quot;penColor&quot;, QColor(Qt::black));
+    lightningBlink-&amp;gt;assignProperty(m_stickMan, &quot;fillColor&quot;, QColor(Qt::white));
+    lightningBlink-&amp;gt;assignProperty(m_stickMan, &quot;isDead&quot;, true);
+
+    QTimer *timer = new QTimer(lightningBlink);
+    timer-&amp;gt;setSingleShot(true);
+    timer-&amp;gt;setInterval(100);
+    QObject::connect(lightningBlink, SIGNAL(entered()), timer, SLOT(start()));
+    QObject::connect(lightningBlink, SIGNAL(exited()), timer, SLOT(stop()));
+
+    m_dead = new QState(m_machine);
+    m_dead-&amp;gt;assignProperty(m_stickMan-&amp;gt;scene(), &quot;backgroundBrush&quot;, QColor(Qt::black));
+    m_dead-&amp;gt;assignProperty(m_stickMan, &quot;penColor&quot;, QColor(Qt::white));
+    m_dead-&amp;gt;assignProperty(m_stickMan, &quot;fillColor&quot;, QColor(Qt::black));
+    m_dead-&amp;gt;setObjectName(&quot;dead&quot;);
+
+    // Idle state (sets no properties)
+    m_idle = new QState(m_alive);
+    m_idle-&amp;gt;setObjectName(&quot;idle&quot;);
+
+    m_alive-&amp;gt;setInitialState(m_idle);
+
+    // Lightning strikes at random
+    m_alive-&amp;gt;addTransition(new LightningStrikesTransition(lightningBlink));
+    lightningBlink-&amp;gt;addTransition(timer, SIGNAL(timeout()), m_dead);
+
+    m_machine-&amp;gt;setInitialState(m_alive);
+}
+
+void LifeCycle::setDeathAnimation(const QString &amp;amp;fileName)
+{
+    QState *deathAnimation = makeState(m_dead, fileName);
+    m_dead-&amp;gt;setInitialState(deathAnimation);
+}
+
+void LifeCycle::start()
+{
+    m_machine-&amp;gt;start();
+}
+
+void LifeCycle::addActivity(const QString &amp;amp;fileName, Qt::Key key, QObject *sender, const char *signal)
+{
+    QState *state = makeState(m_alive, fileName);
+    m_alive-&amp;gt;addTransition(new KeyPressTransition(m_keyReceiver, key, state));
+
+    if((sender != NULL) || (signal != NULL)) {
+        m_alive-&amp;gt;addTransition(sender, signal, state);
+    }
+}
+
+QState *LifeCycle::makeState(QState *parentState, const QString &amp;amp;animationFileName)
+{
+    QState *topLevel = new QState(parentState);
+
+    Animation animation;
+    {
+        QFile file(animationFileName);
+        if (file.open(QIODevice::ReadOnly))
+            animation.load(&amp;amp;file);
+    }
+
+    const int frameCount = animation.totalFrames();
+    QState *previousState = 0;
+    for (int i=0; i&amp;lt;frameCount; ++i) {
+        animation.setCurrentFrame(i);
+
+        QState *frameState = new QState(topLevel);
+        const int nodeCount = animation.nodeCount();
+        for (int j=0; j&amp;lt;nodeCount; ++j)
+            frameState-&amp;gt;assignProperty(m_stickMan-&amp;gt;node(j), &quot;pos&quot;, animation.nodePos(j));
+
+        frameState-&amp;gt;setObjectName(QString::fromLatin1(&quot;frame %0&quot;).arg(i));
+        if (previousState == 0)
+            topLevel-&amp;gt;setInitialState(frameState);
+        else
+            previousState-&amp;gt;addTransition(previousState, SIGNAL(propertiesAssigned()), frameState);
+
+        previousState = frameState;
+    }
+
+    // Loop
+    previousState-&amp;gt;addTransition(previousState, SIGNAL(propertiesAssigned()), topLevel-&amp;gt;initialState());
+
+    return topLevel;
+
+}
+
+LifeCycle::~LifeCycle()
+{
+    delete m_machine;
+    delete m_animationGroup;
+}
+
+</db:programlisting>
+</db:article>

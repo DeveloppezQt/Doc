@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Text Codecs Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>How to import and export text using text codecs.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+
+#include &quot;previewform.h&quot;
+
+// Helpers for creating hex dumps
+static void indent(QTextStream &amp;amp;str, int indent)
+{
+    for (int i = 0; i &amp;lt; indent; ++i)
+        str &amp;lt;&amp;lt; ' ';
+}
+
+static void formatHex(QTextStream &amp;amp;str, const QByteArray &amp;amp;data)
+{
+    const int fieldWidth = str.fieldWidth();
+    const QTextStream::FieldAlignment alignment = str.fieldAlignment();
+    const int base = str.integerBase();
+    const QChar padChar = str.padChar();
+    str.setIntegerBase(16);
+    str.setPadChar(QLatin1Char('0'));
+    str.setFieldAlignment(QTextStream::AlignRight);
+
+    const unsigned char *p = reinterpret_cast&amp;lt;const unsigned char *&amp;gt;(data.constBegin());
+    for (const unsigned char *end = p + data.size(); p &amp;lt; end; ++p) {
+        str &amp;lt;&amp;lt; ' ';
+        str.setFieldWidth(2);
+        str &amp;lt;&amp;lt; unsigned(*p);
+        str.setFieldWidth(fieldWidth);
+    }
+    str.setFieldAlignment(alignment);
+    str.setPadChar(padChar);
+    str.setIntegerBase(base);
+}
+
+static void formatPrintableCharacters(QTextStream &amp;amp;str, const QByteArray &amp;amp;data)
+{
+    for (int i = 0, size = data.size(); i &amp;lt; size; ++i) {
+        const char c = data.at(i);
+        switch (c) {
+        case '\0':
+            str &amp;lt;&amp;lt; &quot;\\0&quot;;
+            break;
+        case '\t':
+            str &amp;lt;&amp;lt; &quot;\\t&quot;;
+            break;
+        case '\r':
+            str &amp;lt;&amp;lt; &quot;\\r&quot;;
+            break;
+        case '\n':
+            str &amp;lt;&amp;lt; &quot;\\n&quot;;
+            break;
+        default:
+            if (c &amp;gt;= 32 &amp;amp;&amp;amp; uchar(c) &amp;lt; 127)
+                str &amp;lt;&amp;lt; ' ' &amp;lt;&amp;lt; c;
+            else
+                str &amp;lt;&amp;lt; &quot;..&quot;;
+            break;
+        }
+    }
+}
+
+static QString formatHexDump(const QByteArray &amp;amp;data)
+{
+    enum { lineWidth = 16 };
+    QString result;
+    QTextStream str(&amp;amp;result);
+    str.setIntegerBase(16);
+    str.setPadChar(QLatin1Char('0'));
+    const int fieldWidth = str.fieldWidth();
+    const QTextStream::FieldAlignment alignment = str.fieldAlignment();
+    for (int a = 0, size = data.size(); a &amp;lt; size; a += lineWidth) {
+        str.setFieldAlignment(QTextStream::AlignRight);
+        str.setFieldWidth(8);
+        str &amp;lt;&amp;lt; a;
+        str.setFieldWidth(fieldWidth);
+        str.setFieldAlignment(alignment);
+
+        const int end = qMin(a + lineWidth, size);
+        const QByteArray line = data.mid(a, end - a);
+
+        formatHex(str, line);
+        indent(str, 3 * (lineWidth - line.size()));
+
+        str &amp;lt;&amp;lt; ' ';
+        formatPrintableCharacters(str, line);
+        indent(str, 2 * (lineWidth - line.size()));
+        str &amp;lt;&amp;lt; '\n';
+    }
+    return result;
+}
+
+PreviewForm::PreviewForm(QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowFlags(windowFlags() &amp;amp; ~Qt::WindowContextHelpButtonHint);
+    encodingComboBox = new QComboBox;
+
+    QLabel *encodingLabel = new QLabel(tr(&quot;&amp;amp;Encoding:&quot;));
+    encodingLabel-&amp;gt;setBuddy(encodingComboBox);
+
+    textEdit = new QPlainTextEdit;
+    textEdit-&amp;gt;setLineWrapMode(QPlainTextEdit::NoWrap);
+    textEdit-&amp;gt;setReadOnly(true);
+    hexDumpEdit = new QPlainTextEdit;
+    hexDumpEdit-&amp;gt;setLineWrapMode(QPlainTextEdit::NoWrap);
+    hexDumpEdit-&amp;gt;setReadOnly(true);
+    hexDumpEdit-&amp;gt;setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+
+    QDialogButtonBox *buttonBox =
+        new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    okButton = buttonBox-&amp;gt;button(QDialogButtonBox::Ok);
+
+    connect(encodingComboBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::activated),
+            this, &amp;amp;PreviewForm::updateTextEdit);
+    connect(buttonBox, &amp;amp;QDialogButtonBox::accepted, this, &amp;amp;QDialog::accept);
+    connect(buttonBox, &amp;amp;QDialogButtonBox::rejected, this, &amp;amp;QDialog::reject);
+
+    QGridLayout *mainLayout = new QGridLayout(this);
+    mainLayout-&amp;gt;addWidget(encodingLabel, 0, 0);
+    mainLayout-&amp;gt;addWidget(encodingComboBox, 0, 1);
+    tabWidget = new QTabWidget;
+    tabWidget-&amp;gt;addTab(textEdit, tr(&quot;Preview&quot;));
+    tabWidget-&amp;gt;addTab(hexDumpEdit, tr(&quot;Hex Dump&quot;));
+    mainLayout-&amp;gt;addWidget(tabWidget, 1, 0, 1, 2);
+    statusLabel = new QLabel;
+    mainLayout-&amp;gt;addWidget(statusLabel, 2, 0, 1, 2);
+    mainLayout-&amp;gt;addWidget(buttonBox, 3, 0, 1, 2);
+
+    const QRect screenGeometry = QApplication::desktop()-&amp;gt;screenGeometry(this);
+    resize(screenGeometry.width() * 2 / 5, screenGeometry.height() / 2);
+}
+
+void PreviewForm::setCodecList(const QList&amp;lt;QTextCodec *&amp;gt; &amp;amp;list)
+{
+    encodingComboBox-&amp;gt;clear();
+    foreach (const QTextCodec *codec, list) {
+        encodingComboBox-&amp;gt;addItem(QLatin1String(codec-&amp;gt;name()),
+                                  QVariant(codec-&amp;gt;mibEnum()));
+    }
+}
+
+void PreviewForm::reset()
+{
+    decodedStr.clear();
+    textEdit-&amp;gt;clear();
+    hexDumpEdit-&amp;gt;clear();
+    statusLabel-&amp;gt;clear();
+    statusLabel-&amp;gt;setStyleSheet(QString());
+    okButton-&amp;gt;setEnabled(false);
+    tabWidget-&amp;gt;setCurrentIndex(0);
+}
+
+void PreviewForm::setEncodedData(const QByteArray &amp;amp;data)
+{
+    reset();
+    encodedData = data;
+    hexDumpEdit-&amp;gt;setPlainText(formatHexDump(data));
+    updateTextEdit();
+}
+
+void PreviewForm::updateTextEdit()
+{
+    int mib = encodingComboBox-&amp;gt;itemData(
+                      encodingComboBox-&amp;gt;currentIndex()).toInt();
+    const QTextCodec *codec = QTextCodec::codecForMib(mib);
+    const QString name = QLatin1String(codec-&amp;gt;name());
+
+    QTextCodec::ConverterState state;
+    decodedStr = codec-&amp;gt;toUnicode(encodedData.constData(), encodedData.size(), &amp;amp;state);
+
+    bool success = true;
+    if (state.remainingChars) {
+        success = false;
+        const QString message =
+            tr(&quot;%1: conversion error at character %2&quot;)
+            .arg(name).arg(encodedData.size() - state.remainingChars + 1);
+        statusLabel-&amp;gt;setText(message);
+        statusLabel-&amp;gt;setStyleSheet(QStringLiteral(&quot;background-color: \&quot;red\&quot;;&quot;));
+    } else if (state.invalidChars) {
+        statusLabel-&amp;gt;setText(tr(&quot;%1: %n invalid characters&quot;, 0, state.invalidChars).arg(name));
+        statusLabel-&amp;gt;setStyleSheet(QStringLiteral(&quot;background-color: \&quot;yellow\&quot;;&quot;));
+    } else {
+        statusLabel-&amp;gt;setText(tr(&quot;%1: %n bytes converted&quot;, 0, encodedData.size()).arg(name));
+        statusLabel-&amp;gt;setStyleSheet(QString());
+    }
+    if (success)
+        textEdit-&amp;gt;setPlainText(decodedStr);
+    else
+        textEdit-&amp;gt;clear();
+    okButton-&amp;gt;setEnabled(success);
+}
+
+</db:programlisting>
+</db:article>

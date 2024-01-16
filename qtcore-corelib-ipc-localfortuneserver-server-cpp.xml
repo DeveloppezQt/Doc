@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Local Fortune Server Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates using <db:link xlink:href="qlocalserver.xml">QLocalServer</db:link> and <db:link xlink:href="qlocalsocket.xml">QLocalSocket</db:link> for serving a simple local service.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtNetwork&amp;gt;
+
+#include &amp;lt;stdlib.h&amp;gt;
+
+#include &quot;server.h&quot;
+#include &amp;lt;qlocalserver.h&amp;gt;
+#include &amp;lt;qlocalsocket.h&amp;gt;
+
+Server::Server(QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowFlags(windowFlags() &amp;amp; ~Qt::WindowContextHelpButtonHint);
+
+    server = new QLocalServer(this);
+    if (!server-&amp;gt;listen(&quot;fortune&quot;)) {
+        QMessageBox::critical(this, tr(&quot;Local Fortune Server&quot;),
+                              tr(&quot;Unable to start the server: %1.&quot;)
+                              .arg(server-&amp;gt;errorString()));
+        close();
+        return;
+    }
+
+    QLabel *statusLabel = new QLabel;
+    statusLabel-&amp;gt;setWordWrap(true);
+    statusLabel-&amp;gt;setText(tr(&quot;The server is running.\n&quot;
+                            &quot;Run the Local Fortune Client example now.&quot;));
+
+    fortunes &amp;lt;&amp;lt; tr(&quot;You've been leading a dog's life. Stay off the furniture.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;You've got to think about tomorrow.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;You will be surprised by a loud noise.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;You will feel hungry again in another hour.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;You might have mail.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;You cannot kill time without injuring eternity.&quot;)
+             &amp;lt;&amp;lt; tr(&quot;Computers are not intelligent. They only think they are.&quot;);
+
+    QPushButton *quitButton = new QPushButton(tr(&quot;Quit&quot;));
+    quitButton-&amp;gt;setAutoDefault(false);
+    connect(quitButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Server::close);
+    connect(server, &amp;amp;QLocalServer::newConnection, this, &amp;amp;Server::sendFortune);
+
+    QHBoxLayout *buttonLayout = new QHBoxLayout;
+    buttonLayout-&amp;gt;addStretch(1);
+    buttonLayout-&amp;gt;addWidget(quitButton);
+    buttonLayout-&amp;gt;addStretch(1);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    mainLayout-&amp;gt;addWidget(statusLabel);
+    mainLayout-&amp;gt;addLayout(buttonLayout);
+
+    setWindowTitle(QGuiApplication::applicationDisplayName());
+}
+
+void Server::sendFortune()
+{
+    QByteArray block;
+    QDataStream out(&amp;amp;block, QIODevice::WriteOnly);
+    out.setVersion(QDataStream::Qt_5_10);
+    const int fortuneIndex = QRandomGenerator::global()-&amp;gt;bounded(0, fortunes.size());
+    const QString &amp;amp;message = fortunes.at(fortuneIndex);
+    out &amp;lt;&amp;lt; quint32(message.size());
+    out &amp;lt;&amp;lt; message;
+
+    QLocalSocket *clientConnection = server-&amp;gt;nextPendingConnection();
+    connect(clientConnection, &amp;amp;QLocalSocket::disconnected,
+            clientConnection, &amp;amp;QLocalSocket::deleteLater);
+
+    clientConnection-&amp;gt;write(block);
+    clientConnection-&amp;gt;flush();
+    clientConnection-&amp;gt;disconnectFromServer();
+}
+
+</db:programlisting>
+</db:article>
