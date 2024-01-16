@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth QML Ping Pong example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A QML example showing Bluetooth communication.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Bluetooth QML Ping Pong example presents the socket communication between two Bluetooth devices. The basic concept is the ping pong game where two players communicate via sockets.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmlpingpong_intro.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+<db:para>At the beginning, the user selects the role. One device acts as a server and the second one as a client. The server side starts a service named &quot;PingPong server&quot;.</db:para>
+<db:programlisting language="cpp">m_serverInfo = new QBluetoothServer(QBluetoothServiceInfo::RfcommProtocol, this);
+connect(m_serverInfo, &amp;amp;QBluetoothServer::newConnection,
+        this, &amp;amp;PingPong::clientConnected);
+connect(m_serverInfo, &amp;amp;QBluetoothServer::errorOccurred, this, &amp;amp;PingPong::serverError);
+const QBluetoothUuid uuid(serviceUuid);
+
+m_serviceInfo = m_serverInfo-&amp;gt;listen(uuid, QStringLiteral(&quot;PingPong server&quot;));
+</db:programlisting>
+<db:para>On the client side, the full service discovery on the nearby Bluetooth devices is done.</db:para>
+<db:programlisting language="cpp">discoveryAgent = new QBluetoothServiceDiscoveryAgent(QBluetoothAddress());
+
+connect(discoveryAgent, &amp;amp;QBluetoothServiceDiscoveryAgent::serviceDiscovered,
+        this, &amp;amp;PingPong::addService);
+connect(discoveryAgent, &amp;amp;QBluetoothServiceDiscoveryAgent::finished,
+        this, &amp;amp;PingPong::done);
+connect(discoveryAgent, &amp;amp;QBluetoothServiceDiscoveryAgent::errorOccurred, this,
+        &amp;amp;PingPong::serviceScanError);
+#ifdef Q_OS_ANDROID
+// QTBUG-61392
+discoveryAgent-&amp;gt;setUuidFilter(QBluetoothUuid(androidUuid));
+#else
+discoveryAgent-&amp;gt;setUuidFilter(QBluetoothUuid(serviceUuid));
+#endif
+discoveryAgent-&amp;gt;start(QBluetoothServiceDiscoveryAgent::FullDiscovery);
+</db:programlisting>
+<db:para>When the ping pong service is discovered, the client connects to the server using the socket.</db:para>
+<db:programlisting language="cpp">socket = new QBluetoothSocket(QBluetoothServiceInfo::RfcommProtocol);
+socket-&amp;gt;connectToService(service);
+
+connect(socket, &amp;amp;QBluetoothSocket::readyRead, this, &amp;amp;PingPong::readSocket);
+connect(socket, &amp;amp;QBluetoothSocket::connected, this, &amp;amp;PingPong::serverConnected);
+connect(socket, &amp;amp;QBluetoothSocket::disconnected, this, &amp;amp;PingPong::serverDisconnected);
+</db:programlisting>
+<db:para>On the server side, the connected signal is emitted initiating that the client is connected. The necessary signals and slots on the server side are connected.</db:para>
+<db:programlisting language="cpp">if (!m_serverInfo-&amp;gt;hasPendingConnections()) {
+    setMessage(&quot;FAIL: expected pending server connection&quot;);
+    return;
+}
+socket = m_serverInfo-&amp;gt;nextPendingConnection();
+if (!socket)
+    return;
+socket-&amp;gt;setParent(this);
+connect(socket, &amp;amp;QBluetoothSocket::readyRead,
+        this, &amp;amp;PingPong::readSocket);
+connect(socket, &amp;amp;QBluetoothSocket::disconnected,
+        this, &amp;amp;PingPong::clientDisconnected);
+connect(socket, &amp;amp;QBluetoothSocket::errorOccurred, this, &amp;amp;PingPong::socketError);
+</db:programlisting>
+<db:para>The game starts after the devices are connected and the screen is adjusted.</db:para>
+<db:programlisting language="cpp">m_timer-&amp;gt;start(10);
+</db:programlisting>
+<db:para>The server updates the ball direction and coordinates. The coordinates of pedals are sent to each other every 10ms.</db:para>
+<db:programlisting language="cpp">if (m_role == 1) {
+    checkBoundaries();
+    m_ballY += m_speedy;
+    m_ballX += m_speedx;
+
+    size.setNum(m_ballX);
+    size.append(' ');
+    QByteArray size1;
+    size1.setNum(m_ballY);
+    size.append(size1);
+    size.append(' ');
+    size1.setNum(m_leftBlockY);
+    size.append(size1);
+    size.append(&quot; \n&quot;);
+    socket-&amp;gt;write(size.constData());
+    emit ballChanged();
+}
+else if (m_role == 2) {
+    size.setNum(m_rightBlockY);
+    size.append(&quot; \n&quot;);
+    socket-&amp;gt;write(size.constData());
+}
+</db:programlisting>
+<db:para>The coordinates are updated and exchanged via sockets. As presented, the server sends its pedal's y coordinate and the ball coordinates whereas, the client sends only its pedal y coordinate.</db:para>
+<db:programlisting language="cpp">if (((m_ballX + ballWidth) &amp;gt; (1. - blockSize)) &amp;amp;&amp;amp; (ballCenterY &amp;lt; (m_rightBlockY + blockHeight))
+    &amp;amp;&amp;amp; (ballCenterY &amp;gt; m_rightBlockY)) {
+    // right paddle collision
+    // simulating paddle surface to be a quarter of a circle
+    float paddlecenter = m_rightBlockY + blockHeight / 2.;
+    float relpos = (ballCenterY - paddlecenter) / (blockHeight / 2.); // [-1 : 1]
+    float surfaceangle = M_PI_4 * relpos;
+
+    // calculation of surface normal
+    float normalx = -cos(surfaceangle);
+    float normaly = sin(surfaceangle);
+
+    // calculation of surface tangent
+    float tangentx = sin(surfaceangle);
+    float tangenty = cos(surfaceangle);
+
+    // calculation of tangentialspeed
+    float tangentialspeed = tangentx * m_speedx + tangenty * m_speedy;
+    // calculation of normal speed
+    float normalspeed = normalx * m_speedx + normaly * m_speedy;
+
+    // speed increase of 10%
+    normalspeed *= 1.1f;
+
+    if (normalspeed &amp;lt; 0) { // if we are coming from the left. To avoid double reflections
+        m_speedx = tangentialspeed * tangentx - normalspeed * normalx;
+        m_speedy = tangentialspeed * tangenty - normalspeed * normaly;
+    }
+} else if ((m_ballX &amp;lt; blockSize) &amp;amp;&amp;amp; (ballCenterY &amp;lt; (m_leftBlockY + blockHeight))
+           &amp;amp;&amp;amp; (ballCenterY &amp;gt; m_leftBlockY)) {
+    // left paddle collision
+    // simulating paddle surface to be a quarter of a circle
+    float paddlecenter = m_leftBlockY + blockHeight / 2.;
+    float relpos = (ballCenterY - paddlecenter) / (blockHeight / 2.); // [-1 : 1]
+    float surfaceangle = M_PI_4 * relpos;
+
+    // calculation of surface normal
+    float normalx = cos(surfaceangle);
+    float normaly = sin(surfaceangle);
+
+    // calculation of surface tangent
+    float tangentx = -sin(surfaceangle);
+    float tangenty = cos(surfaceangle);
+
+    // calculation of tangentialspeed
+    float tangentialspeed = tangentx * m_speedx + tangenty * m_speedy;
+    // calculation of normal speed
+    float normalspeed = normalx * m_speedx + normaly * m_speedy;
+
+    // speed increase of 10%
+    normalspeed *= 1.1f;
+
+    if (normalspeed &amp;lt; 0) { // if we are coming from the left. To avoid double reflections
+        m_speedx = tangentialspeed * tangentx - normalspeed * normalx;
+        m_speedy = tangentialspeed * tangenty - normalspeed * normaly;
+    }
+} else if (m_ballY &amp;lt; 0) {
+    m_speedy = std::abs(m_speedy);
+} else if (m_ballY + ballWidth &amp;gt; 1.f) {
+    m_speedy = -std::abs(m_speedy);
+}
+</db:programlisting>
+<db:para>In the code above, it was shown how the server checks whether the ball has reached the boundaries of the board. In case of a collision with a pedal, a convex surface is simulated. The part of the velocity normal to the simulated surface is inverted and increased by 10% to speed up the game. In the case of the goal, the server updates the results via its socket.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/intro1.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtconnectivity.git/tree/examples/bluetooth/pingpong?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

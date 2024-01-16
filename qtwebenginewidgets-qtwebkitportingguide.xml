@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Porting from Qt WebKit to Qt WebEngine</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Overview of the differences between the Qt WebKit and Qt WebEngine API.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The following sections contain information about porting an application that uses the <db:link xlink:href="http://doc.qt.io/archives/qt-5.3/qtwebkit-index.html">Qt WebKit</db:link> <db:link xlink:href="http://doc.qt.io/archives/qt-5.3/qml-qtwebkit-webview.html">QWebView API</db:link> to use the <db:link xlink:href="qtwebengine-index.xml">Qt WebEngine</db:link> <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>.</db:para>
+<db:section xml:id="architecture">
+<db:title>Architecture</db:title>
+<db:para>Chromium provides its own network and painting engines, which Qt WebEngine uses. This, among other things, allows Qt WebEngine to provide better and more reliable support for the latest HTML5 specification than Qt WebKit. However, Qt WebEngine is thus also heavier than Qt WebKit and does not provide direct access to the network stack and the HTML document through C++ APIs.</db:para>
+</db:section>
+<db:section xml:id="class-names">
+<db:title>Class Names</db:title>
+<db:para>The Qt WebEngine equivalent of Qt WebKit C++ classes are prefixed by &quot;<db:emphasis>QWebEngine&quot;</db:emphasis> instead of &quot;<db:emphasis>QWeb&quot;</db:emphasis>.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QWebHistory&amp;gt;
+#include &amp;lt;QWebHistoryItem&amp;gt;
+#include &amp;lt;QWebPage&amp;gt;
+#include &amp;lt;QWebView&amp;gt;
+
+QWebHistory
+QWebHistoryItem
+QWebPage
+QWebView
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QWebEngineHistory&amp;gt;
+#include &amp;lt;QWebEngineHistoryItem&amp;gt;
+#include &amp;lt;QWebEnginePage&amp;gt;
+#include &amp;lt;QWebEngineView&amp;gt;
+
+QWebEngineHistory
+QWebEngineHistoryItem
+QWebEnginePage
+QWebEngineView
+</db:programlisting>
+</db:section>
+<db:section xml:id="qt-module-name">
+<db:title>Qt Module Name</db:title>
+<db:section xml:id="in-qmake-project-files">
+<db:title>In qmake Project Files</db:title>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QT += webkitwidgets
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">QT += webenginewidgets
+</db:programlisting>
+</db:section>
+<db:section xml:id="including-the-module-in-source-files">
+<db:title>Including the Module in Source Files</db:title>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QtWebKit/QtWebKit&amp;gt;
+#include &amp;lt;QtWebKitWidgets/QtWebKitWidgets&amp;gt; // With Qt &amp;gt;= 4.8
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QtWebEngineWidgets/QtWebEngineWidgets&amp;gt;
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="qwebframe-has-been-merged-into-qwebenginepage">
+<db:title>QWebFrame Has Been Merged into QWebEnginePage</db:title>
+<db:para>HTML frames can be used to divide web pages into several areas where the content can be represented individually.</db:para>
+<db:para>In Qt WebKit, QWebFrame represents a frame inside a web page. Each QWebPage object contains at least one frame, the main frame, obtained using QWebPage::mainFrame(). Additional frames will be created for the HTML <db:code>&lt;frame&gt;</db:code> element, which defines the appearance and contents of a single frame, or the <db:code>&lt;iframe&gt;</db:code> element, which inserts a frame within a block of text.</db:para>
+<db:para>In Qt WebEngine, frame handling has been merged into the <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> class. All child frames are now considered part of the content, and only accessible through JavaScript. Methods of the QWebFrame class, such as <db:code>load()</db:code> are now available directly through the <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> itself.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebPage page;
+connect(page.mainFrame(), SIGNAL(urlChanged(const QUrl&amp;amp;)), SLOT(mySlotName()));
+page.mainFrame()-&amp;gt;load(url);
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebEnginePage page;
+connect(&amp;amp;page, SIGNAL(urlChanged(const QUrl&amp;amp;)), SLOT(mySlotName()));
+page.load(url);
+</db:programlisting>
+</db:section>
+<db:section xml:id="some-methods-now-return-their-result-asynchronously">
+<db:title>Some Methods Now Return Their Result Asynchronously</db:title>
+<db:para>Because Qt WebEngine uses a multi-process architecture, calls to some methods from applications will return immediately, while the results should be received asynchronously via a callback mechanism. A function pointer, a functor, or a lambda expression must be provided to handle the results when they become available.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebPage *page = new QWebPage;
+QTextEdit *textEdit = new QTextEdit;
+// *textEdit is modified immediately.
+textEdit-&amp;gt;setPlainText(page-&amp;gt;toHtml());
+textEdit-&amp;gt;setPlainText(page-&amp;gt;toPlainText());
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine (with a lambda function in C++11)</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebEnginePage *page = new QWebEnginePage;
+QTextEdit *textEdit = new QTextEdit;
+// *textEdit must remain valid until the lambda function is called.
+page-&amp;gt;toHtml([textEdit](const QString &amp;amp;result){ textEdit-&amp;gt;setPlainText(result); });
+page-&amp;gt;toPlainText([textEdit](const QString &amp;amp;result){ textEdit-&amp;gt;setPlainText(result); });
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine (with a functor template wrapping a member function)</db:emphasis></db:para>
+<db:programlisting language="cpp">template&amp;lt;typename Arg, typename R, typename C&amp;gt;
+struct InvokeWrapper {
+    R *receiver;
+    void (C::*memberFun)(Arg);
+    void operator()(Arg result) {
+        (receiver-&amp;gt;*memberFun)(result);
+    }
+};
+
+template&amp;lt;typename Arg, typename R, typename C&amp;gt;
+InvokeWrapper&amp;lt;Arg, R, C&amp;gt; invoke(R *receiver, void (C::*memberFun)(Arg))
+{
+    InvokeWrapper&amp;lt;Arg, R, C&amp;gt; wrapper = {receiver, memberFun};
+    return wrapper;
+}
+
+QWebEnginePage *page = new QWebEnginePage;
+QTextEdit *textEdit = new QTextEdit;
+// *textEdit must remain valid until the functor is called.
+page-&amp;gt;toHtml(invoke(textEdit, &amp;amp;QTextEdit::setPlainText));
+page-&amp;gt;toPlainText(invoke(textEdit, &amp;amp;QTextEdit::setPlainText));
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine (with a regular functor)</db:emphasis></db:para>
+<db:programlisting language="cpp">struct SetPlainTextFunctor {
+    QTextEdit *textEdit;
+    SetPlainTextFunctor(QTextEdit *textEdit) : textEdit(textEdit) { }
+    void operator()(const QString &amp;amp;result) {
+        textEdit-&amp;gt;setPlainText(result);
+    }
+};
+
+QWebEnginePage *page = new QWebEnginePage;
+QTextEdit *textEdit = new QTextEdit;
+// *textEdit must remain valid until the functor is called.
+page-&amp;gt;toHtml(SetPlainTextFunctor(textEdit));
+page-&amp;gt;toPlainText(SetPlainTextFunctor(textEdit));
+</db:programlisting>
+</db:section>
+<db:section xml:id="qt-webengine-does-not-interact-with-qnetworkaccessmanager">
+<db:title>Qt WebEngine Does Not Interact with QNetworkAccessManager</db:title>
+<db:para>Some classes of Qt Network such as <db:link xlink:href="qauthenticator.xml">QAuthenticator</db:link> were reused for their interface but, unlike Qt WebKit, Qt WebEngine has its own HTTP implementation and cannot go through a <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link>.</db:para>
+<db:para>The signals and methods of <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link> that are still supported were moved to the <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> class.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QNetworkAccessManager qnam;
+QWebPage page;
+page.setNetworkAccessManager(&amp;amp;qnam);
+connect(&amp;amp;qnam, SIGNAL(authenticationRequired(QNetworkReply*,QAuthenticator*)), this, SLOT(authenticate(QNetworkReply*,QAuthenticator*)));
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebEnginePage page;
+connect(&amp;amp;page, SIGNAL(authenticationRequired(QNetworkReply*,QAuthenticator*)), this, SLOT(authenticate(QNetworkReply*,QAuthenticator*)));
+</db:programlisting>
+<db:note>
+<db:para>In Qt WebEngine, the <db:link xlink:href="qauthenticator.xml">QAuthenticator</db:link> must be explicitly set to null to cancel authentication:</db:para>
+</db:note>
+<db:programlisting language="cpp">*authenticator = QAuthenticator();
+</db:programlisting>
+<db:para>Omitting the <db:code>QNetworkAccessManager</db:code> also affects the way in which certificates are managed. For more information, see <db:link xlink:href="qtwebengine-overview.xml#managing-certificates">Managing Certificates</db:link>.</db:para>
+</db:section>
+<db:section xml:id="notes-about-individual-methods">
+<db:title>Notes About Individual Methods</db:title>
+<db:section xml:id="evaluatejavascript">
+<db:title>evaluateJavaScript</db:title>
+<db:para>QWebFrame::evaluateJavaScript was moved and renamed as <db:link xlink:href="qwebenginepage.xml#runJavaScript">QWebEnginePage::runJavaScript</db:link>. It is currently only possible to run JavaScript on the main frame of a page and the result is returned asynchronously to the provided functor.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebPage *page = new QWebPage;
+qDebug() &amp;lt;&amp;lt; page-&amp;gt;mainFrame()-&amp;gt;evaluateJavaScript(&quot;'Java' + 'Script'&quot;);
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine (with lambda expressions in C++11)</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebEnginePage *page = new QWebEnginePage;
+page-&amp;gt;runJavaScript(&quot;'Java' + 'Script'&quot;, [](const QVariant &amp;amp;result){ qDebug() &amp;lt;&amp;lt; result; });
+</db:programlisting>
+</db:section>
+<db:section xml:id="sethtml-and-setcontent">
+<db:title>setHtml and setContent</db:title>
+<db:para><db:link xlink:href="qwebenginepage.xml#setHtml">QWebEnginePage::setHtml</db:link> and <db:link xlink:href="qwebenginepage.xml#setContent">QWebEnginePage::setContent</db:link> perform asynchronously the same way as a normal HTTP load would, unlike their QWebPage counterparts.</db:para>
+</db:section>
+<db:section xml:id="setcontenteditable">
+<db:title>setContentEditable</db:title>
+<db:para>QWebPage::setContentEditable has no equivalent since any document element can be made editable through the contentEditable attribute in the latest HTML standard. Therefore, <db:link xlink:href="qwebenginepage.xml#runJavaScript">QWebEnginePage::runJavaScript</db:link> is all that is needed.</db:para>
+<db:para><db:emphasis role="bold">Qt WebKit</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebPage page;
+page.setContentEditable(true);
+</db:programlisting>
+<db:para><db:emphasis role="bold">Qt WebEngine</db:emphasis></db:para>
+<db:programlisting language="cpp">QWebEnginePage page;
+page.runJavaScript(&quot;document.documentElement.contentEditable = true&quot;);
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="unavailable-qt-webkit-api">
+<db:title>Unavailable Qt WebKit API</db:title>
+<db:para>The Qt WebKit classes and methods in this list will not be available in Qt WebEngine.</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>QGraphicsWebView</db:para>
+</db:td>
+<db:td>
+<db:para>Qt WebEngine is designed for being used with hardware acceleration. Because we could not support a web view class in a <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> unless it would be attached to a QGLWidget viewport, this feature is out of scope.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebElement</db:para>
+</db:td>
+<db:td>
+<db:para>Qt WebEngine uses a multi-process architecture and this means that any access to the internal structure of the page has to be done asynchronously, any query result must be returned through callbacks. The QWebElement API was designed for synchronous access and this would require a complete redesign.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebDatabase</db:para>
+</db:td>
+<db:td>
+<db:para>The Web SQL Database feature that this API was wrapping in Qt WebKit was dropped from the HTML5 standard.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebPluginDatabase, QWebPluginFactory, QWebPluginInfo, QWebPage::setPalette, QWebView::setRenderHints</db:para>
+</db:td>
+<db:td>
+<db:para>Qt WebEngine renders web pages using Skia and is not using <db:link xlink:href="qpainter.xml">QPainter</db:link> or Qt for this purpose. The HTML5 standard also now offers much better alternatives that were not available when native controls plugins were introduced in Qt WebKit.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebHistoryInterface</db:para>
+</db:td>
+<db:td>
+<db:para>Visited links are persisted automatically by Qt WebEngine.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebPage::setContentEditable</db:para>
+</db:td>
+<db:td>
+<db:para>In the latest HTML standard, any document element can be made editable through the <db:code>contentEditable</db:code> attribute. So <db:code>runJavaScript</db:code> is all that is needed: <db:code>page-&gt;runJavaScript(&quot;document.documentElement.contentEditable = true&quot;)</db:code></db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>QWebPage::setLinkDelegationPolicy</db:para>
+</db:td>
+<db:td>
+<db:para>There is no way to connect a signal to run C++ code when a link is clicked. However, link clicks can be delegated to the Qt application instead of having the HTML handler engine process them by overloading the <db:link xlink:href="qwebenginepage.xml#acceptNavigationRequest">QWebEnginePage::acceptNavigationRequest</db:link>() function. This is necessary when an HTML document is used as part of the user interface, and not to display external data, for example, when displaying a list of results.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qwebenginepage.xml#acceptNavigationRequest">acceptNavigationRequest</db:link>() starts the loading process and emits the <db:link xlink:href="qwebenginepage.xml#loadStarted">loadStarted</db:link>() signal <db:emphasis>before</db:emphasis> the request is accepted or rejected. Therefore, a <db:link xlink:href="qwebenginepage.xml#loadFinished">loadFinished</db:link>() signal that returns <db:code>false</db:code> is to be expected even after delegating the request.</db:para>
+</db:note>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+</db:article>

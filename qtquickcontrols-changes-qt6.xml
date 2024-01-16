@@ -1,0 +1,203 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Changes to Qt Quick Controls</db:title>
+<db:productname>QtQuickControls</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Controls Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Migrate Qt Quick Controls to Qt 6.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Qt 6 is a result of the conscious effort to make the framework more efficient and easy to use.</db:para>
+<db:para>We try to maintain compatibility for all the public APIs in each release. Some changes were inevitable in an effort to make Qt a better framework.</db:para>
+<db:para>In this topic we summarize those changes in Qt Quick Controls, and provide guidance to handle them.</db:para>
+<db:section xml:id="migrating-from-qt-quick-controls-1">
+<db:title>Migrating from Qt Quick Controls 1</db:title>
+<db:para>Qt Quick Controls 1 was deprecated in Qt 5.11 and is removed from Qt 6.0. Use Qt Quick Controls (previously known as Qt Quick Controls 2) instead. For more information, refer to the <db:link xlink:href="https://doc.qt.io/qt-5/qtquickcontrols2-differences.html">Qt 5.15: Qt Quick Controls vs Qt Quick Controls 1</db:link> topic in the Qt 5 documentation.</db:para>
+</db:section>
+<db:section xml:id="type-registration-changes">
+<db:title>Type registration changes</db:title>
+<db:para>Qt Quick Controls has undergone some large, mostly internal changes in Qt 6. By making use of the improved type registration introduced in Qt 5.15, we pave the way for compilation of the module's QML files to C++ and enable tooling to become more effective. In particular, Qt Creator's QML code model should have a more complete picture of types, making its completion and error checking of Qt Quick Controls code more reliable. Static analysis tools like qmllint and qmlformat also benefit by becoming aware of the types that are now declared at compile time in C++.</db:para>
+<db:para>As a result of these changes, some things are done a little differently.</db:para>
+<db:section xml:id="custom-styles-are-now-proper-qml-modules">
+<db:title>Custom styles are now proper QML modules</db:title>
+<db:para>To enable compile time type registration, each Qt Quick Controls style is now a proper QML module. Previously, a single <db:code>Button.qml</db:code> was sufficient to create your own style. While convenient, this required some non-standard API, which in turn required adaptation in tooling like Qt Designer.</db:para>
+<db:para>Now, all QML types that a style implements must be declared in that style's qmldir file:</db:para>
+<db:programlisting language="cpp">module MyStyle
+Button 1.0 Button.qml
+</db:programlisting>
+<db:para>By unifying this with the rest of the QML world, styles become more familiar to developers and hopefully easier to understand for beginners. As a consequence, the following API had to be removed:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>QQuickStyle::addStylePath()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QQuickStyle::availableStyles()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QQuickStyle::path()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QQuickStyle::stylePathList()</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QT_QUICK_CONTROLS_STYLE_PATH</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Now that the styles are required to be found in the QML engine's import path like any other QML module, it is no longer necessary or possible to support this API.</db:para>
+<db:section xml:id="style-names">
+<db:title>Style names</db:title>
+<db:para>In addition, there is now only one valid, case-sensitive form for style names: &quot;Material&quot;, &quot;MyStyle&quot;, and so on. That is: the style name must exactly match the name of the QML module. This also applies to file selectors, where previously, all style names were lower case. For example, where the following was a valid structure for a Qt 5 project:</db:para>
+<db:programlisting language="cpp" role="bad">MyProject
+├── main.qml
+├── HomePage.qml
+└── +material
+    └───HomePage.qml
+</db:programlisting>
+<db:para>In Qt 6, <db:code>+material</db:code> becomes <db:code>+Material</db:code>:</db:para>
+<db:programlisting language="cpp" role="bad">MyProject
+├── main.qml
+├── HomePage.qml
+└── +Material
+    └───HomePage.qml
+</db:programlisting>
+<db:para>All of the existing ways to <db:link xlink:href="qtquickcontrols2-styles.xml#using-styles-in-qt-quick-controls">run an application with a specific style</db:link> are still supported.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="runtime-and-compile-time-style-selection">
+<db:title>Runtime and compile time style selection</db:title>
+<db:para>Importing a style now has extra meaning due to the way that imports work internally. Previously, importing <db:code>QtQuick.Controls</db:code> would register the control types from the current style with the QML engine:</db:para>
+<db:programlisting language="qml">import QtQuick.Controls
+</db:programlisting>
+<db:para>We refer to this as runtime style selection, as the style is selected at runtime.</db:para>
+<db:para>Explicitly importing <db:code>QtQuick.Controls.Material</db:code> would then simply expose any extra API provided by that style (for example, the attached Material type):</db:para>
+<db:programlisting language="qml">import QtQuick.Controls.Material
+</db:programlisting>
+<db:para>Now, explicitly importing a style does both.</db:para>
+<db:para>This effectively means that the control types (like Button) from the last imported style will be used. We refer to this as compile time style selection.</db:para>
+<db:para>This has implications for existing code. Namely, if your application supports more than one style, move these imports into their own QML files that are file-selected.</db:para>
+<db:para>For example, if you have the following <db:code>main.qml</db:code>:</db:para>
+<db:programlisting language="qml">import QtQuick.Controls
+import QtQuick.Controls.Material
+import QtQuick.Controls.Universal
+
+ApplicationWindow {
+    width: 600
+    height: 400
+    visible: true
+
+    Material.theme: darkMode ? Material.Dark : Material.Light
+    Universal.theme: darkMode ? Universal.Dark : Universal.Light
+
+    // Child items, etc.
+}
+</db:programlisting>
+<db:para>You can move the common code into a &quot;base&quot; component:</db:para>
+<db:programlisting language="qml">// MainWindow.qml
+
+import QtQuick.Controls
+
+ApplicationWindow {}
+</db:programlisting>
+<db:para>Then, add a <db:code>+Material</db:code> subdirectory, and in it, add the Material-specific code into <db:code>MainWindow.qml</db:code>:</db:para>
+<db:programlisting language="qml">// +Material/MainWindow.qml
+
+import QtQuick.Controls.Material
+
+ApplicationWindow {
+    Material.theme: darkMode ? Material.Dark : Material.Light
+}
+</db:programlisting>
+<db:para>Do the same for Universal:</db:para>
+<db:programlisting language="qml">// +Universal/MainWindow.qml
+
+import QtQuick.Controls.Universal
+
+ApplicationWindow {
+    Universal.theme: darkMode ? Universal.Dark : Universal.Light
+}
+</db:programlisting>
+<db:para>Then, in <db:code>main.qml</db:code>:</db:para>
+<db:programlisting language="qml">import QtQuick.Controls
+
+MainWindow {
+    width: 600
+    height: 400
+    visible: true
+
+    // Child items, etc.
+}
+</db:programlisting>
+<db:para>See also: <db:link xlink:href="qtquickcontrols2-fileselectors.xml">Using File Selectors with Qt Quick Controls</db:link>.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="default-style">
+<db:title>Default Style</db:title>
+<db:para>The Default style was renamed to &quot;Basic&quot;, as it is no longer the default style. Instead, the default style is now chosen based on the platform that Qt was built for:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Android: <db:link xlink:href="qtquickcontrols2-material.xml">Material Style</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Linux: <db:link xlink:href="qtquickcontrols2-fusion.xml">Fusion Style</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>macOS: <db:link xlink:href="qtquickcontrols2-macos.xml">macos Style</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Windows: <db:link xlink:href="qtquickcontrols2-windows.xml">Windows Style</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>All other platforms: <db:link xlink:href="qtquickcontrols2-basic.xml">Basic Style</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Therefore, applications that didn't specify a style in Qt 5 and have customized controls should <db:link xlink:href="qtquickcontrols2-styles.xml#using-styles-in-qt-quick-controls">explicitly specify</db:link> the Basic style in Qt 6 to ensure that those controls look and behave as they did with Qt 5.</db:para>
+</db:section>
+<db:section xml:id="palette">
+<db:title>Palette</db:title>
+<db:para>The palette API was moved to <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>. The various APIs that use palettes in Qt Quick Controls are unchanged.</db:para>
+</db:section>
+<db:section xml:id="controls">
+<db:title>Controls</db:title>
+<db:section xml:id="changes-to-applicationwindow">
+<db:title>Changes to ApplicationWindow</db:title>
+<db:para>The deprecated overlay properties and attached API were removed. Use the <db:link xlink:href="qml-qtquick-controls2-overlay.xml">Overlay</db:link> attached type instead.</db:para>
+</db:section>
+<db:section xml:id="changes-to-combobox">
+<db:title>Changes to ComboBox</db:title>
+<db:para>The <db:link xlink:href="qml-qtquick-controls2-combobox.xml#pressed-prop">pressed</db:link> property is now read-only. To modify the visual pressed state of a <db:link xlink:href="qml-qtquick-controls2-combobox.xml">ComboBox</db:link>, use the <db:link xlink:href="qml-qtquick-controls2-combobox.xml#down-prop">down</db:link> property instead.</db:para>
+</db:section>
+<db:section xml:id="changes-to-container">
+<db:title>Changes to Container</db:title>
+<db:para>The deprecated <db:code>removeItem(var)</db:code> function was removed. <db:link xlink:href="qml-qtquick-controls2-container.xml#removeItem-method">removeItem</db:link>(Item) or <db:link xlink:href="qml-qtquick-controls2-container.xml#takeItem-method">takeItem</db:link>(int) can be used instead.</db:para>
+</db:section>
+<db:section xml:id="changes-to-dialog">
+<db:title>Changes to Dialog</db:title>
+<db:para><db:link xlink:href="qml-qtquick-controls2-dialog.xml">Dialog</db:link>'s <db:link xlink:href="qml-qtquick-controls2-dialog.xml#accepted-signal">accepted</db:link>() and <db:link xlink:href="qml-qtquick-controls2-dialog.xml#rejected-signal">rejected</db:link>() signals are now emitted before <db:link xlink:href="qml-qtquick-controls2-popup.xml#closed-signal">closed</db:link>() when calling <db:link xlink:href="qml-qtquick-controls2-dialog.xml#done-method">done</db:link>(), <db:link xlink:href="qml-qtquick-controls2-dialog.xml#accept-method">accept</db:link>() and <db:link xlink:href="qml-qtquick-controls2-dialog.xml#reject-method">reject</db:link>().</db:para>
+</db:section>
+<db:section xml:id="changes-to-menu">
+<db:title>Changes to Menu</db:title>
+<db:para>The deprecated <db:code>removeItem(var)</db:code> function was removed. <db:link xlink:href="qml-qtquick-controls2-menu.xml#removeItem-method">removeItem</db:link>(Item) or <db:link xlink:href="qml-qtquick-controls2-menu.xml#takeItem-method">takeItem</db:link>(int) can be used instead.</db:para>
+</db:section>
+<db:section xml:id="changes-to-tooltip">
+<db:title>Changes to ToolTip</db:title>
+<db:para><db:link xlink:href="qml-qtquick-controls2-tooltip.xml">ToolTip</db:link>'s timeout now begins only after <db:link xlink:href="qml-qtquick-controls2-popup.xml#opened-signal">opened</db:link>() has been emitted. This results in tooltips with enter transitions being visible for the entire duration of the timeout property. This means that they are visible slightly longer than they were before, so it may be worthwhile to visually check tooltips in your application and adjust timeouts if necessary.</db:para>
+</db:section>
+<db:section xml:id="changes-to-stackview">
+<db:title>Changes to StackView</db:title>
+<db:para>The <db:link xlink:href="qml-qtquick-controls2-stackview.xml">StackView</db:link>.Transition enum value was deprecated. The operation argument can be omitted in order to use the default transition for any given operation.</db:para>
+</db:section>
+<db:section xml:id="changes-to-tumbler">
+<db:title>Changes to Tumbler</db:title>
+<db:para><db:link xlink:href="qml-qtquick-item.xml#implicitWidth-prop">implicitWidth</db:link> and <db:link xlink:href="qml-qtquick-item.xml#implicitHeight-prop">implicitHeight</db:link> must now be provided for <db:link xlink:href="qml-qtquick-controls2-tumbler.xml">Tumbler</db:link>'s <db:link xlink:href="qml-qtquick-controls2-control.xml#contentItem-prop">contentItem</db:link>, making it consistent with all other controls.</db:para>
+</db:section>
+</db:section>
+</db:article>

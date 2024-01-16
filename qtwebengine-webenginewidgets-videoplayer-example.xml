@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Video Player Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Displays full screen video using <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/videoplayer-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Video Player</db:emphasis> demonstrates how to support full screen playback of HTML5 video using <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>.</db:para>
+<db:para><db:link xlink:href="https://fullscreen.spec.whatwg.org/">The Fullscreen API</db:link> is a cross-browser Javascript API that enables a web page to request that one of its HTML elements be made to occupy the user's entire screen. It is commonly used for full screen video playback via the <db:code>&lt;video&gt;</db:code> element, but can in principle be used to display any HTML content in full screen mode. Qt WebEngine supports this API, however it is disabled by default. This example shows the steps needed to switch it on, including:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Enabling it in <db:link xlink:href="qwebenginesettings.xml">QWebEngineSettings</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Handling the <db:link xlink:href="qwebenginepage.xml#fullScreenRequested">QWebEnginePage::fullScreenRequested</db:link> signal by creating a new full screen window.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Displaying a notification popup to ensure that the user is aware that something is being displayed full screen.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="overview">
+<db:title>Overview</db:title>
+<db:para>Once started, the example program will create a normal (non-fullscreen) window with a <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> showing an embedded YouTube video player. You can then click on the full screen toggle button (bottom-right corner) to enter full screen mode. This should also display a centered notification overlay informing you that you can exit full screen mode by pressing the escape key.</db:para>
+<db:para>Implementation-wise entering full screen mode entails creating a new full screen window with a separate <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> instance and migrating the <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> from the normal window's <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> to this new <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>. Exiting full screen mode reverses this migration.</db:para>
+<db:para>The example code is divided between three classes, <db:code>MainWindow</db:code>, <db:code>FullScreenWindow</db:code>, and <db:code>FullScreenNotification</db:code>. The classes <db:code>MainWindow</db:code> and <db:code>FullScreenWindow</db:code> are each responsible for managing one top-level window, while <db:code>FullScreenNotification</db:code> is responsible for styling and animating the notification box. A <db:code>MainWindow</db:code> is created on startup and lives for the entire program runtime, while a new <db:code>FullScreenWindow</db:code> is created every time full screen mode is entered.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-declaration">
+<db:title>MainWindow Class Declaration</db:title>
+<db:para>A <db:code>MainWindow</db:code> is a <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> with a <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> as the central widget:</db:para>
+<db:programlisting language="cpp">#include &quot;fullscreenwindow.h&quot;
+
+#include &amp;lt;QMainWindow&amp;gt;
+#include &amp;lt;QWebEngineView&amp;gt;
+#include &amp;lt;QWebEngineFullScreenRequest&amp;gt;
+
+class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    explicit MainWindow(QWidget *parent = nullptr);
+
+private slots:
+    void fullScreenRequested(QWebEngineFullScreenRequest request);
+
+private:
+    QWebEngineView *m_view;
+    QScopedPointer&amp;lt;FullScreenWindow&amp;gt; m_fullScreenWindow;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>In the constructor we start by setting up the <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> as the central widget:</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+    , m_view(new QWebEngineView(this))
+{
+    setCentralWidget(m_view);
+</db:programlisting>
+<db:para>We then configure Qt WebEngine to advertise support for the Fullscreen API:</db:para>
+<db:programlisting language="cpp">    m_view-&amp;gt;settings()-&amp;gt;setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
+</db:programlisting>
+<db:para>Without this line the full screen toggle button would be disabled (grayed out) as the Javascript running on the page can detect that our browser does not support full screen mode.</db:para>
+<db:para>Next we connect the <db:code>fullScreenRequested</db:code> signal to our slot:</db:para>
+<db:programlisting language="cpp">    connect(m_view-&amp;gt;page(),
+            &amp;amp;QWebEnginePage::fullScreenRequested,
+            this,
+            &amp;amp;MainWindow::fullScreenRequested);
+</db:programlisting>
+<db:para>This signal is emitted whenever the Javascript on the page wants to enter or exit full screen mode. Without handling this signal (but still keeping the <db:code>FullScreenSupportEnabled</db:code> attribute as <db:code>true</db:code>) the toggle button will be enabled but clicking on it will have no effect as Javascript's full screen request will be denied.</db:para>
+<db:para>Finally, we load some HTML (see <db:code>webenginewidgets/videoplayer/data/index.html</db:code> included with the example) into our <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>:</db:para>
+<db:programlisting language="cpp">    m_view-&amp;gt;load(QUrl(QStringLiteral(&quot;qrc:/index.html&quot;)));
+</db:programlisting>
+<db:para>The second part of <db:code>MainWindow</db:code> is handling the full screen requests:</db:para>
+<db:programlisting language="cpp">void MainWindow::fullScreenRequested(QWebEngineFullScreenRequest request)
+{
+    if (request.toggleOn()) {
+        if (m_fullScreenWindow)
+            return;
+        request.accept();
+        m_fullScreenWindow.reset(new FullScreenWindow(m_view));
+    } else {
+        if (!m_fullScreenWindow)
+            return;
+        request.accept();
+        m_fullScreenWindow.reset();
+    }
+}
+</db:programlisting>
+<db:para>We create a new <db:code>FullScreenWindow</db:code> when entering full screen mode, and delete it when exiting.</db:para>
+</db:section>
+<db:section xml:id="fullscreenwindow-class-declaration">
+<db:title>FullScreenWindow Class Declaration</db:title>
+<db:para>A <db:code>FullScreenWindow</db:code> is a <db:link xlink:href="qwidget.xml">QWidget</db:link> containing a <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> and a <db:code>FullScreenNotification</db:code>.</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QWidget&amp;gt;
+
+QT_BEGIN_NAMESPACE
+class QWebEngineView;
+QT_END_NAMESPACE
+
+class FullScreenNotification;
+
+class FullScreenWindow : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit FullScreenWindow(QWebEngineView *oldView, QWidget *parent = nullptr);
+    ~FullScreenWindow();
+
+protected:
+    void resizeEvent(QResizeEvent *event) override;
+
+private:
+    QWebEngineView *m_view;
+    FullScreenNotification *m_notification;
+    QWebEngineView *m_oldView;
+    QRect m_oldGeometry;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="fullscreenwindow-class-definition">
+<db:title>FullScreenWindow Class Definition</db:title>
+<db:para>The constructor is responsible for hiding the normal window (while saving its geometry) and showing the new <db:code>FullScreenWindow</db:code> instead:</db:para>
+<db:programlisting language="cpp">FullScreenWindow::FullScreenWindow(QWebEngineView *oldView, QWidget *parent)
+    : QWidget(parent)
+    , m_view(new QWebEngineView(this))
+    , m_notification(new FullScreenNotification(this))
+    , m_oldView(oldView)
+    , m_oldGeometry(oldView-&amp;gt;window()-&amp;gt;geometry())
+{
+    m_view-&amp;gt;stackUnder(m_notification);
+
+    auto exitAction = new QAction(this);
+    exitAction-&amp;gt;setShortcut(Qt::Key_Escape);
+    connect(exitAction, &amp;amp;QAction::triggered, [this]() {
+        m_view-&amp;gt;triggerPageAction(QWebEnginePage::ExitFullScreen);
+    });
+    addAction(exitAction);
+
+    m_view-&amp;gt;setPage(m_oldView-&amp;gt;page());
+    setGeometry(m_oldGeometry);
+    showFullScreen();
+    m_oldView-&amp;gt;window()-&amp;gt;hide();
+}
+</db:programlisting>
+<db:para>The call to <db:link xlink:href="qwebengineview.xml#setPage">QWebEngineView::setPage</db:link> will move the web page from the <db:code>MainWindow</db:code>'s view to <db:code>FullScreenWindow</db:code>'s view.</db:para>
+<db:para>In the destructor we use the same method to move the page back, after which we restore the main window's geometry and visibility:</db:para>
+<db:programlisting language="cpp">FullScreenWindow::~FullScreenWindow()
+{
+    m_oldView-&amp;gt;setPage(m_view-&amp;gt;page());
+    m_oldView-&amp;gt;window()-&amp;gt;setGeometry(m_oldGeometry);
+    m_oldView-&amp;gt;window()-&amp;gt;show();
+    hide();
+}
+</db:programlisting>
+<db:para>We override <db:link xlink:href="qwidget.xml#resizeEvent">QWidget::resizeEvent</db:link> to do manual layout, keeping the <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> maximized, and the <db:code>FullScreenNotification</db:code> centered within the window:</db:para>
+<db:programlisting language="cpp">void FullScreenWindow::resizeEvent(QResizeEvent *event)
+{
+    QRect viewGeometry(QPoint(0, 0), size());
+    m_view-&amp;gt;setGeometry(viewGeometry);
+
+    QRect notificationGeometry(QPoint(0, 0), m_notification-&amp;gt;sizeHint());
+    notificationGeometry.moveCenter(viewGeometry.center());
+    m_notification-&amp;gt;setGeometry(notificationGeometry);
+
+    QWidget::resizeEvent(event);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="fullscreennotification-class-declaration">
+<db:title>FullScreenNotification Class Declaration</db:title>
+<db:para>A <db:code>FullScreenNotification</db:code> is just a <db:link xlink:href="qlabel.xml">QLabel</db:link> with some styling and animation:</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QLabel&amp;gt;
+
+class FullScreenNotification : public QLabel
+{
+    Q_OBJECT
+public:
+    FullScreenNotification(QWidget *parent = nullptr);
+
+protected:
+    void showEvent(QShowEvent *event) override;
+
+signals:
+    void shown();
+
+private:
+    bool m_previouslyVisible;
+};
+</db:programlisting>
+</db:section>
+<db:section xml:id="fullscreenwindow-class-definition">
+<db:title>FullScreenWindow Class Definition</db:title>
+<db:para>In the constructor we configure the <db:link xlink:href="qlabel.xml">QLabel</db:link> and set up a delayed fade-out animation using <db:link xlink:href="animation-overview.xml">The Animation Framework</db:link>:</db:para>
+<db:programlisting language="cpp">FullScreenNotification::FullScreenNotification(QWidget *parent)
+    : QLabel(parent)
+    , m_previouslyVisible(false)
+{
+    setText(tr(&quot;You are now in full screen mode. Press ESC to quit!&quot;));
+    setStyleSheet(
+        &quot;font-size: 24px;&quot;
+        &quot;color: white;&quot;
+        &quot;background-color: black;&quot;
+        &quot;border-color: white;&quot;
+        &quot;border-width: 2px;&quot;
+        &quot;border-style: solid;&quot;
+        &quot;padding: 100px&quot;);
+    setAttribute(Qt::WA_TransparentForMouseEvents);
+
+    auto effect = new QGraphicsOpacityEffect;
+    effect-&amp;gt;setOpacity(1);
+    setGraphicsEffect(effect);
+
+    auto animations = new QSequentialAnimationGroup(this);
+    animations-&amp;gt;addPause(3000);
+    auto opacityAnimation = new QPropertyAnimation(effect, &quot;opacity&quot;, animations);
+    opacityAnimation-&amp;gt;setDuration(2000);
+    opacityAnimation-&amp;gt;setStartValue(1.0);
+    opacityAnimation-&amp;gt;setEndValue(0.0);
+    opacityAnimation-&amp;gt;setEasingCurve(QEasingCurve::OutQuad);
+    animations-&amp;gt;addAnimation(opacityAnimation);
+
+    connect(this, &amp;amp;FullScreenNotification::shown,
+            [animations](){ animations-&amp;gt;start(); });
+
+    connect(animations, &amp;amp;QAbstractAnimation::finished,
+            [this](){ this-&amp;gt;hide(); });
+}
+</db:programlisting>
+<db:para>The custom signal <db:code>shown</db:code>, which we use to trigger the animation, is emitted from the <db:code>showEvent</db:code> method:</db:para>
+<db:programlisting language="cpp">void FullScreenNotification::showEvent(QShowEvent *event)
+{
+    QLabel::showEvent(event);
+    if (!m_previouslyVisible &amp;amp;&amp;amp; isVisible())
+        emit shown();
+    m_previouslyVisible = isVisible();
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/videoplayer?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

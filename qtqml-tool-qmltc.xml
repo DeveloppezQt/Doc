@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QML Type Compiler</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A tool to compile QML types to C++ ahead of time.  The QML Type Compiler, qmltc, is a tool shipped with Qt to translate QML types into C++ types that are <db:emphasis>ahead-of-time</db:emphasis> compiled as part of the user code. Using qmltc can lead to better run-time performance due to more optimization opportunities available to the compiler compared to a <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link>-based object creation. The qmltc is part of the Qt Quick Compiler toolchain.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>By design, qmltc outputs user-facing code. That code is supposed to be utilized by the C++ application directly, otherwise you won't see any benefit. This generated code essentially replaces <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> and its APIs to create objects from QML documents. You can find more information under <db:link xlink:href="qtqml-tool-qmltc.xml#using-qmltc-in-a-qml-application">Using qmltc in a QML application</db:link> and <db:link xlink:href="qtqml-tool-qmltc.xml#generated-output-basics">Generated Output Basics</db:link>.</db:para>
+<db:para>In order to enable qmltc:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Create a <db:link xlink:href="qt-add-qml-module.xml">proper QML module</db:link> for your application.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Invoke qmltc, for example, through the <db:link xlink:href="qt-add-qml-module.xml#qmltc-cmake">CMake API</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>#include the generated header file(s) in the application source code.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Instantiate an object of the generated type.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>In this workflow qmltc usually runs during the build process. Thus, when qmltc rejects a QML document (whether due to errors or warnings, or because of constructs qmltc doesn't yet support), the build process will fail. This is similar to how you receive qmllint errors when you enable the automatic generation of linting targets during <db:link xlink:href="qt-add-qml-module.xml">QML module creation</db:link> and then attempt to &quot;build&quot; them to run the qmllint.</db:para>
+<db:warning>
+<db:para>qmltc is currently in a Tech Preview stage and might not compile an arbitrary QML program (see <db:link xlink:href="qtqml-tool-qmltc.xml#known-limitations">Known Limitations</db:link> for more details). When qmltc fails, nothing is generated as your application cannot sensibly use the qmltc output. If your program contains errors (or unsolvable warnings), they should be fixed to enable the compilation. The general rule is to adhere to the best practices and follow <db:link xlink:href="qtquick-tool-qmllint.xml">qmllint</db:link> advice.</db:para>
+</db:warning>
+<db:section xml:id="using-qmltc-in-a-qml-application">
+<db:title>Using qmltc in a QML application</db:title>
+<db:para>From the build system perspective, adding qmltc compilation is not much different from adding qml cache generation. Naively, the build process could be described as:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmltc-compilation-scheme.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>While the real compilation process is much trickier, this diagram captures the core components that qmltc uses: the QML files themselves and qmldir with qmltypes information. Simpler applications typically have rather primitive qmldir yet, in general, qmldir could be complex, providing essential, nicely packed type information that qmltc relies on to perform correct QML-to-C++ translation.</db:para>
+<db:para>Nevertheless, adding an extra build step is not enough in qmltc case. The application code must also be modified to use qmltc-generated classes instead of <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> or its higher-level alternatives.</db:para>
+<db:section xml:id="compiling-qml-code-with-qmltc">
+<db:title>Compiling QML code with qmltc</db:title>
+<db:para>Qt, starting from Qt 6, uses CMake to build its various components. User projects can - and are encouraged to - also use CMake to build their components using Qt. Adding out-of-the-box qmltc compilation support to your project would require a CMake-driven build flow as well since this flow is centered around proper QML modules and their infrastructure.</db:para>
+<db:para>The easy way to add qmltc compilation is by using the dedicated <db:link xlink:href="qt-add-qml-module.xml#qmltc-cmake">CMake API</db:link> as part of a QML module creation for the application. Consider a simple application directory structure:</db:para>
+<db:programlisting language="cpp" role="bad">.
+├── CMakeLists.txt
+├── myspecialtype.h     // C++ type exposed to QML
+├── myspecialtype.cpp
+├── myApp.qml           // main QML page
+├── MyButton.qml        // custom UI button
+├── MySlider.qml        // custom UI slider
+└── main.cpp            // main C++ application file
+</db:programlisting>
+<db:para>Then the CMake code would usually look similar to the following:</db:para>
+<db:programlisting language="cpp"># Use &quot;my_qmltc_example&quot; as an application name:
+set(application_name my_qmltc_example)
+
+# Create a CMake target, add C++ source files, link libraries, etc...
+
+# Specify a list of QML files to be compiled:
+set(application_qml_files
+    myApp.qml
+    MyButton.qml
+    MySlider.qml
+)
+
+# Make the application into a proper QML module:
+qt6_add_qml_module(${application_name}
+    VERSION 1.0
+    URI QmltcExample
+    QML_FILES ${application_qml_files}
+
+    # Compile qml files (listed in QML_FILES) to C++ using qmltc and add these
+    # files to the application binary:
+    ENABLE_TYPE_COMPILER
+)
+
+# (qmltc-specific) Link *private* libraries that correspond to QML modules:
+target_link_libraries(${application_name} PRIVATE Qt::QmlPrivate Qt::QuickPrivate)
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-the-generated-c">
+<db:title>Using the Generated C++</db:title>
+<db:para>Unlike in the case of <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> instantiation, the output of qmltc, being C++ code, is used directly by the application. Generally, constructing a new object in C++ is equivalent to creating a new object through <db:link xlink:href="qqmlcomponent.xml#create">QQmlComponent::create</db:link>(). Once created, the object could be manipulated from C++ or, for example, combined with <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link> to be drawn on screen. Given a myApp.qml file, the application code (in both cases) would typically look like this:</db:para>
+<db:section xml:id="using-qqmlcomponent">
+<db:title>Using QQmlComponent</db:title>
+<db:programlisting language="cpp">#include &amp;lt;QtQml/qqmlcomponent.h&amp;gt;
+
+QGuiApplication app(argc, argv);
+app.setApplicationDisplayName(QStringLiteral(&quot;This example is powered by QQmlComponent :(&quot;));
+
+QQmlEngine e;
+QQuickWindow window;
+
+QQmlComponent component(&amp;amp;e);
+component.loadUrl(QUrl(QStringLiteral(&quot;qrc:/QmltcExample/myApp.qml&quot;)));
+
+QScopedPointer&amp;lt;QObject&amp;gt; documentRoot(component.create());
+QQuickItem *documentRootItem = qobject_cast&amp;lt;QQuickItem *&amp;gt;(documentRoot.get());
+
+documentRootItem-&amp;gt;setParentItem(window.contentItem());
+window.setHeight(documentRootItem-&amp;gt;height());
+window.setWidth(documentRootItem-&amp;gt;width());
+// ...
+
+window.show();
+app.exec();
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-qmltc-generated-class">
+<db:title>Using qmltc-generated class</db:title>
+<db:programlisting language="cpp">#include &quot;myapp.h&quot; // include generated C++ header
+
+QGuiApplication app(argc, argv);
+app.setApplicationDisplayName(QStringLiteral(&quot;This example is powered by qmltc!&quot;));
+
+QQmlEngine e;
+QQuickWindow window;
+
+QScopedPointer&amp;lt;myApp&amp;gt; documentRoot(new myApp(&amp;amp;e));
+
+documentRoot-&amp;gt;setParentItem(window.contentItem());
+window.setHeight(documentRoot-&amp;gt;height());
+window.setWidth(documentRoot-&amp;gt;width());
+// ...
+
+window.show();
+app.exec();
+</db:programlisting>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="qml-engine">
+<db:title>QML engine</db:title>
+<db:para>The generated code uses <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> to interact with dynamic parts of a QML document - mainly the JavaScript code. For this to work, no special arrangements are needed. Any <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> instance passed to the constructor of a qmltc-generated class object should work correctly as does QQmlComponent(engine). This also means that you can use <db:link xlink:href="qqmlengine.xml">QQmlEngine methods</db:link> that affect QML behavior. However, there are caveats. Unlike <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link>-based object creation, qmltc itself <db:emphasis>does not</db:emphasis> rely on <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> when compiling the code to C++. For instance, QQmlEngine::addImportPath(&quot;/foo/bar/&quot;) - normally resulting in an additional import path to scan for - would be completely ignored by the ahead-of-time qmltc procedure.</db:para>
+<db:note>
+<db:para>To add import paths to the qmltc compilation, consider using a relevant argument of the <db:link xlink:href="qt-add-qml-module.xml#qmltc-cmake">CMake command</db:link> instead.</db:para>
+</db:note>
+<db:para>Generally, you can think of it this way: <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> involves the application process to run, while qmltc does not as it operates <db:emphasis>before</db:emphasis> your application is even compiled. Since qmltc makes no attempt to introspect your application's C++ source code, there is no way for it to know about certain kinds of QML manipulations you, as a user, do. Instead of using <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> and related run-time routines to expose types to QML, adding import paths, etc. you are, practically, required to create <db:link xlink:href="qt-add-qml-module.xml">well-behaving QML modules</db:link> and use <db:link xlink:href="qtqml-cppintegration-definetypes.xml">declarative QML type registration</db:link>.</db:para>
+<db:warning>
+<db:para>Despite qmltc working closely with <db:link xlink:href="qqmlengine.xml">QQmlEngine</db:link> and creating C++ code, the generated classes cannot be further exposed to QML and used through <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link>.</db:para>
+</db:warning>
+</db:section>
+<db:section xml:id="generated-output-basics">
+<db:title>Generated Output Basics</db:title>
+<db:para>qmltc aims to be compatible with the existing QML execution model. This implies that the generated code is roughly equivalent to the internal <db:link xlink:href="qqmlcomponent.xml">QQmlComponent</db:link> setup logic and thus you should be able to understand your QML type's behavior, semantics and API the same way you do currently - by visually inspecting the corresponding QML document.</db:para>
+<db:para>However, the generated code is still somewhat confusing, especially given that your application should use the qmltc output on the C++ side directly. There are two parts of the generated code: CMake build files structure and the generated C++ format. The former is covered in the <db:link xlink:href="qt-add-qml-module.xml#qmltc-cmake">CMake API of qmltc</db:link> and the latter is covered here.</db:para>
+<db:para>Consider a simple HelloWorld type, that has a hello property, a function to print that property, and a signal emitted when the object of that type is created:</db:para>
+<db:programlisting language="qml">// HelloWorld.qml
+import QtQml
+
+QtObject {
+    id: me
+    property string hello: &quot;Hello, qmltc!&quot;
+
+    function printHello(prefix: string, suffix: string) {
+        console.log(prefix + me.hello + suffix);
+    }
+
+    signal created()
+    Component.onCompleted: me.created();
+}
+</db:programlisting>
+<db:para>When providing a C++ alternative of this QML type, the C++ class would need a <db:link xlink:href="qtqml-cppintegration-overview.xml">QML-specific meta-object system macro</db:link>, <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> decoration for the hello property, Q_INVOKABLE C++ printing function and a regular Qt signal definition. Similarly, qmltc would translate the given HelloWorld type into roughly the following:</db:para>
+<db:programlisting language="cpp">class HelloWorld : public QObject
+{
+    Q_OBJECT
+    QML_ELEMENT
+    Q_PROPERTY(QString hello WRITE setHello READ hello BINDABLE bindableHello)
+
+public:
+    HelloWorld(QQmlEngine* engine, QObject* parent = nullptr);
+
+Q_SIGNALS:
+    void created();
+
+public:
+    void setHello(const QString&amp;amp; hello_);
+    QString hello();
+    QBindable&amp;lt;QString&amp;gt; bindableHello();
+    Q_INVOKABLE void printHello(QString prefix, QString suffix);
+
+    // ...
+};
+</db:programlisting>
+<db:para>Even though specific details of the generated type could differ, the universal aspects remain. For instance:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>QML types within a document are translated into C++ types, according to the compiler-visible information.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Properties are translated into C++ properties with <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> declarations.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>JavaScript functions become Q_INVOKABLE C++ functions.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QML signals are transformed into C++ Qt signals.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>QML enumerations are converted into C++ enumerations with Q_ENUM declarations.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:note>
+<db:para>qmltc does not guarantee that the generated C++ stays API-, source- or binary-compatible between releases.</db:para>
+</db:note>
+<db:para>An additional detail is the way qmltc generates class names. A class name for a given QML type is automatically deduced from the QML document defining that type: the QML file name without extensions (up to and excluding the first ., also known as the base name) becomes a class name. The file name case is preserved. Thus, HelloWorld.qml would result in a class HelloWorld and helloWoRlD.qml in a class helloWoRlD. Following the QML convention, if a QML document file name starts with a lower-case letter, the generated C++ class is assumed to be anonymous and marked with <db:link xlink:href="qqmlengine.xml#QML_ANONYMOUS">QML_ANONYMOUS</db:link>.</db:para>
+<db:para>For now, although the generated code is ready to be used from the C++ application side, you should generally limit calls to the generated APIs. Instead, prefer implementing the application logic in QML/JavaScript and hand-written C++ types exposed to QML, using the qmltc-created classes for simple object instantiation. While generated C++ gives you direct (and usually faster) access to QML-defined elements of the type, understanding such code could be a challenge.</db:para>
+</db:section>
+<db:section xml:id="known-limitations">
+<db:title>Known Limitations</db:title>
+<db:para>Despite covering many common QML features, qmltc is still in the early stage of development with many things yet to be supported. To name a few:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Translation APIs (qsTr() and similar methods)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Inline components</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Imported QML modules that consist of QML-defined types (such as QtQuick.Controls). At present, you can reliably use QtQml and QtQuick modules as well as any other QML module that <db:emphasis role="bold">only</db:emphasis> contains C++ classes exposed to QML</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Singleton QML types</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>On top of this, there are some more fundamental peculiarities to consider:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Qt's QML modules usually rely on C++ libraries to do the heavy lifting. Often enough, these libraries do not provide public C++ API (since their primary usage is through QML). For the users of qmltc, this means that their apps need to link against private Qt libraries.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Due to the nature of qmltc code generation, QML plugins are unusable for compilation purposes. Instead, QML modules - that use a plugin - have to ensure that the plugin data is accessible at compile time. Such QML modules would then have <db:emphasis>optional</db:emphasis> plugins. In most cases, the compile-time information can be provided through a header file (with C++ declarations) and linkable library (with C++ definitions). The user code is responsible (usually through CMake) for including a path to the header file and linking against the QML module library.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Given the tech preview status of the compiler, you might also encounter bugs in qmltc, in the generated code, or some other related part. We encourage you to <db:link xlink:href="https://bugreports.qt.io/">submit a bug report</db:link> in this case.</db:para>
+</db:section>
+</db:article>

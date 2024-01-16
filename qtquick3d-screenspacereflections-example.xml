@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Screen Space Reflections Example</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates reflections in Qt Quick 3D.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/screenspacereflections-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example demonstrates how to create reflections using <db:emphasis>Screen Space Reflections</db:emphasis> (SSR) on a model. SSR is a post-processing effect that can enhance the scene by adding reflections to it. The idea behind SSR is that the reflections can be calculated in Screen Space after the objects have been rendered. For each fragment, a ray is emitted from the camera to this fragment and then it is reflected around the fragment's normal. After that, we follow the reflected ray and determine whether it will hit an object or not. If an object was hit, then the fragment will reflect this object. There are situations where SSR will fail. For example, when the reflected ray hits an object behind the camera. Since the reflections are calculated in Screen Space after the objects have been rendered, no information about the color of the objects behind the camera is available. Although SSR has some drawbacks, it adds more realism to the scene.</db:para>
+<db:para>This example implements SSR using <db:link xlink:href="qml-qtquick3d-custommaterial.xml">Custom Materials</db:link> that can be used on a <db:link xlink:href="qml-qtquick3d-model.xml">Model</db:link>, which will make it reflect its surroundings.</db:para>
+<db:programlisting language="qml">Model {
+    source: &quot;#Rectangle&quot;
+    scale: Qt.vector3d(5, 5, 5)
+    eulerRotation.x: -90
+    eulerRotation.z: 180
+    position: Qt.vector3d(0.0, -50.0, 0.0)
+    materials: ScreenSpaceReflections {
+        depthBias: depthBiasSlider.value
+        rayMaxDistance: distanceSlider.value
+        marchSteps: marchSlider.value
+        refinementSteps: refinementStepsSlider.value
+        specular: specularSlider.value
+        materialColor: materialColorCheckBox.checked ? &quot;transparent&quot; : &quot;dimgray&quot;
+    }
+}
+</db:programlisting>
+<db:para>The rest of the scene has some objects which are either static or rotate above the surface to show the reflections.</db:para>
+<db:programlisting language="qml">Node {
+
+    Model {
+        source: &quot;#Cube&quot;
+        eulerRotation.y: 0
+        scale: Qt.vector3d(1, 1, 1)
+        position: Qt.vector3d(50.0, 40.0, 50.0)
+        materials:  DefaultMaterial {
+            diffuseMap: Texture {
+                source: &quot;qt_logo_rect.png&quot;
+            }
+        }
+    }
+
+    Node{
+
+        Model {
+            source: &quot;#Sphere&quot;
+            position: Qt.vector3d(-400.0, screenSpaceReflectionsView.modelHeight, 0.0)
+            materials: DefaultMaterial {
+                diffuseColor: &quot;magenta&quot;
+            }
+        }
+    }
+
+    Node{
+        eulerRotation.y: screenSpaceReflectionsView.modelRotation
+        position.y: screenSpaceReflectionsView.modelHeight
+
+        Model {
+            source: &quot;#Sphere&quot;
+            pivot: Qt.vector3d(0, 0.0, 0.0)
+            position: Qt.vector3d(200.0, 0.0, 0.0)
+            materials: DefaultMaterial {
+                diffuseColor: &quot;green&quot;
+            }
+        }
+    }
+
+    Node{
+        eulerRotation.y: screenSpaceReflectionsView.modelRotation
+        position.y: screenSpaceReflectionsView.modelHeight
+
+        Model {
+            source: &quot;#Sphere&quot;
+            eulerRotation.y: 45
+            position: Qt.vector3d(0.0, 0.0, -200.0)
+            materials: DefaultMaterial {
+                diffuseColor: &quot;blue&quot;
+            }
+        }
+    }
+
+    Node{
+        eulerRotation.y: screenSpaceReflectionsView.modelRotation
+        position.y: screenSpaceReflectionsView.modelHeight
+
+        Model {
+            source: &quot;#Sphere&quot;
+            position: Qt.vector3d(0.0, 0.0, 200.0)
+            materials: DefaultMaterial {
+                diffuseColor: &quot;red&quot;
+            }
+        }
+    }
+</db:programlisting>
+<db:section xml:id="shader-code">
+<db:title>Shader Code</db:title>
+<db:para>Before diving into the shader's code, let's check some parameters that can be used to control the reflections.</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>depthBias</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>This parameter is used to check if the difference between the depth of the ray and object is within a certain threshold.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>rayMaxDistance</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>Controls how far is the ending point of the ray in View Space.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>marchSteps</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>Controls how many steps are used for computation. Increasing the number of steps decreases the amount of fragments the ray moves in each iteration and increases the quality.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>refinementSteps</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>After finding where the reflected ray hit the object, a refinement process is done to try and find the exact location of the hit. This parameter controls how many steps should be used. It can give better results when the <db:code>marchSteps</db:code> is small.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>specular</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>A value between 0 and 1 to control how much reflectivity the model has.</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:code>materialColor</db:code></db:para>
+</db:td>
+<db:td>
+<db:para>Gives color to the model. This color is mixed with the reflection color.</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>The shader starts by getting a direction from the camera to the fragment, and then reflects it around the fragment's normal. The starting point and the ending point of the ray are calculated in View Space, and then these points are transformed into Screen Space. The benefit of marching the reflected ray in Screen Space is that it results in better quality. Moreover, the ray could cover a large distance in View Space but only a few fragments in Screen Space.</db:para>
+<db:para>A vector pointing from the starting fragment to the ending fragment is calculated and divided by the <db:code>marchSteps</db:code>.</db:para>
+<db:para>The <db:code>rayMarch</db:code> function is called afterward. It marches the ray every step in Screen Space, and then transforms it back to View Space. It also gets the object at this fragment using the <db:code>DEPTH_TEXTURE</db:code> of the scene. The difference between the ray's and object's depths is calculated and compared with the <db:code>depthBias</db:code>. If a hit is found, the <db:code>refinementStep</db:code> function is called.</db:para>
+<db:programlisting language="cpp">void rayMarch(vec2 rayStepVector, vec2 size)
+{
+    for(int i = 0; i &amp;lt; marchSteps; i++)
+    {
+        rayData.rayFragCurr += rayStepVector;
+        rayData.rayCoveredPart = length(rayData.rayFragCurr - rayData.rayFragStart) / length(rayData.rayFragEnd - rayData.rayFragStart);
+        rayData.rayCoveredPart = clamp(rayData.rayCoveredPart, 0.0, 1.0);
+        float rayDepth = rayViewDepthFromScreen(size);
+        rayData.objHitViewPos = viewPosFromScreen(rayData.rayFragCurr, size);
+        float deltaDepth = rayDepth - rayData.objHitViewPos.z;
+
+        if(deltaDepth &amp;gt; 0 &amp;amp;&amp;amp; deltaDepth &amp;lt; depthBias)
+        {
+            rayData.hit = 1;
+            refinementStep(rayStepVector, size);
+            return;
+        }
+    }
+}
+</db:programlisting>
+<db:para>The refinement step is the same as <db:code>rayMarch</db:code>, except it tries to find the exact position where the hit happens, so it advances the ray by half the step's distance every iteration.</db:para>
+<db:programlisting language="cpp">void refinementStep(vec2 rayStepVector, vec2 size)
+{
+    for(int i = 0; i &amp;lt; refinementSteps; i++)
+    {
+        rayData.rayCoveredPart = length(rayData.rayFragCurr - rayData.rayFragStart) / length(rayData.rayFragEnd - rayData.rayFragStart);
+        rayData.rayCoveredPart = clamp(rayData.rayCoveredPart, 0.0, 1.0);
+        float rayDepth = rayViewDepthFromScreen(size);
+        rayData.objHitViewPos = viewPosFromScreen(rayData.rayFragCurr, size);
+        float deltaDepth = rayDepth - rayData.objHitViewPos.z;
+
+        rayStepVector *= 0.5;
+        if(deltaDepth &amp;gt; 0 &amp;amp;&amp;amp; deltaDepth &amp;lt; depthBias)
+            rayData.rayFragCurr -= rayStepVector;
+        else
+            rayData.rayFragCurr += rayStepVector;
+    }
+}
+</db:programlisting>
+<db:para>The visibility of the reflection is set to the hit value, and after that some visibility checks are made. As mentioned before, SSR will fail if the reflected ray hits something behind the camera, so the visibility is faded out according to how much the reflected ray is heading toward the camera. The visibility is also faded out according to how far the hit object is from the starting point of the ray.</db:para>
+<db:programlisting language="cpp">float visibility = rayData.hit;
+/* Check if the ray hit an object behind the camera. This means information about the object can not be obtained from SCREEN_TEXTURE.
+   Start fading the visibility according to how much the reflected ray is moving toward the opposite direction of the camera */
+visibility *= (1 - max(dot(-normalize(fragViewPos), reflected), 0));
+
+/* Fade out visibility according how far is the hit object from the fragment */
+visibility *= (1 - clamp(length(rayData.objHitViewPos - rayData.rayViewStart) / rayMaxDistance, 0, 1));
+visibility = clamp(visibility, 0, 1);
+</db:programlisting>
+<db:para>Finally, the reflection color is calculated from the <db:code>SCREEN_TEXTURE</db:code> and mixed with the material color.</db:para>
+<db:programlisting language="cpp">vec2 uv = rayData.rayFragCurr / size;
+uv = correctTextureCoordinates(uv);
+vec3 reflectionColor = texture(SCREEN_TEXTURE, uv).rgb;
+reflectionColor *= specular;
+
+vec3 mixedColor = mix(materialColor.rgb, reflectionColor, visibility);
+BASE_COLOR = vec4(mixedColor, materialColor.a);
+</db:programlisting>
+</db:section>
+<db:section xml:id="helper-functions">
+<db:title>Helper functions</db:title>
+<db:para>There are some helper functions used in the shader's code. The <db:code>correctTextureCoordinates</db:code> function fixes the texture's coordinate according to the used Graphics API. This has to be done in the case of D3D11 or Metal. For more information, see <db:link xlink:href="qml-qtquick3d-custommaterial.xml">CustomMaterial</db:link> documentation.</db:para>
+<db:programlisting language="cpp">vec2 correctTextureCoordinates(vec2 uv)
+{
+    if(FRAMEBUFFER_Y_UP &amp;lt; 0 &amp;amp;&amp;amp; NDC_Y_UP == 1)
+        uv.y = 1 - uv.y;
+
+    return uv;
+}
+</db:programlisting>
+<db:para>The <db:code>rayFragOutOfBound</db:code> function checks if the ray is outside the screen after marching. In this case, no reflection color is used because no information is available for anything outside the screen.</db:para>
+<db:programlisting language="cpp">bool rayFragOutOfBound(vec2 rayFrag, vec2 size)
+{
+    if(rayFrag.x &amp;gt; size.x || rayFrag.y &amp;gt; size.y)
+        return true;
+
+    if(rayFrag.x &amp;lt; 0 || rayFrag.y &amp;lt; 0)
+        return true;
+
+    return false;
+}
+</db:programlisting>
+<db:para>The <db:code>viewPosFromScreen</db:code> function gets the object's position in View Space by using the <db:code>DEPTH_TEXTURE</db:code>.</db:para>
+<db:programlisting language="cpp">vec3 viewPosFromScreen(vec2 fragPos, vec2 size)
+{
+    vec2 uv = fragPos / size;
+    vec2 texuv = correctTextureCoordinates(uv);
+
+    float depth = textureLod(DEPTH_TEXTURE, texuv, 0).r;
+    if(NEAR_CLIP_VALUE  &amp;lt; 0.0)
+        depth = 2 * depth - 1.0;
+
+    vec3 ndc = vec3(2 * uv - 1, depth);
+    vec4 viewPos = INVERSE_PROJECTION_MATRIX * vec4(ndc, 1.0);
+    viewPos /= viewPos.w;
+    return viewPos.xyz;
+}
+</db:programlisting>
+<db:para>The <db:code>rayViewDepthFromScreen</db:code> function gets the current position of the ray in View Space. This time the depth value is obtained by linearly interpolating the value between the starting point depth and ending point depth of the ray.</db:para>
+<db:programlisting language="cpp">float rayViewDepthFromScreen(vec2 size)
+{
+    vec2 uv = rayData.rayFragCurr / size;
+    float depth = mix(rayData.rayFragStartDepth, rayData.rayFragEndDepth, rayData.rayCoveredPart);
+    vec3 ndc = vec3(2 * uv - 1, depth);
+    vec4 viewPos = INVERSE_PROJECTION_MATRIX * vec4(ndc, 1.0);
+    viewPos /= viewPos.w;
+    return viewPos.z;
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/CMakeLists.txt">screenspacereflections/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/ScreenSpaceReflections.qml">screenspacereflections/ScreenSpaceReflections.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/main.cpp">screenspacereflections/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/main.qml">screenspacereflections/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/materials.qrc">screenspacereflections/materials.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/qml.qrc">screenspacereflections/qml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/screenspacereflections.pro">screenspacereflections/screenspacereflections.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="screenspacereflections/qt_logo_rect.png">screenspacereflections/qt_logo_rect.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>
