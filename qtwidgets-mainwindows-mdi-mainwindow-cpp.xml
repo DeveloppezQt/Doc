@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>MDI Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The MDI example shows how to implement a Multiple Document Interface using Qt's <db:link xlink:href="qmdiarea.xml">QMdiArea</db:link> class.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;mainwindow.h&quot;
+#include &quot;mdichild.h&quot;
+
+MainWindow::MainWindow()
+{
+    mdiArea = new QMdiArea;
+    mdiArea-&gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    mdiArea-&gt;setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    setCentralWidget(mdiArea);
+    connect(mdiArea, SIGNAL(subWindowActivated(QMdiSubWindow*)),
+            this, SLOT(updateMenus()));
+    windowMapper = new QSignalMapper(this);
+    connect(windowMapper, SIGNAL(mapped(QWidget*)),
+            this, SLOT(setActiveSubWindow(QWidget*)));
+
+    createActions();
+    createMenus();
+    createToolBars();
+    createStatusBar();
+    updateMenus();
+
+    readSettings();
+
+    setWindowTitle(tr(&quot;MDI&quot;));
+    setUnifiedTitleAndToolBarOnMac(true);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    mdiArea-&gt;closeAllSubWindows();
+    if (mdiArea-&gt;currentSubWindow()) {
+        event-&gt;ignore();
+    } else {
+        writeSettings();
+        event-&gt;accept();
+    }
+}
+
+void MainWindow::newFile()
+{
+    MdiChild *child = createMdiChild();
+    child-&gt;newFile();
+    child-&gt;show();
+}
+
+void MainWindow::open()
+{
+    QString fileName = QFileDialog::getOpenFileName(this);
+    if (!fileName.isEmpty()) {
+        QMdiSubWindow *existing = findMdiChild(fileName);
+        if (existing) {
+            mdiArea-&gt;setActiveSubWindow(existing);
+            return;
+        }
+
+        MdiChild *child = createMdiChild();
+        if (child-&gt;loadFile(fileName)) {
+            statusBar()-&gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+            child-&gt;show();
+        } else {
+            child-&gt;close();
+        }
+    }
+}
+
+void MainWindow::save()
+{
+    if (activeMdiChild() &amp;&amp; activeMdiChild()-&gt;save())
+        statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+
+void MainWindow::saveAs()
+{
+    if (activeMdiChild() &amp;&amp; activeMdiChild()-&gt;saveAs())
+        statusBar()-&gt;showMessage(tr(&quot;File saved&quot;), 2000);
+}
+
+#ifndef QT_NO_CLIPBOARD
+void MainWindow::cut()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&gt;cut();
+}
+
+void MainWindow::copy()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&gt;copy();
+}
+
+void MainWindow::paste()
+{
+    if (activeMdiChild())
+        activeMdiChild()-&gt;paste();
+}
+#endif
+
+void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About MDI&quot;),
+            tr(&quot;The &lt;b&gt;MDI&lt;/b&gt; example demonstrates how to write multiple &quot;
+               &quot;document interface applications using Qt.&quot;));
+}
+
+void MainWindow::updateMenus()
+{
+    bool hasMdiChild = (activeMdiChild() != 0);
+    saveAct-&gt;setEnabled(hasMdiChild);
+    saveAsAct-&gt;setEnabled(hasMdiChild);
+#ifndef QT_NO_CLIPBOARD
+    pasteAct-&gt;setEnabled(hasMdiChild);
+#endif
+    closeAct-&gt;setEnabled(hasMdiChild);
+    closeAllAct-&gt;setEnabled(hasMdiChild);
+    tileAct-&gt;setEnabled(hasMdiChild);
+    cascadeAct-&gt;setEnabled(hasMdiChild);
+    nextAct-&gt;setEnabled(hasMdiChild);
+    previousAct-&gt;setEnabled(hasMdiChild);
+    separatorAct-&gt;setVisible(hasMdiChild);
+
+#ifndef QT_NO_CLIPBOARD
+    bool hasSelection = (activeMdiChild() &amp;&amp;
+                         activeMdiChild()-&gt;textCursor().hasSelection());
+    cutAct-&gt;setEnabled(hasSelection);
+    copyAct-&gt;setEnabled(hasSelection);
+#endif
+}
+
+void MainWindow::updateWindowMenu()
+{
+    windowMenu-&gt;clear();
+    windowMenu-&gt;addAction(closeAct);
+    windowMenu-&gt;addAction(closeAllAct);
+    windowMenu-&gt;addSeparator();
+    windowMenu-&gt;addAction(tileAct);
+    windowMenu-&gt;addAction(cascadeAct);
+    windowMenu-&gt;addSeparator();
+    windowMenu-&gt;addAction(nextAct);
+    windowMenu-&gt;addAction(previousAct);
+    windowMenu-&gt;addAction(separatorAct);
+
+    QList&lt;QMdiSubWindow *&gt; windows = mdiArea-&gt;subWindowList();
+    separatorAct-&gt;setVisible(!windows.isEmpty());
+
+    for (int i = 0; i &lt; windows.size(); ++i) {
+        MdiChild *child = qobject_cast&lt;MdiChild *&gt;(windows.at(i)-&gt;widget());
+
+        QString text;
+        if (i &lt; 9) {
+            text = tr(&quot;&amp;%1 %2&quot;).arg(i + 1)
+                               .arg(child-&gt;userFriendlyCurrentFile());
+        } else {
+            text = tr(&quot;%1 %2&quot;).arg(i + 1)
+                              .arg(child-&gt;userFriendlyCurrentFile());
+        }
+        QAction *action  = windowMenu-&gt;addAction(text);
+        action-&gt;setCheckable(true);
+        action -&gt;setChecked(child == activeMdiChild());
+        connect(action, SIGNAL(triggered()), windowMapper, SLOT(map()));
+        windowMapper-&gt;setMapping(action, windows.at(i));
+    }
+}
+
+MdiChild *MainWindow::createMdiChild()
+{
+    MdiChild *child = new MdiChild;
+    mdiArea-&gt;addSubWindow(child);
+
+#ifndef QT_NO_CLIPBOARD
+    connect(child, SIGNAL(copyAvailable(bool)),
+            cutAct, SLOT(setEnabled(bool)));
+    connect(child, SIGNAL(copyAvailable(bool)),
+            copyAct, SLOT(setEnabled(bool)));
+#endif
+
+    return child;
+}
+
+void MainWindow::createActions()
+{
+    newAct = new QAction(QIcon(&quot;:/images/new.png&quot;), tr(&quot;&amp;New&quot;), this);
+    newAct-&gt;setShortcuts(QKeySequence::New);
+    newAct-&gt;setStatusTip(tr(&quot;Create a new file&quot;));
+    connect(newAct, SIGNAL(triggered()), this, SLOT(newFile()));
+
+    openAct = new QAction(QIcon(&quot;:/images/open.png&quot;), tr(&quot;&amp;Open...&quot;), this);
+    openAct-&gt;setShortcuts(QKeySequence::Open);
+    openAct-&gt;setStatusTip(tr(&quot;Open an existing file&quot;));
+    connect(openAct, SIGNAL(triggered()), this, SLOT(open()));
+
+    saveAct = new QAction(QIcon(&quot;:/images/save.png&quot;), tr(&quot;&amp;Save&quot;), this);
+    saveAct-&gt;setShortcuts(QKeySequence::Save);
+    saveAct-&gt;setStatusTip(tr(&quot;Save the document to disk&quot;));
+    connect(saveAct, SIGNAL(triggered()), this, SLOT(save()));
+
+    saveAsAct = new QAction(tr(&quot;Save &amp;As...&quot;), this);
+    saveAsAct-&gt;setShortcuts(QKeySequence::SaveAs);
+    saveAsAct-&gt;setStatusTip(tr(&quot;Save the document under a new name&quot;));
+    connect(saveAsAct, SIGNAL(triggered()), this, SLOT(saveAs()));
+
+    exitAct = new QAction(tr(&quot;E&amp;xit&quot;), this);
+    exitAct-&gt;setShortcuts(QKeySequence::Quit);
+    exitAct-&gt;setStatusTip(tr(&quot;Exit the application&quot;));
+    connect(exitAct, SIGNAL(triggered()), qApp, SLOT(closeAllWindows()));
+
+#ifndef QT_NO_CLIPBOARD
+    cutAct = new QAction(QIcon(&quot;:/images/cut.png&quot;), tr(&quot;Cu&amp;t&quot;), this);
+    cutAct-&gt;setShortcuts(QKeySequence::Cut);
+    cutAct-&gt;setStatusTip(tr(&quot;Cut the current selection's contents to the &quot;
+                            &quot;clipboard&quot;));
+    connect(cutAct, SIGNAL(triggered()), this, SLOT(cut()));
+
+    copyAct = new QAction(QIcon(&quot;:/images/copy.png&quot;), tr(&quot;&amp;Copy&quot;), this);
+    copyAct-&gt;setShortcuts(QKeySequence::Copy);
+    copyAct-&gt;setStatusTip(tr(&quot;Copy the current selection's contents to the &quot;
+                             &quot;clipboard&quot;));
+    connect(copyAct, SIGNAL(triggered()), this, SLOT(copy()));
+
+    pasteAct = new QAction(QIcon(&quot;:/images/paste.png&quot;), tr(&quot;&amp;Paste&quot;), this);
+    pasteAct-&gt;setShortcuts(QKeySequence::Paste);
+    pasteAct-&gt;setStatusTip(tr(&quot;Paste the clipboard's contents into the current &quot;
+                              &quot;selection&quot;));
+    connect(pasteAct, SIGNAL(triggered()), this, SLOT(paste()));
+#endif
+
+    closeAct = new QAction(tr(&quot;Cl&amp;ose&quot;), this);
+    closeAct-&gt;setStatusTip(tr(&quot;Close the active window&quot;));
+    connect(closeAct, SIGNAL(triggered()),
+            mdiArea, SLOT(closeActiveSubWindow()));
+
+    closeAllAct = new QAction(tr(&quot;Close &amp;All&quot;), this);
+    closeAllAct-&gt;setStatusTip(tr(&quot;Close all the windows&quot;));
+    connect(closeAllAct, SIGNAL(triggered()),
+            mdiArea, SLOT(closeAllSubWindows()));
+
+    tileAct = new QAction(tr(&quot;&amp;Tile&quot;), this);
+    tileAct-&gt;setStatusTip(tr(&quot;Tile the windows&quot;));
+    connect(tileAct, SIGNAL(triggered()), mdiArea, SLOT(tileSubWindows()));
+
+    cascadeAct = new QAction(tr(&quot;&amp;Cascade&quot;), this);
+    cascadeAct-&gt;setStatusTip(tr(&quot;Cascade the windows&quot;));
+    connect(cascadeAct, SIGNAL(triggered()), mdiArea, SLOT(cascadeSubWindows()));
+
+    nextAct = new QAction(tr(&quot;Ne&amp;xt&quot;), this);
+    nextAct-&gt;setShortcuts(QKeySequence::NextChild);
+    nextAct-&gt;setStatusTip(tr(&quot;Move the focus to the next window&quot;));
+    connect(nextAct, SIGNAL(triggered()),
+            mdiArea, SLOT(activateNextSubWindow()));
+
+    previousAct = new QAction(tr(&quot;Pre&amp;vious&quot;), this);
+    previousAct-&gt;setShortcuts(QKeySequence::PreviousChild);
+    previousAct-&gt;setStatusTip(tr(&quot;Move the focus to the previous &quot;
+                                 &quot;window&quot;));
+    connect(previousAct, SIGNAL(triggered()),
+            mdiArea, SLOT(activatePreviousSubWindow()));
+
+    separatorAct = new QAction(this);
+    separatorAct-&gt;setSeparator(true);
+
+    aboutAct = new QAction(tr(&quot;&amp;About&quot;), this);
+    aboutAct-&gt;setStatusTip(tr(&quot;Show the application's About box&quot;));
+    connect(aboutAct, SIGNAL(triggered()), this, SLOT(about()));
+
+    aboutQtAct = new QAction(tr(&quot;About &amp;Qt&quot;), this);
+    aboutQtAct-&gt;setStatusTip(tr(&quot;Show the Qt library's About box&quot;));
+    connect(aboutQtAct, SIGNAL(triggered()), qApp, SLOT(aboutQt()));
+}
+
+void MainWindow::createMenus()
+{
+    fileMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;File&quot;));
+    fileMenu-&gt;addAction(newAct);
+    fileMenu-&gt;addAction(openAct);
+    fileMenu-&gt;addAction(saveAct);
+    fileMenu-&gt;addAction(saveAsAct);
+    fileMenu-&gt;addSeparator();
+    QAction *action = fileMenu-&gt;addAction(tr(&quot;Switch layout direction&quot;));
+    connect(action, SIGNAL(triggered()), this, SLOT(switchLayoutDirection()));
+    fileMenu-&gt;addAction(exitAct);
+
+    editMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Edit&quot;));
+#ifndef QT_NO_CLIPBOARD
+    editMenu-&gt;addAction(cutAct);
+    editMenu-&gt;addAction(copyAct);
+    editMenu-&gt;addAction(pasteAct);
+#endif
+
+    windowMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Window&quot;));
+    updateWindowMenu();
+    connect(windowMenu, SIGNAL(aboutToShow()), this, SLOT(updateWindowMenu()));
+
+    menuBar()-&gt;addSeparator();
+
+    helpMenu = menuBar()-&gt;addMenu(tr(&quot;&amp;Help&quot;));
+    helpMenu-&gt;addAction(aboutAct);
+    helpMenu-&gt;addAction(aboutQtAct);
+}
+
+void MainWindow::createToolBars()
+{
+    fileToolBar = addToolBar(tr(&quot;File&quot;));
+    fileToolBar-&gt;addAction(newAct);
+    fileToolBar-&gt;addAction(openAct);
+    fileToolBar-&gt;addAction(saveAct);
+
+#ifndef QT_NO_CLIPBOARD
+    editToolBar = addToolBar(tr(&quot;Edit&quot;));
+    editToolBar-&gt;addAction(cutAct);
+    editToolBar-&gt;addAction(copyAct);
+    editToolBar-&gt;addAction(pasteAct);
+#endif
+}
+
+void MainWindow::createStatusBar()
+{
+    statusBar()-&gt;showMessage(tr(&quot;Ready&quot;));
+}
+
+void MainWindow::readSettings()
+{
+    QSettings settings(&quot;QtProject&quot;, &quot;MDI Example&quot;);
+    QPoint pos = settings.value(&quot;pos&quot;, QPoint(200, 200)).toPoint();
+    QSize size = settings.value(&quot;size&quot;, QSize(400, 400)).toSize();
+    move(pos);
+    resize(size);
+}
+
+void MainWindow::writeSettings()
+{
+    QSettings settings(&quot;QtProject&quot;, &quot;MDI Example&quot;);
+    settings.setValue(&quot;pos&quot;, pos());
+    settings.setValue(&quot;size&quot;, size());
+}
+
+MdiChild *MainWindow::activeMdiChild()
+{
+    if (QMdiSubWindow *activeSubWindow = mdiArea-&gt;activeSubWindow())
+        return qobject_cast&lt;MdiChild *&gt;(activeSubWindow-&gt;widget());
+    return 0;
+}
+
+QMdiSubWindow *MainWindow::findMdiChild(const QString &amp;fileName)
+{
+    QString canonicalFilePath = QFileInfo(fileName).canonicalFilePath();
+
+    foreach (QMdiSubWindow *window, mdiArea-&gt;subWindowList()) {
+        MdiChild *mdiChild = qobject_cast&lt;MdiChild *&gt;(window-&gt;widget());
+        if (mdiChild-&gt;currentFile() == canonicalFilePath)
+            return window;
+    }
+    return 0;
+}
+
+void MainWindow::switchLayoutDirection()
+{
+    if (layoutDirection() == Qt::LeftToRight)
+        qApp-&gt;setLayoutDirection(Qt::RightToLeft);
+    else
+        qApp-&gt;setLayoutDirection(Qt::LeftToRight);
+}
+
+void MainWindow::setActiveSubWindow(QWidget *window)
+{
+    if (!window)
+        return;
+    mdiArea-&gt;setActiveSubWindow(qobject_cast&lt;QMdiSubWindow *&gt;(window));
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Torrent Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates complex TCP/IP operations.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;bencodeparser.h&quot;
+#include &quot;connectionmanager.h&quot;
+#include &quot;torrentclient.h&quot;
+#include &quot;torrentserver.h&quot;
+#include &quot;trackerclient.h&quot;
+
+#include &lt;QtCore&gt;
+#include &lt;QNetworkRequest&gt;
+
+TrackerClient::TrackerClient(TorrentClient *downloader, QObject *parent)
+    : QObject(parent), torrentDownloader(downloader)
+{
+    length = 0;
+    requestInterval = 5 * 60;
+    requestIntervalTimer = -1;
+    firstTrackerRequest = true;
+    lastTrackerRequest = false;
+    firstSeeding = true;
+
+    connect(&amp;http, SIGNAL(finished(QNetworkReply*)), this, SLOT(httpRequestDone(QNetworkReply*)));
+}
+
+void TrackerClient::start(const MetaInfo &amp;info)
+{
+    metaInfo = info;
+    QTimer::singleShot(0, this, SLOT(fetchPeerList()));
+
+    if (metaInfo.fileForm() == MetaInfo::SingleFileForm) {
+        length = metaInfo.singleFile().length;
+    } else {
+        QList&lt;MetaInfoMultiFile&gt; files = metaInfo.multiFiles();
+        for (int i = 0; i &lt; files.size(); ++i)
+            length += files.at(i).length;
+    }
+}
+
+void TrackerClient::startSeeding()
+{
+    firstSeeding = true;
+    fetchPeerList();
+}
+
+void TrackerClient::stop()
+{
+    lastTrackerRequest = true;
+    fetchPeerList();
+}
+
+void TrackerClient::timerEvent(QTimerEvent *event)
+{
+    if (event-&gt;timerId() == requestIntervalTimer) {
+        fetchPeerList();
+    } else {
+        QObject::timerEvent(event);
+    }
+}
+
+void TrackerClient::fetchPeerList()
+{
+    QUrl url(metaInfo.announceUrl());
+
+    // Base the query on announce url to include a passkey (if any)
+    QUrlQuery query(url);
+
+    // Percent encode the hash
+    QByteArray infoHash = torrentDownloader-&gt;infoHash();
+    QByteArray encodedSum;
+    for (int i = 0; i &lt; infoHash.size(); ++i) {
+        encodedSum += '%';
+        encodedSum += QByteArray::number(infoHash[i], 16).right(2).rightJustified(2, '0');
+    }
+
+    bool seeding = (torrentDownloader-&gt;state() == TorrentClient::Seeding);
+
+    query.addQueryItem(&quot;info_hash&quot;, encodedSum);
+    query.addQueryItem(&quot;peer_id&quot;, ConnectionManager::instance()-&gt;clientId());
+    query.addQueryItem(&quot;port&quot;, QByteArray::number(TorrentServer::instance()-&gt;serverPort()));
+    query.addQueryItem(&quot;compact&quot;, &quot;1&quot;);
+    query.addQueryItem(&quot;uploaded&quot;, QByteArray::number(torrentDownloader-&gt;uploadedBytes()));
+
+    if (!firstSeeding) {
+        query.addQueryItem(&quot;downloaded&quot;, &quot;0&quot;);
+        query.addQueryItem(&quot;left&quot;, &quot;0&quot;);
+    } else {
+        query.addQueryItem(&quot;downloaded&quot;,
+                           QByteArray::number(torrentDownloader-&gt;downloadedBytes()));
+        int left = qMax&lt;int&gt;(0, metaInfo.totalSize() - torrentDownloader-&gt;downloadedBytes());
+        query.addQueryItem(&quot;left&quot;, QByteArray::number(seeding ? 0 : left));
+    }
+
+    if (seeding &amp;&amp; firstSeeding) {
+        query.addQueryItem(&quot;event&quot;, &quot;completed&quot;);
+        firstSeeding = false;
+    } else if (firstTrackerRequest) {
+        firstTrackerRequest = false;
+        query.addQueryItem(&quot;event&quot;, &quot;started&quot;);
+    } else if(lastTrackerRequest) {
+        query.addQueryItem(&quot;event&quot;, &quot;stopped&quot;);
+    }
+
+    if (!trackerId.isEmpty())
+        query.addQueryItem(&quot;trackerid&quot;, trackerId);
+
+    url.setQuery(query);
+
+    QNetworkRequest req(url);
+    if (!url.userName().isEmpty()) {
+        uname = url.userName();
+        pwd = url.password();
+        connect(&amp;http, SIGNAL(authenticationRequired(QNetworkReply*,QAuthenticator*)),
+                this, SLOT(provideAuthentication(QNetworkReply*,QAuthenticator*)));
+    }
+    http.get(req);
+}
+
+void TrackerClient::httpRequestDone(QNetworkReply *reply)
+{
+    reply-&gt;deleteLater();
+    if (lastTrackerRequest) {
+        emit stopped();
+        return;
+    }
+
+    if (reply-&gt;error() != QNetworkReply::NoError) {
+        emit connectionError(reply-&gt;error());
+        return;
+    }
+
+    QByteArray response = reply-&gt;readAll();
+    reply-&gt;abort();
+
+    BencodeParser parser;
+    if (!parser.parse(response)) {
+        qWarning(&quot;Error parsing bencode response from tracker: %s&quot;,
+                 qPrintable(parser.errorString()));
+        return;
+    }
+
+    QMap&lt;QByteArray, QVariant&gt; dict = parser.dictionary();
+
+    if (dict.contains(&quot;failure reason&quot;)) {
+        // no other items are present
+        emit failure(QString::fromUtf8(dict.value(&quot;failure reason&quot;).toByteArray()));
+        return;
+    }
+
+    if (dict.contains(&quot;warning message&quot;)) {
+        // continue processing
+        emit warning(QString::fromUtf8(dict.value(&quot;warning message&quot;).toByteArray()));
+    }
+
+    if (dict.contains(&quot;tracker id&quot;)) {
+        // store it
+        trackerId = dict.value(&quot;tracker id&quot;).toByteArray();
+    }
+
+    if (dict.contains(&quot;interval&quot;)) {
+        // Mandatory item
+        if (requestIntervalTimer != -1)
+            killTimer(requestIntervalTimer);
+        requestIntervalTimer = startTimer(dict.value(&quot;interval&quot;).toInt() * 1000);
+    }
+
+    if (dict.contains(&quot;peers&quot;)) {
+        // store it
+        peers.clear();
+        QVariant peerEntry = dict.value(&quot;peers&quot;);
+        if (peerEntry.type() == QVariant::List) {
+            QList&lt;QVariant&gt; peerTmp = peerEntry.toList();
+            for (int i = 0; i &lt; peerTmp.size(); ++i) {
+                TorrentPeer tmp;
+                QMap&lt;QByteArray, QVariant&gt; peer = qvariant_cast&lt;QMap&lt;QByteArray, QVariant&gt; &gt;(peerTmp.at(i));
+                tmp.id = QString::fromUtf8(peer.value(&quot;peer id&quot;).toByteArray());
+                tmp.address.setAddress(QString::fromUtf8(peer.value(&quot;ip&quot;).toByteArray()));
+                tmp.port = peer.value(&quot;port&quot;).toInt();
+                peers &lt;&lt; tmp;
+            }
+        } else {
+            QByteArray peerTmp = peerEntry.toByteArray();
+            for (int i = 0; i &lt; peerTmp.size(); i += 6) {
+                TorrentPeer tmp;
+                uchar *data = (uchar *)peerTmp.constData() + i;
+                tmp.port = (int(data[4]) &lt;&lt; 8) + data[5];
+                uint ipAddress = 0;
+                ipAddress += uint(data[0]) &lt;&lt; 24;
+                ipAddress += uint(data[1]) &lt;&lt; 16;
+                ipAddress += uint(data[2]) &lt;&lt; 8;
+                ipAddress += uint(data[3]);
+                tmp.address.setAddress(ipAddress);
+                peers &lt;&lt; tmp;
+            }
+        }
+        emit peerListUpdated(peers);
+    }
+}
+
+void TrackerClient::provideAuthentication(QNetworkReply *reply, QAuthenticator *auth)
+{
+    Q_UNUSED(reply);
+    auth-&gt;setUser(uname);
+    auth-&gt;setPassword(pwd);
+}
+
+</db:programlisting>
+</db:article>

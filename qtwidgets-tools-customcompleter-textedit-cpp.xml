@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>Custom Completer Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Custom Completer example shows how to provide string-completion facilities for an input widget based on data provided by a model. The completer pops up suggestions for possible words based on the first three characters input by the user and the user's choice of word is inserted into the <db:code>TextEdit</db:code> using <db:link xlink:href="qtextcursor.xml">QTextCursor</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of Digia Plc and its Subsidiary(-ies) nor the names
+**     of its contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;textedit.h&quot;
+#include &lt;QCompleter&gt;
+#include &lt;QKeyEvent&gt;
+#include &lt;QAbstractItemView&gt;
+#include &lt;QtDebug&gt;
+#include &lt;QApplication&gt;
+#include &lt;QModelIndex&gt;
+#include &lt;QAbstractItemModel&gt;
+#include &lt;QScrollBar&gt;
+
+TextEdit::TextEdit(QWidget *parent)
+: QTextEdit(parent), c(0)
+{
+    setPlainText(tr(&quot;This TextEdit provides autocompletions for words that have more than&quot;
+                    &quot; 3 characters. You can trigger autocompletion using &quot;) +
+                    QKeySequence(&quot;Ctrl+E&quot;).toString(QKeySequence::NativeText));
+}
+
+TextEdit::~TextEdit()
+{
+}
+
+void TextEdit::setCompleter(QCompleter *completer)
+{
+    if (c)
+        QObject::disconnect(c, 0, this, 0);
+
+    c = completer;
+
+    if (!c)
+        return;
+
+    c-&gt;setWidget(this);
+    c-&gt;setCompletionMode(QCompleter::PopupCompletion);
+    c-&gt;setCaseSensitivity(Qt::CaseInsensitive);
+    QObject::connect(c, SIGNAL(activated(QString)),
+                     this, SLOT(insertCompletion(QString)));
+}
+
+QCompleter *TextEdit::completer() const
+{
+    return c;
+}
+
+void TextEdit::insertCompletion(const QString&amp; completion)
+{
+    if (c-&gt;widget() != this)
+        return;
+    QTextCursor tc = textCursor();
+    int extra = completion.length() - c-&gt;completionPrefix().length();
+    tc.movePosition(QTextCursor::Left);
+    tc.movePosition(QTextCursor::EndOfWord);
+    tc.insertText(completion.right(extra));
+    setTextCursor(tc);
+}
+
+QString TextEdit::textUnderCursor() const
+{
+    QTextCursor tc = textCursor();
+    tc.select(QTextCursor::WordUnderCursor);
+    return tc.selectedText();
+}
+
+void TextEdit::focusInEvent(QFocusEvent *e)
+{
+    if (c)
+        c-&gt;setWidget(this);
+    QTextEdit::focusInEvent(e);
+}
+
+void TextEdit::keyPressEvent(QKeyEvent *e)
+{
+    if (c &amp;&amp; c-&gt;popup()-&gt;isVisible()) {
+        // The following keys are forwarded by the completer to the widget
+       switch (e-&gt;key()) {
+       case Qt::Key_Enter:
+       case Qt::Key_Return:
+       case Qt::Key_Escape:
+       case Qt::Key_Tab:
+       case Qt::Key_Backtab:
+            e-&gt;ignore();
+            return; // let the completer do default behavior
+       default:
+           break;
+       }
+    }
+
+    bool isShortcut = ((e-&gt;modifiers() &amp; Qt::ControlModifier) &amp;&amp; e-&gt;key() == Qt::Key_E); // CTRL+E
+    if (!c || !isShortcut) // do not process the shortcut when we have a completer
+        QTextEdit::keyPressEvent(e);
+
+    const bool ctrlOrShift = e-&gt;modifiers() &amp; (Qt::ControlModifier | Qt::ShiftModifier);
+    if (!c || (ctrlOrShift &amp;&amp; e-&gt;text().isEmpty()))
+        return;
+
+    static QString eow(&quot;~!@#$%^&amp;*()_+{}|:\&quot;&lt;&gt;?,./;'[]\\-=&quot;); // end of word
+    bool hasModifier = (e-&gt;modifiers() != Qt::NoModifier) &amp;&amp; !ctrlOrShift;
+    QString completionPrefix = textUnderCursor();
+
+    if (!isShortcut &amp;&amp; (hasModifier || e-&gt;text().isEmpty()|| completionPrefix.length() &lt; 3
+                      || eow.contains(e-&gt;text().right(1)))) {
+        c-&gt;popup()-&gt;hide();
+        return;
+    }
+
+    if (completionPrefix != c-&gt;completionPrefix()) {
+        c-&gt;setCompletionPrefix(completionPrefix);
+        c-&gt;popup()-&gt;setCurrentIndex(c-&gt;completionModel()-&gt;index(0, 0));
+    }
+    QRect cr = cursorRect();
+    cr.setWidth(c-&gt;popup()-&gt;sizeHintForColumn(0)
+                + c-&gt;popup()-&gt;verticalScrollBar()-&gt;sizeHint().width());
+    c-&gt;complete(cr); // popup it up!
+}
+
+</db:programlisting>
+</db:article>

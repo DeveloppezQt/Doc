@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en_US">
+<db:info>
+<db:title>SQL Browser</db:title>
+<db:productname>QtSql</db:productname>
+<db:titleabbrev>Qt SQL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The SQL Browser example shows how a data browser can be used to visualize the results of SQL statements on a live database.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the demonstration applications of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and Digia.  For licensing terms and
+** conditions see http://qt.digia.com/licensing.  For further information
+** use the contact form at http://qt.digia.com/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL included in the
+** packaging of this file.  Please review the following information to
+** ensure the GNU Lesser General Public License version 2.1 requirements
+** will be met: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** In addition, as a special exception, Digia gives you certain additional
+** rights.  These rights are described in the Digia Qt LGPL Exception
+** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3.0 as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL included in the
+** packaging of this file.  Please review the following information to
+** ensure the GNU General Public License version 3.0 requirements will be
+** met: http://www.gnu.org/copyleft/gpl.html.
+**
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;connectionwidget.h&quot;
+
+#include &lt;QtWidgets&gt;
+#include &lt;QtSql&gt;
+
+ConnectionWidget::ConnectionWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    tree = new QTreeWidget(this);
+    tree-&gt;setObjectName(QLatin1String(&quot;tree&quot;));
+    tree-&gt;setHeaderLabels(QStringList(tr(&quot;database&quot;)));
+    tree-&gt;header()-&gt;setSectionResizeMode(QHeaderView::Stretch);
+    QAction *refreshAction = new QAction(tr(&quot;Refresh&quot;), tree);
+    metaDataAction = new QAction(tr(&quot;Show Schema&quot;), tree);
+    connect(refreshAction, SIGNAL(triggered()), SLOT(refresh()));
+    connect(metaDataAction, SIGNAL(triggered()), SLOT(showMetaData()));
+    tree-&gt;addAction(refreshAction);
+    tree-&gt;addAction(metaDataAction);
+    tree-&gt;setContextMenuPolicy(Qt::ActionsContextMenu);
+
+    layout-&gt;addWidget(tree);
+
+    QMetaObject::connectSlotsByName(this);
+}
+
+ConnectionWidget::~ConnectionWidget()
+{
+}
+
+static QString qDBCaption(const QSqlDatabase &amp;db)
+{
+    QString nm = db.driverName();
+    nm.append(QLatin1Char(':'));
+    if (!db.userName().isEmpty())
+        nm.append(db.userName()).append(QLatin1Char('@'));
+    nm.append(db.databaseName());
+    return nm;
+}
+
+void ConnectionWidget::refresh()
+{
+    tree-&gt;clear();
+    QStringList connectionNames = QSqlDatabase::connectionNames();
+
+    bool gotActiveDb = false;
+    for (int i = 0; i &lt; connectionNames.count(); ++i) {
+        QTreeWidgetItem *root = new QTreeWidgetItem(tree);
+        QSqlDatabase db = QSqlDatabase::database(connectionNames.at(i), false);
+        root-&gt;setText(0, qDBCaption(db));
+        if (connectionNames.at(i) == activeDb) {
+            gotActiveDb = true;
+            setActive(root);
+        }
+        if (db.isOpen()) {
+            QStringList tables = db.tables();
+            for (int t = 0; t &lt; tables.count(); ++t) {
+                QTreeWidgetItem *table = new QTreeWidgetItem(root);
+                table-&gt;setText(0, tables.at(t));
+            }
+        }
+    }
+    if (!gotActiveDb) {
+        activeDb = connectionNames.value(0);
+        setActive(tree-&gt;topLevelItem(0));
+    }
+
+    tree-&gt;doItemsLayout(); // HACK
+}
+
+QSqlDatabase ConnectionWidget::currentDatabase() const
+{
+    return QSqlDatabase::database(activeDb);
+}
+
+static void qSetBold(QTreeWidgetItem *item, bool bold)
+{
+    QFont font = item-&gt;font(0);
+    font.setBold(bold);
+    item-&gt;setFont(0, font);
+}
+
+void ConnectionWidget::setActive(QTreeWidgetItem *item)
+{
+    for (int i = 0; i &lt; tree-&gt;topLevelItemCount(); ++i) {
+        if (tree-&gt;topLevelItem(i)-&gt;font(0).bold())
+            qSetBold(tree-&gt;topLevelItem(i), false);
+    }
+
+    if (!item)
+        return;
+
+    qSetBold(item, true);
+    activeDb = QSqlDatabase::connectionNames().value(tree-&gt;indexOfTopLevelItem(item));
+}
+
+void ConnectionWidget::on_tree_itemActivated(QTreeWidgetItem *item, int /* column */)
+{
+
+    if (!item)
+        return;
+
+    if (!item-&gt;parent()) {
+        setActive(item);
+    } else {
+        setActive(item-&gt;parent());
+        emit tableActivated(item-&gt;text(0));
+    }
+}
+
+void ConnectionWidget::showMetaData()
+{
+    QTreeWidgetItem *cItem = tree-&gt;currentItem();
+    if (!cItem || !cItem-&gt;parent())
+        return;
+    setActive(cItem-&gt;parent());
+    emit metaDataRequested(cItem-&gt;text(0));
+}
+
+void ConnectionWidget::on_tree_currentItemChanged(QTreeWidgetItem *current, QTreeWidgetItem *)
+{
+    metaDataAction-&gt;setEnabled(current &amp;&amp; current-&gt;parent());
+}
+
+</db:programlisting>
+</db:article>
