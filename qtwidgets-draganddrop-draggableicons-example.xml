@@ -1,0 +1,131 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Draggable Icons Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.11.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Draggable Icons example shows how to drag and drop image data between widgets in the same application, and between different applications.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/draggableicons-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In many situations where drag and drop is used, the user starts dragging from a particular widget and drops the payload onto another widget. In this example, we subclass <db:link xlink:href="qlabel.xml">QLabel</db:link> to create labels that we use as drag sources, and place them inside <db:link xlink:href="qwidget.xml">QWidget</db:link>s that serve as both containers and drop sites.</db:para>
+<db:para>In addition, when a drag and drop operation occurs, we want to send more than just an image. We also want to send information about where the user clicked in the image so that the user can place it precisely on the drop target. This level of detail means that we must create a custom MIME type for our data.</db:para>
+<db:section xml:id="dragwidget-class-definition">
+<db:title>DragWidget Class Definition</db:title>
+<db:para>The icon widgets that we use to display icons are subclassed from <db:link xlink:href="qlabel.xml">QLabel</db:link>:</db:para>
+<db:programlisting language="cpp">class DragWidget : public QFrame
+{
+public:
+    explicit DragWidget(QWidget *parent = nullptr);
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override;
+    void dragMoveEvent(QDragMoveEvent *event) override;
+    void dropEvent(QDropEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+};
+</db:programlisting>
+<db:para>Since the <db:link xlink:href="qlabel.xml">QLabel</db:link> class provides most of what we require for the icon, we only need to reimplement the <db:link xlink:href="qwidget.xml#mousePressEvent">QWidget::mousePressEvent</db:link>() to provide drag and drop facilities.</db:para>
+</db:section>
+<db:section xml:id="dragwidget-class-implementation">
+<db:title>DragWidget Class Implementation</db:title>
+<db:para>The DragWidget constructor sets an attribute on the widget that ensures that it will be deleted when it is closed:</db:para>
+<db:programlisting language="cpp">DragWidget::DragWidget(QWidget *parent)
+    : QFrame(parent)
+{
+    setMinimumSize(200, 200);
+    setFrameStyle(QFrame::Sunken | QFrame::StyledPanel);
+    setAcceptDrops(true);
+
+    QLabel *boatIcon = new QLabel(this);
+    boatIcon-&amp;gt;setPixmap(QPixmap(&quot;:/images/boat.png&quot;));
+    boatIcon-&amp;gt;move(10, 10);
+    boatIcon-&amp;gt;show();
+    boatIcon-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+
+    QLabel *carIcon = new QLabel(this);
+    carIcon-&amp;gt;setPixmap(QPixmap(&quot;:/images/car.png&quot;));
+    carIcon-&amp;gt;move(100, 10);
+    carIcon-&amp;gt;show();
+    carIcon-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+
+    QLabel *houseIcon = new QLabel(this);
+    houseIcon-&amp;gt;setPixmap(QPixmap(&quot;:/images/house.png&quot;));
+    houseIcon-&amp;gt;move(10, 80);
+    houseIcon-&amp;gt;show();
+    houseIcon-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+}
+</db:programlisting>
+<db:para>To enable dragging from the icon, we need to act on a mouse press event. We do this by reimplementing <db:link xlink:href="qwidget.xml#mousePressEvent">QWidget::mousePressEvent</db:link>() and setting up a <db:link xlink:href="qdrag.xml">QDrag</db:link> object.</db:para>
+<db:programlisting language="cpp">void DragWidget::mousePressEvent(QMouseEvent *event)
+{
+    QLabel *child = static_cast&amp;lt;QLabel*&amp;gt;(childAt(event-&amp;gt;pos()));
+    if (!child)
+        return;
+
+    QPixmap pixmap = *child-&amp;gt;pixmap();
+
+    QByteArray itemData;
+    QDataStream dataStream(&amp;amp;itemData, QIODevice::WriteOnly);
+    dataStream &amp;lt;&amp;lt; pixmap &amp;lt;&amp;lt; QPoint(event-&amp;gt;pos() - child-&amp;gt;pos());
+</db:programlisting>
+<db:para>Since we will be sending pixmap data for the icon and information about the user's click in the icon widget, we construct a <db:link xlink:href="qbytearray.xml">QByteArray</db:link> and package up the details using a <db:link xlink:href="qdatastream.xml">QDataStream</db:link>.</db:para>
+<db:para>For interoperability, drag and drop operations describe the data they contain using MIME types. In Qt, we describe this data using a <db:link xlink:href="qmimedata.xml">QMimeData</db:link> object:</db:para>
+<db:programlisting language="cpp">    QMimeData *mimeData = new QMimeData;
+    mimeData-&amp;gt;setData(&quot;application/x-dnditemdata&quot;, itemData);
+</db:programlisting>
+<db:para>We choose an unofficial MIME type for this purpose, and supply the <db:link xlink:href="qbytearray.xml">QByteArray</db:link> to the MIME data object.</db:para>
+<db:para>The drag and drop operation itself is handled by a <db:link xlink:href="qdrag.xml">QDrag</db:link> object:</db:para>
+<db:programlisting language="cpp">    QDrag *drag = new QDrag(this);
+    drag-&amp;gt;setMimeData(mimeData);
+    drag-&amp;gt;setPixmap(pixmap);
+    drag-&amp;gt;setHotSpot(event-&amp;gt;pos() - child-&amp;gt;pos());
+</db:programlisting>
+<db:para>Here, we pass the data to the drag object, set a pixmap that will be shown alongside the cursor during the operation, and define the position of a hot spot that places the position of this pixmap under the cursor.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/draggableicons.pro">draganddrop/draggableicons/draggableicons.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/draggableicons.qrc">draganddrop/draggableicons/draggableicons.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/dragwidget.cpp">draganddrop/draggableicons/dragwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/dragwidget.h">draganddrop/draggableicons/dragwidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/main.cpp">draganddrop/draggableicons/main.cpp</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/images/boat.png">draganddrop/draggableicons/images/boat.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/images/car.png">draganddrop/draggableicons/images/car.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="draganddrop/draggableicons/images/house.png">draganddrop/draggableicons/images/house.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

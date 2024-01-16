@@ -1,0 +1,307 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Google Suggest Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.11.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Obtains the list of search recommendations by the Google search engine.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The example uses the <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link> to obtain the list of search recommendations by Google as the user types into a <db:link xlink:href="qlineedit.xml">QLineEdit</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/googlesuggest-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The application makes use of the get function in <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link> to post a request and obtain the result of the search query sent to the Google search engine. The results returned are listed as clickable links appearing below the search box as a drop-down menu.</db:para>
+<db:para>The widget is built up by a <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> as the search box, and a <db:link xlink:href="qtreeview.xml">QTreeView</db:link> used as a popup menu below the search box.</db:para>
+<db:section xml:id="gsuggestcompletion-class-declaration">
+<db:title>GSuggestCompletion Class Declaration</db:title>
+<db:para>This class implements an event filter and a number of functions to display the search results and to determent when and how to perform the search.</db:para>
+<db:programlisting language="cpp">class GSuggestCompletion : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit GSuggestCompletion(QLineEdit *parent = nullptr);
+    ~GSuggestCompletion();
+    bool eventFilter(QObject *obj, QEvent *ev) override;
+    void showCompletion(const QVector&amp;lt;QString&amp;gt; &amp;amp;choices);
+
+public slots:
+
+    void doneCompletion();
+    void preventSuggest();
+    void autoSuggest();
+    void handleNetworkData(QNetworkReply *networkReply);
+
+private:
+    QLineEdit *editor = nullptr;
+    QTreeWidget *popup = nullptr;
+    QTimer timer;
+    QNetworkAccessManager networkManager;
+};
+</db:programlisting>
+<db:para>The class connects to a <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> and uses a <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> to display the results. A <db:link xlink:href="qtimer.xml">QTimer</db:link> controls the start of the network requests that are executed using a <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link>.</db:para>
+</db:section>
+<db:section xml:id="gsuggestcompletion-class-implementation">
+<db:title>GSuggestCompletion Class Implementation</db:title>
+<db:para>We start by defining a constant containing the URL to be used in the Google queries. This is the basis for the query. The letters typed into the search box will be added to the query to perform the search itself.</db:para>
+<db:programlisting language="cpp">#include &quot;googlesuggest.h&quot;
+
+const QString gsuggestUrl(QStringLiteral(&quot;http://google.com/complete/search?output=toolbar&amp;amp;q=%1&quot;));
+</db:programlisting>
+<db:para>In the constructor, we set the parent of this GSuggestCompletion instance to be the <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> passed in. For simplicity, the <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> is also stored in the explicit editor member variable.</db:para>
+<db:para>We then create a <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> as a toplevel widget and configure the various properties to give it the look of a popup widget. The widget is populated with the results by Google Suggest API request.</db:para>
+<db:para>Furthermore, we install the GSuggestCompletion instance as an event filter on the <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link>, and connect the itemClicked() signal with the doneCompletion() slot.</db:para>
+<db:para>A single-shot <db:link xlink:href="qtimer.xml">QTimer</db:link> is used to start the request when the user has stopped typing for 500 ms.</db:para>
+<db:para>Finally, we connect the networkManagers finished() signal with the handleNetworkData() slot to handle the incoming data.</db:para>
+<db:programlisting language="cpp">GSuggestCompletion::GSuggestCompletion(QLineEdit *parent): QObject(parent), editor(parent)
+{
+    popup = new QTreeWidget;
+    popup-&amp;gt;setWindowFlags(Qt::Popup);
+    popup-&amp;gt;setFocusPolicy(Qt::NoFocus);
+    popup-&amp;gt;setFocusProxy(parent);
+    popup-&amp;gt;setMouseTracking(true);
+
+    popup-&amp;gt;setColumnCount(1);
+    popup-&amp;gt;setUniformRowHeights(true);
+    popup-&amp;gt;setRootIsDecorated(false);
+    popup-&amp;gt;setEditTriggers(QTreeWidget::NoEditTriggers);
+    popup-&amp;gt;setSelectionBehavior(QTreeWidget::SelectRows);
+    popup-&amp;gt;setFrameStyle(QFrame::Box | QFrame::Plain);
+    popup-&amp;gt;setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    popup-&amp;gt;header()-&amp;gt;hide();
+
+    popup-&amp;gt;installEventFilter(this);
+
+    connect(popup, SIGNAL(itemClicked(QTreeWidgetItem*,int)),
+            SLOT(doneCompletion()));
+
+    timer.setSingleShot(true);
+    timer.setInterval(500);
+    connect(&amp;amp;timer, SIGNAL(timeout()), SLOT(autoSuggest()));
+    connect(editor, SIGNAL(textEdited(QString)), &amp;amp;timer, SLOT(start()));
+
+    connect(&amp;amp;networkManager, SIGNAL(finished(QNetworkReply*)),
+            this, SLOT(handleNetworkData(QNetworkReply*)));
+
+}
+</db:programlisting>
+<db:para>Since the <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> popup has been instantiated as a toplevel widget, the destructor has to delete it explicitly from memory to avoid a memory leak.</db:para>
+<db:programlisting language="cpp">GSuggestCompletion::~GSuggestCompletion()
+{
+    delete popup;
+}
+</db:programlisting>
+<db:para>The event filter handles mouse press and key press events that are delivered to the popup. For mouse press events we just hide the popup and return focus to the editor widget, and then return true to prevent further event processing.</db:para>
+<db:para>Key event handling is implemented so that Enter and Return execute the selected link, while the Escape key hides the popup. Since we want to be able to navigate the list of suggestions using the different navigation keys on the keyboard we let Qt continue regular event processing for those by returning false from the eventFilter reimplementation.</db:para>
+<db:para>For all other keys, the event will be passed on to the editor widget and the popup is hidden. This way the user's typing will not be interrupted by the popping up of the completion list.</db:para>
+<db:programlisting language="cpp">bool GSuggestCompletion::eventFilter(QObject *obj, QEvent *ev)
+{
+    if (obj != popup)
+        return false;
+
+    if (ev-&amp;gt;type() == QEvent::MouseButtonPress) {
+        popup-&amp;gt;hide();
+        editor-&amp;gt;setFocus();
+        return true;
+    }
+
+    if (ev-&amp;gt;type() == QEvent::KeyPress) {
+        bool consumed = false;
+        int key = static_cast&amp;lt;QKeyEvent*&amp;gt;(ev)-&amp;gt;key();
+        switch (key) {
+        case Qt::Key_Enter:
+        case Qt::Key_Return:
+            doneCompletion();
+            consumed = true;
+            break;
+
+        case Qt::Key_Escape:
+            editor-&amp;gt;setFocus();
+            popup-&amp;gt;hide();
+            consumed = true;
+            break;
+
+        case Qt::Key_Up:
+        case Qt::Key_Down:
+        case Qt::Key_Home:
+        case Qt::Key_End:
+        case Qt::Key_PageUp:
+        case Qt::Key_PageDown:
+            break;
+
+        default:
+            editor-&amp;gt;setFocus();
+            editor-&amp;gt;event(ev);
+            popup-&amp;gt;hide();
+            break;
+        }
+
+        return consumed;
+    }
+
+    return false;
+}
+</db:programlisting>
+<db:para>The showCompletion() function populates the <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> with the results returned from the query. It takes a <db:link xlink:href="qstringlist.xml">QStringList</db:link> of the suggested search terms.</db:para>
+<db:programlisting language="cpp">void GSuggestCompletion::showCompletion(const QVector&amp;lt;QString&amp;gt; &amp;amp;choices)
+{
+    if (choices.isEmpty())
+        return;
+
+    const QPalette &amp;amp;pal = editor-&amp;gt;palette();
+    QColor color = pal.color(QPalette::Disabled, QPalette::WindowText);
+
+    popup-&amp;gt;setUpdatesEnabled(false);
+    popup-&amp;gt;clear();
+
+    for (const auto &amp;amp;choice : choices) {
+        auto item  = new QTreeWidgetItem(popup);
+        item-&amp;gt;setText(0, choice);
+        item-&amp;gt;setTextColor(0, color);
+    }
+
+    popup-&amp;gt;setCurrentItem(popup-&amp;gt;topLevelItem(0));
+    popup-&amp;gt;resizeColumnToContents(0);
+    popup-&amp;gt;setUpdatesEnabled(true);
+
+    popup-&amp;gt;move(editor-&amp;gt;mapToGlobal(QPoint(0, editor-&amp;gt;height())));
+    popup-&amp;gt;setFocus();
+    popup-&amp;gt;show();
+}
+</db:programlisting>
+<db:para>A <db:link xlink:href="qtreewidgetitem.xml">QTreeWidgetItem</db:link> is created for each index in the list and inserted into the <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link>. Finally, we adjust position and size of the popup to make sure that it pops up in the correct position below the editor, and show it.</db:para>
+<db:para>The doneCompletion() function, which is called by the event filter when either Enter or Return keys are pressed, stops the timer to prevent further requests and passes the text of the selected item to the editor. We then make the editor <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> emit the returnPressed() signal, to which the application can connect to open the respective web page.</db:para>
+<db:programlisting language="cpp">void GSuggestCompletion::doneCompletion()
+{
+    timer.stop();
+    popup-&amp;gt;hide();
+    editor-&amp;gt;setFocus();
+    QTreeWidgetItem *item = popup-&amp;gt;currentItem();
+    if (item) {
+        editor-&amp;gt;setText(item-&amp;gt;text(0));
+        QMetaObject::invokeMethod(editor, &quot;returnPressed&quot;);
+    }
+}
+</db:programlisting>
+<db:para>The autoSuggest() slot is called when the timer times out, and uses the text in the editor to build the complete search query. The query is then passed to the <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link>'s get() function to start the request.</db:para>
+<db:programlisting language="cpp">void GSuggestCompletion::autoSuggest()
+{
+    QString str = editor-&amp;gt;text();
+    QString url = gsuggestUrl.arg(str);
+    networkManager.get(QNetworkRequest(url));
+}
+</db:programlisting>
+<db:para>The function preventSuggest() stops the timer to prevent further requests from being started.</db:para>
+<db:programlisting language="cpp">void GSuggestCompletion::preventSuggest()
+{
+    timer.stop();
+}
+</db:programlisting>
+<db:para>When the network request is finished, the <db:link xlink:href="qnetworkaccessmanager.xml">QNetworkAccessManager</db:link> delivers the data received from the server through the networkReply object.</db:para>
+<db:programlisting language="cpp">void GSuggestCompletion::handleNetworkData(QNetworkReply *networkReply)
+{
+    QUrl url = networkReply-&amp;gt;url();
+    if (networkReply-&amp;gt;error() == QNetworkReply::NoError) {
+        QVector&amp;lt;QString&amp;gt; choices;
+
+        QByteArray response(networkReply-&amp;gt;readAll());
+        QXmlStreamReader xml(response);
+        while (!xml.atEnd()) {
+            xml.readNext();
+            if (xml.tokenType() == QXmlStreamReader::StartElement)
+                if (xml.name() == &quot;suggestion&quot;) {
+                    QStringRef str = xml.attributes().value(&quot;data&quot;);
+                    choices &amp;lt;&amp;lt; str.toString();
+                }
+        }
+
+        showCompletion(choices);
+    }
+
+    networkReply-&amp;gt;deleteLater();
+}
+</db:programlisting>
+<db:para>To extract the data from the reply we use the readAll() function, which is inherited from <db:link xlink:href="qiodevice.xml">QIODevice</db:link> and returns a <db:link xlink:href="qbytearray.xml">QByteArray</db:link>. Since this data is encoded in XML we can use a <db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link> to traverse the data and extract the search result as QStrings, which we can stream into two QStringLists used to populate the popup.</db:para>
+<db:para>Finally, we schedule the <db:link xlink:href="qnetworkreply.xml">QNetworkReply</db:link> object for deletion using the deleteLater function.</db:para>
+</db:section>
+<db:section xml:id="searchbox-class-declaration">
+<db:title>SearchBox Class Declaration</db:title>
+<db:para>The SearchBox class inherits <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> and adds the protected slot doSearch().</db:para>
+<db:para>A GSuggestCompletion member provides the SearchBox with the request functionality and the suggestions returned from the Google search engine.</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QLineEdit&amp;gt;
+
+class GSuggestCompletion;
+
+class SearchBox: public QLineEdit
+{
+    Q_OBJECT
+
+public:
+    explicit SearchBox(QWidget *parent = nullptr);
+
+protected slots:
+    void doSearch();
+
+private:
+    GSuggestCompletion *completer = nullptr;
+</db:programlisting>
+</db:section>
+<db:section xml:id="searchbox-class-implementation">
+<db:title>SearchBox Class Implementation</db:title>
+<db:para>The search box constructor instantiates the GSuggestCompletion object and connects the returnPressed() signal to the doSearch() slot.</db:para>
+<db:programlisting language="cpp">SearchBox::SearchBox(QWidget *parent): QLineEdit(parent)
+{
+    completer = new GSuggestCompletion(this);
+
+    connect(this, SIGNAL(returnPressed()),this, SLOT(doSearch()));
+
+    setWindowTitle(&quot;Search with Google&quot;);
+
+    adjustSize();
+    resize(400, height());
+    setFocus();
+}
+</db:programlisting>
+<db:para>The function doSearch() stops the completer from sending any further queries to the search engine.</db:para>
+<db:para>Further, the function extracts the selected search phrase and opens it in the default web browser using <db:link xlink:href="qdesktopservices.xml">QDesktopServices</db:link>.</db:para>
+<db:programlisting language="cpp">void SearchBox::doSearch()
+{
+    completer-&amp;gt;preventSuggest();
+    QString url = gsearchUrl.arg(text());
+    QDesktopServices::openUrl(url);
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/googlesuggest.cpp">googlesuggest/googlesuggest.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/googlesuggest.h">googlesuggest/googlesuggest.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/googlesuggest.pro">googlesuggest/googlesuggest.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/main.cpp">googlesuggest/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/searchbox.cpp">googlesuggest/searchbox.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="googlesuggest/searchbox.h">googlesuggest/searchbox.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

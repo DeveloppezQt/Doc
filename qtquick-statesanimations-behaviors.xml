@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Using Qt Quick Behaviors with States</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.11.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>animating property changes with behaviors.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="using-behaviors-with-states">
+<db:title>Using Behaviors with States</db:title>
+<db:para>In some cases you may choose to use a Behavior to animate a property change caused by a state change. While this works well for some situations, in other situations it may lead to unexpected behavior.</db:para>
+<db:para>Here's an example that shows the problem:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle {
+    width: 400
+    height: 400
+
+    Rectangle {
+        id: coloredRect
+        width: 100
+        height: 100
+        anchors.centerIn: parent
+
+        color: &quot;red&quot;
+        Behavior on color {
+            ColorAnimation {}
+        }
+
+        MouseArea {
+            id: mouser
+            anchors.fill: parent
+            hoverEnabled: true
+        }
+
+        states: State {
+            name: &quot;GreenState&quot;
+            when: mouser.containsMouse
+
+            PropertyChanges {
+                target: coloredRect
+                color: &quot;green&quot;
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>Testing the example by quickly and repeatedly moving the mouse in to and out of the colored rectangle shows that the colored rectangle will settle into a green color over time, never returning to full red. This is not what we wanted! The problem occurs because we have used a Behavior to animate the change in color, and our state change is trigged by the mouse entering or exiting the <db:link xlink:href="qml-qtquick-mousearea.xml">MouseArea</db:link>, which is easily interrupted.</db:para>
+<db:para>To state the problem more formally, using States and Behaviors together can cause unexpected behavior when:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>a Behavior is used to animate a property change, specifically when moving from an explicitly defined state back to the implicit base state; and</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>this Behavior can be interrupted to (re-)enter an explicitly defined state.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The problem occurs because of the way the base state is defined for QML: as the &quot;snapshot&quot; state of the application just prior to entering an explicitly defined state. In this case, if we are in the process of animating from green back to red, and interrupt the animation to return to &quot;GreenState&quot;, the base state will include the color in its intermediate, mid-animation form.</db:para>
+<db:para>While future versions of QML should be able to handle this situation more gracefully, there are currently several ways to rework your application to avoid this problem.</db:para>
+<db:para>1. Use a transition to animate the change, rather than a Behavior.</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle {
+    width: 400
+    height: 400
+
+    Rectangle {
+        id: coloredRect
+        width: 100
+        height: 100
+        anchors.centerIn: parent
+
+        color: &quot;red&quot;
+
+        MouseArea {
+            id: mouser
+            anchors.fill: parent
+            hoverEnabled: true
+        }
+
+        states: State {
+            name: &quot;GreenState&quot;
+            when: mouser.containsMouse
+
+            PropertyChanges {
+                target: coloredRect
+                color: &quot;green&quot;
+            }
+        }
+
+        transitions: Transition {
+            ColorAnimation {}
+        }
+    }
+}
+</db:programlisting>
+<db:para>2. Use a conditional binding to change the property value, rather than a state</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle {
+    width: 400
+    height: 400
+
+    Rectangle {
+        id: coloredRect
+        width: 100
+        height: 100
+        anchors.centerIn: parent
+
+        color: mouser.containsMouse ? &quot;green&quot; : &quot;red&quot;
+        Behavior on color {
+            ColorAnimation {}
+        }
+
+        MouseArea {
+            id: mouser
+            anchors.fill: parent
+            hoverEnabled: true
+        }
+    }
+}
+</db:programlisting>
+<db:para>3. Use only explicitly defined states, rather than an implicit base state</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Rectangle {
+    width: 400
+    height: 400
+
+    Rectangle {
+        id: coloredRect
+        width: 100
+        height: 100
+        anchors.centerIn: parent
+
+        Behavior on color {
+            ColorAnimation {}
+        }
+
+        MouseArea {
+            id: mouser
+            anchors.fill: parent
+            hoverEnabled: true
+        }
+
+        states: [
+        State {
+            name: &quot;GreenState&quot;
+            when: mouser.containsMouse
+
+            PropertyChanges {
+                target: coloredRect
+                color: &quot;green&quot;
+            }
+        },
+        State {
+            name: &quot;RedState&quot;
+            when: !mouser.containsMouse
+
+            PropertyChanges {
+                target: coloredRect
+                color: &quot;red&quot;
+            }
+        }]
+    }
+}
+</db:programlisting>
+</db:section>
+</db:article>
