@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Heart Rate Server</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An example demonstrating how to set up and advertise a GATT service. The example demonstrates the use of the Qt Bluetooth Low Energy classes related to peripheral (slave) functionality.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Bluetooth Low Energy Heart Rate Server is a command-line application that shows how to develop a Bluetooth GATT server using the Qt Bluetooth API. The application covers setting up a service, advertising it and notifying clients about changes to characteristic values.</db:para>
+<db:para>The example makes use of the following Qt classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyadvertisingdata.xml">QLowEnergyAdvertisingData</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyadvertisingparameters.xml">QLowEnergyAdvertisingParameters</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyservicedata.xml">QLowEnergyServiceData</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergycharacteristicdata.xml">QLowEnergyCharacteristicData</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergydescriptordata.xml">QLowEnergyDescriptorData</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergycontroller.xml">QLowEnergyController</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyservice.xml">QLowEnergyService</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The example implements a server application, which means it has no graphical user interface. To visualize what it is doing, you can use the <db:link xlink:href="qtbluetooth-heartrate-game-example.xml">Heart Rate Game</db:link> example, which is basically the client-side counterpart to this application.</db:para>
+<db:note>
+<db:para>By default on Linux a kernel socket API is used for advertising, which means that a privileged access is required to start advertising. This can be achieved by running the example as root, for instance via <db:code>sudo</db:code>. Starting from Qt 6.5, an alternative approach is to use the BlueZ D-Bus backend for advertising, which does not require root access. To enable this backend, set <db:code>QT_BLUETOOTH_USE_DBUS_PERIPHERAL</db:code> environment variable.</db:para>
+</db:note>
+<db:section xml:id="setting-up-advertising-data-and-parameters">
+<db:title>Setting up Advertising Data and Parameters</db:title>
+<db:para>Two classes are used to configure the advertising process:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyadvertisingdata.xml">QLowEnergyAdvertisingData</db:link> specifies which information is to be broadcasted</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyadvertisingparameters.xml">QLowEnergyAdvertisingParameters</db:link> is used for specific aspects such as setting the advertising interval or controlling which devices are allowed to connect.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>In our example, we simply use the default parameters.</db:para>
+<db:para>The information contained in the <db:link xlink:href="qlowenergyadvertisingdata.xml">QLowEnergyAdvertisingData</db:link> will be visible to other devices that are currently scanning. They can use it to decide whether they want to establish a connection or not. In our example, we include the type of service we offer, a name that adequately describes our device to humans, and the transmit power level of the device. The latter is often useful to potential clients, because they can tell how far away our device is by comparing the received signal strength to the advertised one.</db:para>
+<db:note>
+<db:para>Space for the advertising data is very limited (only 31 bytes in total), so variable-length data such as the device name should be kept as short as possible.</db:para>
+</db:note>
+<db:programlisting language="cpp">QLowEnergyAdvertisingData advertisingData;
+advertisingData.setDiscoverability(QLowEnergyAdvertisingData::DiscoverabilityGeneral);
+advertisingData.setIncludePowerLevel(true);
+advertisingData.setLocalName(&quot;HeartRateServer&quot;);
+advertisingData.setServices(QList&amp;lt;QBluetoothUuid&amp;gt;() &amp;lt;&amp;lt; QBluetoothUuid::ServiceClassUuid::HeartRate);
+</db:programlisting>
+</db:section>
+<db:section xml:id="setting-up-service-data">
+<db:title>Setting up Service Data</db:title>
+<db:para>Next we configure the kind of service we want to offer. We use the <db:link xlink:href="qbluetoothuuid.xml#ServiceClassUuid-enum">Heart Rate</db:link> service as defined in the Bluetooth specification in its minimal form, that is, consisting only of the <db:link xlink:href="qbluetoothuuid.xml#CharacteristicType-enum">Heart Rate Measurement</db:link> characteristic. This characteristic must support the <db:link xlink:href="qlowenergycharacteristic.xml#PropertyType-enum">Notify</db:link> property (and no others), and it needs to have a <db:link xlink:href="qbluetoothuuid.xml#DescriptorType-enum">Client Characteristic Configuration</db:link> descriptor, which enables clients to register to get notified about changes to characteristic values. We set the initial heart rate value to zero, as it cannot be read anyway (the only way the client can get the value is via notifications).</db:para>
+<db:programlisting language="cpp">QLowEnergyCharacteristicData charData;
+charData.setUuid(QBluetoothUuid::CharacteristicType::HeartRateMeasurement);
+charData.setValue(QByteArray(2, 0));
+charData.setProperties(QLowEnergyCharacteristic::Notify);
+const QLowEnergyDescriptorData clientConfig(QBluetoothUuid::DescriptorType::ClientCharacteristicConfiguration,
+                                            QByteArray(2, 0));
+charData.addDescriptor(clientConfig);
+
+QLowEnergyServiceData serviceData;
+serviceData.setType(QLowEnergyServiceData::ServiceTypePrimary);
+serviceData.setUuid(QBluetoothUuid::ServiceClassUuid::HeartRate);
+serviceData.addCharacteristic(charData);
+</db:programlisting>
+</db:section>
+<db:section xml:id="advertising-and-listening-for-incoming-connections">
+<db:title>Advertising and Listening for Incoming Connections</db:title>
+<db:para>Now that all the data has been set up, we can start advertising. First we create a <db:link xlink:href="qlowenergycontroller.xml">QLowEnergyController</db:link> object in the <db:link xlink:href="qlowenergycontroller.xml#Role-enum">peripheral role</db:link> and use it to create a (dynamic) <db:link xlink:href="qlowenergyservice.xml">QLowEnergyService</db:link> object from our (static) <db:link xlink:href="qlowenergyservicedata.xml">QLowEnergyServiceData</db:link>. Then we call <db:link xlink:href="qlowenergycontroller.xml#startAdvertising">QLowEnergyController::startAdvertising</db:link>(). Note that we hand in our <db:link xlink:href="qlowenergyadvertisingdata.xml">QLowEnergyAdvertisingData</db:link> twice: The first argument acts as the actual advertising data, the second one as the scan response data. They could transport different information, but here we don't have a need for that. We also pass a default-constructed instance of <db:link xlink:href="qlowenergyadvertisingparameters.xml">QLowEnergyAdvertisingParameters</db:link>, because the default advertising parameters are fine for us. If a client is interested in the advertised service, it can now establish a connection to our device. When that happens, the device stops advertising and the <db:link xlink:href="qlowenergycontroller.xml#connected">QLowEnergyController::connected</db:link>() signal is emitted.</db:para>
+<db:note>
+<db:para>When a client disconnects, advertising does not resume automatically. If you want that to happen, you need to connect to the <db:link xlink:href="qlowenergycontroller.xml#disconnected">QLowEnergyController::disconnected</db:link>() signal and call <db:link xlink:href="qlowenergycontroller.xml#startAdvertising">QLowEnergyController::startAdvertising</db:link>() in the respective slot.</db:para>
+</db:note>
+<db:programlisting language="cpp">bool errorOccurred = false;
+const std::unique_ptr&amp;lt;QLowEnergyController&amp;gt; leController(QLowEnergyController::createPeripheral());
+auto errorHandler = [&amp;amp;leController, &amp;amp;errorOccurred](QLowEnergyController::Error errorCode) {
+        qWarning().noquote().nospace() &amp;lt;&amp;lt; errorCode &amp;lt;&amp;lt; &quot; occurred: &quot;
+            &amp;lt;&amp;lt; leController-&amp;gt;errorString();
+        if (errorCode != QLowEnergyController::RemoteHostClosedError) {
+            qWarning(&quot;Heartrate-server quitting due to the error.&quot;);
+            errorOccurred = true;
+            QCoreApplication::quit();
+        }
+};
+QObject::connect(leController.get(), &amp;amp;QLowEnergyController::errorOccurred, errorHandler);
+
+std::unique_ptr&amp;lt;QLowEnergyService&amp;gt; service(leController-&amp;gt;addService(serviceData));
+leController-&amp;gt;startAdvertising(QLowEnergyAdvertisingParameters(), advertisingData,
+                               advertisingData);
+if (errorOccurred)
+    return -1;
+</db:programlisting>
+</db:section>
+<db:section xml:id="providing-the-heartrate">
+<db:title>Providing the Heartrate</db:title>
+<db:para>So far, so good. But how does a client actually get at the heart rate? This happens by regularly updating the value of the respective characteristic in the <db:link xlink:href="qlowenergyservice.xml">QLowEnergyService</db:link> object that we received from the <db:link xlink:href="qlowenergycontroller.xml">QLowEnergyController</db:link> in the code snippet above. The source of the heart rate would normally be some kind of sensor, but in our example, we just make up values that we let oscillate between 60 and 100. The most important part in the following code snippet is the call to <db:link xlink:href="qlowenergyservice.xml#writeCharacteristic">QLowEnergyService::writeCharacteristic</db:link>. If a client is currently connected and has enabled notifications by writing to the aforementioned <db:code>Client Characteristic Configuration</db:code>, it will get notified about the new value.</db:para>
+<db:programlisting language="cpp">QTimer heartbeatTimer;
+quint8 currentHeartRate = 60;
+enum ValueChange { ValueUp, ValueDown } valueChange = ValueUp;
+const auto heartbeatProvider = [&amp;amp;service, &amp;amp;currentHeartRate, &amp;amp;valueChange]() {
+    QByteArray value;
+    value.append(char(0)); // Flags that specify the format of the value.
+    value.append(char(currentHeartRate)); // Actual value.
+    QLowEnergyCharacteristic characteristic
+            = service-&amp;gt;characteristic(QBluetoothUuid::CharacteristicType::HeartRateMeasurement);
+    Q_ASSERT(characteristic.isValid());
+    service-&amp;gt;writeCharacteristic(characteristic, value); // Potentially causes notification.
+    if (currentHeartRate == 60)
+        valueChange = ValueUp;
+    else if (currentHeartRate == 100)
+        valueChange = ValueDown;
+    if (valueChange == ValueUp)
+        ++currentHeartRate;
+    else
+        --currentHeartRate;
+};
+QObject::connect(&amp;amp;heartbeatTimer, &amp;amp;QTimer::timeout, heartbeatProvider);
+heartbeatTimer.start(1000);
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtconnectivity.git/tree/examples/bluetooth/heartrate-server?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

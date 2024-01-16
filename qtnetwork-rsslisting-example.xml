@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>A minimal RSS listing application</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A demonstration of how to fetch and display a network resource.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This example shows how to fetch a resource the user has requested and display data contained in the response, illustrated by an RSS listing application. (RDF Site Summary, or Really Simple Syndication, is a standard format for communicating updates to web sites. See https://www.rssboard.org/rss-specification for details.) The user inferface in the illustration is simple, as the focus of this example is on how to use networking, but naturally a more sophisticated interface would be wanted for a serious RSS reader.</db:para>
+<db:para>The example also illustrates how to do asynchronous parsing of data as it is received, preserving state in member variables so that an incremental parser can consume chunks of data as they arrive over the network. Constituents of the parsed content may start in one chunk of data but not be completed until a later chunk, requiring the parser to retain state between calls.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/rsslisting.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The main program is fairly minimal. It simply instantiates a <db:link xlink:href="qapplication.xml">QApplication</db:link> and the RSSListing widget, shows the latter and hands over control to the former. For the sake of illustration, it gives the widget the Qt blog's URL as default value for the resource to check.</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+    RSSListing rsslisting(u&quot;https://www.qt.io/blog/rss.xml&quot;_s);
+    rsslisting.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:section xml:id="the-rsslisting-class">
+<db:title>The RSSListing class</db:title>
+<db:programlisting language="cpp">class RSSListing : public QWidget
+{
+    Q_OBJECT
+public:
+    explicit RSSListing(const QString &amp;amp;url = QString(), QWidget *widget = nullptr);
+
+public slots:
+    void fetch();
+    void finished(QNetworkReply *reply);
+    void consumeData();
+    void error(QNetworkReply::NetworkError);
+
+private:
+    void parseXml();
+    void get(const QUrl &amp;amp;url);
+
+    // Parser state:
+    QXmlStreamReader xml;
+    QString currentTag;
+    QString linkString;
+    QString titleString;
+
+    // Network state:
+    QNetworkAccessManager manager;
+    QNetworkReply *currentReply;
+
+    // UI elements:
+    QLineEdit *lineEdit;
+    QTreeWidget *treeWidget;
+    QPushButton *fetchButton;
+};
+</db:programlisting>
+<db:para>The widget itself provides a simple user interface for specifying the URL to fetch and, once available updates are displayed, controlling the downloading of updated items. A <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> provides for input of the URL, and a <db:link xlink:href="qtreewidget.xml">QTreeWidget</db:link> for display of the results once fetched.</db:para>
+<db:para>The widget downloads and parses the RSS (a form of XML) asynchronously, feeding the data to an XML reader as it arrives. This supports reading of very large data sources. Because the data is streamed from the network through the XML reader, there is no need to retain the full text of the XML in memory. In other context, a similar approach can allow the user to interrupt such incremental loading.</db:para>
+<db:section xml:id="construction">
+<db:title>Construction</db:title>
+<db:programlisting language="cpp">RSSListing::RSSListing(const QString &amp;amp;url, QWidget *parent)
+    : QWidget(parent), currentReply(0)
+{
+    connect(&amp;amp;manager, &amp;amp;QNetworkAccessManager::finished, this, &amp;amp;RSSListing::finished);
+
+    lineEdit = new QLineEdit(this);
+    lineEdit-&amp;gt;setText(url);
+    connect(lineEdit, &amp;amp;QLineEdit::returnPressed, this, &amp;amp;RSSListing::fetch);
+
+    fetchButton = new QPushButton(tr(&quot;Fetch&quot;), this);
+    connect(fetchButton, &amp;amp;QPushButton::clicked, this, &amp;amp;RSSListing::fetch);
+
+    treeWidget = new QTreeWidget(this);
+    connect(treeWidget, &amp;amp;QTreeWidget::itemActivated,
+            // Open the link in the browser:
+            this, [](QTreeWidgetItem *item) { QDesktopServices::openUrl(QUrl(item-&amp;gt;text(1))); });
+    treeWidget-&amp;gt;setHeaderLabels(QStringList { tr(&quot;Title&quot;), tr(&quot;Link&quot;) });
+    treeWidget-&amp;gt;header()-&amp;gt;setSectionResizeMode(QHeaderView::ResizeToContents);
+
+    QHBoxLayout *hboxLayout = new QHBoxLayout;
+    hboxLayout-&amp;gt;addWidget(lineEdit);
+    hboxLayout-&amp;gt;addWidget(fetchButton);
+
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout-&amp;gt;addLayout(hboxLayout);
+    layout-&amp;gt;addWidget(treeWidget);
+
+    setWindowTitle(tr(&quot;RSS listing example&quot;));
+    resize(640, 480);
+}
+</db:programlisting>
+<db:para>The constructor sets up the assorted components of the widget and connects their various signals to the slots it shall use to handle them.</db:para>
+<db:para>The user interface consists of a line edit, a push button, and a list view widget. The line edit is used for entering the URL to fetch; the push button starts the process of fetching updates. The line edit is empty by default, but the constructor's caller can override that, as our main() has done. In any case, the user can replace the default with the URL of another RSS feed.</db:para>
+<db:para>The list view shows the updated items reported in the RSS feed. Double-clicking on one of these sends its URL to the user's browser or other user agent using <db:link xlink:href="qdesktopservices.xml#openUrl">QDesktopServices::openUrl</db:link>().</db:para>
+</db:section>
+<db:section xml:id="the-slots">
+<db:title>The slots</db:title>
+<db:programlisting language="cpp">void RSSListing::fetch()
+{
+    lineEdit-&amp;gt;setReadOnly(true);
+    fetchButton-&amp;gt;setEnabled(false);
+    treeWidget-&amp;gt;clear();
+
+    get(QUrl(lineEdit-&amp;gt;text()));
+}
+
+void RSSListing::consumeData()
+{
+    int statusCode = currentReply-&amp;gt;attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (statusCode &amp;gt;= 200 &amp;amp;&amp;amp; statusCode &amp;lt; 300)
+        parseXml();
+}
+
+void RSSListing::error(QNetworkReply::NetworkError)
+{
+    qWarning(&quot;error retrieving RSS feed&quot;);
+    xml.clear();
+    currentReply-&amp;gt;disconnect(this);
+    currentReply-&amp;gt;deleteLater();
+    currentReply = nullptr;
+}
+
+void RSSListing::finished(QNetworkReply *reply)
+{
+    Q_UNUSED(reply);
+    lineEdit-&amp;gt;setReadOnly(false);
+    fetchButton-&amp;gt;setEnabled(true);
+}
+</db:programlisting>
+<db:para>All slots are kept simple by delegating any hard work to private methods.</db:para>
+<db:para>When the user completes input of a URL, either by clicking the &quot;Fetch&quot; button or by pressing the return key in the line edit, the fetch() slot disables the &quot;Fetch&quot; button and disables further editing of the line edit. It clears the display of available updates and delegates to get() the initiating of an HTTP GET request.</db:para>
+<db:para>When data is received, the network reply triggers its <db:link xlink:href="qiodevice.xml#readyRead">readyRead</db:link>() signal, which get() connects to the consumeData() slot. This checks the response got a successful status code and, if it did, calls parseXml() to consume the data.</db:para>
+<db:para>If the network reply gets an error, this is delivered to the error() slot, which reports the error, clears the XML stream reader then disconnects from the reply and deletes it.</db:para>
+<db:para>On completion (whether successful or otherwise) of a network reply, the finished() slot restores the UI to be ready to accept a new URL to fetch by re-enabling the line edit and &quot;Fetch&quot; button.</db:para>
+</db:section>
+<db:section xml:id="the-get-method">
+<db:title>The get() method</db:title>
+<db:programlisting language="cpp">void RSSListing::get(const QUrl &amp;amp;url)
+{
+    if (currentReply) {
+        currentReply-&amp;gt;disconnect(this);
+        currentReply-&amp;gt;deleteLater();
+    }
+    currentReply = url.isValid() ? manager.get(QNetworkRequest(url)) : nullptr;
+    if (currentReply) {
+        connect(currentReply, &amp;amp;QNetworkReply::readyRead, this, &amp;amp;RSSListing::consumeData);
+        connect(currentReply, &amp;amp;QNetworkReply::errorOccurred, this, &amp;amp;RSSListing::error);
+
+    }
+    xml.setDevice(currentReply); // Equivalent to clear() if currentReply is null.
+}
+</db:programlisting>
+<db:para>The private get() method is used by the fetch() slot to initiate an HTTP GET request. It first clears the XML stream reader and, if a reply is currently active, disconnects and deletes it. If the URL it has been passed is valid, it asks the network access manager to GET it. It connects its relevant slots to signals of the resulting reply (if any) and sets up its XML stream reader to read data from the reply - a network reply object is also a QIODevice, from which data can be read.</db:para>
+</db:section>
+<db:section xml:id="the-parsexml-method">
+<db:title>The parseXml() method</db:title>
+<db:programlisting language="cpp">void RSSListing::parseXml()
+{
+    while (!xml.atEnd()) {
+        xml.readNext();
+        if (xml.isStartElement()) {
+            if (xml.name() == u&quot;item&quot;) {
+                linkString = xml.attributes().value(&quot;rss:about&quot;).toString();
+                titleString.clear();
+            }
+            currentTag = xml.name().toString();
+        } else if (xml.isEndElement()) {
+            if (xml.name() == u&quot;item&quot;) {
+
+                QTreeWidgetItem *item = new QTreeWidgetItem;
+                item-&amp;gt;setText(0, titleString);
+                item-&amp;gt;setText(1, linkString);
+                treeWidget-&amp;gt;addTopLevelItem(item);
+            }
+        } else if (xml.isCharacters() &amp;amp;&amp;amp; !xml.isWhitespace()) {
+            if (currentTag == &quot;title&quot;)
+                titleString += xml.text();
+            else if (currentTag == &quot;link&quot;)
+                linkString += xml.text();
+        }
+    }
+    if (xml.error() &amp;amp;&amp;amp; xml.error() != QXmlStreamReader::PrematureEndOfDocumentError)
+        qWarning() &amp;lt;&amp;lt; &quot;XML ERROR:&quot; &amp;lt;&amp;lt; xml.lineNumber() &amp;lt;&amp;lt; &quot;: &quot; &amp;lt;&amp;lt; xml.errorString();
+}
+</db:programlisting>
+<db:para>When data is received, and thus made available to the XML stream reader, parseXml() reads from the XML stream, checking for item elements and, within them, title and link elements. It will use the rss:about attribute of an item as URL in the Link column of the tree-view, failing that the content of its link element; and it uses the content of the title element in the Title column of the tree-view. As each item element closes, its details are turned into a new row in the tree widget, with the extracted title and URL in the Title and Link columns.</db:para>
+<db:para>The variables that keep track of the parsing state - linkString, titleString and currentTag - are member variables of the RSSListing class, even though they are only accessed from this method, because this method may be called repeatedly, as new data arrives, and one chunk of received data may start an element that isn't completed until a later chunk arrives. This enables the parser to operate asynchronously as the data arrives, instead of having to wait until all the data has arrived.</db:para>
+</db:section>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/network/rsslisting?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qnetworkreply.xml">QNetworkReply</db:link></db:member>
+<db:member><db:link xlink:href="qxmlstreamreader.xml">QXmlStreamReader</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

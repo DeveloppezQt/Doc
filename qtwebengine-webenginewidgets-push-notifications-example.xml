@@ -1,0 +1,245 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Push Notifications Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to subscribe to and unsubscribe from push notifications.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>In this example we are going to send push notifications from a web push service to the user. This is the typical scenario where messages are sent from the application server i.e. website back-end through a 3rd-party push service, to finally arrive at the user's browser in form of notifications. To demonstrate this flow, we will implement a simple push service server application, to which the user can subscribe to receive <db:emphasis>ping</db:emphasis> messages.</db:para>
+<db:para>As already mentioned, in such a workflow there are three different parties involved:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>the user's web browser where they receive push notifications</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>3rd-party push service, which is defined by a subscription endpoint and is a part of a browser's push service implementation</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>application server, which will store user's subscriptions and initiate push messages using a subscription endpoint</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The user visits a website, where a JavaScript web application uses the JavaScript Push API to create a push notification subscription. The user is then asked to grant a permission to receive and display push notifications. Once accepted, the Push API establishes a push channel with a 3rd-party push service, which in case of <db:link xlink:href="qtwebengine-qmlmodule.xml">QtWebEngine</db:link> is <db:link xlink:href="https://firebase.google.com">Firebase Cloud Messaging (FCM)</db:link>. The unique push subscription is created that includes the subscription endpoint URL. The browser then sends a subscription message to the application server forwarding the endpoint setup. The application server can now use the subscription endpoint to send notifications to the browser. The browser push service implementation will deliver a push message. However, to show it, a service worker must be registered. As the service worker runs in the background, it allows displaying notifications even if a website, which has installed it, is no longer opened.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/push-notifications.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Let's go more into implementation details. We start with implementing our custom push service using NodeJS with two modules:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="https://github.com/web-push-libs/web-push">web-push</db:link> - provides the web-push protocol implementation</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="https://github.com/expressjs/express">express</db:link> - provides the web application framework</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Let's initialize a new project and install the required modules in the root directory of this example:</db:para>
+<db:programlisting language="cpp">npm init -y
+npm install web-push express
+</db:programlisting>
+<db:para>These commands should create package.js, which defines the start command:</db:para>
+<db:programlisting language="cpp">&quot;start&quot;: &quot;node server.js&quot;
+</db:programlisting>
+<db:para>Now let's move on to the push service back-end implementation in server.js.</db:para>
+<db:para>We start by including the required modules and doing basic <db:emphasis>express</db:emphasis> framework setup, which we use to create our custom push server. For simplicity we are going to handle only one subscription at a time. To do that we need to create <db:emphasis>VAPID</db:emphasis> keys which we are going to generate with <db:emphasis>web-push</db:emphasis> libs. The public key is going to be used by the front-end and authenticate to the service.</db:para>
+<db:programlisting language="cpp">const express = require('express');
+const webpush = require('web-push');
+
+// setup server
+const port = 5000;
+const server = express();
+server.use(express.json());
+server.use(express.static('content'));
+
+// we support only one subscription at the time
+var subscription = null;
+
+// setup vapid keys
+const vapidKeys = {
+    publicKey :
+            &quot;BNO4fIv439RpvbReeABNlDNiiBD2Maykn7EVnwsPseH7-P5hjnzZLEfnejXVP7Zt6MFoKqKeHm4nV9BHvbgoRPg&quot;,
+    privateKey : &quot;HqhrzsRfG5-SB3j45lyUmV7cYZuy-71r2Bb0tgaOefk&quot;
+};
+
+// set vapid keys for webpush libs
+webpush.setVapidDetails('mailto:push@qt.io', vapidKeys.publicKey, vapidKeys.privateKey);
+</db:programlisting>
+<db:note>
+<db:para>We are not going to cover the encryption of messages in this example.</db:para>
+</db:note>
+<db:para>To generate keys, we can use the tool shipped with <db:emphasis>web-push</db:emphasis> lib, that is installed by <db:code>npm</db:code> in our example's root directory.</db:para>
+<db:programlisting language="cpp">./node_odules/.bin/web-push generate-vapid-keys
+</db:programlisting>
+<db:para>Now we add two <db:code>routes</db:code> to the push server. One to <db:code>subscribe</db:code> and one to <db:code>unsubscribe</db:code>, so that our front-end can send an HTTP POST request to handle the push subscription. In the subscribe request we will get <db:code>subscription</db:code> in the request body and we also retrieve the custom header <db:code>ping-time</db:code> that defines how often the ping messages should be pushed to the user. We keep around the <db:code>subscription</db:code> to be able to send push notifications later. As a confirmation, we send the 201 status code and schedule the first push notification based on the <db:code>ping-time</db:code> value. The <db:code>unsubscribe</db:code> request simply removes a subscription.</db:para>
+<db:programlisting language="cpp">// add subscribe route
+server.post('/subscribe', (req, res) =&amp;gt; {
+
+    // subscription request
+    subscription = req.body;
+    const delay = req.headers['ping-time'];
+    console.log('Got subscription with endpoint: ' + subscription.endpoint);
+    console.log('Ping delay is at: ' + delay);
+
+    // confirm resource created
+    res.status(201).json({});
+
+    // schedule notification
+    setTimeout(() =&amp;gt; { sendNotification(delay) }, delay * 1000);
+});
+
+// add unsubscribe route
+server.post('/unsubscribe', (req, res) =&amp;gt; {
+    console.log('Got unsubscribe with endpoint: ' + req.body.endpoint);
+    subscription = null;
+    res.status(201).json({});
+});
+</db:programlisting>
+<db:para>The <db:code>sendNotication()</db:code> function sends push messages using the web-push lib. We create the payload with the message we want to present to a user and schedule the next push message.</db:para>
+<db:programlisting language="cpp">function sendNotification(delay)
+{
+    if (!subscription)
+        return;
+
+    // create payload text
+    const payload = JSON.stringify({ title : 'Ping !', text : 'Visit qt.io', url : 'www.qt.io' });
+
+    // send notification
+    console.log('Sending notification !');
+    webpush.sendNotification(subscription, payload).catch(err =&amp;gt; console.error(err));
+
+    // schedule next notification
+    setTimeout(() =&amp;gt; { sendNotification(delay) }, delay * 1000);
+}
+</db:programlisting>
+<db:para>In the end we start the server to listen on the given port.</db:para>
+<db:programlisting language="cpp">server.listen(port, () =&amp;gt; console.log(`Push server started at port ${port}`));
+</db:programlisting>
+<db:para>Let's move now to our front-end. We create a simple page index.html, where the user can enter how often they want to receive ping notification messages. We will have two buttons: <db:emphasis>Ping Me</db:emphasis> to subscribe for push notifications and <db:emphasis>Clear</db:emphasis> to unsubscribe. In the end we load ping.js, which we cover next.</db:para>
+<db:programlisting language="cpp">&amp;lt;body&amp;gt;
+  &amp;lt;h1&amp;gt;Push Notification Using NodeJS and QtWebEngine&amp;lt;/h1&amp;gt;
+  &amp;lt;div id=&quot;app&quot;&amp;gt;
+    &amp;lt;div id=&quot;ping-setup&quot;&amp;gt;
+      &amp;lt;form&amp;gt;
+        &amp;lt;div&amp;gt;
+          Ping Me Every [sec]:
+        &amp;lt;/div&amp;gt;
+        &amp;lt;div class=&quot;ping-input&quot;&amp;gt;
+          &amp;lt;input type=&quot;number&quot; name=&quot;seconds&quot; min=&quot;0&quot; max=&quot;3600&quot; required=&quot;&quot;&amp;gt;
+        &amp;lt;/div&amp;gt;&amp;lt;button&amp;gt;Ping Me&amp;lt;/button&amp;gt;
+      &amp;lt;/form&amp;gt;
+    &amp;lt;/div&amp;gt;
+    &amp;lt;div id=&quot;ping-clear&quot;&amp;gt;
+      &amp;lt;div id=&quot;ping-text&quot;&amp;gt;&amp;lt;/div&amp;gt;&amp;lt;button id=&quot;ping-clear-button&quot;&amp;gt;Clear&amp;lt;/button&amp;gt;
+    &amp;lt;/div&amp;gt;
+  &amp;lt;/div&amp;gt;
+  &amp;lt;script src=&quot;ping.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+&amp;lt;/body&amp;gt;
+</db:programlisting>
+<db:para>The last piece is creating the logic for the push subscription within the front-end. Here we have two functions, <db:code>setup</db:code> and <db:code>clear</db:code>, to handle subscriptions. When the user clicks on the <db:emphasis>Ping Me</db:emphasis> button, <db:code>setup</db:code> is called. To be able to receive notifications, the service worker is needed. This way the user can leave the website and still get notified as the service worker works in the background and handles incoming messages. To achieve that, we have to first register one with:</db:para>
+<db:programlisting language="cpp">    const register = await navigator.serviceWorker.register('/worker.js', { scope : '/' });
+</db:programlisting>
+<db:para>The call to <db:code>cpushManager.subscribe()</db:code> will trigger a permission prompt, which is displayed to the user. If the permission is granted, the push subscription is returned. It includes a URL endpoint that allows sending notifications to the browser, where the registered service worker waits for push messages.</db:para>
+<db:programlisting language="cpp">    var subscription = await register.pushManager.subscribe(
+            { userVisibleOnly : true, applicationServerKey : publicVapidKey });
+</db:programlisting>
+<db:para>As mentioned the subscription is created for FCM and should be now sent to our custom server with an HTTP POST request. In addition, we add to the post request the HTTP header with the <db:code>ping-time</db:code> the user entered on our website.</db:para>
+<db:programlisting language="cpp">    await fetch('/subscribe', {
+        method : 'POST',
+        body : JSON.stringify(subscription),
+        headers : { 'content-type' : 'application/json', 'ping-time' : delay }
+    });
+</db:programlisting>
+<db:para>The function <db:code>clear</db:code> call unsubscribes first from our push server by sending an HTTP POST request and later from the 3rd-party push service (FCM).</db:para>
+<db:programlisting language="cpp">    const register = await navigator.serviceWorker.getRegistration();
+    var subscription = await register.pushManager.getSubscription();
+    ...
+    await fetch('/unsubscribe', {
+        method : 'POST',
+        body : JSON.stringify(subscription),
+        headers : { 'content-type' : 'application/json' }
+    });
+    ...
+    await subscription.unsubscribe();
+</db:programlisting>
+<db:para>The rest of code in ping.js is just boilerplate code to read a user provided value and call <db:code>setup()</db:code> or <db:code>clear()</db:code>.</db:para>
+<db:para>As the last part of the front-end let's look inside a service worker script, where we simply register an event listener for <db:emphasis>push</db:emphasis> events.</db:para>
+<db:programlisting language="cpp">self.addEventListener('push', event =&amp;gt; {
+    const data = event.data.json();
+    self.registration.showNotification(data.title, { body : data.text });
+});
+</db:programlisting>
+<db:para>When a push event comes we simply use the Notification JavaScript API to display a notification.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qtwebengine-qmlmodule.xml">QtWebEngine</db:link> Notification Example shows how to provide your own handler and customize the look and feel of a notification message.</db:para>
+</db:note>
+<db:para>Having the implementation in place, we can start the server on localhost at the port 5000. To do that, we can simply enter in the console in the project's root directory:</db:para>
+<db:programlisting language="cpp">npm start
+</db:programlisting>
+<db:para>Now we can look into the <db:emphasis>push-notification</db:emphasis> browser application, which is based on <db:link xlink:href="qtwebengine-webenginewidgets-notifications-example.xml">WebEngine Notifications Example</db:link>:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QCoreApplication::setOrganizationName(&quot;QtExamples&quot;);
+    QApplication app(argc, argv);
+
+    const QString name =
+            QString::fromLatin1(&quot;push-notifications.%1&quot;).arg(qWebEngineChromiumVersion());
+
+    QScopedPointer&amp;lt;QWebEngineProfile&amp;gt; profile(new QWebEngineProfile(name));
+    QWebEngineView view(profile.data());
+    auto popup = new NotificationPopup(&amp;amp;view);
+
+    QObject::connect(view.page(), &amp;amp;QWebEnginePage::featurePermissionRequested,
+                     [&amp;amp;](const QUrl &amp;amp;origin, QWebEnginePage::Feature feature) {
+                         if (feature != QWebEnginePage::Notifications)
+                             return;
+
+                         view.page()-&amp;gt;setFeaturePermission(origin, feature,
+                                                           QWebEnginePage::PermissionGrantedByUser);
+                     });
+
+    profile-&amp;gt;setPushServiceEnabled(true);
+    profile-&amp;gt;setNotificationPresenter([&amp;amp;](std::unique_ptr&amp;lt;QWebEngineNotification&amp;gt; notification) {
+        popup-&amp;gt;present(notification);
+    });
+
+    view.resize(640, 480);
+    view.setUrl(QUrl(&quot;http://localhost:5000&quot;));
+    view.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>This application simply opens the page at <db:code>http:\\localhost:5000</db:code>. We are not going into detail about how to open a notification as it is documented <db:link xlink:href="qtwebengine-webenginewidgets-notifications-example.xml">here</db:link>. However, you need to modify the application in two ways. First, <db:code>QWebEngineProfile</db:code> cannot be set to <db:emphasis>off-the-record</db:emphasis> because push messaging would be disabled. Therefore, as you can see above, <db:code>QWebEngineProfile</db:code> is initialized with the name. Second, you need to enable push messaging with the call <db:link xlink:href="qwebengineprofile.xml#setPushServiceEnabled">QWebEngineProfile::setPushServiceEnabled</db:link> for the created <db:code>profile</db:code>.</db:para>
+<db:para>When the application runs it displays:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/website.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>After granting the permission we can send our ping request:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/permissions.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>We should see the coming push notification:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/notification.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/push-notifications?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

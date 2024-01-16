@@ -1,0 +1,214 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>System Tray Icon Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The System Tray Icon example shows how to add an icon with a menu and popup messages to a desktop environment's system tray.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:figure>
+<db:title>Screenshot of the System Tray Icon</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/systemtray-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:figure>
+<db:para>Modern operating systems usually provide a special area on the desktop, called the system tray or notification area, where long-running applications can display icons and short messages.</db:para>
+<db:para>This example consists of one single class, Window, providing the main application window (i.e., an editor for the system tray icon) and the associated icon.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/systemtray-editor.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The editor allows the user to choose the preferred icon as well as set the balloon message's type and duration. The user can also edit the message's title and body. Finally, the editor provides a checkbox controlling whether the icon is actually shown in the system tray, or not.</db:para>
+<db:section xml:id="window-class-definition">
+<db:title>Window Class Definition</db:title>
+<db:para>The Window class inherits <db:link xlink:href="qwidget.xml">QWidget</db:link>:</db:para>
+<db:programlisting language="cpp">class Window : public QDialog
+{
+    Q_OBJECT
+
+public:
+    Window();
+
+    void setVisible(bool visible) override;
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
+private slots:
+    void setIcon(int index);
+    void iconActivated(QSystemTrayIcon::ActivationReason reason);
+    void showMessage();
+    void messageClicked();
+
+private:
+    void createIconGroupBox();
+    void createMessageGroupBox();
+    void createActions();
+    void createTrayIcon();
+
+    QGroupBox *iconGroupBox;
+    QLabel *iconLabel;
+    QComboBox *iconComboBox;
+    QCheckBox *showIconCheckBox;
+
+    QGroupBox *messageGroupBox;
+    QLabel *typeLabel;
+    QLabel *durationLabel;
+    QLabel *durationWarningLabel;
+    QLabel *titleLabel;
+    QLabel *bodyLabel;
+    QComboBox *typeComboBox;
+    QSpinBox *durationSpinBox;
+    QLineEdit *titleEdit;
+    QTextEdit *bodyEdit;
+    QPushButton *showMessageButton;
+
+    QAction *minimizeAction;
+    QAction *maximizeAction;
+    QAction *restoreAction;
+    QAction *quitAction;
+
+    QSystemTrayIcon *trayIcon;
+    QMenu *trayIconMenu;
+};
+</db:programlisting>
+<db:para>We implement several private slots to respond to user interaction. The other private functions are only convenience functions provided to simplify the constructor.</db:para>
+<db:para>The tray icon is an instance of the <db:link xlink:href="qsystemtrayicon.xml">QSystemTrayIcon</db:link> class. To check whether a system tray is present on the user's desktop, call the static <db:link xlink:href="qsystemtrayicon.xml#isSystemTrayAvailable">QSystemTrayIcon::isSystemTrayAvailable</db:link>() function. Associated with the icon, we provide a menu containing the typical <db:guilabel>minimize</db:guilabel>, <db:guilabel>maximize</db:guilabel>, <db:guilabel>restore</db:guilabel> and <db:guilabel>quit</db:guilabel> actions. We reimplement the <db:link xlink:href="qwidget.xml#visible-prop">QWidget::setVisible</db:link>() function to update the tray icon's menu whenever the editor's appearance changes, e.g., when maximizing or minimizing the main application window.</db:para>
+<db:para>Finally, we reimplement <db:link xlink:href="qwidget.xml">QWidget</db:link>'s <db:link xlink:href="qwidget.xml#closeEvent">closeEvent</db:link>() function to be able to inform the user (when closing the editor window) that the program will keep running in the system tray until the user chooses the <db:guilabel>Quit</db:guilabel> entry in the icon's context menu.</db:para>
+</db:section>
+<db:section xml:id="window-class-implementation">
+<db:title>Window Class Implementation</db:title>
+<db:para>When constructing the editor widget, we first create the various editor elements before we create the actual system tray icon:</db:para>
+<db:programlisting language="cpp">Window::Window()
+{
+    createIconGroupBox();
+    createMessageGroupBox();
+
+    iconLabel-&amp;gt;setMinimumWidth(durationLabel-&amp;gt;sizeHint().width());
+
+    createActions();
+    createTrayIcon();
+
+    connect(showMessageButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;Window::showMessage);
+    connect(showIconCheckBox, &amp;amp;QAbstractButton::toggled, trayIcon, &amp;amp;QSystemTrayIcon::setVisible);
+    connect(iconComboBox, &amp;amp;QComboBox::currentIndexChanged,
+            this, &amp;amp;Window::setIcon);
+    connect(trayIcon, &amp;amp;QSystemTrayIcon::messageClicked, this, &amp;amp;Window::messageClicked);
+    connect(trayIcon, &amp;amp;QSystemTrayIcon::activated, this, &amp;amp;Window::iconActivated);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addWidget(iconGroupBox);
+    mainLayout-&amp;gt;addWidget(messageGroupBox);
+    setLayout(mainLayout);
+
+    iconComboBox-&amp;gt;setCurrentIndex(1);
+    trayIcon-&amp;gt;show();
+
+    setWindowTitle(tr(&quot;Systray&quot;));
+    resize(400, 300);
+}
+</db:programlisting>
+<db:para>We ensure that the application responds to user input by connecting most of the editor's input widgets (including the system tray icon) to the application's private slots. But note the visibility checkbox; its <db:link xlink:href="qabstractbutton.xml#toggled">toggled</db:link>() signal is connected to the <db:emphasis>icon</db:emphasis>'s <db:link xlink:href="qsystemtrayicon.xml#visible-prop">setVisible</db:link>() function instead.</db:para>
+<db:programlisting language="cpp">void Window::setIcon(int index)
+{
+    QIcon icon = iconComboBox-&amp;gt;itemIcon(index);
+    trayIcon-&amp;gt;setIcon(icon);
+    setWindowIcon(icon);
+
+    trayIcon-&amp;gt;setToolTip(iconComboBox-&amp;gt;itemText(index));
+}
+</db:programlisting>
+<db:para>The setIcon() slot is triggered whenever the current index in the icon combobox changes, i.e., whenever the user chooses another icon in the editor. Note that it is also called when the user activates the tray icon with the left mouse button, triggering the icon's <db:link xlink:href="qsystemtrayicon.xml#activated">activated</db:link>() signal. We will come back to this signal shortly.</db:para>
+<db:para>The <db:link xlink:href="qsystemtrayicon.xml#icon-prop">QSystemTrayIcon::setIcon</db:link>() function sets the <db:link xlink:href="qsystemtrayicon.xml#icon-prop">icon</db:link> property that holds the actual system tray icon. On Windows, the system tray icon size is 16x16; on X11, the preferred size is 22x22. The icon will be scaled to the appropriate size as necessary.</db:para>
+<db:para>Note that on X11, due to a limitation in the system tray specification, mouse clicks on transparent areas in the icon are propagated to the system tray. If this behavior is unacceptable, we suggest using an icon with no transparency.</db:para>
+<db:programlisting language="cpp">void Window::iconActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    switch (reason) {
+    case QSystemTrayIcon::Trigger:
+    case QSystemTrayIcon::DoubleClick:
+        iconComboBox-&amp;gt;setCurrentIndex((iconComboBox-&amp;gt;currentIndex() + 1) % iconComboBox-&amp;gt;count());
+        break;
+    case QSystemTrayIcon::MiddleClick:
+        showMessage();
+        break;
+    default:
+        ;
+    }
+}
+</db:programlisting>
+<db:para>Whenever the user activates the system tray icon, it emits its <db:link xlink:href="qsystemtrayicon.xml#activated">activated</db:link>() signal passing the triggering reason as parameter. <db:link xlink:href="qsystemtrayicon.xml">QSystemTrayIcon</db:link> provides the <db:link xlink:href="qsystemtrayicon.xml#ActivationReason-enum">ActivationReason</db:link> enum to describe how the icon was activated.</db:para>
+<db:para>In the constructor, we connected our icon's <db:link xlink:href="qsystemtrayicon.xml#activated">activated</db:link>() signal to our custom iconActivated() slot: If the user has clicked the icon using the left mouse button, this function changes the icon image by incrementing the icon combobox's current index, triggering the setIcon() slot as mentioned above. If the user activates the icon using the middle mouse button, it calls the custom showMessage() slot:</db:para>
+<db:programlisting language="cpp">void Window::showMessage()
+{
+    showIconCheckBox-&amp;gt;setChecked(true);
+    int selectedIcon = typeComboBox-&amp;gt;itemData(typeComboBox-&amp;gt;currentIndex()).toInt();
+    QSystemTrayIcon::MessageIcon msgIcon = QSystemTrayIcon::MessageIcon(selectedIcon);
+
+    if (selectedIcon == -1) { // custom icon
+        QIcon icon(iconComboBox-&amp;gt;itemIcon(iconComboBox-&amp;gt;currentIndex()));
+        trayIcon-&amp;gt;showMessage(titleEdit-&amp;gt;text(), bodyEdit-&amp;gt;toPlainText(), icon,
+                          durationSpinBox-&amp;gt;value() * 1000);
+    } else {
+        trayIcon-&amp;gt;showMessage(titleEdit-&amp;gt;text(), bodyEdit-&amp;gt;toPlainText(), msgIcon,
+                          durationSpinBox-&amp;gt;value() * 1000);
+    }
+}
+</db:programlisting>
+<db:para>When the <db:emphasis>showMessage()</db:emphasis> slot is triggered, we first retrieve the message icon depending on the currently chosen message type. The <db:link xlink:href="qsystemtrayicon.xml#MessageIcon-enum">QSystemTrayIcon::MessageIcon</db:link> enum describes the icon that is shown when a balloon message is displayed. Then we call <db:link xlink:href="qsystemtrayicon.xml">QSystemTrayIcon</db:link>'s <db:link xlink:href="qsystemtrayicon.xml#showMessage">showMessage</db:link>() function to show the message with the title, body, and icon for the time specified in milliseconds.</db:para>
+<db:para>macOS users note: The Growl notification system must be installed for <db:link xlink:href="qsystemtrayicon.xml#showMessage">QSystemTrayIcon::showMessage</db:link>() to display messages.</db:para>
+<db:para><db:link xlink:href="qsystemtrayicon.xml">QSystemTrayIcon</db:link> also has the corresponding, <db:link xlink:href="qsystemtrayicon.xml#messageClicked">messageClicked</db:link>() signal, which is emitted when the user clicks a message displayed by <db:link xlink:href="qsystemtrayicon.xml#showMessage">showMessage</db:link>().</db:para>
+<db:programlisting language="cpp">void Window::messageClicked()
+{
+    QMessageBox::information(nullptr, tr(&quot;Systray&quot;),
+                             tr(&quot;Sorry, I already gave what help I could.\n&quot;
+                                &quot;Maybe you should try asking a human?&quot;));
+}
+</db:programlisting>
+<db:para>In the constructor, we connected the <db:link xlink:href="qsystemtrayicon.xml#messageClicked">messageClicked</db:link>() signal to our custom messageClicked() slot that simply displays a message using the <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> class.</db:para>
+<db:para><db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> provides a modal dialog with a short message, an icon, and buttons laid out depending on the current style. It supports four severity levels: &quot;Question&quot;, &quot;Information&quot;, &quot;Warning&quot; and &quot;Critical&quot;. The easiest way to pop up a message box in Qt is to call one of the associated static functions, e.g., <db:link xlink:href="qmessagebox.xml#information">QMessageBox::information</db:link>().</db:para>
+<db:para>As we mentioned earlier, we reimplement a couple of <db:link xlink:href="qwidget.xml">QWidget</db:link>'s virtual functions:</db:para>
+<db:programlisting language="cpp">void Window::setVisible(bool visible)
+{
+    minimizeAction-&amp;gt;setEnabled(visible);
+    maximizeAction-&amp;gt;setEnabled(!isMaximized());
+    restoreAction-&amp;gt;setEnabled(isMaximized() || !visible);
+    QDialog::setVisible(visible);
+}
+</db:programlisting>
+<db:para>Our reimplementation of the <db:link xlink:href="qwidget.xml#visible-prop">QWidget::setVisible</db:link>() function updates the tray icon's menu whenever the editor's appearance changes, e.g., when maximizing or minimizing the main application window, before calling the base class implementation.</db:para>
+<db:programlisting language="cpp">void Window::closeEvent(QCloseEvent *event)
+{
+    if (!event-&amp;gt;spontaneous() || !isVisible())
+        return;
+    if (trayIcon-&amp;gt;isVisible()) {
+        QMessageBox::information(this, tr(&quot;Systray&quot;),
+                                 tr(&quot;The program will keep running in the &quot;
+                                    &quot;system tray. To terminate the program, &quot;
+                                    &quot;choose &amp;lt;b&amp;gt;Quit&amp;lt;/b&amp;gt; in the context menu &quot;
+                                    &quot;of the system tray entry.&quot;));
+        hide();
+        event-&amp;gt;ignore();
+    }
+}
+</db:programlisting>
+<db:para>We have reimplemented the <db:link xlink:href="qwidget.xml#closeEvent">QWidget::closeEvent</db:link>() event handler to receive widget close events, showing the above message to the users when they are closing the editor window. We need to avoid showing the message and accepting the close event when the user really intends to quit the application: that is, when the user has triggered &quot;Quit&quot; in the menu bar, or in the tray icon's context menu, or pressed Command+Q shortcut on macOS.</db:para>
+<db:para>In addition to the functions and slots discussed above, we have also implemented several convenience functions to simplify the constructor: createIconGroupBox(), createMessageGroupBox(), createActions() and createTrayIcon(). See the desktop/systray/window.cpp file for details.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/desktop/systray?h=6.5">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

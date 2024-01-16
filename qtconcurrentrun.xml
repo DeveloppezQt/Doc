@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Concurrent Run</db:title>
+<db:productname>QtConcurrent</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Concurrent Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple way to run a task in a separate thread.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The QtConcurrent::run() function runs a function in a separate thread. The return value of the function is made available through the <db:link xlink:href="qfuture.xml">QFuture</db:link> API.</db:para>
+<db:para>QtConcurrent::run() is an overloaded method. You can think of these overloads as slightly different <db:emphasis>modes</db:emphasis>. In <db:link xlink:href="qtconcurrentrun.xml#concurrent-run-basic-mode">basic mode</db:link>, the function passed to QtConcurrent::run() is able to report merely a single computation result to its caller. In <db:link xlink:href="qtconcurrentrun.xml#concurrent-run-with-promise">run with promise mode</db:link>, the function passed to QtConcurrent::run() can make use of the additional <db:link xlink:href="qpromise.xml">QPromise</db:link> API, which enables multiple result reporting, progress reporting, suspending the computation when requested by the caller, or stopping the computation on the caller's demand.</db:para>
+<db:para>This function is a part of the Qt Concurrent framework.</db:para>
+<db:section xml:id="concurrent-run-basic-mode">
+<db:title>Concurrent Run (basic mode)</db:title>
+<db:para>The function passed to QtConcurrent::run() may report the result through its return value.</db:para>
+<db:section xml:id="running-a-function-in-a-separate-thread">
+<db:title>Running a Function in a Separate Thread</db:title>
+<db:para>To run a function in another thread, use QtConcurrent::run():</db:para>
+<db:programlisting language="cpp">extern void aFunction();
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(aFunction);
+</db:programlisting>
+<db:para>This will run <db:code>aFunction</db:code> in a separate thread obtained from the default <db:link xlink:href="qthreadpool.xml">QThreadPool</db:link>. You can use the <db:link xlink:href="qfuture.xml">QFuture</db:link> and <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> classes to monitor the status of the function.</db:para>
+<db:para>To use a dedicated thread pool, you can pass the <db:link xlink:href="qthreadpool.xml">QThreadPool</db:link> as the first argument:</db:para>
+<db:programlisting language="cpp">extern void aFunction();
+QThreadPool pool;
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(&amp;amp;pool, aFunction);
+</db:programlisting>
+</db:section>
+<db:section xml:id="passing-arguments-to-the-function">
+<db:title>Passing Arguments to the Function</db:title>
+<db:para>Passing arguments to the function is done by adding them to the QtConcurrent::run() call immediately after the function name. For example:</db:para>
+<db:programlisting language="cpp">extern void aFunctionWithArguments(int arg1, double arg2, const QString &amp;amp;string);
+
+int integer = ...;
+double floatingPoint = ...;
+QString string = ...;
+
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(aFunctionWithArguments, integer, floatingPoint, string);
+</db:programlisting>
+<db:para>A copy of each argument is made at the point where QtConcurrent::run() is called, and these values are passed to the thread when it begins executing the function. Changes made to the arguments after calling QtConcurrent::run() are <db:emphasis>not</db:emphasis> visible to the thread.</db:para>
+<db:para>Note that <db:link xlink:href="qtconcurrent.xml#run">QtConcurrent::run</db:link> does not support calling overloaded functions directly. For example, the code below won't compile:</db:para>
+<db:programlisting language="cpp">void foo(int arg);
+void foo(int arg1, int arg2);
+...
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(foo, 42);
+</db:programlisting>
+<db:para>The easiest workaround is to call the overloaded function through lambda:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run([] { foo(42); });
+</db:programlisting>
+<db:para>Or you can tell the compiler which overload to choose by using a <db:code>static_cast</db:code>:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(static_cast&amp;lt;void(*)(int)&amp;gt;(foo), 42);
+</db:programlisting>
+<db:para>Or <db:link xlink:href="qoverload-proxy.xml#qOverload">qOverload</db:link>:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(qOverload&amp;lt;int&amp;gt;(foo), 42);
+</db:programlisting>
+</db:section>
+<db:section xml:id="returning-values-from-the-function">
+<db:title>Returning Values from the Function</db:title>
+<db:para>Any return value from the function is available via <db:link xlink:href="qfuture.xml">QFuture</db:link>:</db:para>
+<db:programlisting language="cpp">extern QString functionReturningAString();
+QFuture&amp;lt;QString&amp;gt; future = QtConcurrent::run(functionReturningAString);
+...
+QString result = future.result();
+</db:programlisting>
+<db:para>If you don't need the result (for example, because the function returns <db:code>void</db:code>), using the <db:link xlink:href="qthreadpool.xml#start">QThreadPool::start</db:link>() overload taking a function object is more efficient.</db:para>
+<db:para>As documented above, passing arguments is done like this:</db:para>
+<db:programlisting language="cpp">extern QString someFunction(const QByteArray &amp;amp;input);
+
+QByteArray bytearray = ...;
+
+QFuture&amp;lt;QString&amp;gt; future = QtConcurrent::run(someFunction, bytearray);
+...
+QString result = future.result();
+</db:programlisting>
+<db:para>Note that the <db:link xlink:href="qfuture.xml#result">QFuture::result</db:link>() function blocks and waits for the result to become available. Use <db:link xlink:href="qfuturewatcher.xml">QFutureWatcher</db:link> to get notification when the function has finished execution and the result is available.</db:para>
+</db:section>
+<db:section xml:id="additional-api-features">
+<db:title>Additional API Features</db:title>
+<db:section xml:id="using-member-functions">
+<db:title>Using Member Functions</db:title>
+<db:para>QtConcurrent::run() also accepts pointers to member functions. The first argument must be either a const reference or a pointer to an instance of the class. Passing by const reference is useful when calling const member functions; passing by pointer is useful for calling non-const member functions that modify the instance.</db:para>
+<db:para>For example, calling <db:link xlink:href="qbytearray.xml#split">QByteArray::split</db:link>() (a const member function) in a separate thread is done like this:</db:para>
+<db:programlisting language="cpp">// call 'QList&amp;lt;QByteArray&amp;gt;  QByteArray::split(char sep) const' in a separate thread
+QByteArray bytearray = &quot;hello world&quot;;
+QFuture&amp;lt;QList&amp;lt;QByteArray&amp;gt; &amp;gt; future = QtConcurrent::run(&amp;amp;QByteArray::split, bytearray, ' ');
+...
+QList&amp;lt;QByteArray&amp;gt; result = future.result();
+</db:programlisting>
+<db:para>Calling a non-const member function is done like this:</db:para>
+<db:programlisting language="cpp">// call 'void QImage::invertPixels(InvertMode mode)' in a separate thread
+QImage image = ...;
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(&amp;amp;QImage::invertPixels, &amp;amp;image, QImage::InvertRgba);
+...
+future.waitForFinished();
+// At this point, the pixels in 'image' have been inverted
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-lambda-functions">
+<db:title>Using Lambda Functions</db:title>
+<db:para>Calling a lambda function is done like this:</db:para>
+<db:programlisting language="cpp">QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run([=]() {
+    // Code in this block will run in another thread
+});
+...
+</db:programlisting>
+<db:para>Calling a function modifies an object passed by reference is done like this:</db:para>
+<db:programlisting language="cpp">static void addOne(int &amp;amp;n) { ++n; }
+...
+int n = 42;
+QtConcurrent::run(&amp;amp;addOne, std::ref(n)).waitForFinished(); // n == 43
+</db:programlisting>
+<db:para>Using callable object is done like this:</db:para>
+<db:programlisting language="cpp">struct TestClass
+{
+    void operator()(int s1) { s = s1; }
+    int s = 42;
+};
+
+...
+
+TestClass o;
+
+// Modify original object
+QtConcurrent::run(std::ref(o), 15).waitForFinished(); // o.s == 15
+
+// Modify a copy of the original object
+QtConcurrent::run(o, 42).waitForFinished(); // o.s == 15
+
+// Use a temporary object
+QtConcurrent::run(TestClass(), 42).waitForFinished();
+
+// Ill-formed
+QtConcurrent::run(&amp;amp;o, 42).waitForFinished(); // compilation error
+</db:programlisting>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="concurrent-run-with-promise">
+<db:title>Concurrent Run With Promise</db:title>
+<db:para>The <db:emphasis>Run With Promise</db:emphasis> mode enables more control for the running task compared to <db:emphasis>basic</db:emphasis> mode of QtConcurrent::run(). It allows progress reporting of the running task, reporting multiple results, suspending the execution if it was requested, or canceling the task on caller's demand.</db:para>
+<db:section xml:id="the-mandatory-qpromise-argument">
+<db:title>The mandatory QPromise argument</db:title>
+<db:para>The function passed to QtConcurrent::run() in <db:emphasis>Run With Promise</db:emphasis> mode is expected to have an additional argument of <db:code>QPromise&lt;T&gt; &amp;</db:code> type, where <db:code>T</db:code> is the type of the computation result (it should match the type <db:code>T</db:code> of <db:link xlink:href="qfuture.xml">QFuture</db:link>&lt;T&gt; returned by QtConcurrent::run()), like e.g.:</db:para>
+<db:programlisting language="cpp">extern void aFunction(QPromise&amp;lt;void&amp;gt; &amp;amp;promise);
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(aFunction);
+</db:programlisting>
+<db:para>The <db:code>promise</db:code> argument is instantiated inside the QtConcurrent::run() function, and its reference is passed to the invoked <db:code>aFunction</db:code>, so the user doesn't need to instantiate it, nor pass it explicitly when calling QtConcurrent::run() in this mode.</db:para>
+<db:para>The additional argument of <db:link xlink:href="qpromise.xml">QPromise</db:link> type always needs to appear as a first argument on function's arguments list, like:</db:para>
+<db:programlisting language="cpp">extern void aFunction(QPromise&amp;lt;void&amp;gt; &amp;amp;promise, int arg1, const QString &amp;amp;arg2);
+
+int integer = ...;
+QString string = ...;
+
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::run(aFunction, integer, string);
+</db:programlisting>
+</db:section>
+<db:section xml:id="reporting-results">
+<db:title>Reporting results</db:title>
+<db:para>In contrast to <db:emphasis>basic</db:emphasis> mode of QtConcurrent::run(), the function passed to QtConcurrent::run() in <db:emphasis>Run With Promise</db:emphasis> mode is expected to always return void type. Result reporting is done through the additional argument of <db:link xlink:href="qpromise.xml">QPromise</db:link> type. It also enables multiple result reporting, like:</db:para>
+<db:programlisting language="cpp">void helloWorldFunction(QPromise&amp;lt;QString&amp;gt; &amp;amp;promise)
+{
+    promise.addResult(&quot;Hello&quot;);
+    promise.addResult(&quot;world&quot;);
+}
+
+QFuture&amp;lt;QString&amp;gt; future = QtConcurrent::run(helloWorldFunction);
+...
+QList&amp;lt;QString&amp;gt; results = future.results();
+</db:programlisting>
+<db:note>
+<db:para>There's no need to call <db:link xlink:href="qpromise.xml#start">QPromise::start</db:link>() and <db:link xlink:href="qpromise.xml#finish">QPromise::finish</db:link>() to indicate the beginning and the end of computation (like you would normally do when using <db:link xlink:href="qpromise.xml">QPromise</db:link>). QtConcurrent::run() will always call them before starting and after finishing the execution.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="suspending-and-canceling-the-execution">
+<db:title>Suspending and canceling the execution</db:title>
+<db:para>The <db:link xlink:href="qpromise.xml">QPromise</db:link> API also enables suspending and canceling the computation, if requested:</db:para>
+<db:programlisting language="cpp">void aFunction(QPromise&amp;lt;int&amp;gt; &amp;amp;promise)
+{
+    for (int i = 0; i &amp;lt; 100; ++i) {
+        promise.suspendIfRequested();
+        if (promise.isCanceled())
+            return;
+
+        // computes the next result, may be time consuming like 1 second
+        const int res = ... ;
+        promise.addResult(res);
+    }
+}
+
+QFuture&amp;lt;int&amp;gt; future = QtConcurrent::run(aFunction);
+
+... // user pressed a pause button after 10 seconds
+future.suspend();
+
+... // user pressed a resume button after 10 seconds
+future.resume();
+
+... // user pressed a cancel button after 10 seconds
+future.cancel();
+</db:programlisting>
+<db:para>The call to <db:code>future.suspend()</db:code> requests the running task to hold its execution. After calling this method, the running task will suspend after the next call to <db:code>promise.suspendIfRequested()</db:code> in its iteration loop. In this case the running task will block on a call to <db:code>promise.suspendIfRequested()</db:code>. The blocked call will unblock after the <db:code>future.resume()</db:code> is called. Note, that internally suspendIfRequested() uses wait condition in order to unblock, so the running thread goes into an idle state instead of wasting its resources when blocked in order to periodically check if the resume request came from the caller's thread.</db:para>
+<db:para>The call to <db:code>future.cancel()</db:code> from the last line causes that the next call to <db:code>promise.isCanceled()</db:code> will return <db:code>true</db:code> and <db:code>aFunction</db:code> will return immediately without any further result reporting.</db:para>
+<db:note>
+<db:para>There's no need to call <db:link xlink:href="qpromise.xml#finish">QPromise::finish</db:link>() to stop the computation after the cancellation (like you would normally do when using <db:link xlink:href="qpromise.xml">QPromise</db:link>). QtConcurrent::run() will always call it after finishing the execution.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="progress-reporting">
+<db:title>Progress reporting</db:title>
+<db:para>It's also possible to report the progress of a task independently of result reporting, like:</db:para>
+<db:programlisting language="cpp">void aFunction(QPromise&amp;lt;int&amp;gt; &amp;amp;promise)
+{
+    promise.setProgressRange(0, 100);
+    int result = 0;
+    for (int i = 0; i &amp;lt; 100; ++i) {
+        // computes some part of the task
+        const int part = ... ;
+        result += part;
+        promise.setProgressValue(i);
+    }
+    promise.addResult(result);
+}
+
+QFutureWatcher&amp;lt;int&amp;gt; watcher;
+QObject::connect(&amp;amp;watcher, &amp;amp;QFutureWatcher::progressValueChanged, [](int progress){
+    ... ; // update GUI with a progress
+    qDebug() &amp;lt;&amp;lt; &quot;current progress:&quot; &amp;lt;&amp;lt; progress;
+});
+watcher.setFuture(QtConcurrent::run(aFunction));
+</db:programlisting>
+<db:para>The caller installs the <db:code>QFutureWatcher</db:code> for the <db:code>QFuture</db:code> returned by QtConcurrent::run() in order to connect to its <db:code>progressValueChanged()</db:code> signal and update e.g. the graphical user interface accordingly.</db:para>
+</db:section>
+<db:section xml:id="invoking-functions-with-overloaded-operator">
+<db:title>Invoking functions with overloaded operator()()</db:title>
+<db:para>By default, QtConcurrent::run() doesn't support functors with overloaded operator()() in <db:emphasis>Run With Promise</db:emphasis> mode. In case of overloaded functors the user needs to explicitly specify the result type as a template parameter passed to QtConcurrent::run(), like:</db:para>
+<db:programlisting language="cpp">struct Functor {
+    void operator()(QPromise&amp;lt;int&amp;gt; &amp;amp;) { }
+    void operator()(QPromise&amp;lt;double&amp;gt; &amp;amp;) { }
+};
+
+Functor f;
+run&amp;lt;double&amp;gt;(f); // this will select the 2nd overload
+// run(f);      // error, both candidate overloads potentially match
+</db:programlisting>
+</db:section>
+</db:section>
+</db:article>

@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Quick CoAP Multicast Discovery</db:title>
+<db:productname>QtCoap</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt CoAP Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using the CoAP client for a multicast resource discovery with a Qt Quick user interface.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">// Copyright (C) 2019 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+pragma ComponentBehavior: Bound
+
+import QtQuick
+import QtQuick.Window
+import QtQuick.Controls
+import QtQuick.Layouts
+
+Window {
+    id: root
+
+    visible: true
+    width: 480
+    height: 480
+    title: qsTr(&quot;Qt Quick CoAP Multicast Discovery&quot;)
+
+    function addResource(resource) {
+        resourceModel.insert(0, {&quot;host&quot; : resource.host,
+                                 &quot;path&quot; : resource.path,
+                                 &quot;title&quot; : resource.title})
+    }
+
+    CoapMulticastClient {
+        id: client
+        onDiscovered: (resource) =&amp;gt; { root.addResource(resource) }
+
+        onFinished: (error) =&amp;gt; {
+            statusLabel.text = (error === QtCoap.Error.Ok)
+                    ? qsTr(&quot;Finished resource discovery.&quot;)
+                    : qsTr(&quot;Resource discovery failed with error code: %1&quot;).arg(error)
+        }
+    }
+
+    GridLayout {
+        anchors.fill: parent
+        anchors.margins: 10
+        columns: 2
+
+        Label {
+            text: qsTr(&quot;Host:&quot;)
+        }
+
+        RowLayout {
+            spacing: 5
+
+            ComboBox {
+                id: groupComboBox
+                textRole: &quot;group&quot;
+                Layout.preferredWidth: 210
+                model: ListModel {
+                    id: cbItems
+                    ListElement {
+                        group: qsTr(&quot;IPv4 CoAP Nodes&quot;)
+                        address: &quot;224.0.1.187&quot;
+                        value: QtCoap.MulticastGroup.AllCoapNodesIPv4
+                    }
+                    ListElement {
+                        group: qsTr(&quot;IPv6 Link Local CoAP Nodes&quot;)
+                        address: &quot;ff02::fd&quot;
+                        value: QtCoap.MulticastGroup.AllCoapNodesIPv6LinkLocal
+                    }
+                    ListElement {
+                        group: qsTr(&quot;IPv6 Site Local CoAP Nodes&quot;)
+                        address: &quot;ff05::fd&quot;
+                        value: QtCoap.MulticastGroup.AllCoapNodesIPv6SiteLocal
+                    }
+                    ListElement {
+                        group: qsTr(&quot;Other&quot;)
+                        address: &quot;&quot;
+                        value: -1
+                    }
+                }
+
+                delegate: ItemDelegate {
+                    id: entry
+
+                    required property int index
+                    required property string group
+                    required property string address
+
+                    width: groupComboBox.width
+                    contentItem: Column {
+                        Text { text: entry.group }
+                        Text { text: entry.address }
+                    }
+                    highlighted: groupComboBox.highlightedIndex === index
+                }
+            }
+
+            TextField {
+                id: customGroupField
+                placeholderText: qsTr(&quot;&amp;lt;Custom Group&amp;gt;&quot;)
+                enabled: groupComboBox.model.get(groupComboBox.currentIndex).value === -1
+                Layout.fillWidth: true
+            }
+        }
+
+        Label {
+            text: qsTr(&quot;Port:&quot;)
+        }
+
+        TextField {
+            id: portField
+            text: &quot;5683&quot;
+            placeholderText: qsTr(&quot;&amp;lt;Port&amp;gt;&quot;)
+            inputMethodHints: Qt.ImhDigitsOnly
+            Layout.preferredWidth: 80
+        }
+
+        Label {
+            text: qsTr(&quot;Discovery Path:&quot;)
+        }
+
+        TextField {
+            id: discoveryPathField
+            text: &quot;/.well-known/core&quot;
+            placeholderText: qsTr(&quot;&amp;lt;Resource Discovery Path&amp;gt;&quot;)
+            inputMethodHints: Qt.ImhUrlCharactersOnly
+            Layout.fillWidth: true
+        }
+
+        Button {
+            id: discoverButton
+            text: client.isDiscovering ? qsTr(&quot;Stop Discovery&quot;) : qsTr(&quot;Discover&quot;)
+            Layout.preferredWidth: 100
+
+            onClicked: {
+                if (client.isDiscovering) {
+                    client.stopDiscovery()
+                } else {
+                    var currentGroup = groupComboBox.model.get(groupComboBox.currentIndex).value;
+
+                    var path = &quot;&quot;;
+                    if (currentGroup !== - 1) {
+                        client.discover(currentGroup, parseInt(portField.text),
+                                        discoveryPathField.text);
+                        path = groupComboBox.currentText;
+                    } else {
+                        client.discover(customGroupField.text, parseInt(portField.text),
+                                        discoveryPathField.text);
+                        path = customGroupField.text + discoveryPathField.text;
+                    }
+                    statusLabel.text = qsTr(&quot;Discovering resources at %1...&quot;).arg(path);
+                }
+            }
+        }
+
+        Button {
+            id: clearButton
+            text: qsTr(&quot;Clear&quot;)
+            enabled: resourceModel.count !== 0
+            Layout.preferredWidth: 100
+
+            onClicked: resourceModel.clear()
+        }
+
+        ListModel {
+            id: resourceModel
+        }
+
+        ListView {
+            id: resourceView
+            model: resourceModel
+            clip: true
+            Layout.columnSpan: 2
+            Layout.fillHeight: true
+            Layout.fillWidth: true
+
+            delegate: Rectangle {
+                id: resourceItem
+
+                required property string host
+                required property string path
+                required property string title
+
+                width: resourceView.width
+                height: contentColumn.implicitHeight
+                color: &quot;lightgray&quot;
+                border.color: &quot;darkgray&quot;
+                radius: 5
+
+                Column {
+                    id: contentColumn
+                    topPadding: 5
+                    leftPadding: 5
+                    bottomPadding: 5
+                    Text { text: qsTr('&amp;lt;b&amp;gt;Host:&amp;lt;/b&amp;gt; %1').arg(resourceItem.host) }
+                    Text { text: qsTr('&amp;lt;b&amp;gt;Resource:&amp;lt;/b&amp;gt; %1').arg(resourceItem.path) }
+                    Text { text: qsTr('&amp;lt;b&amp;gt;Title:&amp;lt;/b&amp;gt; %1').arg(resourceItem.title) }
+                }
+            }
+        }
+        Label {
+            id: statusLabel
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

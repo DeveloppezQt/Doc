@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>RESTful Color Palette Server</db:title>
+<db:productname>QtHttpServer</db:productname>
+<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Lightweight HTTP Server Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of how to create a RESTful API server using the <db:link xlink:href="qhttpserver.xml">QHttpServer</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-02-14</db:pubdate>
+<db:date>2024-02-14</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;apibehavior.h&quot;
+#include &quot;types.h&quot;
+#include &quot;utils.h&quot;
+#include &amp;lt;QtCore/QCoreApplication&amp;gt;
+#include &amp;lt;QtHttpServer/QHttpServer&amp;gt;
+
+#define SCHEME &quot;http&quot;
+#define HOST &quot;127.0.0.1&quot;
+#define PORT 49425
+
+template&amp;lt;typename T&amp;gt;
+void addCrudRoutes(QHttpServer &amp;amp;httpServer, const QString &amp;amp;apiPath, CrudApi&amp;lt;T&amp;gt; &amp;amp;api,
+                   const SessionApi &amp;amp;sessionApi)
+{
+    httpServer.route(
+            QString(&quot;%1&quot;).arg(apiPath), QHttpServerRequest::Method::Get,
+            [&amp;amp;api](const QHttpServerRequest &amp;amp;request) { return api.getPaginatedList(request); });
+
+    httpServer.route(QString(&quot;%1/&amp;lt;arg&amp;gt;&quot;).arg(apiPath), QHttpServerRequest::Method::Get,
+                     [&amp;amp;api](qint64 itemId) { return api.getItem(itemId); });
+
+    httpServer.route(QString(&quot;%1&quot;).arg(apiPath), QHttpServerRequest::Method::Post,
+                     [&amp;amp;api, &amp;amp;sessionApi](const QHttpServerRequest &amp;amp;request) {
+                         if (!sessionApi.authorize(request)) {
+                             return QHttpServerResponse(
+                                     QHttpServerResponder::StatusCode::Unauthorized);
+                         }
+                         return api.postItem(request);
+                     });
+
+    httpServer.route(QString(&quot;%1/&amp;lt;arg&amp;gt;&quot;).arg(apiPath), QHttpServerRequest::Method::Put,
+                     [&amp;amp;api, &amp;amp;sessionApi](qint64 itemId, const QHttpServerRequest &amp;amp;request) {
+                         if (!sessionApi.authorize(request)) {
+                             return QHttpServerResponse(
+                                     QHttpServerResponder::StatusCode::Unauthorized);
+                         }
+                         return api.updateItem(itemId, request);
+                     });
+
+    httpServer.route(QString(&quot;%1/&amp;lt;arg&amp;gt;&quot;).arg(apiPath), QHttpServerRequest::Method::Patch,
+                     [&amp;amp;api, &amp;amp;sessionApi](qint64 itemId, const QHttpServerRequest &amp;amp;request) {
+                         if (!sessionApi.authorize(request)) {
+                             return QHttpServerResponse(
+                                     QHttpServerResponder::StatusCode::Unauthorized);
+                         }
+                         return api.updateItemFields(itemId, request);
+                     });
+
+    httpServer.route(QString(&quot;%1/&amp;lt;arg&amp;gt;&quot;).arg(apiPath), QHttpServerRequest::Method::Delete,
+                     [&amp;amp;api, &amp;amp;sessionApi](qint64 itemId, const QHttpServerRequest &amp;amp;request) {
+                         if (!sessionApi.authorize(request)) {
+                             return QHttpServerResponse(
+                                     QHttpServerResponder::StatusCode::Unauthorized);
+                         }
+                         return api.deleteItem(itemId);
+                     });
+}
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+
+    QCommandLineParser parser;
+    parser.addOptions({
+            { &quot;port&quot;, QCoreApplication::translate(&quot;main&quot;, &quot;The port the server listens on.&quot;),
+              &quot;port&quot; },
+    });
+    parser.addHelpOption();
+    parser.process(app);
+
+    quint16 portArg = PORT;
+    if (!parser.value(&quot;port&quot;).isEmpty())
+        portArg = parser.value(&quot;port&quot;).toUShort();
+
+    auto colorFactory = std::make_unique&amp;lt;ColorFactory&amp;gt;();
+    auto colors = tryLoadFromFile&amp;lt;Color&amp;gt;(*colorFactory, &quot;:/assets/colors.json&quot;);
+    CrudApi&amp;lt;Color&amp;gt; colorsApi(std::move(colors), std::move(colorFactory));
+
+    auto userFactory = std::make_unique&amp;lt;UserFactory&amp;gt;(SCHEME, HOST, portArg);
+    auto users = tryLoadFromFile&amp;lt;User&amp;gt;(*userFactory, &quot;:/assets/users.json&quot;);
+    CrudApi&amp;lt;User&amp;gt; usersApi(std::move(users), std::move(userFactory));
+
+    auto sessionEntryFactory = std::make_unique&amp;lt;SessionEntryFactory&amp;gt;();
+    auto sessions = tryLoadFromFile&amp;lt;SessionEntry&amp;gt;(*sessionEntryFactory, &quot;:/assets/sessions.json&quot;);
+    SessionApi sessionApi(std::move(sessions), std::move(sessionEntryFactory));
+
+    // Setup QHttpServer
+    QHttpServer httpServer;
+    httpServer.route(&quot;/&quot;, []() {
+        return &quot;Qt Colorpalette example server. Please see documentation for API description&quot;;
+    });
+
+    addCrudRoutes(httpServer, &quot;/api/unknown&quot;, colorsApi, sessionApi);
+    addCrudRoutes(httpServer, &quot;/api/users&quot;, usersApi, sessionApi);
+
+    // Login resource
+    httpServer.route(
+            &quot;/api/login&quot;, QHttpServerRequest::Method::Post,
+            [&amp;amp;sessionApi](const QHttpServerRequest &amp;amp;request) { return sessionApi.login(request); });
+
+    httpServer.route(&quot;/api/register&quot;, QHttpServerRequest::Method::Post,
+                     [&amp;amp;sessionApi](const QHttpServerRequest &amp;amp;request) {
+                         return sessionApi.registerSession(request);
+                     });
+
+    httpServer.route(&quot;/api/logout&quot;, QHttpServerRequest::Method::Post,
+                     [&amp;amp;sessionApi](const QHttpServerRequest &amp;amp;request) {
+                         return sessionApi.logout(request);
+                     });
+
+    // Images resource
+    httpServer.route(&quot;/img/faces/&amp;lt;arg&amp;gt;-image.jpg&quot;, QHttpServerRequest::Method::Get,
+                     [](qint64 imageId, const QHttpServerRequest &amp;amp;) {
+                         return QHttpServerResponse::fromFile(
+                                 QString(&quot;:/assets/img/%1-image.jpg&quot;).arg(imageId));
+                     });
+
+    const auto port = httpServer.listen(QHostAddress::Any, portArg);
+    if (!port) {
+        qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&quot;QHttpServerExample&quot;,
+                                                &quot;Server failed to listen on a port.&quot;);
+        return 0;
+    }
+
+    qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(
+                        &quot;QHttpServerExample&quot;,
+                        &quot;Running on http://127.0.0.1:%1/ (Press CTRL+C to quit)&quot;)
+                        .arg(port);
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>
