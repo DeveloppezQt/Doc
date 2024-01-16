@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>SVG Viewer Example</db:title>
+<db:productname>QtSvg</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SVG Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt SVG Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+
+#include &lt;QtWidgets&gt;
+
+#include &quot;svgview.h&quot;
+
+MainWindow::MainWindow()
+    : QMainWindow()
+    , m_view(new SvgView)
+{
+    QMenu *fileMenu = new QMenu(tr(&quot;&amp;File&quot;), this);
+    QAction *openAction = fileMenu-&gt;addAction(tr(&quot;&amp;Open...&quot;));
+    openAction-&gt;setShortcut(QKeySequence(tr(&quot;Ctrl+O&quot;)));
+    QAction *quitAction = fileMenu-&gt;addAction(tr(&quot;E&amp;xit&quot;));
+    quitAction-&gt;setShortcuts(QKeySequence::Quit);
+
+    menuBar()-&gt;addMenu(fileMenu);
+
+    QMenu *viewMenu = new QMenu(tr(&quot;&amp;View&quot;), this);
+    m_backgroundAction = viewMenu-&gt;addAction(tr(&quot;&amp;Background&quot;));
+    m_backgroundAction-&gt;setEnabled(false);
+    m_backgroundAction-&gt;setCheckable(true);
+    m_backgroundAction-&gt;setChecked(false);
+    connect(m_backgroundAction, SIGNAL(toggled(bool)), m_view, SLOT(setViewBackground(bool)));
+
+    m_outlineAction = viewMenu-&gt;addAction(tr(&quot;&amp;Outline&quot;));
+    m_outlineAction-&gt;setEnabled(false);
+    m_outlineAction-&gt;setCheckable(true);
+    m_outlineAction-&gt;setChecked(true);
+    connect(m_outlineAction, SIGNAL(toggled(bool)), m_view, SLOT(setViewOutline(bool)));
+
+    menuBar()-&gt;addMenu(viewMenu);
+
+    QMenu *rendererMenu = new QMenu(tr(&quot;&amp;Renderer&quot;), this);
+    m_nativeAction = rendererMenu-&gt;addAction(tr(&quot;&amp;Native&quot;));
+    m_nativeAction-&gt;setCheckable(true);
+    m_nativeAction-&gt;setChecked(true);
+#ifndef QT_NO_OPENGL
+    m_glAction = rendererMenu-&gt;addAction(tr(&quot;&amp;OpenGL&quot;));
+    m_glAction-&gt;setCheckable(true);
+#endif
+    m_imageAction = rendererMenu-&gt;addAction(tr(&quot;&amp;Image&quot;));
+    m_imageAction-&gt;setCheckable(true);
+
+#ifndef QT_NO_OPENGL
+    rendererMenu-&gt;addSeparator();
+    m_highQualityAntialiasingAction = rendererMenu-&gt;addAction(tr(&quot;&amp;High Quality Antialiasing&quot;));
+    m_highQualityAntialiasingAction-&gt;setEnabled(false);
+    m_highQualityAntialiasingAction-&gt;setCheckable(true);
+    m_highQualityAntialiasingAction-&gt;setChecked(false);
+    connect(m_highQualityAntialiasingAction, SIGNAL(toggled(bool)), m_view, SLOT(setHighQualityAntialiasing(bool)));
+#endif
+
+    QActionGroup *rendererGroup = new QActionGroup(this);
+    rendererGroup-&gt;addAction(m_nativeAction);
+#ifndef QT_NO_OPENGL
+    rendererGroup-&gt;addAction(m_glAction);
+#endif
+    rendererGroup-&gt;addAction(m_imageAction);
+
+    menuBar()-&gt;addMenu(rendererMenu);
+
+    connect(openAction, SIGNAL(triggered()), this, SLOT(openFile()));
+    connect(quitAction, SIGNAL(triggered()), qApp, SLOT(quit()));
+    connect(rendererGroup, SIGNAL(triggered(QAction*)),
+            this, SLOT(setRenderer(QAction*)));
+
+    setCentralWidget(m_view);
+    setWindowTitle(tr(&quot;SVG Viewer&quot;));
+}
+
+void MainWindow::openFile(const QString &amp;path)
+{
+    QString fileName;
+    if (path.isNull())
+        fileName = QFileDialog::getOpenFileName(this, tr(&quot;Open SVG File&quot;),
+                m_currentPath, &quot;SVG files (*.svg *.svgz *.svg.gz)&quot;);
+    else
+        fileName = path;
+
+    if (!fileName.isEmpty()) {
+        QFile file(fileName);
+        if (!file.exists()) {
+            QMessageBox::critical(this, tr(&quot;Open SVG File&quot;),
+                           QString(&quot;Could not open file '%1'.&quot;).arg(fileName));
+
+            m_outlineAction-&gt;setEnabled(false);
+            m_backgroundAction-&gt;setEnabled(false);
+            return;
+        }
+
+        m_view-&gt;openFile(file);
+
+        if (!fileName.startsWith(&quot;:/&quot;)) {
+            m_currentPath = fileName;
+            setWindowTitle(tr(&quot;%1 - SVGViewer&quot;).arg(m_currentPath));
+        }
+
+        m_outlineAction-&gt;setEnabled(true);
+        m_backgroundAction-&gt;setEnabled(true);
+
+        resize(m_view-&gt;sizeHint() + QSize(80, 80 + menuBar()-&gt;height()));
+    }
+}
+
+void MainWindow::setRenderer(QAction *action)
+{
+#ifndef QT_NO_OPENGL
+    m_highQualityAntialiasingAction-&gt;setEnabled(false);
+#endif
+
+    if (action == m_nativeAction)
+        m_view-&gt;setRenderer(SvgView::Native);
+#ifndef QT_NO_OPENGL
+    else if (action == m_glAction) {
+        m_highQualityAntialiasingAction-&gt;setEnabled(true);
+        m_view-&gt;setRenderer(SvgView::OpenGL);
+    }
+#endif
+    else if (action == m_imageAction) {
+        m_view-&gt;setRenderer(SvgView::Image);
+    }
+}
+
+</db:programlisting>
+</db:article>

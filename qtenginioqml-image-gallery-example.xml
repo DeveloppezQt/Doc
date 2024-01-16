@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Enginio QML Examples - Image Gallery</db:title>
+<db:productname>QtEnginioQml</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Client library for Enginio from QML</db:titleabbrev>
+<db:abstract>
+<db:para>This is an example that demonstrates uploading and downloading of files in Enginio.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The user interface is a list of images with their meta-information and a button to upload more images.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/image-gallery.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="backend-configuration">
+<db:title>Backend Configuration</db:title>
+<db:para>The Enginio backend needs to be set up to get this example working.</db:para>
+<db:para>Go to the Enginio Dashboard and create a new backend with the <db:code>Image Gallery</db:code> template.</db:para>
+<db:para>The template will construct a new custom backend by executing the following steps:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Create a new object type <db:code>objects.image</db:code> (on the <db:emphasis role="bold">Object Types</db:emphasis> page).</db:para>
+<db:para>Add two properties to the image object: <db:code>name:&quot;name&quot;</db:code>, <db:code>type: &quot;String&quot;</db:code> and <db:code>name: &quot;file&quot;</db:code>, <db:code>type: &quot;Ref&quot;</db:code> with <db:code>target &quot;files&quot;</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Add a file processor by clicking the <db:code>file</db:code> property. Choose <db:emphasis role="bold">Image processor</db:emphasis>, and in <db:emphasis role="bold">Variants</db:emphasis> enter:</db:para>
+<db:programlisting language="cpp">{
+    &quot;thumbnail&quot;: { &quot;crop&quot;:&quot;100x100&quot; }
+}
+</db:programlisting>
+<db:para>This JSON snippet triggers the server to generate thumbnails for all uploaded images. In the image gallery the thumbnails will be used in the list view. The full image will be shown when the thumbnail is clicked.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Copy the <db:emphasis>backend id</db:emphasis> from the Enginio dashboard. They need to be entered into the example when it is executed for the first time.</db:para>
+</db:section>
+<db:section xml:id="the-example-code">
+<db:title>The Example Code</db:title>
+<db:para>The first step is to set up the <db:link xlink:href="qml-enginio-enginioclient.xml">Enginio client</db:link>.</db:para>
+<db:programlisting language="qml">EnginioClient {
+    id: client
+    backendId: backendHelper.backendId
+    onError: console.log(&quot;Enginio error: &quot; + reply.errorCode + &quot;: &quot; + reply.errorString)
+}
+</db:programlisting>
+<db:para>Then the model is initialized with that client.</db:para>
+<db:programlisting language="qml">EnginioModel {
+    id: enginioModel
+    client: client
+    query: { // query for all objects of type &quot;objects.image&quot; and include not null references to files
+        &quot;objectType&quot;: &quot;objects.image&quot;,
+        &quot;include&quot;: {&quot;file&quot;: {}},
+        &quot;query&quot; : { &quot;file&quot;: { &quot;$ne&quot;: null } }
+    }
+}
+</db:programlisting>
+<db:para>A delegate is needed to present the images nicely. The model is used to get the list of image objects, but the images are only attached to the objects as file references. Thus the image's thumbnail is fetched by each delegate.</db:para>
+<db:note>
+<db:para>In a real application it might be necessary to cache the images.</db:para>
+</db:note>
+<db:para>The <db:code>Component.onCompleted</db:code> function is used to fetch the image. When the delegate is created, it has the JSON image object data. The information needed is the <db:code>file.id</db:code> reference. The <db:code>file</db:code> property was introduced in the backend setup section. Every object (files are just objects) contains an ID that uniquely identifies the image file. The thumbnail url of the image is retrieved using the ID (&quot;variant&quot;: &quot;thumbnail&quot;).</db:para>
+<db:programlisting language="qml">Image {
+    id: image
+    x: 10
+    width: 100
+    height: 100
+    anchors.verticalCenter: parent.verticalCenter
+    opacity: image.status == Image.Ready ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: 100 } }
+    Component.onCompleted: {
+        if (id in imagesUrl) {
+            image.source = imagesUrl[id]
+        } else {
+            var data = { &quot;id&quot;: file.id,
+                &quot;variant&quot;: &quot;thumbnail&quot;}
+            var reply = client.downloadUrl(data)
+            reply.finished.connect(function() {
+                imagesUrl[id] = reply.data.expiringUrl
+                if (image &amp;&amp; reply.data.expiringUrl) // It may be deleted as it is delegate
+                    image.source = reply.data.expiringUrl
+            })
+        }
+    }
+}
+Rectangle {
+    color: &quot;transparent&quot;
+    anchors.fill: image
+    border.color: &quot;#aaa&quot;
+    Rectangle {
+        id: progressBar
+        property real value:  image.progress
+        anchors.bottom: parent.bottom
+        width: image.width * value
+        height: 4
+        color: &quot;#49f&quot;
+        opacity: image.status != Image.Ready ? 1 : 0
+        Behavior on opacity {NumberAnimation {duration: 100}}
+    }
+}
+</db:programlisting>
+<db:para>The meta-information about each image is displayed in simple <db:code>Text</db:code> elements. For the filename, it is possible to directly reference the <db:code>name</db:code> property as defined in the JSON.</db:para>
+<db:programlisting language="qml">Text { text: name }
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="image-gallery/gallery.qrc">image-gallery/gallery.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="image-gallery/image-gallery.pro">image-gallery/image-gallery.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="image-gallery/image-gallery.qml">image-gallery/image-gallery.qml</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

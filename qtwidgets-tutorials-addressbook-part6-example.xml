@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Part 6 - Loading and Saving</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Widgets Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This part covers the Qt file handling features we use to write loading and saving routines for the address book.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-tutorial-part6-screenshot.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Although browsing and searching the contact list are useful features, our address book is not complete until we can save existing contacts and load them again at a later time.</db:para>
+<db:para>Qt provides a number of classes for <db:link xlink:href="io.xml">input and output</db:link>, but we have chosen to use two which are simple to use in combination: <db:link xlink:href="qfile.xml">QFile</db:link> and <db:link xlink:href="qdatastream.xml">QDataStream</db:link>.</db:para>
+<db:para>A <db:link xlink:href="qfile.xml">QFile</db:link> object represents a file on disk that can be read from and written to. <db:link xlink:href="qfile.xml">QFile</db:link> is a subclass of the more general <db:link xlink:href="qiodevice.xml">QIODevice</db:link> class which represents many different kinds of devices.</db:para>
+<db:para>A <db:link xlink:href="qdatastream.xml">QDataStream</db:link> object is used to serialize binary data so that it can be stored in a <db:link xlink:href="qiodevice.xml">QIODevice</db:link> and retrieved again later. Reading from a <db:link xlink:href="qiodevice.xml">QIODevice</db:link> and writing to it is as simple as opening the stream - with the respective device as a parameter - and reading from or writing to it.</db:para>
+<db:section xml:id="defining-the-addressbook-class">
+<db:title>Defining the AddressBook Class</db:title>
+<db:para>We declare two public slots, saveToFile() and loadFromFile(), as well as two <db:link xlink:href="qpushbutton.xml">QPushButton</db:link> objects, loadButton and saveButton.</db:para>
+<db:programlisting language="cpp">    void saveToFile();
+    void loadFromFile();
+    ...
+    QPushButton *loadButton;
+    QPushButton *saveButton;
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-the-addressbook-class">
+<db:title>Implementing the AddressBook Class</db:title>
+<db:para>In our constructor, we instantiate loadButton and saveButton. Ideally, it would be more user-friendly to set the push buttons' labels to &quot;Load contacts from a file&quot; and &quot;Save contacts to a file&quot;. However, due to the size of our other push buttons, we set the labels to <db:guilabel>Load...</db:guilabel> and <db:guilabel>Save...</db:guilabel>. Fortunately, Qt provides a simple way to set tooltips with <db:link xlink:href="qwidget.xml#toolTip-prop">setToolTip</db:link>() and we use it in the following way for our push buttons:</db:para>
+<db:programlisting language="cpp">    loadButton-&gt;setToolTip(tr(&quot;Load contacts from a file&quot;));
+    ...
+    saveButton-&gt;setToolTip(tr(&quot;Save contacts to a file&quot;));
+</db:programlisting>
+<db:para>Although it is not shown here, just like the other features we implemented, we add the push buttons to the layout panel on the right, buttonLayout1, and we connect the push buttons' <db:link xlink:href="qabstractbutton.xml#clicked">clicked</db:link>() signals to their respective slots.</db:para>
+<db:para>For the saving feature, we first obtain fileName using <db:link xlink:href="qfiledialog.xml#getSaveFileName">QFileDialog::getSaveFileName</db:link>(). This is a convenience function provided by <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link>, which pops up a modal file dialog and allows the user to enter a file name or select any existing .abk file. The .abk file is our Address Book extension that we create when we save contacts.</db:para>
+<db:programlisting language="cpp">void AddressBook::saveToFile()
+{
+    QString fileName = QFileDialog::getSaveFileName(this,
+        tr(&quot;Save Address Book&quot;), &quot;&quot;,
+        tr(&quot;Address Book (*.abk);;All Files (*)&quot;));
+
+</db:programlisting>
+<db:para>The file dialog that pops up is displayed in the screenshot below:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-tutorial-part6-save.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>If fileName is not empty, we create a <db:link xlink:href="qfile.xml">QFile</db:link> object, file, with fileName. <db:link xlink:href="qfile.xml">QFile</db:link> works with <db:link xlink:href="qdatastream.xml">QDataStream</db:link> as <db:link xlink:href="qfile.xml">QFile</db:link> is a <db:link xlink:href="qiodevice.xml">QIODevice</db:link>.</db:para>
+<db:para>Next, we attempt to open the file in <db:link xlink:href="qiodevice.xml#OpenModeFlag-enum">WriteOnly</db:link> mode. If this is unsuccessful, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to inform the user.</db:para>
+<db:programlisting language="cpp">    if (fileName.isEmpty())
+        return;
+    else {
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+                file.errorString());
+            return;
+        }
+
+</db:programlisting>
+<db:para>Otherwise, we instantiate a <db:link xlink:href="qdatastream.xml">QDataStream</db:link> object, out, to write the open file. <db:link xlink:href="qdatastream.xml">QDataStream</db:link> requires that the same version of the stream is used for reading and writing. We ensure that this is the case by setting the version used to the <db:link xlink:href="qdatastream.xml#Version-enum">version introduced with Qt 4.5</db:link> before serializing the data to file.</db:para>
+<db:programlisting language="cpp">        QDataStream out(&amp;file);
+        out.setVersion(QDataStream::Qt_4_5);
+        out &lt;&lt; contacts;
+    }
+}
+</db:programlisting>
+<db:para>For the loading feature, we also obtain fileName using <db:link xlink:href="qfiledialog.xml#getOpenFileName">QFileDialog::getOpenFileName</db:link>(). This function, the counterpart to <db:link xlink:href="qfiledialog.xml#getSaveFileName">QFileDialog::getSaveFileName</db:link>(), also pops up the modal file dialog and allows the user to enter a file name or select any existing .abk file to load it into the address book.</db:para>
+<db:programlisting language="cpp">void AddressBook::loadFromFile()
+{
+    QString fileName = QFileDialog::getOpenFileName(this,
+        tr(&quot;Open Address Book&quot;), &quot;&quot;,
+        tr(&quot;Address Book (*.abk);;All Files (*)&quot;));
+</db:programlisting>
+<db:para>On Windows, for example, this function pops up a native file dialog, as shown in the following screenshot.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/addressbook-tutorial-part6-load.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>If fileName is not empty, again, we use a <db:link xlink:href="qfile.xml">QFile</db:link> object, file, and attempt to open it in <db:link xlink:href="qiodevice.xml#OpenModeFlag-enum">ReadOnly</db:link> mode. Similar to our implementation of saveToFile(), if this attempt is unsuccessful, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to inform the user.</db:para>
+<db:programlisting language="cpp">    if (fileName.isEmpty())
+        return;
+    else {
+
+        QFile file(fileName);
+
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::information(this, tr(&quot;Unable to open file&quot;),
+                file.errorString());
+            return;
+        }
+
+        QDataStream in(&amp;file);
+        in.setVersion(QDataStream::Qt_4_5);
+        contacts.clear();   // clear existing contacts
+        in &gt;&gt; contacts;
+</db:programlisting>
+<db:para>Otherwise, we instantiate a <db:link xlink:href="qdatastream.xml">QDataStream</db:link> object, in, set its version as above and read the serialized data into the contacts data structure. The contacts object is emptied before data is read into it to simplify the file reading process. A more advanced method would be to read the contacts into a temporary <db:link xlink:href="qmap.xml">QMap</db:link> object, and copy over non-duplicate contacts into contacts.</db:para>
+<db:programlisting language="cpp">        if (contacts.isEmpty()) {
+            QMessageBox::information(this, tr(&quot;No contacts in file&quot;),
+                tr(&quot;The file you are attempting to open contains no contacts.&quot;));
+        } else {
+            QMap&lt;QString, QString&gt;::iterator i = contacts.begin();
+            nameLine-&gt;setText(i.key());
+            addressText-&gt;setText(i.value());
+        }
+    }
+
+    updateInterface(NavigationMode);
+}
+</db:programlisting>
+<db:para>To display the contacts that have been read from the file, we must first validate the data obtained to ensure that the file we read from actually contains address book contacts. If it does, we display the first contact; otherwise, we display a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> to inform the user about the problem. Lastly, we update the interface to enable and disable the push buttons accordingly.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/addressbook.cpp">tutorials/addressbook/part6/addressbook.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/addressbook.h">tutorials/addressbook/part6/addressbook.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/finddialog.cpp">tutorials/addressbook/part6/finddialog.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/finddialog.h">tutorials/addressbook/part6/finddialog.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/main.cpp">tutorials/addressbook/part6/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="tutorials/addressbook/part6/part6.pro">tutorials/addressbook/part6/part6.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

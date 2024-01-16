@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Camera Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Camera Example shows how to use the API to capture a still image or video.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;videosettings.h&quot;
+#include &quot;ui_videosettings.h&quot;
+
+#include &lt;QComboBox&gt;
+#include &lt;QDebug&gt;
+#include &lt;QMediaRecorder&gt;
+#include &lt;QMediaService&gt;
+
+VideoSettings::VideoSettings(QMediaRecorder *mediaRecorder, QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::VideoSettingsUi),
+    mediaRecorder(mediaRecorder)
+{
+    ui-&gt;setupUi(this);
+
+    //audio codecs
+    ui-&gt;audioCodecBox-&gt;addItem(tr(&quot;Default audio codec&quot;), QVariant(QString()));
+    foreach (const QString &amp;codecName, mediaRecorder-&gt;supportedAudioCodecs()) {
+        QString description = mediaRecorder-&gt;audioCodecDescription(codecName);
+        ui-&gt;audioCodecBox-&gt;addItem(codecName+&quot;: &quot;+description, QVariant(codecName));
+    }
+
+    //sample rate:
+    foreach (int sampleRate, mediaRecorder-&gt;supportedAudioSampleRates()) {
+        ui-&gt;audioSampleRateBox-&gt;addItem(QString::number(sampleRate), QVariant(sampleRate));
+    }
+
+    ui-&gt;audioQualitySlider-&gt;setRange(0, int(QMultimedia::VeryHighQuality));
+
+    //video codecs
+    ui-&gt;videoCodecBox-&gt;addItem(tr(&quot;Default video codec&quot;), QVariant(QString()));
+    foreach (const QString &amp;codecName, mediaRecorder-&gt;supportedVideoCodecs()) {
+        QString description = mediaRecorder-&gt;videoCodecDescription(codecName);
+        ui-&gt;videoCodecBox-&gt;addItem(codecName+&quot;: &quot;+description, QVariant(codecName));
+    }
+
+    ui-&gt;videoQualitySlider-&gt;setRange(0, int(QMultimedia::VeryHighQuality));
+
+    ui-&gt;videoResolutionBox-&gt;addItem(tr(&quot;Default&quot;));
+    QList&lt;QSize&gt; supportedResolutions = mediaRecorder-&gt;supportedResolutions();
+    foreach (const QSize &amp;resolution, supportedResolutions) {
+        ui-&gt;videoResolutionBox-&gt;addItem(QString(&quot;%1x%2&quot;).arg(resolution.width()).arg(resolution.height()),
+                                        QVariant(resolution));
+    }
+
+    ui-&gt;videoFramerateBox-&gt;addItem(tr(&quot;Default&quot;));
+    QList&lt;qreal&gt; supportedFrameRates = mediaRecorder-&gt;supportedFrameRates();
+    qreal rate;
+    foreach (rate, supportedFrameRates) {
+        QString rateString = QString(&quot;%1&quot;).arg(rate, 0, 'f', 2);
+        ui-&gt;videoFramerateBox-&gt;addItem(rateString, QVariant(rate));
+    }
+
+    //containers
+    ui-&gt;containerFormatBox-&gt;addItem(tr(&quot;Default container&quot;), QVariant(QString()));
+    foreach (const QString &amp;format, mediaRecorder-&gt;supportedContainers()) {
+        ui-&gt;containerFormatBox-&gt;addItem(format+&quot;:&quot;+mediaRecorder-&gt;containerDescription(format),
+                                        QVariant(format));
+    }
+}
+
+VideoSettings::~VideoSettings()
+{
+    delete ui;
+}
+
+void VideoSettings::changeEvent(QEvent *e)
+{
+    QDialog::changeEvent(e);
+    switch (e-&gt;type()) {
+    case QEvent::LanguageChange:
+        ui-&gt;retranslateUi(this);
+        break;
+    default:
+        break;
+    }
+}
+
+QAudioEncoderSettings VideoSettings::audioSettings() const
+{
+    QAudioEncoderSettings settings = mediaRecorder-&gt;audioSettings();
+    settings.setCodec(boxValue(ui-&gt;audioCodecBox).toString());
+    settings.setQuality(QMultimedia::EncodingQuality(ui-&gt;audioQualitySlider-&gt;value()));
+    settings.setSampleRate(boxValue(ui-&gt;audioSampleRateBox).toInt());
+    return settings;
+}
+
+void VideoSettings::setAudioSettings(const QAudioEncoderSettings &amp;audioSettings)
+{
+    selectComboBoxItem(ui-&gt;audioCodecBox, QVariant(audioSettings.codec()));
+    selectComboBoxItem(ui-&gt;audioSampleRateBox, QVariant(audioSettings.sampleRate()));
+    ui-&gt;audioQualitySlider-&gt;setValue(audioSettings.quality());
+}
+
+QVideoEncoderSettings VideoSettings::videoSettings() const
+{
+    QVideoEncoderSettings settings = mediaRecorder-&gt;videoSettings();
+    settings.setCodec(boxValue(ui-&gt;videoCodecBox).toString());
+    settings.setQuality(QMultimedia::EncodingQuality(ui-&gt;videoQualitySlider-&gt;value()));
+    settings.setResolution(boxValue(ui-&gt;videoResolutionBox).toSize());
+    settings.setFrameRate(boxValue(ui-&gt;videoFramerateBox).value&lt;qreal&gt;());
+
+    return settings;
+}
+
+void VideoSettings::setVideoSettings(const QVideoEncoderSettings &amp;videoSettings)
+{
+    selectComboBoxItem(ui-&gt;videoCodecBox, QVariant(videoSettings.codec()));
+    selectComboBoxItem(ui-&gt;videoResolutionBox, QVariant(videoSettings.resolution()));
+    ui-&gt;videoQualitySlider-&gt;setValue(videoSettings.quality());
+
+    //special case for frame rate
+    for (int i = 0; i &lt; ui-&gt;videoFramerateBox-&gt;count(); ++i) {
+        qreal itemRate = ui-&gt;videoFramerateBox-&gt;itemData(i).value&lt;qreal&gt;();
+        if (qFuzzyCompare(itemRate, videoSettings.frameRate())) {
+            ui-&gt;videoFramerateBox-&gt;setCurrentIndex(i);
+            break;
+        }
+    }
+}
+
+QString VideoSettings::format() const
+{
+    return boxValue(ui-&gt;containerFormatBox).toString();
+}
+
+void VideoSettings::setFormat(const QString &amp;format)
+{
+    selectComboBoxItem(ui-&gt;containerFormatBox, QVariant(format));
+}
+
+QVariant VideoSettings::boxValue(const QComboBox *box) const
+{
+    int idx = box-&gt;currentIndex();
+    if (idx == -1)
+        return QVariant();
+
+    return box-&gt;itemData(idx);
+}
+
+void VideoSettings::selectComboBoxItem(QComboBox *box, const QVariant &amp;value)
+{
+    for (int i = 0; i &lt; box-&gt;count(); ++i) {
+        if (box-&gt;itemData(i) == value) {
+            box-&gt;setCurrentIndex(i);
+            break;
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

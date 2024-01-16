@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick Demo - Photo Surface</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A QML app for touch devices that uses a Repeater with a <db:link xlink:href="qml-qt-labs-folderlistmodel-folderlistmodel.xml">FolderListModel</db:link> to access content in a folder, and a <db:link xlink:href="qml-qtquick-pincharea.xml">PinchArea</db:link> that contains a <db:link xlink:href="qml-qtquick-mousearea.xml">MouseArea</db:link> to handle pinch gestures on the fetched content.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#ifdef QT_WIDGETS_LIB
+#include &lt;QtWidgets/QApplication&gt;
+#else
+#include &lt;QtGui/QGuiApplication&gt;
+#endif
+#include &lt;QtQml/QQmlApplicationEngine&gt;
+#include &lt;QtQml/QQmlContext&gt;
+#include &lt;QtQuick/QQuickWindow&gt;
+#include &lt;QtGui/QImageReader&gt;
+#include &lt;QtCore/QCommandLineParser&gt;
+#include &lt;QtCore/QCommandLineOption&gt;
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtCore/QDir&gt;
+#include &lt;QtCore/QMimeDatabase&gt;
+#include &lt;QtCore/QStandardPaths&gt;
+#include &lt;QtCore/QUrl&gt;
+
+static QStringList imageNameFilters()
+{
+    QStringList result;
+    QMimeDatabase mimeDatabase;
+    foreach (const QByteArray &amp;m, QImageReader::supportedMimeTypes()) {
+        foreach (const QString &amp;suffix, mimeDatabase.mimeTypeForName(m).suffixes())
+            result.append(QStringLiteral(&quot;*.&quot;) + suffix);
+    }
+    return result;
+}
+
+int main(int argc, char* argv[])
+{
+    // The reason to use QApplication is that QWidget-based dialogs
+    // are the native dialogs on Qt-based platforms like KDE,
+    // but they cannot be instantiated if this is a QGuiApplication.
+#ifdef QT_WIDGETS_LIB
+    QApplication app(argc, argv);
+#else
+    QGuiApplication app(argc, argv);
+#endif
+    QQuickWindow::setDefaultAlphaBuffer(true);
+
+    QCoreApplication::setApplicationName(QStringLiteral(&quot;Photosurface&quot;));
+    QCoreApplication::setOrganizationName(QStringLiteral(&quot;QtProject&quot;));
+    QCoreApplication::setApplicationVersion(QLatin1String(QT_VERSION_STR));
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QStringLiteral(&quot;Qt Quick Demo - Photo Surface&quot;));
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addPositionalArgument(QStringLiteral(&quot;directory&quot;),
+                                 QStringLiteral(&quot;The image directory or URL to show.&quot;));
+    parser.process(app);
+
+    QUrl initialUrl;
+    if (!parser.positionalArguments().isEmpty()) {
+        initialUrl = QUrl::fromUserInput(parser.positionalArguments().first(),
+                                         QDir::currentPath(), QUrl::AssumeLocalFile);
+        if (!initialUrl.isValid()) {
+            qWarning().nospace() &lt;&lt; &quot;Invalid argument: \&quot;&quot;
+                &lt;&lt; parser.positionalArguments().first() &lt;&lt; &quot;\&quot;: &quot; &lt;&lt; initialUrl.errorString();
+            return 1;
+        }
+    }
+
+    const QStringList nameFilters = imageNameFilters();
+
+    QQmlApplicationEngine engine;
+    QQmlContext *context = engine.rootContext();
+
+    QUrl picturesLocationUrl = QUrl::fromLocalFile(QDir::homePath());
+    const QStringList picturesLocations = QStandardPaths::standardLocations(QStandardPaths::PicturesLocation);
+    if (!picturesLocations.isEmpty()) {
+        picturesLocationUrl = QUrl::fromLocalFile(picturesLocations.first());
+        if (initialUrl.isEmpty()
+            &amp;&amp; !QDir(picturesLocations.first()).entryInfoList(nameFilters, QDir::Files).isEmpty()) {
+            initialUrl = picturesLocationUrl;
+        }
+    }
+
+    context-&gt;setContextProperty(QStringLiteral(&quot;contextPicturesLocation&quot;), picturesLocationUrl);
+    context-&gt;setContextProperty(QStringLiteral(&quot;contextInitialUrl&quot;), initialUrl);
+    context-&gt;setContextProperty(QStringLiteral(&quot;contextImageNameFilters&quot;), nameFilters);
+
+    engine.load(QUrl(&quot;qrc:///photosurface.qml&quot;));
+    if (engine.rootObjects().isEmpty())
+        return -1;
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

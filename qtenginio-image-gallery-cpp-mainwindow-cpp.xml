@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Enginio C++ Examples - Image Gallery</db:title>
+<db:productname>QtEnginio</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Client library for Enginio</db:titleabbrev>
+<db:abstract>
+<db:para>This is an example that demonstrates uploading and downloading of files in Enginio.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** You may use this file under the terms of the BSD license as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;QtWidgets&gt;
+#include &lt;QDebug&gt;
+#include &lt;QFrame&gt;
+#include &lt;QLabel&gt;
+#include &lt;QListView&gt;
+#include &lt;QMenu&gt;
+#include &lt;QNetworkAccessManager&gt;
+#include &lt;QPushButton&gt;
+#include &lt;QTimer&gt;
+#include &lt;QVBoxLayout&gt;
+
+#include &lt;enginioclient.h&gt;
+#include &lt;enginioreply.h&gt;
+
+// To get the backend right, we use a helper class in the example.
+// Usually one would just insert the backend information below.
+#include &quot;backendhelper.h&quot;
+
+#include &quot;imageobject.h&quot;
+#include &quot;mainwindow.h&quot;
+#include &quot;imagemodel.h&quot;
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+{
+    setWindowTitle(QStringLiteral(&quot;Enginio Image Gallery&quot;));
+
+    m_client = new EnginioClient(this);
+    m_client-&gt;setBackendId(backendId(&quot;image-gallery&quot;));
+
+    m_model = new ImageModel(this);
+    m_model-&gt;setClient(m_client);
+
+    m_view = new QListView;
+    m_view-&gt;setModel(m_model);
+    m_view-&gt;setViewMode(QListView::IconMode);
+    m_view-&gt;setGridSize(QSize(104, 104));
+
+    m_fileDialog = new QFileDialog(this);
+    m_fileDialog-&gt;setFileMode(QFileDialog::ExistingFile);
+    m_fileDialog-&gt;setNameFilter(&quot;Image files (*.png *.jpg *.jpeg)&quot;);
+    connect(m_fileDialog, SIGNAL(fileSelected(QString)),
+            this, SLOT(fileSelected(QString)));
+
+    m_uploadButton = new QPushButton(&quot;Upload image&quot;);
+    connect(m_uploadButton, SIGNAL(clicked()),
+            m_fileDialog, SLOT(show()));
+
+    QFrame *frame = new QFrame;
+    QVBoxLayout *windowLayout = new QVBoxLayout(frame);
+    windowLayout-&gt;addWidget(m_view);
+    windowLayout-&gt;addWidget(m_uploadButton);
+    setCentralWidget(frame);
+
+    queryImages();
+}
+
+QSize MainWindow::sizeHint() const
+{
+    return QSize(500, 700);
+}
+
+void MainWindow::queryImages()
+{
+    QJsonObject query;
+    query.insert(&quot;objectType&quot;, QStringLiteral(&quot;objects.image&quot;));
+    QJsonObject fileObject;
+    fileObject.insert(&quot;file&quot;, QJsonObject());
+
+    // Use include parameter to request full &quot;file&quot; object for every result
+    // object including image and thumbnail URLs.
+    query.insert(&quot;include&quot;, fileObject);
+
+    // Filter out objects which have not yet been uploaded completely
+    QJsonObject filter;
+    QJsonObject exists;
+    exists.insert(&quot;$exists&quot;, true);
+    filter.insert(&quot;file.id&quot;, exists);
+    query.insert(&quot;query&quot;, filter);
+
+    m_model-&gt;setQuery(query);
+}
+
+void MainWindow::error(EnginioReply *error)
+{
+    qWarning() &lt;&lt; Q_FUNC_INFO &lt;&lt; error;
+}
+
+void MainWindow::fileSelected(const QString &amp;filePath)
+{
+    if (filePath.isEmpty())
+        return;
+
+    QJsonObject object;
+    object.insert(&quot;objectType&quot;, QString(&quot;objects.image&quot;));
+    QString fileName = filePath.split(QDir::separator()).last();
+    object.insert(&quot;name&quot;, fileName);
+    object.insert(&quot;localPath&quot;, filePath);
+    EnginioReply *reply = m_model-&gt;append(object);
+    connect(reply, SIGNAL(finished(EnginioReply*)), this, SLOT(beginUpload(EnginioReply*)));
+}
+
+void MainWindow::beginUpload(EnginioReply *reply)
+{
+    reply-&gt;deleteLater();
+    QString path = reply-&gt;data().value(&quot;localPath&quot;).toString();
+    QString objectId = reply-&gt;data().value(&quot;id&quot;).toString();
+
+    QJsonObject object;
+    object.insert(&quot;id&quot;, objectId);
+    object.insert(&quot;objectType&quot;, QStringLiteral(&quot;objects.image&quot;));
+    object.insert(&quot;propertyName&quot;, QStringLiteral(&quot;file&quot;));
+
+    QJsonObject fileObject;
+    fileObject.insert(QStringLiteral(&quot;fileName&quot;), path);
+
+    QJsonObject uploadJson;
+    uploadJson.insert(QStringLiteral(&quot;targetFileProperty&quot;), object);
+    uploadJson.insert(QStringLiteral(&quot;file&quot;), fileObject);
+
+    EnginioReply *upload = m_client-&gt;uploadFile(uploadJson, QUrl::fromUserInput(path));
+    connect(upload, SIGNAL(finished(EnginioReply*)), upload, SLOT(deleteLater()));
+}
+
+</db:programlisting>
+</db:article>

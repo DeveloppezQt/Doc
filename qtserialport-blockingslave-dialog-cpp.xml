@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Blocking Slave Example</db:title>
+<db:productname>QtSerialPort</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Port Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use the synchronous API of <db:link xlink:href="qserialport.xml">QSerialPort</db:link> in a non-GUI thread.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2012 Denis Shienkov &lt;denis.shienkov@gmail.com&gt;
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the QtSerialPort module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL21$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
+** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;dialog.h&quot;
+
+#include &lt;QLabel&gt;
+#include &lt;QLineEdit&gt;
+#include &lt;QComboBox&gt;
+#include &lt;QSpinBox&gt;
+#include &lt;QPushButton&gt;
+#include &lt;QGridLayout&gt;
+
+#include &lt;QtSerialPort/QSerialPortInfo&gt;
+
+QT_USE_NAMESPACE
+
+Dialog::Dialog(QWidget *parent)
+    : QDialog(parent)
+    , transactionCount(0)
+    , serialPortLabel(new QLabel(tr(&quot;Serial port:&quot;)))
+    , serialPortComboBox(new QComboBox())
+    , waitRequestLabel(new QLabel(tr(&quot;Wait request, msec:&quot;)))
+    , waitRequestSpinBox(new QSpinBox())
+    , responseLabel(new QLabel(tr(&quot;Response:&quot;)))
+    , responseLineEdit(new QLineEdit(tr(&quot;Hello, I'm Slave.&quot;)))
+    , trafficLabel(new QLabel(tr(&quot;No traffic.&quot;)))
+    , statusLabel(new QLabel(tr(&quot;Status: Not running.&quot;)))
+    , runButton(new QPushButton(tr(&quot;Start&quot;)))
+{
+    waitRequestSpinBox-&gt;setRange(0, 10000);
+    waitRequestSpinBox-&gt;setValue(10000);
+
+    foreach (const QSerialPortInfo &amp;info, QSerialPortInfo::availablePorts())
+        serialPortComboBox-&gt;addItem(info.portName());
+
+    QGridLayout *mainLayout = new QGridLayout;
+    mainLayout-&gt;addWidget(serialPortLabel, 0, 0);
+    mainLayout-&gt;addWidget(serialPortComboBox, 0, 1);
+    mainLayout-&gt;addWidget(waitRequestLabel, 1, 0);
+    mainLayout-&gt;addWidget(waitRequestSpinBox, 1, 1);
+    mainLayout-&gt;addWidget(runButton, 0, 2, 2, 1);
+    mainLayout-&gt;addWidget(responseLabel, 2, 0);
+    mainLayout-&gt;addWidget(responseLineEdit, 2, 1, 1, 3);
+    mainLayout-&gt;addWidget(trafficLabel, 3, 0, 1, 4);
+    mainLayout-&gt;addWidget(statusLabel, 4, 0, 1, 5);
+    setLayout(mainLayout);
+
+    setWindowTitle(tr(&quot;Blocking Slave&quot;));
+    serialPortComboBox-&gt;setFocus();
+
+    connect(runButton, &amp;QPushButton::clicked, this, &amp;Dialog::startSlave);
+    connect(&amp;thread, &amp;SlaveThread::request, this,&amp;Dialog::showRequest);
+    connect(&amp;thread, &amp;SlaveThread::error, this, &amp;Dialog::processError);
+    connect(&amp;thread, &amp;SlaveThread::timeout, this, &amp;Dialog::processTimeout);
+
+    connect(serialPortComboBox, static_cast&lt;void (QComboBox::*)(const QString &amp;)&gt;(&amp;QComboBox::currentIndexChanged),
+            this, &amp;Dialog::activateRunButton);
+    connect(waitRequestSpinBox, static_cast&lt;void (QSpinBox::*)(const QString &amp;)&gt;(&amp;QSpinBox::valueChanged),
+            this, &amp;Dialog::activateRunButton);
+    connect(responseLineEdit, &amp;QLineEdit::textChanged, this, &amp;Dialog::activateRunButton);
+}
+
+void Dialog::startSlave()
+{
+    runButton-&gt;setEnabled(false);
+    statusLabel-&gt;setText(tr(&quot;Status: Running, connected to port %1.&quot;)
+                         .arg(serialPortComboBox-&gt;currentText()));
+    thread.startSlave(serialPortComboBox-&gt;currentText(),
+                      waitRequestSpinBox-&gt;value(),
+                      responseLineEdit-&gt;text());
+}
+
+void Dialog::showRequest(const QString &amp;s)
+{
+    trafficLabel-&gt;setText(tr(&quot;Traffic, transaction #%1:&quot;
+                             &quot;\n\r-request: %2&quot;
+                             &quot;\n\r-response: %3&quot;)
+                          .arg(++transactionCount).arg(s).arg(responseLineEdit-&gt;text()));
+}
+
+void Dialog::processError(const QString &amp;s)
+{
+    activateRunButton();
+    statusLabel-&gt;setText(tr(&quot;Status: Not running, %1.&quot;).arg(s));
+    trafficLabel-&gt;setText(tr(&quot;No traffic.&quot;));
+}
+
+void Dialog::processTimeout(const QString &amp;s)
+{
+    statusLabel-&gt;setText(tr(&quot;Status: Running, %1.&quot;).arg(s));
+    trafficLabel-&gt;setText(tr(&quot;No traffic.&quot;));
+}
+void Dialog::activateRunButton()
+{
+    runButton-&gt;setEnabled(true);
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Star Delegate Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Star Delegate example shows how to create a delegate that can paint itself and that supports editing.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>The Star Delegate Example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/stardelegate.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>When displaying data in a <db:link xlink:href="qlistview.xml">QListView</db:link>, <db:link xlink:href="qtableview.xml">QTableView</db:link>, or <db:link xlink:href="qtreeview.xml">QTreeView</db:link>, the individual items are drawn by a <db:link xlink:href="model-view-programming.xml#delegate-classes">delegate</db:link>. Also, when the user starts editing an item (e.g., by double-clicking the item), the delegate provides an editor widget that is placed on top of the item while editing takes place.</db:para>
+<db:para>Delegates are subclasses of <db:link xlink:href="qabstractitemdelegate.xml">QAbstractItemDelegate</db:link>. Qt provides <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link>, which inherits <db:link xlink:href="qabstractitemdelegate.xml">QAbstractItemDelegate</db:link> and handles the most common data types (notably int and <db:link xlink:href="qstring.xml">QString</db:link>). If we need to support custom data types, or want to customize the rendering or the editing for existing data types, we can subclass <db:link xlink:href="qabstractitemdelegate.xml">QAbstractItemDelegate</db:link> or <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link>. See <db:link xlink:href="model-view-programming.xml#delegate-classes">Delegate Classes</db:link> for more information about delegates, and <db:link xlink:href="model-view-programming.xml">Model/View Programming</db:link> if you need a high-level introduction to Qt's model/view architecture (including delegates).</db:para>
+<db:para>In this example, we will see how to implement a custom delegate to render and edit a &quot;star rating&quot; data type, which can store values such as &quot;1 out of 5 stars&quot;.</db:para>
+<db:para>The example consists of the following classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>StarRating is the custom data type. It stores a rating expressed as stars, such as &quot;2 out of 5 stars&quot; or &quot;5 out of 6 stars&quot;.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>StarDelegate inherits <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link> and provides support for StarRating (in addition to the data types already handled by <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link>).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>StarEditor inherits <db:link xlink:href="qwidget.xml">QWidget</db:link> and is used by StarDelegate to let the user edit a star rating using the mouse.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>To show the StarDelegate in action, we will fill a <db:link xlink:href="qtablewidget.xml">QTableWidget</db:link> with some data and install the delegate on it.</db:para>
+<db:section xml:id="stardelegate-class-definition">
+<db:title>StarDelegate Class Definition</db:title>
+<db:para>Here's the definition of the StarDelegate class:</db:para>
+<db:programlisting language="cpp">class StarDelegate : public QStyledItemDelegate
+{
+    Q_OBJECT
+
+public:
+    StarDelegate(QWidget *parent = 0) : QStyledItemDelegate(parent) {}
+
+    void paint(QPainter *painter, const QStyleOptionViewItem &amp;option,
+               const QModelIndex &amp;index) const Q_DECL_OVERRIDE;
+    QSize sizeHint(const QStyleOptionViewItem &amp;option,
+                   const QModelIndex &amp;index) const Q_DECL_OVERRIDE;
+    QWidget *createEditor(QWidget *parent, const QStyleOptionViewItem &amp;option,
+                          const QModelIndex &amp;index) const Q_DECL_OVERRIDE;
+    void setEditorData(QWidget *editor, const QModelIndex &amp;index) const Q_DECL_OVERRIDE;
+    void setModelData(QWidget *editor, QAbstractItemModel *model,
+                      const QModelIndex &amp;index) const Q_DECL_OVERRIDE;
+
+private slots:
+    void commitAndCloseEditor();
+};
+</db:programlisting>
+<db:para>All public functions are reimplemented virtual functions from <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link> to provide custom rendering and editing.</db:para>
+</db:section>
+<db:section xml:id="stardelegate-class-implementation">
+<db:title>StarDelegate Class Implementation</db:title>
+<db:para>The <db:link xlink:href="qabstractitemdelegate.xml#paint">paint</db:link>() function is reimplemented from <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link> and is called whenever the view needs to repaint an item:</db:para>
+<db:programlisting language="cpp">void StarDelegate::paint(QPainter *painter, const QStyleOptionViewItem &amp;option,
+                         const QModelIndex &amp;index) const
+{
+    if (index.data().canConvert&lt;StarRating&gt;()) {
+        StarRating starRating = qvariant_cast&lt;StarRating&gt;(index.data());
+
+        if (option.state &amp; QStyle::State_Selected)
+            painter-&gt;fillRect(option.rect, option.palette.highlight());
+
+        starRating.paint(painter, option.rect, option.palette,
+                         StarRating::ReadOnly);
+    } else {
+        QStyledItemDelegate::paint(painter, option, index);
+    }
+</db:programlisting>
+<db:para>The function is invoked once for each item, represented by a <db:link xlink:href="qmodelindex.xml">QModelIndex</db:link> object from the model. If the data stored in the item is a StarRating, we paint it ourselves; otherwise, we let <db:link xlink:href="qitemdelegate.xml">QItemDelegate</db:link> paint it for us. This ensures that the StarDelegate can handle the most common data types.</db:para>
+<db:para>In the case where the item is a StarRating, we draw the background if the item is selected, and we draw the item using StarRating::paint(), which we will review later.</db:para>
+<db:para>StartRatings can be stored in a <db:link xlink:href="qvariant.xml">QVariant</db:link> thanks to the <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro appearing in starrating.h. More on this later.</db:para>
+<db:para>The <db:link xlink:href="qabstractitemdelegate.xml#createEditor">createEditor</db:link>() function is called when the user starts editing an item:</db:para>
+<db:programlisting language="cpp">QWidget *StarDelegate::createEditor(QWidget *parent,
+                                    const QStyleOptionViewItem &amp;option,
+                                    const QModelIndex &amp;index) const
+
+{
+    if (index.data().canConvert&lt;StarRating&gt;()) {
+        StarEditor *editor = new StarEditor(parent);
+        connect(editor, &amp;StarEditor::editingFinished,
+                this, &amp;StarDelegate::commitAndCloseEditor);
+        return editor;
+    } else {
+        return QStyledItemDelegate::createEditor(parent, option, index);
+    }
+}
+</db:programlisting>
+<db:para>If the item is a StarRating, we create a StarEditor and connect its editingFinished() signal to our commitAndCloseEditor() slot, so we can update the model when the editor closes.</db:para>
+<db:para>Here's the implementation of commitAndCloseEditor():</db:para>
+<db:programlisting language="cpp">void StarDelegate::commitAndCloseEditor()
+{
+    StarEditor *editor = qobject_cast&lt;StarEditor *&gt;(sender());
+    emit commitData(editor);
+    emit closeEditor(editor);
+}
+</db:programlisting>
+<db:para>When the user is done editing, we emit <db:link xlink:href="qabstractitemdelegate.xml#commitData">commitData</db:link>() and <db:link xlink:href="qabstractitemdelegate.xml#closeEditor">closeEditor</db:link>() (both declared in <db:link xlink:href="qabstractitemdelegate.xml">QAbstractItemDelegate</db:link>), to tell the model that there is edited data and to inform the view that the editor is no longer needed.</db:para>
+<db:para>The <db:link xlink:href="qabstractitemdelegate.xml#setEditorData">setEditorData</db:link>() function is called when an editor is created to initialize it with data from the model:</db:para>
+<db:programlisting language="cpp">void StarDelegate::setEditorData(QWidget *editor,
+                                 const QModelIndex &amp;index) const
+{
+    if (index.data().canConvert&lt;StarRating&gt;()) {
+        StarRating starRating = qvariant_cast&lt;StarRating&gt;(index.data());
+        StarEditor *starEditor = qobject_cast&lt;StarEditor *&gt;(editor);
+        starEditor-&gt;setStarRating(starRating);
+    } else {
+        QStyledItemDelegate::setEditorData(editor, index);
+    }
+}
+</db:programlisting>
+<db:para>We simply call setStarRating() on the editor.</db:para>
+<db:para>The <db:link xlink:href="qabstractitemdelegate.xml#setModelData">setModelData</db:link>() function is called when editing is finished, to commit data from the editor to the model:</db:para>
+<db:programlisting language="cpp">void StarDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
+                                const QModelIndex &amp;index) const
+{
+    if (index.data().canConvert&lt;StarRating&gt;()) {
+        StarEditor *starEditor = qobject_cast&lt;StarEditor *&gt;(editor);
+        model-&gt;setData(index, QVariant::fromValue(starEditor-&gt;starRating()));
+    } else {
+        QStyledItemDelegate::setModelData(editor, model, index);
+    }
+}
+</db:programlisting>
+<db:para>The sizeHint() function returns an item's preferred size:</db:para>
+<db:programlisting language="cpp">QSize StarDelegate::sizeHint(const QStyleOptionViewItem &amp;option,
+                             const QModelIndex &amp;index) const
+{
+    if (index.data().canConvert&lt;StarRating&gt;()) {
+        StarRating starRating = qvariant_cast&lt;StarRating&gt;(index.data());
+        return starRating.sizeHint();
+    } else {
+        return QStyledItemDelegate::sizeHint(option, index);
+    }
+}
+</db:programlisting>
+<db:para>We simply forward the call to StarRating.</db:para>
+</db:section>
+<db:section xml:id="stareditor-class-definition">
+<db:title>StarEditor Class Definition</db:title>
+<db:para>The StarEditor class was used when implementing StarDelegate. Here's the class definition:</db:para>
+<db:programlisting language="cpp">class StarEditor : public QWidget
+{
+    Q_OBJECT
+
+public:
+    StarEditor(QWidget *parent = 0);
+
+    QSize sizeHint() const Q_DECL_OVERRIDE;
+    void setStarRating(const StarRating &amp;starRating) {
+        myStarRating = starRating;
+    }
+    StarRating starRating() { return myStarRating; }
+
+signals:
+    void editingFinished();
+
+protected:
+    void paintEvent(QPaintEvent *event) Q_DECL_OVERRIDE;
+    void mouseMoveEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+    void mouseReleaseEvent(QMouseEvent *event) Q_DECL_OVERRIDE;
+
+private:
+    int starAtPosition(int x);
+
+    StarRating myStarRating;
+};
+</db:programlisting>
+<db:para>The class lets the user edit a StarRating by moving the mouse over the editor. It emits the editingFinished() signal when the user clicks on the editor.</db:para>
+<db:para>The protected functions are reimplemented from <db:link xlink:href="qwidget.xml">QWidget</db:link> to handle mouse and paint events. The private function starAtPosition() is a helper function that returns the number of the star under the mouse pointer.</db:para>
+</db:section>
+<db:section xml:id="stareditor-class-implementation">
+<db:title>StarEditor Class Implementation</db:title>
+<db:para>Let's start with the constructor:</db:para>
+<db:programlisting language="cpp">StarEditor::StarEditor(QWidget *parent)
+    : QWidget(parent)
+{
+    setMouseTracking(true);
+    setAutoFillBackground(true);
+}
+</db:programlisting>
+<db:para>We enable <db:link xlink:href="qwidget.xml#mouseTracking-prop">mouse tracking</db:link> on the widget so we can follow the cursor even when the user doesn't hold down any mouse button. We also turn on <db:link xlink:href="qwidget.xml">QWidget</db:link>'s <db:link xlink:href="qwidget.xml#autoFillBackground-prop">auto-fill background</db:link> feature to obtain an opaque background. (Without the call, the view's background would shine through the editor.)</db:para>
+<db:para>The <db:link xlink:href="qwidget.xml#paintEvent">paintEvent</db:link>() function is reimplemented from <db:link xlink:href="qwidget.xml">QWidget</db:link>:</db:para>
+<db:programlisting language="cpp">void StarEditor::paintEvent(QPaintEvent *)
+{
+    QPainter painter(this);
+    myStarRating.paint(&amp;painter, rect(), this-&gt;palette(),
+                       StarRating::Editable);
+}
+</db:programlisting>
+<db:para>We simply call StarRating::paint() to draw the stars, just like we did when implementing StarDelegate.</db:para>
+<db:programlisting language="cpp">void StarEditor::mouseMoveEvent(QMouseEvent *event)
+{
+    int star = starAtPosition(event-&gt;x());
+
+    if (star != myStarRating.starCount() &amp;&amp; star != -1) {
+        myStarRating.setStarCount(star);
+        update();
+    }
+}
+</db:programlisting>
+<db:para>In the mouse event handler, we call setStarCount() on the private data member myStarRating to reflect the current cursor position, and we call <db:link xlink:href="qwidget.xml#update">QWidget::update</db:link>() to force a repaint.</db:para>
+<db:programlisting language="cpp">void StarEditor::mouseReleaseEvent(QMouseEvent * /* event */)
+{
+    emit editingFinished();
+}
+</db:programlisting>
+<db:para>When the user releases a mouse button, we simply emit the editingFinished() signal.</db:para>
+<db:programlisting language="cpp">int StarEditor::starAtPosition(int x)
+{
+    int star = (x / (myStarRating.sizeHint().width()
+                     / myStarRating.maxStarCount())) + 1;
+    if (star &lt;= 0 || star &gt; myStarRating.maxStarCount())
+        return -1;
+
+    return star;
+}
+</db:programlisting>
+<db:para>The starAtPosition() function uses basic linear algebra to find out which star is under the cursor.</db:para>
+</db:section>
+<db:section xml:id="starrating-class-definition">
+<db:title>StarRating Class Definition</db:title>
+<db:programlisting language="cpp">class StarRating
+{
+public:
+    enum EditMode { Editable, ReadOnly };
+
+    explicit StarRating(int starCount = 1, int maxStarCount = 5);
+
+    void paint(QPainter *painter, const QRect &amp;rect,
+               const QPalette &amp;palette, EditMode mode) const;
+    QSize sizeHint() const;
+    int starCount() const { return myStarCount; }
+    int maxStarCount() const { return myMaxStarCount; }
+    void setStarCount(int starCount) { myStarCount = starCount; }
+    void setMaxStarCount(int maxStarCount) { myMaxStarCount = maxStarCount; }
+
+private:
+    QPolygonF starPolygon;
+    QPolygonF diamondPolygon;
+    int myStarCount;
+    int myMaxStarCount;
+};
+
+Q_DECLARE_METATYPE(StarRating)
+</db:programlisting>
+<db:para>The StarRating class represents a rating as a number of stars. In addition to holding the data, it is also capable of painting the stars on a <db:link xlink:href="qpaintdevice.xml">QPaintDevice</db:link>, which in this example is either a view or an editor. The myStarCount member variable stores the current rating, and myMaxStarCount stores the highest possible rating (typically 5).</db:para>
+<db:para>The <db:link xlink:href="qmetatype.xml#Q_DECLARE_METATYPE">Q_DECLARE_METATYPE</db:link>() macro makes the type StarRating known to <db:link xlink:href="qvariant.xml">QVariant</db:link>, making it possible to store StarRating values in <db:link xlink:href="qvariant.xml">QVariant</db:link>.</db:para>
+</db:section>
+<db:section xml:id="starrating-class-implementation">
+<db:title>StarRating Class Implementation</db:title>
+<db:para>The constructor initializes myStarCount and myMaxStarCount, and sets up the polygons used to draw stars and diamonds:</db:para>
+<db:programlisting language="cpp">StarRating::StarRating(int starCount, int maxStarCount)
+{
+    myStarCount = starCount;
+    myMaxStarCount = maxStarCount;
+
+    starPolygon &lt;&lt; QPointF(1.0, 0.5);
+    for (int i = 1; i &lt; 5; ++i)
+        starPolygon &lt;&lt; QPointF(0.5 + 0.5 * std::cos(0.8 * i * 3.14),
+                               0.5 + 0.5 * std::sin(0.8 * i * 3.14));
+
+    diamondPolygon &lt;&lt; QPointF(0.4, 0.5) &lt;&lt; QPointF(0.5, 0.4)
+                   &lt;&lt; QPointF(0.6, 0.5) &lt;&lt; QPointF(0.5, 0.6)
+                   &lt;&lt; QPointF(0.4, 0.5);
+}
+</db:programlisting>
+<db:para>The paint() function paints the stars in this StarRating object on a paint device:</db:para>
+<db:programlisting language="cpp">void StarRating::paint(QPainter *painter, const QRect &amp;rect,
+                       const QPalette &amp;palette, EditMode mode) const
+{
+    painter-&gt;save();
+
+    painter-&gt;setRenderHint(QPainter::Antialiasing, true);
+    painter-&gt;setPen(Qt::NoPen);
+
+    if (mode == Editable) {
+        painter-&gt;setBrush(palette.highlight());
+    } else {
+        painter-&gt;setBrush(palette.foreground());
+    }
+
+    int yOffset = (rect.height() - PaintingScaleFactor) / 2;
+    painter-&gt;translate(rect.x(), rect.y() + yOffset);
+    painter-&gt;scale(PaintingScaleFactor, PaintingScaleFactor);
+
+    for (int i = 0; i &lt; myMaxStarCount; ++i) {
+        if (i &lt; myStarCount) {
+            painter-&gt;drawPolygon(starPolygon, Qt::WindingFill);
+        } else if (mode == Editable) {
+            painter-&gt;drawPolygon(diamondPolygon, Qt::WindingFill);
+        }
+        painter-&gt;translate(1.0, 0.0);
+    }
+
+    painter-&gt;restore();
+}
+</db:programlisting>
+<db:para>We first set the pen and brush we will use for painting. The mode parameter can be either Editable or ReadOnly. If mode is editable, we use the <db:link xlink:href="qpalette.xml#ColorRole-enum">Highlight</db:link> color instead of the <db:link xlink:href="qpalette.xml#ColorRole-enum">Foreground</db:link> color to draw the stars.</db:para>
+<db:para>Then we draw the stars. If we are in Edit mode, we paint diamonds in place of stars if the rating is less than the highest rating.</db:para>
+<db:para>The sizeHint() function returns the preferred size for an area to paint the stars on:</db:para>
+<db:programlisting language="cpp">QSize StarRating::sizeHint() const
+{
+    return PaintingScaleFactor * QSize(myMaxStarCount, 1);
+}
+</db:programlisting>
+<db:para>The preferred size is just enough to paint the maximum number of stars. The function is called by both StarDelegate::sizeHint() and StarEditor::sizeHint().</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:para>Here's the program's main() function:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+
+    QTableWidget tableWidget(4, 4);
+    tableWidget.setItemDelegate(new StarDelegate);
+    tableWidget.setEditTriggers(QAbstractItemView::DoubleClicked
+                                | QAbstractItemView::SelectedClicked);
+    tableWidget.setSelectionBehavior(QAbstractItemView::SelectRows);
+
+    QStringList headerLabels;
+    headerLabels &lt;&lt; &quot;Title&quot; &lt;&lt; &quot;Genre&quot; &lt;&lt; &quot;Artist&quot; &lt;&lt; &quot;Rating&quot;;
+    tableWidget.setHorizontalHeaderLabels(headerLabels);
+
+    populateTableWidget(&amp;tableWidget);
+
+    tableWidget.resizeColumnsToContents();
+    tableWidget.resize(500, 300);
+    tableWidget.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The main() function creates a <db:link xlink:href="qtablewidget.xml">QTableWidget</db:link> and sets a StarDelegate on it. <db:link xlink:href="qabstractitemview.xml#EditTrigger-enum">DoubleClicked</db:link> and <db:link xlink:href="qabstractitemview.xml#EditTrigger-enum">SelectedClicked</db:link> are set as <db:link xlink:href="qabstractitemview.xml#editTriggers-prop">edit triggers</db:link>, so that the editor is opened with a single click when the star rating item is selected.</db:para>
+<db:para>The populateTableWidget() function fills the <db:link xlink:href="qtablewidget.xml">QTableWidget</db:link> with data:</db:para>
+<db:programlisting language="cpp">void populateTableWidget(QTableWidget *tableWidget)
+{
+    static const struct {
+        const char *title;
+        const char *genre;
+        const char *artist;
+        int rating;
+    } staticData[] = {
+        { &quot;Mass in B-Minor&quot;, &quot;Baroque&quot;, &quot;J.S. Bach&quot;, 5 },
+    ...
+        { 0, 0, 0, 0 }
+    };
+
+    for (int row = 0; staticData[row].title != 0; ++row) {
+        QTableWidgetItem *item0 = new QTableWidgetItem(staticData[row].title);
+        QTableWidgetItem *item1 = new QTableWidgetItem(staticData[row].genre);
+        QTableWidgetItem *item2 = new QTableWidgetItem(staticData[row].artist);
+        QTableWidgetItem *item3 = new QTableWidgetItem;
+        item3-&gt;setData(0,
+                       QVariant::fromValue(StarRating(staticData[row].rating)));
+
+        tableWidget-&gt;setItem(row, 0, item0);
+        tableWidget-&gt;setItem(row, 1, item1);
+        tableWidget-&gt;setItem(row, 2, item2);
+        tableWidget-&gt;setItem(row, 3, item3);
+    }
+}
+</db:programlisting>
+<db:para>Notice the call to qVariantFromValue to convert a StarRating to a <db:link xlink:href="qvariant.xml">QVariant</db:link>.</db:para>
+</db:section>
+<db:section xml:id="possible-extensions-and-suggestions">
+<db:title>Possible Extensions and Suggestions</db:title>
+<db:para>There are many ways to customize Qt's <db:link xlink:href="model-view-programming.xml">model/view framework</db:link>. The approach used in this example is appropriate for most custom delegates and editors. Examples of possibilities not used by the star delegate and star editor are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>It is possible to open editors programmatically by calling <db:link xlink:href="qabstractitemview.xml#edit">QAbstractItemView::edit</db:link>(), instead of relying on edit triggers. This could be use to support other edit triggers than those offered by the <db:link xlink:href="qabstractitemview.xml#EditTrigger-enum">QAbstractItemView::EditTrigger</db:link> enum. For example, in the Star Delegate example, hovering over an item with the mouse might make sense as a way to pop up an editor.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>By reimplementing <db:link xlink:href="qabstractitemdelegate.xml#editorEvent">QAbstractItemDelegate::editorEvent</db:link>(), it is possible to implement the editor directly in the delegate, instead of creating a separate <db:link xlink:href="qwidget.xml">QWidget</db:link> subclass.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/main.cpp">itemviews/stardelegate/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/stardelegate.cpp">itemviews/stardelegate/stardelegate.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/stardelegate.h">itemviews/stardelegate/stardelegate.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/stardelegate.pro">itemviews/stardelegate/stardelegate.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/stareditor.cpp">itemviews/stardelegate/stareditor.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/stareditor.h">itemviews/stardelegate/stareditor.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/starrating.cpp">itemviews/stardelegate/starrating.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="itemviews/stardelegate/starrating.h">itemviews/stardelegate/starrating.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

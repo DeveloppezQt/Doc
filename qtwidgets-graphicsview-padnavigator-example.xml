@@ -1,0 +1,695 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Pad Navigator Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create animated user interface.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Pad Navigator Example shows how you can use Graphics View together with embedded widgets and Qt's <db:link xlink:href="statemachine-api.xml">state machine framework</db:link> to create a simple but useful, dynamic, animated user interface.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/padnavigator-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The interface consists of a flippable, rotating pad with icons that can be selected using the arrow keys on your keyboard or keypad. Pressing enter will flip the pad around and reveal its back side, which has a form embedded into a <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link>. You can interact with the form, and press the enter key to flip back to the front side of the pad at any time.</db:para>
+<db:para>Graphics View provides the <db:link xlink:href="qgraphicsscene.xml">QGraphicsScene</db:link> class for managing and interacting with a large number of custom-made 2D graphical items derived from the <db:link xlink:href="qgraphicsitem.xml">QGraphicsItem</db:link> class, and a <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> widget for visualizing the items, with support for zooming and rotation.</db:para>
+<db:para>This example consists of a RoundRectItem class, a FlippablePad class, a PadNavigator class, a SplashItem class, and a main() function.</db:para>
+<db:section xml:id="roundrectitem-class-definition">
+<db:title>RoundRectItem Class Definition</db:title>
+<db:para>The RoundRectItem class is used by itself to display the icons on the pad, and as a base class for FlippablePad, the class for the pad itself. The role of the class is to paint a round rectangle of a specified size and gradient color, and optionally to paint a pixmap icon on top. To support FlippablePad it also allows filling its contents with a plain window background color.</db:para>
+<db:para>Let's start by reviewing the RoundRectItem class declaration.</db:para>
+<db:programlisting language="cpp">class RoundRectItem : public QGraphicsObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool fill READ fill WRITE setFill)
+public:
+    RoundRectItem(const QRectF &amp;bounds, const QColor &amp;color,
+                  QGraphicsItem *parent = 0);
+
+    QPixmap pixmap() const;
+    void setPixmap(const QPixmap &amp;pixmap);
+
+    QRectF boundingRect() const Q_DECL_OVERRIDE;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0) Q_DECL_OVERRIDE;
+
+    bool fill() const;
+    void setFill(bool fill);
+</db:programlisting>
+<db:para>RoundRectItem inherits <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link>, which makes it easy to control its properties using <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link>. Its constructor takes a rectangle to determine its bounds, and a color.</db:para>
+<db:para>Besides implementing the mandatory <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() and <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() pure virtual functions, it also provides the pixmap and fill properties.</db:para>
+<db:para>The pixmap property sets an optional pixmap that is drawn on top of the round rectangle. The fill property will, when true, fill the round rectangle contents with a fixed <db:link xlink:href="qpalette.xml#ColorRole-enum">QPalette::Window</db:link> background color. Otherwise the contents are filled using a gradient based on the color passed to RoundRectItem's constructor.</db:para>
+<db:programlisting language="cpp">private:
+    QPixmap pix;
+    bool fillRect;
+    QRectF bounds;
+    QLinearGradient gradient;
+};
+</db:programlisting>
+<db:para>The private data members are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>pix: The optional pixmap that is drawn on top of the rectangle.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>fillRect: Corresponds to the fill property.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>color: The configurable gradient color fill of the rectangle.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>bounds: The bounds of the rectangle.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>gradient: A precalculated gradient used to fill the rectangle.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>We will now review the RoundRectItem implementation. Let's start by looking at its constructor:</db:para>
+<db:programlisting language="cpp">RoundRectItem::RoundRectItem(const QRectF &amp;bounds, const QColor &amp;color,
+                             QGraphicsItem *parent)
+    : QGraphicsObject(parent), fillRect(false), bounds(bounds)
+{
+    gradient.setStart(bounds.topLeft());
+    gradient.setFinalStop(bounds.bottomRight());
+    gradient.setColorAt(0, color);
+    gradient.setColorAt(1, color.dark(200));
+    setCacheMode(ItemCoordinateCache);
+}
+</db:programlisting>
+<db:para>The constructor initializes its member variables and forwards the parent argument to <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link>'s constructor. It then constructs the linear gradient that is used in <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() to draw the round rectangle's gradient background. The linear gradient's starting point is at the top-left corner of the bounds, and the end is at the bottom-left corner. The start color is identical to the color passed as an argument, and a slightly darker color is chosen for the final stop.</db:para>
+<db:para>We store this gradient as a member variable to avoid having to recreate the gradient every time the item is repainted.</db:para>
+<db:para>Finally we set the cache mode <db:link xlink:href="qgraphicsitem.xml#CacheMode-enum">ItemCoordinateCache</db:link>. This mode causes the item's rendering to be cached into an off-screen pixmap that remains persistent as we move and transform the item. This mode is ideal for this example, and works particularly well with OpenGL and OpenGL ES.</db:para>
+<db:programlisting language="cpp">QPixmap RoundRectItem::pixmap() const
+{
+    return pix;
+}
+void RoundRectItem::setPixmap(const QPixmap &amp;pixmap)
+{
+    pix = pixmap;
+    update();
+}
+</db:programlisting>
+<db:para>The pixmap property implementation simple returns the member pixmap, or sets it and then calls <db:link xlink:href="qgraphicsitem.xml#update">update</db:link>().</db:para>
+<db:programlisting language="cpp">QRectF RoundRectItem::boundingRect() const
+{
+    return bounds.adjusted(0, 0, 2, 2);
+}
+</db:programlisting>
+<db:para>As the <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() implementation below draws a simple drop shadow down and to the right of the item, we return a slightly adjusted rectangle from <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>().</db:para>
+<db:programlisting language="cpp">void RoundRectItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
+                          QWidget *widget)
+{
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+    painter-&gt;setPen(Qt::NoPen);
+    painter-&gt;setBrush(QColor(0, 0, 0, 64));
+    painter-&gt;drawRoundRect(bounds.translated(2, 2));
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() implementation starts by rendering a semi transparent black round rectangle drop shadow, two units down and to the right of the main item.</db:para>
+<db:programlisting language="cpp">    if (fillRect)
+        painter-&gt;setBrush(QApplication::palette().brush(QPalette::Window));
+    else
+        painter-&gt;setBrush(gradient);
+    painter-&gt;setPen(QPen(Qt::black, 1));
+    painter-&gt;drawRoundRect(bounds);
+</db:programlisting>
+<db:para>We then draw the &quot;foreground&quot; round rectangle itself. The fill depends on the fill property; if true, we will with a plain <db:link xlink:href="qpalette.xml#ColorRole-enum">QPalette::Window</db:link> color. We get the current brush from <db:link xlink:href="qapplication.xml#palette">QApplication::palette</db:link>(). We assign a single unit wide pen for the stroke, assign the brush, and then draw the rectangle.</db:para>
+<db:programlisting language="cpp">    if (!pix.isNull()) {
+        painter-&gt;scale(1.95, 1.95);
+        painter-&gt;drawPixmap(-pix.width() / 2, -pix.height() / 2, pix);
+    }
+}
+</db:programlisting>
+<db:para>If a pixmap has been assigned to the <db:emphasis>pixmap</db:emphasis> property, we draw this pixmap in the center of the rectangle item. The pixmaps are scaled to match the size of the icons; in arguably a better approach would have been to store the icons with the right size in the first places.</db:para>
+<db:programlisting language="cpp">bool RoundRectItem::fill() const
+{
+    return fillRect;
+}
+void RoundRectItem::setFill(bool fill)
+{
+    fillRect = fill;
+    update();
+}
+</db:programlisting>
+<db:para>Finally, for completeness we include the fill property implementation. It returns the fill member variable's value, and when assigned to, it calls <db:link xlink:href="qgraphicsitem.xml#update">update</db:link>().</db:para>
+<db:para>As mentioned already, RoundRectItem is the base class for FlippablePad, which is the class representing the tilting pad itself. We will proceed to reviewing FlippablePad.</db:para>
+</db:section>
+<db:section xml:id="flippablepad-class-definition">
+<db:title>FlippablePad Class Definition</db:title>
+<db:para>FlippablePad is, in addition to its inherited RoundRectItem responsibilities, responsible for creating and managing a grid of icons.</db:para>
+<db:programlisting language="cpp">class FlippablePad : public RoundRectItem
+{
+public:
+    explicit FlippablePad(const QSize &amp;size, QGraphicsItem *parent = 0);
+
+    RoundRectItem *iconAt(int column, int row) const;
+
+private:
+    QVector&lt;QVector&lt;RoundRectItem *&gt; &gt; iconGrid;
+};
+</db:programlisting>
+<db:para>Its declaration is very simple: It inherits RoundRectItem and does not need any special polymorphic behavior. It's suitable to declare its own constructor, and a getter-function that allows PadNavigator to access the icons in the grid by (row, column).</db:para>
+<db:para>The example has no &quot;real&quot; behavior or logic of any kind, and because of that, the icons do not need to provide any <db:emphasis>behavior</db:emphasis> or special interactions management. In a real application, however, it would be natural for the FlippablePad and its icons to handle more of the navigation logic. In this example, we have chosen to leave this to the PadNavigator class, which we will get back to below.</db:para>
+<db:para>We will now review the FlippablePad implementation. This implementation starts with two helper functions: boundsFromSize() and posForLocation():</db:para>
+<db:programlisting language="cpp">static QRectF boundsFromSize(const QSize &amp;size)
+{
+    return QRectF((-size.width() / 2.0) * 150, (-size.height() / 2.0) * 150,
+                  size.width() * 150, size.height() * 150);
+}
+</db:programlisting>
+<db:para>boundsForSize() takes a <db:link xlink:href="qsize.xml">QSize</db:link> argument, and returns the bounding rectangle of the flippable pad item. The <db:link xlink:href="qsize.xml">QSize</db:link> determines how many rows and columns the icon grid should have. Each icon is given 150x150 units of space, and this determines the bounds.</db:para>
+<db:programlisting language="cpp">static QPointF posForLocation(int column, int row, const QSize &amp;size)
+{
+    return QPointF(column * 150, row * 150)
+        - QPointF((size.width() - 1) * 75, (size.height() - 1) * 75);
+}
+</db:programlisting>
+<db:para>posForLocation() returns the position of an icon given its row and column position. Like boundsForSize(), the function assumes each icon is given 150x150 units of space, and that all icons are centered around the flippable pad item's origin (0, 0).</db:para>
+<db:programlisting language="cpp">FlippablePad::FlippablePad(const QSize &amp;size, QGraphicsItem *parent)
+    : RoundRectItem(boundsFromSize(size), QColor(226, 255, 92, 64), parent)
+{
+</db:programlisting>
+<db:para>The FlippablePad constructor passes suitable bounds (using boundsForSize()) and specific color to RoundRectItem's constructor.</db:para>
+<db:programlisting language="cpp">    int numIcons = size.width() * size.height();
+    QList&lt;QPixmap&gt; pixmaps;
+    QDirIterator it(&quot;:/images&quot;, QStringList() &lt;&lt; &quot;*.png&quot;);
+    while (it.hasNext() &amp;&amp; pixmaps.size() &lt; numIcons)
+        pixmaps &lt;&lt; it.next();
+</db:programlisting>
+<db:para>It then loads pixmaps from compiled-in resources to use for its icons. <db:link xlink:href="qdiriterator.xml">QDirIterator</db:link> is very useful in this context, as it allows us to fetch all resource &quot;*.png&quot; files inside the :/images directory without explicitly naming the files.</db:para>
+<db:para>We also make sure not to load more pixmaps than we need.</db:para>
+<db:programlisting language="cpp">    const QRectF iconRect(-54, -54, 108, 108);
+    const QColor iconColor(214, 240, 110, 128);
+    iconGrid.resize(size.height());
+    int n = 0;
+
+    for (int y = 0; y &lt; size.height(); ++y) {
+        iconGrid[y].resize(size.width());
+        for (int x = 0; x &lt; size.width(); ++x) {
+            RoundRectItem *rect = new RoundRectItem(iconRect, iconColor, this);
+            rect-&gt;setZValue(1);
+            rect-&gt;setPos(posForLocation(x, y, size));
+            rect-&gt;setPixmap(pixmaps.at(n++ % pixmaps.size()));
+            iconGrid[y][x] = rect;
+        }
+    }
+}
+</db:programlisting>
+<db:para>Now that we have the pixmaps, we can create icons, position then and assign pixmaps. We start by finding a suitable size and color for the icons, and initializing a convenient grid structure for storing the icons. This iconGrid is also used later to find the icon for a specific (column, row) location.</db:para>
+<db:para>For each row and column in our grid, we proceed to constructing each icon as an instance of RoundRectItem. The item is placed by using the posForLocation() helper function. To make room for the slip-behind selection item, we give each icon a <db:link xlink:href="qgraphicsitem.xml#zValue">Z-value</db:link> of 1. The pixmaps are distributed to the icons in round-robin fasion.</db:para>
+<db:para>Again, this approach is only suitable for example purposes. In a real-life application where each icon represents a specific action, it would be more natural to assign the pixmaps directly, or that the icons themselves provide suitable pixmaps.</db:para>
+<db:programlisting language="cpp">RoundRectItem *FlippablePad::iconAt(int column, int row) const
+{
+    return iconGrid[row][column];
+}
+</db:programlisting>
+<db:para>Finally, the iconAt() function returns a pointer to the icon at a specific row and column. It makes a somewhat bold assumption that the input is valid, which is fair because the PadNavigator class only calls this function with correct input.</db:para>
+<db:para>We will now review the SplashItem class.</db:para>
+</db:section>
+<db:section xml:id="splashitem-class-definition">
+<db:title>SplashItem Class Definition</db:title>
+<db:para>The SplashItem class represents the &quot;splash window&quot;, a semitransparent white overlay with text that appears immediately after the application has started, and disappears after pressing any key. The animation is controlled by PadNavigator; this class is very simple by itself.</db:para>
+<db:programlisting language="cpp">class SplashItem : public QGraphicsObject
+{
+    Q_OBJECT
+public:
+    explicit SplashItem(QGraphicsItem *parent = 0);
+
+    QRectF boundingRect() const Q_DECL_OVERRIDE;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = 0) Q_DECL_OVERRIDE;
+
+private:
+    QString text;
+};
+</db:programlisting>
+<db:para>The class declaration shows that SplashItem inherits <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link> to allow it to be controlled by <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link>. It reimplements the mandatory <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() and <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() pure virtual functions, and keeps a text member variable which will contain the information text displayed on this splash item.</db:para>
+<db:para>Let's look at its implementation.</db:para>
+<db:programlisting language="cpp">SplashItem::SplashItem(QGraphicsItem *parent)
+    : QGraphicsObject(parent)
+{
+    text = tr(&quot;Welcome to the Pad Navigator Example. You can use the&quot;
+              &quot; keyboard arrows to navigate the icons, and press enter&quot;
+              &quot; to activate an item. Press any key to begin.&quot;);
+    setCacheMode(DeviceCoordinateCache);
+}
+</db:programlisting>
+<db:para>The constructor forwards to <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link> as expected, assigns a text message to the text member variable, and enables <db:link xlink:href="qgraphicsitem.xml#CacheMode-enum">DeviceCoordinateCache</db:link>. This cache mode is suitable because the splash item only moves and is never transformed, and because it contains text, it's important that it has a pixel perfect visual appearance (in constrast to <db:link xlink:href="qgraphicsitem.xml#CacheMode-enum">ItemCoordinateCache</db:link>, where the visual appearance is not as good).</db:para>
+<db:para>We use caching to avoid having to relayout and rerender the text for each frame. An alterative approach would be to use the new <db:link xlink:href="qstatictext.xml">QStaticText</db:link> class.</db:para>
+<db:programlisting language="cpp">QRectF SplashItem::boundingRect() const
+{
+    return QRectF(0, 0, 400, 175);
+}
+</db:programlisting>
+<db:para>SplashItem's bounding rectangle is fixed at (400x175).</db:para>
+<db:programlisting language="cpp">void SplashItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option,
+                       QWidget *widget)
+{
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+    painter-&gt;setPen(QPen(Qt::black, 2));
+    painter-&gt;setBrush(QColor(245, 245, 255, 220));
+    painter-&gt;setClipRect(boundingRect());
+    painter-&gt;drawRoundRect(3, -100 + 3, 400 - 6, 250 - 6);
+
+    QRectF textRect = boundingRect().adjusted(10, 10, -10, -10);
+    int flags = Qt::AlignTop | Qt::AlignLeft | Qt::TextWordWrap;
+
+    QFont font;
+    font.setPixelSize(18);
+    painter-&gt;setPen(Qt::black);
+    painter-&gt;setFont(font);
+    painter-&gt;drawText(textRect, flags, text);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() implementation draws a clipped round rectangle with a thick 2-unit border and a semi-transparent white background. It proceeds to finding a suitable text area by adjusting the splash item's bounding rectangle with 10 units in each side. The text is rendered inside this rectangle, with top-left alignment, and with word wrapping enabled.</db:para>
+<db:para>The main class now remains. We will proceed to reviewing PadNavigator.</db:para>
+</db:section>
+<db:section xml:id="padnavigator-class-definition">
+<db:title>PadNavigator Class Definition</db:title>
+<db:para>PadNavigator represents the main window of our Pad Navigator Example application. It creates and controls a somewhat complex state machine, and several animations. Its class declaration is very simple:</db:para>
+<db:programlisting language="cpp">class PadNavigator : public QGraphicsView
+{
+    Q_OBJECT
+public:
+    explicit PadNavigator(const QSize &amp;size, QWidget *parent = 0);
+
+protected:
+    void resizeEvent(QResizeEvent *event) Q_DECL_OVERRIDE;
+
+private:
+    Ui::Form form;
+};
+</db:programlisting>
+<db:para>It inherits <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> and reimplements only one function: <db:link xlink:href="qgraphicsview.xml#resizeEvent">resizeEvent</db:link>(), to ensure the scene is scaled to fit inside the view when resizing the main window.</db:para>
+<db:para>The PadNavigator constructor takes a <db:link xlink:href="qsize.xml">QSize</db:link> argument that determines the number or rows and columns in the grid.</db:para>
+<db:para>It also keeps a private member instance, form, which is the generated code for the pad's back side item's <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link>-embedded form.</db:para>
+<db:programlisting language="cpp">PadNavigator::PadNavigator(const QSize &amp;size, QWidget *parent)
+    : QGraphicsView(parent)
+{
+</db:programlisting>
+<db:para>PadNavigator's constructor is a bit long. In short, its job is to create all items, including the FlippablePad, the SplashItem and the <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link> backItem, and then to set up all animations, states and transitions that control the behavior of the application.</db:para>
+<db:para>It starts out simple, by forwarding to <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link>'s constructor.</db:para>
+<db:programlisting language="cpp">    // Splash item
+    SplashItem *splash = new SplashItem;
+    splash-&gt;setZValue(1);
+</db:programlisting>
+<db:para>The first item to be created is SplashItem. This is going to be a top-level item in the scene, next to FlippablePad, and stacked on top of it, so we assign it a <db:link xlink:href="qgraphicsitem.xml#zValue">Z-value</db:link> of 1.</db:para>
+<db:programlisting language="cpp">    // Pad item
+    FlippablePad *pad = new FlippablePad(size);
+    QGraphicsRotation *flipRotation = new QGraphicsRotation(pad);
+    QGraphicsRotation *xRotation = new QGraphicsRotation(pad);
+    QGraphicsRotation *yRotation = new QGraphicsRotation(pad);
+    flipRotation-&gt;setAxis(Qt::YAxis);
+    xRotation-&gt;setAxis(Qt::YAxis);
+    yRotation-&gt;setAxis(Qt::XAxis);
+    pad-&gt;setTransformations(QList&lt;QGraphicsTransform *&gt;()
+                            &lt;&lt; flipRotation
+                            &lt;&lt; xRotation &lt;&lt; yRotation);
+</db:programlisting>
+<db:para>Now we construct the FlippablePad item, passing its column-row count to its constructor.</db:para>
+<db:para>The pad is controlled by three transformations, and we create one <db:link xlink:href="qgraphicsrotation.xml">QGraphicsRotation</db:link> object for each of these.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>flipRotation: Rotates the grid around its <db:link xlink:href="qt.xml#Axis-enum">Qt::YAxis</db:link>. This rotation is animated from 0 to 180, and eventually back, when enter is pressed on the keyboard, flipping the pad around.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>xRotation: Rotates the grid around its <db:link xlink:href="qt.xml#Axis-enum">Qt::XAxis</db:link>. This is used to tilt the pad vertically corresponding to which item is currently selected. This way, the selected item is always kept in front.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>yRotation: Rotates the grid around its <db:link xlink:href="qt.xml#Axis-enum">Qt::YAxis</db:link>. This is used to tilt the pad horizontally corresponding to which item is selected. This way, the selected item is always kept in front.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The combination of all three rotations is assigned via <db:link xlink:href="qgraphicsitem.xml#setTransformations">QGraphicsItem::setTransformations</db:link>().</db:para>
+<db:programlisting language="cpp">    // Back (proxy widget) item
+    QGraphicsProxyWidget *backItem = new QGraphicsProxyWidget(pad);
+    QWidget *widget = new QWidget;
+    form.setupUi(widget);
+    form.hostName-&gt;setFocus();
+    backItem-&gt;setWidget(widget);
+    backItem-&gt;setVisible(false);
+    backItem-&gt;setFocus();
+    backItem-&gt;setCacheMode(QGraphicsItem::ItemCoordinateCache);
+    const QRectF r = backItem-&gt;rect();
+    backItem-&gt;setTransform(QTransform()
+                           .rotate(180, Qt::YAxis)
+                           .translate(-r.width()/2, -r.height()/2));
+</db:programlisting>
+<db:para>Now we construct the <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link>-embedded backItem. The proxy widget is created as a child of the pad. We create a new <db:link xlink:href="qwidget.xml">QWidget</db:link> and populate it with the form member. To ensure the hostName line edit is the first to receive input focus when this item is shown, we call <db:link xlink:href="qwidget.xml#setFocus-1">setFocus</db:link>() immediately. This will not give the widget focus right away; it will only prepare the item to automatically receive focus once it is shown.</db:para>
+<db:para>The <db:link xlink:href="qwidget.xml">QWidget</db:link> based form is embedded into the proxy widget. The proxy is hidden initially; we only want to show it when the pad is rotated at least 90 degrees, and we also rotate the proxy itself by 180 degrees. This way we give the impression that the proxy widget is &quot;behind&quot; the flipped pad, when in fact, it's actually <db:emphasis>on top of it</db:emphasis>.</db:para>
+<db:para>We enable <db:link xlink:href="qgraphicsitem.xml#CacheMode-enum">ItemCoordinateCache</db:link> to ensure the flip animation can run smoothly.</db:para>
+<db:programlisting language="cpp">    // Selection item
+    RoundRectItem *selectionItem = new RoundRectItem(QRectF(-60, -60, 120, 120), Qt::gray, pad);
+    selectionItem-&gt;setZValue(0.5);
+</db:programlisting>
+<db:para>We now create the selection item. This is simply another instance of RoundRectItem that is slightly larger than the icons on the pad. We create it as an immediate child of the FlippablePad, so the selection item is a sibling to all the icons. By giving it a <db:link xlink:href="qgraphicsitem.xml#zValue">Z-value</db:link> of 0.5 we ensure it will slide between the pad and its icons.</db:para>
+<db:para>What follows now is a series of animation initializations.</db:para>
+<db:programlisting language="cpp">    // Splash animations
+    QPropertyAnimation *smoothSplashMove = new QPropertyAnimation(splash, &quot;y&quot;);
+    QPropertyAnimation *smoothSplashOpacity = new QPropertyAnimation(splash, &quot;opacity&quot;);
+    smoothSplashMove-&gt;setEasingCurve(QEasingCurve::InQuad);
+    smoothSplashMove-&gt;setDuration(250);
+    smoothSplashOpacity-&gt;setDuration(250);
+</db:programlisting>
+<db:para>We begin with the animations that apply to the splash item. The first animation, smoothSplashMove, ensures that the &quot;y&quot; property of splash will be animated with a 250-millisecond duration <db:link xlink:href="qeasingcurve.xml#Type-enum">InQuad</db:link> easing function. smoothSplashOpacity ensures the opacity of splash eases in and out in 250 milliseconds.</db:para>
+<db:para>The values are assigned by PadNavigator's state machine, which is created later.</db:para>
+<db:programlisting language="cpp">    // Selection animation
+    QPropertyAnimation *smoothXSelection = new QPropertyAnimation(selectionItem, &quot;x&quot;);
+    QPropertyAnimation *smoothYSelection = new QPropertyAnimation(selectionItem, &quot;y&quot;);
+    QPropertyAnimation *smoothXRotation = new QPropertyAnimation(xRotation, &quot;angle&quot;);
+    QPropertyAnimation *smoothYRotation = new QPropertyAnimation(yRotation, &quot;angle&quot;);
+    smoothXSelection-&gt;setDuration(125);
+    smoothYSelection-&gt;setDuration(125);
+    smoothXRotation-&gt;setDuration(125);
+    smoothYRotation-&gt;setDuration(125);
+    smoothXSelection-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothYSelection-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothXRotation-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothYRotation-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+</db:programlisting>
+<db:para>These are the animations that control the selection item's movement and the xRotation and yRotation <db:link xlink:href="qgraphicsrotation.xml">QGraphicsRotation</db:link> objects that tilt the pad. All animations have a duration of 125 milliseconds, and they all use the <db:link xlink:href="qeasingcurve.xml#Type-enum">InOutQuad</db:link> easing function.</db:para>
+<db:programlisting language="cpp">    // Flip animation setup
+    QPropertyAnimation *smoothFlipRotation = new QPropertyAnimation(flipRotation, &quot;angle&quot;);
+    QPropertyAnimation *smoothFlipScale = new QPropertyAnimation(pad, &quot;scale&quot;);
+    QPropertyAnimation *smoothFlipXRotation = new QPropertyAnimation(xRotation, &quot;angle&quot;);
+    QPropertyAnimation *smoothFlipYRotation = new QPropertyAnimation(yRotation, &quot;angle&quot;);
+    QParallelAnimationGroup *flipAnimation = new QParallelAnimationGroup(this);
+    smoothFlipScale-&gt;setDuration(500);
+    smoothFlipRotation-&gt;setDuration(500);
+    smoothFlipXRotation-&gt;setDuration(500);
+    smoothFlipYRotation-&gt;setDuration(500);
+    smoothFlipScale-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothFlipRotation-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothFlipXRotation-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothFlipYRotation-&gt;setEasingCurve(QEasingCurve::InOutQuad);
+    smoothFlipScale-&gt;setKeyValueAt(0, qvariant_cast&lt;qreal&gt;(1.0));
+    smoothFlipScale-&gt;setKeyValueAt(0.5, qvariant_cast&lt;qreal&gt;(0.7));
+    smoothFlipScale-&gt;setKeyValueAt(1, qvariant_cast&lt;qreal&gt;(1.0));
+    flipAnimation-&gt;addAnimation(smoothFlipRotation);
+    flipAnimation-&gt;addAnimation(smoothFlipScale);
+    flipAnimation-&gt;addAnimation(smoothFlipXRotation);
+    flipAnimation-&gt;addAnimation(smoothFlipYRotation);
+</db:programlisting>
+<db:para>We now create the animations that control the flip-effect when you press the enter key. The main goal is to rotate the pad by 180 degrees or back, but we also need to make sure the selection item's tilt rotations are reset back to 0 when the pad is flipped, and restored back to their original values when flipped back:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>smoothFlipRotation: Animates the main 180 degree rotation of the pad.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>smoothFlipScale: Scales the pad out and then in again while the pad is rotating.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>smoothFlipXRotation: Animates the selection item's X-tilt to 0 and back.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>smoothFlipYRotation: Animates the selection item's Y-tilt to 0 and back.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>flipAnimation: A parallel animation group that ensures all the above animations are run in parallel.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>All animations are given a 500 millisecond duration and an <db:link xlink:href="qeasingcurve.xml#Type-enum">InOutQuad</db:link> easing function.</db:para>
+<db:para>It's worth taking a close look at smoothFlipScale. This animation's start and end values are both 1.0, but at animation step 0.5 the animation's value is 0.7. This means that after 50% of the animation's duration, or 250 milliseconds, the pad will be scaled down to 0.7x of its original size, which gives a great visual effect while flipping.</db:para>
+<db:programlisting language="cpp">    // Flip animation delayed property assignment
+    QSequentialAnimationGroup *setVariablesSequence = new QSequentialAnimationGroup;
+    QPropertyAnimation *setFillAnimation = new QPropertyAnimation(pad, &quot;fill&quot;);
+    QPropertyAnimation *setBackItemVisibleAnimation = new QPropertyAnimation(backItem, &quot;visible&quot;);
+    QPropertyAnimation *setSelectionItemVisibleAnimation = new QPropertyAnimation(selectionItem, &quot;visible&quot;);
+    setFillAnimation-&gt;setDuration(0);
+    setBackItemVisibleAnimation-&gt;setDuration(0);
+    setSelectionItemVisibleAnimation-&gt;setDuration(0);
+    setVariablesSequence-&gt;addPause(250);
+    setVariablesSequence-&gt;addAnimation(setBackItemVisibleAnimation);
+    setVariablesSequence-&gt;addAnimation(setSelectionItemVisibleAnimation);
+    setVariablesSequence-&gt;addAnimation(setFillAnimation);
+    flipAnimation-&gt;addAnimation(setVariablesSequence);
+</db:programlisting>
+<db:para>This section uses a trick to ensure that certain properties are assigned precisely when the flip animation passes 50%, or 90 degrees, rotation. In short, the pad's icons and selection item are all hidden, the pad's fill property is enabled, and backItem is shown when flipping over. When flipping back, the reverse properties are applied.</db:para>
+<db:para>The way this is achieved is by running a sequential animation in parallel to the other animations. This sequence, dubbed setVariablesSequence, starts with a 250 millisecond pause, and then executes several animations with a duration of 0. Each animation will ensure that properties are set immediate at this point.</db:para>
+<db:para>This approach can also be used to call functions or set any other properties at a specific time while an animation is running.</db:para>
+<db:programlisting language="cpp">    // Build the state machine
+    QStateMachine *stateMachine = new QStateMachine(this);
+    QState *splashState = new QState(stateMachine);
+    QState *frontState = new QState(stateMachine);
+    QHistoryState *historyState = new QHistoryState(frontState);
+    QState *backState = new QState(stateMachine);
+</db:programlisting>
+<db:para>We will now create the state machine. The whole PadNavigator state machinery is controlled by one single state machine that has a straight-forward state structure. The state engine itself is created as a child of the PadNavigator itself. We then create three top level states:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>splashState: The initial state where the splash item is visible.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>frontState: The base state where the splash is gone and we can see the front side of the pad, and navigate the selection item.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>backState: The flipped state where the backItem is visible, and we can interact with the <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link>-embedded form.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:programlisting language="cpp">    frontState-&gt;assignProperty(pad, &quot;fill&quot;, false);
+    frontState-&gt;assignProperty(splash, &quot;opacity&quot;, 0.0);
+    frontState-&gt;assignProperty(backItem, &quot;visible&quot;, false);
+    frontState-&gt;assignProperty(flipRotation, &quot;angle&quot;, qvariant_cast&lt;qreal&gt;(0.0));
+    frontState-&gt;assignProperty(selectionItem, &quot;visible&quot;, true);
+    backState-&gt;assignProperty(pad, &quot;fill&quot;, true);
+    backState-&gt;assignProperty(backItem, &quot;visible&quot;, true);
+    backState-&gt;assignProperty(xRotation, &quot;angle&quot;, qvariant_cast&lt;qreal&gt;(0.0));
+    backState-&gt;assignProperty(yRotation, &quot;angle&quot;, qvariant_cast&lt;qreal&gt;(0.0));
+    backState-&gt;assignProperty(flipRotation, &quot;angle&quot;, qvariant_cast&lt;qreal&gt;(180.0));
+    backState-&gt;assignProperty(selectionItem, &quot;visible&quot;, false);
+    stateMachine-&gt;addDefaultAnimation(smoothXRotation);
+    stateMachine-&gt;addDefaultAnimation(smoothYRotation);
+    stateMachine-&gt;addDefaultAnimation(smoothXSelection);
+    stateMachine-&gt;addDefaultAnimation(smoothYSelection);
+    stateMachine-&gt;setInitialState(splashState);
+</db:programlisting>
+<db:para>Each state assigns specific properties to objects on entry. Most interesting perhaps is the assignment of the value 0.0 to the pad's flipRotation angle property when in frontState, and 180.0 when in backState. At the end of this section we register default animations with the state engine; these animations will apply to their respective objects and properties for any state transition. Otherwise it's common to assign animations to specific transitions.</db:para>
+<db:para>The splashState state is set as the initial state. This is required before we start the state engine. We proceed with creating some transitions.</db:para>
+<db:programlisting language="cpp">    // Transitions
+    QEventTransition *anyKeyTransition = new QEventTransition(this, QEvent::KeyPress, splashState);
+    anyKeyTransition-&gt;setTargetState(frontState);
+    anyKeyTransition-&gt;addAnimation(smoothSplashMove);
+    anyKeyTransition-&gt;addAnimation(smoothSplashOpacity);
+</db:programlisting>
+<db:para><db:link xlink:href="qeventtransition.xml">QEventTransition</db:link> defines a very flexible transition type. You can use this class to trigger a transition based on an object receiving an event of a specific type. In this case, we would like to transition from splashState into frontState if PadNavigator receives any key press event (<db:link xlink:href="qevent.xml#Type-enum">QEvent::KeyPress</db:link>).</db:para>
+<db:para>We register the splashItem's animations to this transition to ensure they are used to animate the item's movement and opacity.</db:para>
+<db:programlisting language="cpp">    QKeyEventTransition *enterTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                   Qt::Key_Enter, backState);
+    QKeyEventTransition *returnTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                    Qt::Key_Return, backState);
+    QKeyEventTransition *backEnterTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                       Qt::Key_Enter, frontState);
+    QKeyEventTransition *backReturnTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                        Qt::Key_Return, frontState);
+    enterTransition-&gt;setTargetState(historyState);
+    returnTransition-&gt;setTargetState(historyState);
+    backEnterTransition-&gt;setTargetState(backState);
+    backReturnTransition-&gt;setTargetState(backState);
+    enterTransition-&gt;addAnimation(flipAnimation);
+    returnTransition-&gt;addAnimation(flipAnimation);
+    backEnterTransition-&gt;addAnimation(flipAnimation);
+    backReturnTransition-&gt;addAnimation(flipAnimation);
+</db:programlisting>
+<db:para>We use <db:link xlink:href="qkeyeventtransition.xml">QKeyEventTransition</db:link> to capture specific key events. In this case, we detect that the user presses <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Return</db:link> or <db:link xlink:href="qt.xml#Key-enum">Qt::Key_Enter</db:link>, and use this to trigger transitions between frontState and backState. We register flipAnimation, our complex parallel animation group, with these transitions.</db:para>
+<db:para>We continue by defining the states for each of the icons in the grid.</db:para>
+<db:programlisting language="cpp">    // Create substates for each icon; store in temporary grid.
+    int columns = size.width();
+    int rows = size.height();
+    QVector&lt; QVector&lt; QState * &gt; &gt; stateGrid;
+    stateGrid.resize(rows);
+    for (int y = 0; y &lt; rows; ++y) {
+        stateGrid[y].resize(columns);
+        for (int x = 0; x &lt; columns; ++x)
+            stateGrid[y][x] = new QState(frontState);
+    }
+    frontState-&gt;setInitialState(stateGrid[0][0]);
+    selectionItem-&gt;setPos(pad-&gt;iconAt(0, 0)-&gt;pos());
+</db:programlisting>
+<db:para>We will use state groups to control transitions between icons. Each icon represents a <db:emphasis>substate</db:emphasis> of frontState. We will then define transitions between the states by detecting key presses, using <db:link xlink:href="qkeyeventtransition.xml">QKeyEventTransition</db:link>.</db:para>
+<db:para>We start by creating all the substates, and at the same time we create a temporary grid structure for the states to make it easier to find which states represents icons that are up, down, left and to the right each other.</db:para>
+<db:para>Once the first substate is known, we set this up as the initial substate of frontState. We will use the (0, 0), or top-left, icon for the initial substate. We initialze the selection item's position to be exactly where the top-left icon is.</db:para>
+<db:programlisting language="cpp">    // Enable key navigation using state transitions
+    for (int y = 0; y &lt; rows; ++y) {
+        for (int x = 0; x &lt; columns; ++x) {
+            QState *state = stateGrid[y][x];
+            QKeyEventTransition *rightTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                           Qt::Key_Right, state);
+            QKeyEventTransition *leftTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                          Qt::Key_Left, state);
+            QKeyEventTransition *downTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                          Qt::Key_Down, state);
+            QKeyEventTransition *upTransition = new QKeyEventTransition(this, QEvent::KeyPress,
+                                                                        Qt::Key_Up, state);
+            rightTransition-&gt;setTargetState(stateGrid[y][(x + 1) % columns]);
+            leftTransition-&gt;setTargetState(stateGrid[y][((x - 1) + columns) % columns]);
+            downTransition-&gt;setTargetState(stateGrid[(y + 1) % rows][x]);
+            upTransition-&gt;setTargetState(stateGrid[((y - 1) + rows) % rows][x]);
+</db:programlisting>
+<db:para>We can now create four transitions for each icon. Each transition ensures that we move to the state corresponding to which arrow key has been pressed. It's clear from this techinique that we could design any other specific transitions to and from each of the sub states depending on these and other keys.</db:para>
+<db:programlisting language="cpp">            RoundRectItem *icon = pad-&gt;iconAt(x, y);
+            state-&gt;assignProperty(xRotation, &quot;angle&quot;, -icon-&gt;x() / 6.0);
+            state-&gt;assignProperty(yRotation, &quot;angle&quot;, icon-&gt;y() / 6.0);
+            state-&gt;assignProperty(selectionItem, &quot;x&quot;, icon-&gt;x());
+            state-&gt;assignProperty(selectionItem, &quot;y&quot;, icon-&gt;y());
+            frontState-&gt;assignProperty(icon, &quot;visible&quot;, true);
+            backState-&gt;assignProperty(icon, &quot;visible&quot;, false);
+
+            QPropertyAnimation *setIconVisibleAnimation = new QPropertyAnimation(icon, &quot;visible&quot;);
+            setIconVisibleAnimation-&gt;setDuration(0);
+            setVariablesSequence-&gt;addAnimation(setIconVisibleAnimation);
+        }
+    }
+</db:programlisting>
+<db:para>Also, for each of the icons, we assign suitable values to the xRotation and yRotation objects' &quot;angle&quot;-properties. If you recall, these properties &quot;tilt&quot; the pad corresponding to which item is currently selected. We ensure each icon is invisible when the pad is flipped, and visible when the pad is not flipped. To ensure the visible property is assigned at the right time, we add property-controlling animations to the setVariableSequence animation defined earlier.</db:para>
+<db:programlisting language="cpp">    // Scene
+    QGraphicsScene *scene = new QGraphicsScene(this);
+    scene-&gt;setBackgroundBrush(QPixmap(&quot;:/images/blue_angle_swirl.jpg&quot;));
+    scene-&gt;setItemIndexMethod(QGraphicsScene::NoIndex);
+    scene-&gt;addItem(pad);
+    scene-&gt;setSceneRect(scene-&gt;itemsBoundingRect());
+    setScene(scene);
+</db:programlisting>
+<db:para>We are now finished with all states, transitions, and animations. We now create the scene that will contain all our items. The scene gets a defined background pixmap, and we disable item indexing (as most items in this scene are animated). We add our pad item to the scene, and use its bounding rectangle to fixate the scene rectangle. This rectangle is used by the view to find a suitable size for the application window.</db:para>
+<db:para>Then the scene is assigned to the view, or in our case, PadNavigator itself.</db:para>
+<db:programlisting language="cpp">    // Adjust splash item to scene contents
+    const QRectF sbr = splash-&gt;boundingRect();
+    splash-&gt;setPos(-sbr.width() / 2, scene-&gt;sceneRect().top() - 2);
+    frontState-&gt;assignProperty(splash, &quot;y&quot;, splash-&gt;y() - 100.0);
+    scene-&gt;addItem(splash);
+</db:programlisting>
+<db:para>Now that the scene has received its final size, we can position the splash item at the very top, find its fade-out position, and add it to the scene.</db:para>
+<db:programlisting language="cpp">    // View
+    setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    setMinimumSize(50, 50);
+    setViewportUpdateMode(FullViewportUpdate);
+    setCacheMode(CacheBackground);
+    setRenderHints(QPainter::Antialiasing
+                   | QPainter::SmoothPixmapTransform
+                   | QPainter::TextAntialiasing);
+#ifndef QT_NO_OPENGL
+    setViewport(new QOpenGLWidget);
+#endif
+
+    stateMachine-&gt;start();
+</db:programlisting>
+<db:para>The view toggles a few necessary properties:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>It disables its scroll bars - this application has no use for scroll bars.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>It assigns a minimum size. This is necessary to avoid numerical errors in our fit-in-view resizeEvent() implementation.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>It sets <db:link xlink:href="qgraphicsview.xml#ViewportUpdateMode-enum">FullViewportUpdate</db:link>, to ensure <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> doesn't spend time figuring out precisely what needs to be redrawn. This application is very simple - if anything changes, everything is updated.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>It enables background caching - this makes no performance difference with OpenGL, but without OpenGL it avoids unnecessary re-scaling of the background pixmap.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>It sets render hints that increase rendering quality.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>If OpenGL is supported, a QGLWidget viewport is assigned to the view.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Finally, we start the state engine.</db:para>
+<db:programlisting language="cpp">void PadNavigator::resizeEvent(QResizeEvent *event)
+{
+    QGraphicsView::resizeEvent(event);
+    fitInView(scene()-&gt;sceneRect(), Qt::KeepAspectRatio);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsview.xml#resizeEvent">resizeEvent</db:link>() implementation calls the base implementation, and then calls <db:link xlink:href="qgraphicsview.xml#fitInView">QGraphicsView::fitInView</db:link>() to scale the scene so that it fits perfectly inside the view.</db:para>
+<db:para>By resizing the main application window, you can see this effect yourself. The scene contents grow when you make the window larger, and shrink when you make it smaller, while keeping the aspect ratio intact.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    Q_INIT_RESOURCE(padnavigator);
+
+    PadNavigator navigator(QSize(3, 3));
+    navigator.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The main function creates the <db:link xlink:href="qapplication.xml">QApplication</db:link> instance, uses <db:link xlink:href="qdir.xml#Q_INIT_RESOURCE">Q_INIT_RESOURCE</db:link> to ensure our compiled-in resources aren't removed by the linker, and then creates a 3x3 PadNavigator instance and shows it.</db:para>
+<db:para>Our flippable pad shows up with a suitable splash item once control returns to the event loop.</db:para>
+</db:section>
+<db:section xml:id="performance-notes">
+<db:title>Performance Notes</db:title>
+<db:para>The example uses OpenGL if this is available, to achieve optimal performance; otherwise perspective tranformations can be quite costly.</db:para>
+<db:para>Although this example does use <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link> to demonstrate integration of Qt widget components integrated into Graphics View, using <db:link xlink:href="qgraphicsproxywidget.xml">QGraphicsProxyWidget</db:link> comes with a performance penalty, and is therefore not recommended for embedded development.</db:para>
+<db:para>This example uses extensive item caching to avoid rerendering of static elements, at the expense of graphics memory.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/flippablepad.cpp">graphicsview/padnavigator/flippablepad.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/flippablepad.h">graphicsview/padnavigator/flippablepad.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/form.ui">graphicsview/padnavigator/form.ui</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/main.cpp">graphicsview/padnavigator/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/padnavigator.cpp">graphicsview/padnavigator/padnavigator.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/padnavigator.h">graphicsview/padnavigator/padnavigator.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/padnavigator.pro">graphicsview/padnavigator/padnavigator.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/padnavigator.qrc">graphicsview/padnavigator/padnavigator.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/roundrectitem.cpp">graphicsview/padnavigator/roundrectitem.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/roundrectitem.h">graphicsview/padnavigator/roundrectitem.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/splashitem.cpp">graphicsview/padnavigator/splashitem.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/splashitem.h">graphicsview/padnavigator/splashitem.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/artsfftscope.png">graphicsview/padnavigator/images/artsfftscope.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/blue_angle_swirl.jpg">graphicsview/padnavigator/images/blue_angle_swirl.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/kontact_contacts.png">graphicsview/padnavigator/images/kontact_contacts.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/kontact_journal.png">graphicsview/padnavigator/images/kontact_journal.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/kontact_mail.png">graphicsview/padnavigator/images/kontact_mail.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/kontact_notes.png">graphicsview/padnavigator/images/kontact_notes.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/kopeteavailable.png">graphicsview/padnavigator/images/kopeteavailable.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/metacontact_online.png">graphicsview/padnavigator/images/metacontact_online.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="graphicsview/padnavigator/images/minitools.png">graphicsview/padnavigator/images/minitools.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

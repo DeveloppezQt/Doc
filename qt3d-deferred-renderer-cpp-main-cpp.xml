@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt 3D: Deferred Renderer C++ Example</db:title>
+<db:productname>Qt3D</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt 3D Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2014 Klaralvdalens Datakonsult AB (KDAB).
+** Contact: http://www.qt-project.org/legal
+**
+** This file is part of the Qt3D module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL3$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPLv3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or later as published by the Free
+** Software Foundation and appearing in the file LICENSE.GPL included in
+** the packaging of this file. Please review the following information to
+** ensure the GNU General Public License version 2.0 requirements will be
+** met: http://www.gnu.org/licenses/gpl-2.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &lt;Qt3DCore/QEntity&gt;
+#include &lt;window.h&gt;
+
+#include &lt;Qt3DInput/QInputAspect&gt;
+
+#include &lt;Qt3DRender/QRenderAspect&gt;
+#include &lt;Qt3DRender/QFrameGraph&gt;
+#include &lt;Qt3DRender/QMaterial&gt;
+#include &lt;Qt3DRender/QSphereMesh&gt;
+#include &lt;Qt3DRender/QPlaneMesh&gt;
+#include &lt;Qt3DRender/QLayer&gt;
+#include &lt;Qt3DRender/QParameter&gt;
+#include &lt;Qt3DCore/QCamera&gt;
+#include &lt;Qt3DCore/QCameraLens&gt;
+#include &lt;Qt3DCore/QTransform&gt;
+#include &lt;Qt3DRender/QPointLight&gt;
+#include &lt;Qt3DRender/QWindow&gt;
+#include &lt;Qt3DCore/qaspectengine.h&gt;
+
+#include &lt;QGuiApplication&gt;
+
+#include &quot;gbuffer.h&quot;
+#include &quot;deferredrenderer.h&quot;
+#include &quot;finaleffect.h&quot;
+#include &quot;sceneeffect.h&quot;
+#include &quot;pointlightblock.h&quot;
+
+int main(int ac, char **av)
+{
+    QGuiApplication app(ac, av);
+
+    Qt3DRender::QWindow view;
+    Qt3DInput::QInputAspect *input = new Qt3DInput::QInputAspect();
+    view.registerAspect(input);
+
+    // Root entity
+    Qt3DCore::QEntity *rootEntity = new Qt3DCore::QEntity();
+    rootEntity-&gt;setObjectName(QStringLiteral(&quot;rootEntity&quot;));
+
+    // Shared Components
+    GBuffer *gBuffer = new GBuffer();
+    FinalEffect *finalEffect = new FinalEffect();
+    SceneEffect *sceneEffect = new SceneEffect();
+
+    Qt3DRender::QSphereMesh *sphereMesh = new Qt3DRender::QSphereMesh();
+    sphereMesh-&gt;setRings(50);
+    sphereMesh-&gt;setSlices(100);
+
+    Qt3DRender::QLayer *sceneLayer = new Qt3DRender::QLayer();
+    sceneLayer-&gt;setNames(QStringList(&quot;scene&quot;));
+
+    Qt3DRender::QLayer *quadLayer = new Qt3DRender::QLayer();
+    quadLayer-&gt;setNames(QStringList(&quot;screenQuad&quot;));
+
+    Qt3DRender::QPlaneMesh *planeMesh = new Qt3DRender::QPlaneMesh();
+    planeMesh-&gt;setMeshResolution(QSize(2, 2));
+    planeMesh-&gt;setWidth(2.0f);
+    planeMesh-&gt;setHeight(2.0f);
+
+    Qt3DRender::QPointLight *light1 = new Qt3DRender::QPointLight();
+    light1-&gt;setColor(Qt::white);
+    light1-&gt;setIntensity(1.5f);
+
+    rootEntity-&gt;addComponent(light1);
+
+    // Scene Camera
+    Qt3DCore::QCamera *camera = view.defaultCamera();
+
+    camera-&gt;setFieldOfView(45.0f);
+    camera-&gt;setNearPlane(0.01f);
+    camera-&gt;setFarPlane(1000.0f);
+    camera-&gt;setProjectionType(Qt3DCore::QCameraLens::PerspectiveProjection);
+
+    camera-&gt;setPosition(QVector3D(10.0f, 10.0f, -25.0f));
+    camera-&gt;setUpVector(QVector3D(0.0f, 1.0f, 0.0f));
+    camera-&gt;setViewCenter(QVector3D(0.0f, 0.0f, 10.0f));
+
+    input-&gt;setCamera(camera);
+
+    // FrameGraph
+    Qt3DRender::QFrameGraph *frameGraph = new Qt3DRender::QFrameGraph();
+    DeferredRenderer *deferredRenderer = new DeferredRenderer();
+    deferredRenderer-&gt;setClearColor(Qt::black);
+    deferredRenderer-&gt;setRect(QRectF(0.0f, 0.0f, 1.0f, 1.0f));
+    deferredRenderer-&gt;setFinalPassCriteria(finalEffect-&gt;passCriteria());
+    deferredRenderer-&gt;setGeometryPassCriteria(sceneEffect-&gt;passCriteria());
+    deferredRenderer-&gt;setGBuffer(gBuffer);
+    deferredRenderer-&gt;setSceneCamera(camera);
+    deferredRenderer-&gt;setGBufferLayers(sceneLayer-&gt;names());
+    deferredRenderer-&gt;setScreenQuadLayers(quadLayer-&gt;names());
+
+    frameGraph-&gt;setActiveFrameGraph(deferredRenderer);
+    view.setFrameGraph(frameGraph);
+
+    // Scene Content
+    Qt3DCore::QEntity *sphereOne = new Qt3DCore::QEntity(rootEntity);
+    Qt3DRender::QMaterial *sphereOneMaterial = new Qt3DRender::QMaterial();
+
+    sphereOneMaterial-&gt;setEffect(sceneEffect);
+    sphereOneMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;meshColor&quot;), QColor(Qt::blue)));
+
+    Qt3DCore::QTransform *sphereOneTransform = new Qt3DCore::QTransform;
+    sphereOneTransform-&gt;setTranslation(QVector3D(-10.0f, 0.0f, 25.0f));
+
+    Qt3DRender::QPointLight *light2 = new Qt3DRender::QPointLight();
+    light2-&gt;setColor(Qt::white);
+    light2-&gt;setIntensity(1.5f);
+
+    sphereOne-&gt;addComponent(sphereOneTransform);
+    sphereOne-&gt;addComponent(sphereOneMaterial);
+    sphereOne-&gt;addComponent(sphereMesh);
+    sphereOne-&gt;addComponent(sceneLayer);
+    sphereOne-&gt;addComponent(light2);
+
+    Qt3DCore::QEntity *sphereTwo = new Qt3DCore::QEntity(rootEntity);
+    Qt3DRender::QMaterial *sphereTwoMaterial = new Qt3DRender::QMaterial();
+    sphereTwoMaterial-&gt;setEffect(sceneEffect);
+    sphereTwoMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;meshColor&quot;), QColor(Qt::yellow)));
+
+    Qt3DRender::QPointLight *light3 = new Qt3DRender::QPointLight();
+    light3-&gt;setColor(Qt::blue);
+    light3-&gt;setIntensity(0.5f);
+
+    sphereTwo-&gt;addComponent(sphereMesh);
+    sphereTwo-&gt;addComponent(sceneLayer);
+    sphereTwo-&gt;addComponent(sphereTwoMaterial);
+    sphereTwo-&gt;addComponent(light3);
+
+    // Screen Quad
+    Qt3DCore::QEntity *screenQuad = new Qt3DCore::QEntity(rootEntity);
+    Qt3DRender::QMaterial *screenQuadMaterial = new Qt3DRender::QMaterial();
+    screenQuadMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;position&quot;), gBuffer-&gt;positionTexture()));
+    screenQuadMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;normal&quot;), gBuffer-&gt;normalTexture()));
+    screenQuadMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;color&quot;), gBuffer-&gt;colorTexture()));
+    screenQuadMaterial-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;winSize&quot;), QSize(1024, 1024)));
+    PointLightBlock *lightsData = new PointLightBlock(screenQuadMaterial);
+    lightsData-&gt;addLight(light1);
+    lightsData-&gt;addLight(light2);
+    lightsData-&gt;addLight(light3);
+
+    finalEffect-&gt;gl3Technique()-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;PointLightBlock&quot;), QVariant::fromValue(lightsData)));
+    finalEffect-&gt;gl2Technique()-&gt;addParameter(new Qt3DRender::QParameter(QStringLiteral(&quot;pointLights&quot;), QVariant::fromValue(lightsData)));
+    screenQuadMaterial-&gt;setEffect(finalEffect);
+
+    Qt3DCore::QTransform *screenPlaneTransform = new Qt3DCore::QTransform;
+    screenPlaneTransform-&gt;setRotation(QQuaternion::fromAxisAndAngle(QVector3D(1.0f, 0.0f, 0.0f), 90.0f));
+
+    screenQuad-&gt;addComponent(quadLayer);
+    screenQuad-&gt;addComponent(screenPlaneTransform);
+    screenQuad-&gt;addComponent(screenQuadMaterial);
+    screenQuad-&gt;addComponent(planeMesh);
+
+    // Set root object of the scene
+    view.setRootEntity(rootEntity);
+    // Show window
+    view.show();
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

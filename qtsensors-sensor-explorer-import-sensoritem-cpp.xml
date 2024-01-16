@@ -1,0 +1,332 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Sensors - Explorer QML Example</db:title>
+<db:productname>QtSensors</db:productname>
+<db:edition>Qt 5.6.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Sensors Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to read the meta-data of available sensors.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2015 The Qt Company Ltd.
+** Contact: http://www.qt.io/licensing/
+**
+** This file is part of the QtSensors module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL21$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see http://www.qt.io/terms-conditions. For further
+** information use the contact form at http://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or version 3 as published by the Free
+** Software Foundation and appearing in the file LICENSE.LGPLv21 and
+** LICENSE.LGPLv3 included in the packaging of this file. Please review the
+** following information to ensure the GNU Lesser General Public License
+** requirements will be met: https://www.gnu.org/licenses/lgpl.html and
+** http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** As a special exception, The Qt Company gives you certain additional
+** rights. These rights are described in The Qt Company LGPL Exception
+** version 1.1, included in the file LGPL_EXCEPTION.txt in this package.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;sensoritem.h&quot;
+#include &lt;QtCore/QDebug&gt;
+#include &lt;QtSensors&gt;
+
+/*
+    \class QSensorItem
+    \brief The QSensorItem type provides information about the metadata from a sensors installed on the system.
+*/
+
+/*
+    Construct a QSensorItem object with parent \a parent
+*/
+QSensorItem::QSensorItem(QObject* parent)
+    : QObject(parent)
+    , _qsensor(0)
+{
+}
+
+/*
+    Construct a QSensorItem object with QSensor \a sensor and parent \a parent
+*/
+QSensorItem::QSensorItem(QSensor* sensor, QObject* parent)
+    : QObject(parent)
+    , _qsensor(sensor)
+{
+}
+
+/*
+    Destructor of a QSensorItem
+*/
+QSensorItem::~QSensorItem()
+{
+}
+
+/*
+    \fn QSensorItem::startChanged()
+    Notifies the client if the sensors has changed its start active status
+*/
+
+/*
+    \property QSensorItem::start
+    This property starts or stops the sensor
+*/
+bool QSensorItem::start()
+{
+    return (_qsensor ? _qsensor-&gt;isActive() : false);
+}
+
+void QSensorItem::setStart(bool run)
+{
+    if (_qsensor)
+        _qsensor-&gt;setActive(run);
+}
+
+/*
+    \property QSensorItem::id
+    Returns the sensor id of the sensor item
+*/
+QString QSensorItem::id()
+{
+    return (_qsensor ? _qsensor-&gt;identifier() : &quot;&quot;);
+}
+
+/*
+    Set the new value \a val to the QPropertyInfo object \a property
+*/
+void QSensorItem::changePropertyValue(QPropertyInfo* property, const QString&amp; val)
+{
+    if (_qsensor &amp;&amp; _sensorProperties.contains(property)){
+        if ( _qsensor-&gt;setProperty(property-&gt;name().toLatin1().constData(), QVariant(val)))
+            updateSensorPropertyValues();
+        else
+            qWarning() &lt;&lt; &quot;new property value couldn't be set&quot;;
+    }
+}
+
+/*
+    Reading the metadata and activates the sensor.
+*/
+void QSensorItem::select()
+{
+    if (_sensorProperties.isEmpty()) {
+        // Probe the reading using Qt's meta-object facilities
+        //Read properties from reader
+        QSensorReading *reading = _qsensor-&gt;reading();
+        const QMetaObject *mo = reading-&gt;metaObject();
+        int firstProperty = QSensorReading::staticMetaObject.propertyOffset();
+
+        for (int i = firstProperty; i &lt; mo-&gt;propertyCount(); ++i) {
+            QString typeName = QLatin1String(mo-&gt;property(i).typeName());
+            int crap = typeName.lastIndexOf(&quot;::&quot;);
+            if (crap != -1)
+                typeName = typeName.mid(crap + 2);
+
+            QPropertyInfo* pi = new QPropertyInfo(mo-&gt;property(i).name()
+                                                  , i
+                                                  , isWriteable(mo-&gt;property(i).name())
+                                                  , typeName
+                                                  , &quot;-&quot;
+                                                  , this);
+            _readerProperties.append(pi);
+        }
+
+        //Read properties from sensor
+        const QMetaObject *mo1 = _qsensor-&gt;metaObject();
+        firstProperty = QSensorReading::staticMetaObject.propertyOffset();
+
+        for (int i = firstProperty; i &lt; mo1-&gt;propertyCount(); ++i) {
+            QString propertyname = mo1-&gt;property(i).name();
+            if (ignoreProperty(propertyname))
+                continue;
+
+            QString typeName = QLatin1String(mo1-&gt;property(i).typeName());
+            int crap = typeName.lastIndexOf(&quot;::&quot;);
+            if (crap != -1)
+                typeName = typeName.mid(crap + 2);
+
+            QPropertyInfo* pi = new QPropertyInfo(propertyname
+                                                  , i
+                                                  , isWriteable(propertyname)
+                                                  , typeName
+                                                  , &quot;-&quot;
+                                                  , this);
+            _sensorProperties.append(pi);
+        }
+        updateSensorPropertyValues();
+        connect(_qsensor, SIGNAL(readingChanged()), this, SLOT(sensorReadingChanged()));
+    }
+    connect(_qsensor, SIGNAL(activeChanged()), SIGNAL(startChanged()));
+}
+
+/*
+    Unselect the sensor by stopping the sensor.
+*/
+void QSensorItem::unSelect()
+{
+    _qsensor-&gt;stop();
+    disconnect(_qsensor, SIGNAL(activeChanged()), this , SIGNAL(startChanged()));
+}
+
+/*
+    Updates the property values from QSensor
+*/
+void QSensorItem::updateSensorPropertyValues()
+{
+    if (_qsensor){
+        const QMetaObject *mo = _qsensor-&gt;metaObject();
+        for (int i = 0; i &lt; _sensorProperties.count(); i++){
+            QVariant val = mo-&gt;property(_sensorProperties[i]-&gt;index()).read(_qsensor);
+            _sensorProperties[i]-&gt;setValue(convertValue(_sensorProperties[i]-&gt;typeName(), val));
+        }
+    }
+}
+
+/*
+    \fn QSensorItem::propertiesChanged()
+    Notifies the client if the list of the properties was changed
+*/
+
+/*
+    Updates the property values from the QSensorReader
+*/
+void QSensorItem::sensorReadingChanged()
+{
+    QSensorReading *reading = _qsensor-&gt;reading();
+    const QMetaObject *mo = reading-&gt;metaObject();
+    for (int i = 0; i &lt; _readerProperties.count(); i++){
+        QVariant val = mo-&gt;property(_readerProperties[i]-&gt;index()).read(reading);
+        _readerProperties[i]-&gt;setValue(convertValue(_readerProperties[i]-&gt;typeName(), val));
+    }
+}
+
+/*
+    Returns true if the property with the name \a propertyname should be ignored
+*/
+bool QSensorItem::ignoreProperty(const QString&amp; propertyname)
+{
+    if (propertyname == &quot;reading&quot; ||
+        propertyname == &quot;active&quot; ||
+        propertyname == &quot;identifier&quot; ||
+        propertyname == &quot;connectedToBackend&quot; ||
+        propertyname == &quot;busy&quot;)
+        return true;
+
+    return false;
+}
+
+/*
+    Returns true if the property with the name \a propertyname is writeable
+*/
+bool QSensorItem::isWriteable(const QString&amp; propertyname)
+{
+    if (_qsensor){
+        const QMetaObject *mo = _qsensor-&gt;metaObject();
+        int propertyindex = mo-&gt;indexOfProperty(propertyname.toLocal8Bit().constData());
+        if (propertyindex &gt;= 0){
+            QMetaProperty prop = mo-&gt;property(propertyindex);
+            return prop.isWritable();
+        }
+        else {
+            QSensorReading *reading = _qsensor-&gt;reading();
+            const QMetaObject *moreader = reading-&gt;metaObject();
+            propertyindex = moreader-&gt;indexOfProperty(propertyname.toLocal8Bit().constData());
+            if (propertyindex &gt;= 0){
+                QMetaProperty prop = mo-&gt;property(propertyindex);
+                return prop.isWritable();
+            }
+        }
+    }
+
+    return false;
+}
+
+/*
+    Convert the variant \a val dependent on the type \a type and returns the converted value as a QString
+*/
+QString QSensorItem::convertValue(const QString&amp; type, const QVariant&amp; val)
+{
+    if (type == &quot;LightLevel&quot;){
+        switch (val.toInt()) {
+            case 1: return &quot;Dark&quot;;
+            case 2: return &quot;Twilight&quot;;
+            case 3: return &quot;Light&quot;;
+            case 4: return &quot;Bright&quot;;
+            case 5: return &quot;Sunny&quot;;
+            default: return &quot;Undefined&quot;;
+        }
+    }
+    else if (type == &quot;Orientation&quot;){
+        switch (val.toInt()) {
+            case 1: return &quot;TopUp&quot;;
+            case 2: return &quot;TopDown&quot;;
+            case 3: return &quot;LeftUp&quot;;
+            case 4: return &quot;RightUp&quot;;
+            case 5: return &quot;FaceUp&quot;;
+            case 6: return &quot;FaceDown&quot;;
+            default: return &quot;Undefined&quot;;
+        }
+    }
+    else if (type == &quot;qrangelist&quot;){
+        qrangelist rangelist = val.value&lt;qrangelist&gt;();
+        QStringList ranges;
+        foreach (const qrange &amp;r, rangelist) {
+            if (r.first == r.second)
+                ranges &lt;&lt; QString(&quot;%1 Hz&quot;).arg(r.first);
+            else
+                ranges &lt;&lt; QString(&quot;%1-%2 Hz&quot;).arg(r.first).arg(r.second);
+        }
+        if (ranges.count() &gt; 0)
+            return ranges.join(&quot;, &quot;);
+        return &quot;-&quot;;
+    }
+    else if (type == &quot;qoutputrangelist&quot;) {
+        qoutputrangelist rangelist = val.value&lt;qoutputrangelist&gt;();
+        QStringList ranges;
+        foreach (const qoutputrange &amp;r, rangelist) {
+            ranges &lt;&lt; QString(&quot;(%1, %2) += %3&quot;).arg(r.minimum).arg(r.maximum).arg(r.accuracy);
+        }
+        if (ranges.count() &gt; 0)
+            return ranges.join(&quot;, &quot;);
+        return &quot;-&quot;;
+    }
+
+    return val.toString();
+}
+
+/*
+    \property QSensorItem::properties
+    Returns a list of all properties from the sensor
+*/
+QQmlListProperty&lt;QPropertyInfo&gt; QSensorItem::properties()
+{
+    _properties.clear();
+    _properties.append(_sensorProperties);
+    _properties.append(_readerProperties);
+    return QQmlListProperty&lt;QPropertyInfo&gt; (this, _properties);
+}
+
+
+</db:programlisting>
+</db:article>
