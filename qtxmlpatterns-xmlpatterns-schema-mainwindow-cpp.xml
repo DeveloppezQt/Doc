@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>XML Schema Validation Example</db:title>
+<db:productname>QtXmlPatterns</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Patterns Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using Qt XML Patterns to validate XML with a W3C XML Schema.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtGui&amp;gt;
+#include &amp;lt;QtXmlPatterns&amp;gt;
+
+#include &quot;mainwindow.h&quot;
+#include &quot;xmlsyntaxhighlighter.h&quot;
+
+class MessageHandler : public QAbstractMessageHandler
+{
+public:
+    MessageHandler()
+        : QAbstractMessageHandler(0)
+    {
+    }
+
+    QString statusMessage() const
+    {
+        return m_description;
+    }
+
+    int line() const
+    {
+        return m_sourceLocation.line();
+    }
+
+    int column() const
+    {
+        return m_sourceLocation.column();
+    }
+
+protected:
+    virtual void handleMessage(QtMsgType type, const QString &amp;amp;description,
+                               const QUrl &amp;amp;identifier, const QSourceLocation &amp;amp;sourceLocation)
+    {
+        Q_UNUSED(type);
+        Q_UNUSED(identifier);
+
+        m_description = description;
+        m_sourceLocation = sourceLocation;
+    }
+
+private:
+    QString m_description;
+    QSourceLocation m_sourceLocation;
+};
+
+MainWindow::MainWindow()
+{
+    setupUi(this);
+
+    new XmlSyntaxHighlighter(schemaView-&amp;gt;document());
+    new XmlSyntaxHighlighter(instanceEdit-&amp;gt;document());
+
+    schemaSelection-&amp;gt;addItem(tr(&quot;Contact Schema&quot;));
+    schemaSelection-&amp;gt;addItem(tr(&quot;Recipe Schema&quot;));
+    schemaSelection-&amp;gt;addItem(tr(&quot;Order Schema&quot;));
+
+    instanceSelection-&amp;gt;addItem(tr(&quot;Valid Contact Instance&quot;));
+    instanceSelection-&amp;gt;addItem(tr(&quot;Invalid Contact Instance&quot;));
+
+    connect(schemaSelection, SIGNAL(currentIndexChanged(int)), SLOT(schemaSelected(int)));
+    connect(instanceSelection, SIGNAL(currentIndexChanged(int)), SLOT(instanceSelected(int)));
+    connect(validateButton, SIGNAL(clicked()), SLOT(validate()));
+    connect(instanceEdit, SIGNAL(textChanged()), SLOT(textChanged()));
+
+    validationStatus-&amp;gt;setAlignment(Qt::AlignCenter | Qt::AlignVCenter);
+
+    schemaSelected(0);
+    instanceSelected(0);
+}
+
+void MainWindow::schemaSelected(int index)
+{
+    instanceSelection-&amp;gt;clear();
+    if (index == 0) {
+        instanceSelection-&amp;gt;addItem(tr(&quot;Valid Contact Instance&quot;));
+        instanceSelection-&amp;gt;addItem(tr(&quot;Invalid Contact Instance&quot;));
+    } else if (index == 1) {
+        instanceSelection-&amp;gt;addItem(tr(&quot;Valid Recipe Instance&quot;));
+        instanceSelection-&amp;gt;addItem(tr(&quot;Invalid Recipe Instance&quot;));
+    } else if (index == 2) {
+        instanceSelection-&amp;gt;addItem(tr(&quot;Valid Order Instance&quot;));
+        instanceSelection-&amp;gt;addItem(tr(&quot;Invalid Order Instance&quot;));
+    }
+    textChanged();
+
+    const QString fileName = QStringLiteral(&quot;:/schema_&quot;)
+        + QString::number(index) + QStringLiteral(&quot;.xsd&quot;);
+    QFile schemaFile(fileName);
+    if (!schemaFile.open(QIODevice::ReadOnly)) {
+        qWarning() &amp;lt;&amp;lt; &quot;Cannot open&quot; &amp;lt;&amp;lt; QDir::toNativeSeparators(fileName)
+            &amp;lt;&amp;lt; ':' &amp;lt;&amp;lt; schemaFile.errorString();
+        return;
+    }
+
+    const QString schemaText(QString::fromUtf8(schemaFile.readAll()));
+    schemaView-&amp;gt;setPlainText(schemaText);
+
+    validate();
+}
+
+void MainWindow::instanceSelected(int index)
+{
+    if (index &amp;lt; 0) {
+        instanceEdit-&amp;gt;setPlainText(QString());
+        return;
+    }
+    const QString fileName = QStringLiteral(&quot;:/instance_&quot;)
+        + QString::number(2 * schemaSelection-&amp;gt;currentIndex() + index)
+        + QStringLiteral(&quot;.xml&quot;);
+    QFile instanceFile(fileName);
+    if (!instanceFile.open(QIODevice::ReadOnly)) {
+        qWarning() &amp;lt;&amp;lt; &quot;Cannot open&quot; &amp;lt;&amp;lt; QDir::toNativeSeparators(fileName)
+            &amp;lt;&amp;lt; ':' &amp;lt;&amp;lt; instanceFile.errorString();
+        return;
+    }
+    const QString instanceText(QString::fromUtf8(instanceFile.readAll()));
+    instanceEdit-&amp;gt;setPlainText(instanceText);
+
+    validate();
+}
+
+void MainWindow::validate()
+{
+    const QByteArray schemaData = schemaView-&amp;gt;toPlainText().toUtf8();
+    const QByteArray instanceData = instanceEdit-&amp;gt;toPlainText().toUtf8();
+
+    MessageHandler messageHandler;
+
+    QXmlSchema schema;
+    schema.setMessageHandler(&amp;amp;messageHandler);
+
+    schema.load(schemaData);
+
+    bool errorOccurred = false;
+    if (!schema.isValid()) {
+        errorOccurred = true;
+    } else {
+        QXmlSchemaValidator validator(schema);
+        if (!validator.validate(instanceData))
+            errorOccurred = true;
+    }
+
+    if (errorOccurred) {
+        validationStatus-&amp;gt;setText(messageHandler.statusMessage());
+        moveCursor(messageHandler.line(), messageHandler.column());
+    } else {
+        validationStatus-&amp;gt;setText(tr(&quot;validation successful&quot;));
+    }
+
+    const QString styleSheet = QString(&quot;QLabel {background: %1; padding: 3px}&quot;)
+                                      .arg(errorOccurred ? QColor(Qt::red).lighter(160).name() :
+                                                           QColor(Qt::green).lighter(160).name());
+    validationStatus-&amp;gt;setStyleSheet(styleSheet);
+}
+
+void MainWindow::textChanged()
+{
+    instanceEdit-&amp;gt;setExtraSelections(QList&amp;lt;QTextEdit::ExtraSelection&amp;gt;());
+}
+
+void MainWindow::moveCursor(int line, int column)
+{
+    instanceEdit-&amp;gt;moveCursor(QTextCursor::Start);
+    for (int i = 1; i &amp;lt; line; ++i)
+        instanceEdit-&amp;gt;moveCursor(QTextCursor::Down);
+
+    for (int i = 1; i &amp;lt; column; ++i)
+        instanceEdit-&amp;gt;moveCursor(QTextCursor::Right);
+
+    QList&amp;lt;QTextEdit::ExtraSelection&amp;gt; extraSelections;
+    QTextEdit::ExtraSelection selection;
+
+    const QColor lineColor = QColor(Qt::red).lighter(160);
+    selection.format.setBackground(lineColor);
+    selection.format.setProperty(QTextFormat::FullWidthSelection, true);
+    selection.cursor = instanceEdit-&amp;gt;textCursor();
+    selection.cursor.clearSelection();
+    extraSelections.append(selection);
+
+    instanceEdit-&amp;gt;setExtraSelections(extraSelections);
+
+    instanceEdit-&amp;gt;setFocus();
+}
+
+</db:programlisting>
+</db:article>

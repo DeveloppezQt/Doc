@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>System Tray Icon Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The System Tray Icon example shows how to add an icon with a menu and popup messages to a desktop environment's system tray.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;window.h&quot;
+
+#ifndef QT_NO_SYSTEMTRAYICON
+
+#include &amp;lt;QAction&amp;gt;
+#include &amp;lt;QCheckBox&amp;gt;
+#include &amp;lt;QComboBox&amp;gt;
+#include &amp;lt;QCoreApplication&amp;gt;
+#include &amp;lt;QCloseEvent&amp;gt;
+#include &amp;lt;QGroupBox&amp;gt;
+#include &amp;lt;QLabel&amp;gt;
+#include &amp;lt;QLineEdit&amp;gt;
+#include &amp;lt;QMenu&amp;gt;
+#include &amp;lt;QPushButton&amp;gt;
+#include &amp;lt;QSpinBox&amp;gt;
+#include &amp;lt;QTextEdit&amp;gt;
+#include &amp;lt;QVBoxLayout&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+
+Window::Window()
+{
+    createIconGroupBox();
+    createMessageGroupBox();
+
+    iconLabel-&amp;gt;setMinimumWidth(durationLabel-&amp;gt;sizeHint().width());
+
+    createActions();
+    createTrayIcon();
+
+    connect(showMessageButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;Window::showMessage);
+    connect(showIconCheckBox, &amp;amp;QAbstractButton::toggled, trayIcon, &amp;amp;QSystemTrayIcon::setVisible);
+    connect(iconComboBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;Window::setIcon);
+    connect(trayIcon, &amp;amp;QSystemTrayIcon::messageClicked, this, &amp;amp;Window::messageClicked);
+    connect(trayIcon, &amp;amp;QSystemTrayIcon::activated, this, &amp;amp;Window::iconActivated);
+
+    QVBoxLayout *mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addWidget(iconGroupBox);
+    mainLayout-&amp;gt;addWidget(messageGroupBox);
+    setLayout(mainLayout);
+
+    iconComboBox-&amp;gt;setCurrentIndex(1);
+    trayIcon-&amp;gt;show();
+
+    setWindowTitle(tr(&quot;Systray&quot;));
+    resize(400, 300);
+}
+
+void Window::setVisible(bool visible)
+{
+    minimizeAction-&amp;gt;setEnabled(visible);
+    maximizeAction-&amp;gt;setEnabled(!isMaximized());
+    restoreAction-&amp;gt;setEnabled(isMaximized() || !visible);
+    QDialog::setVisible(visible);
+}
+
+void Window::closeEvent(QCloseEvent *event)
+{
+#ifdef Q_OS_OSX
+    if (!event-&amp;gt;spontaneous() || !isVisible()) {
+        return;
+    }
+#endif
+    if (trayIcon-&amp;gt;isVisible()) {
+        QMessageBox::information(this, tr(&quot;Systray&quot;),
+                                 tr(&quot;The program will keep running in the &quot;
+                                    &quot;system tray. To terminate the program, &quot;
+                                    &quot;choose &amp;lt;b&amp;gt;Quit&amp;lt;/b&amp;gt; in the context menu &quot;
+                                    &quot;of the system tray entry.&quot;));
+        hide();
+        event-&amp;gt;ignore();
+    }
+}
+
+void Window::setIcon(int index)
+{
+    QIcon icon = iconComboBox-&amp;gt;itemIcon(index);
+    trayIcon-&amp;gt;setIcon(icon);
+    setWindowIcon(icon);
+
+    trayIcon-&amp;gt;setToolTip(iconComboBox-&amp;gt;itemText(index));
+}
+
+void Window::iconActivated(QSystemTrayIcon::ActivationReason reason)
+{
+    switch (reason) {
+    case QSystemTrayIcon::Trigger:
+    case QSystemTrayIcon::DoubleClick:
+        iconComboBox-&amp;gt;setCurrentIndex((iconComboBox-&amp;gt;currentIndex() + 1) % iconComboBox-&amp;gt;count());
+        break;
+    case QSystemTrayIcon::MiddleClick:
+        showMessage();
+        break;
+    default:
+        ;
+    }
+}
+
+void Window::showMessage()
+{
+    showIconCheckBox-&amp;gt;setChecked(true);
+    int selectedIcon = typeComboBox-&amp;gt;itemData(typeComboBox-&amp;gt;currentIndex()).toInt();
+    QSystemTrayIcon::MessageIcon msgIcon = QSystemTrayIcon::MessageIcon(selectedIcon);
+
+    if (selectedIcon == -1) { // custom icon
+        QIcon icon(iconComboBox-&amp;gt;itemIcon(iconComboBox-&amp;gt;currentIndex()));
+        trayIcon-&amp;gt;showMessage(titleEdit-&amp;gt;text(), bodyEdit-&amp;gt;toPlainText(), icon,
+                          durationSpinBox-&amp;gt;value() * 1000);
+    } else {
+        trayIcon-&amp;gt;showMessage(titleEdit-&amp;gt;text(), bodyEdit-&amp;gt;toPlainText(), msgIcon,
+                          durationSpinBox-&amp;gt;value() * 1000);
+    }
+}
+
+void Window::messageClicked()
+{
+    QMessageBox::information(0, tr(&quot;Systray&quot;),
+                             tr(&quot;Sorry, I already gave what help I could.\n&quot;
+                                &quot;Maybe you should try asking a human?&quot;));
+}
+
+void Window::createIconGroupBox()
+{
+    iconGroupBox = new QGroupBox(tr(&quot;Tray Icon&quot;));
+
+    iconLabel = new QLabel(&quot;Icon:&quot;);
+
+    iconComboBox = new QComboBox;
+    iconComboBox-&amp;gt;addItem(QIcon(&quot;:/images/bad.png&quot;), tr(&quot;Bad&quot;));
+    iconComboBox-&amp;gt;addItem(QIcon(&quot;:/images/heart.png&quot;), tr(&quot;Heart&quot;));
+    iconComboBox-&amp;gt;addItem(QIcon(&quot;:/images/trash.png&quot;), tr(&quot;Trash&quot;));
+
+    showIconCheckBox = new QCheckBox(tr(&quot;Show icon&quot;));
+    showIconCheckBox-&amp;gt;setChecked(true);
+
+    QHBoxLayout *iconLayout = new QHBoxLayout;
+    iconLayout-&amp;gt;addWidget(iconLabel);
+    iconLayout-&amp;gt;addWidget(iconComboBox);
+    iconLayout-&amp;gt;addStretch();
+    iconLayout-&amp;gt;addWidget(showIconCheckBox);
+    iconGroupBox-&amp;gt;setLayout(iconLayout);
+}
+
+void Window::createMessageGroupBox()
+{
+    messageGroupBox = new QGroupBox(tr(&quot;Balloon Message&quot;));
+
+    typeLabel = new QLabel(tr(&quot;Type:&quot;));
+
+    typeComboBox = new QComboBox;
+    typeComboBox-&amp;gt;addItem(tr(&quot;None&quot;), QSystemTrayIcon::NoIcon);
+    typeComboBox-&amp;gt;addItem(style()-&amp;gt;standardIcon(
+            QStyle::SP_MessageBoxInformation), tr(&quot;Information&quot;),
+            QSystemTrayIcon::Information);
+    typeComboBox-&amp;gt;addItem(style()-&amp;gt;standardIcon(
+            QStyle::SP_MessageBoxWarning), tr(&quot;Warning&quot;),
+            QSystemTrayIcon::Warning);
+    typeComboBox-&amp;gt;addItem(style()-&amp;gt;standardIcon(
+            QStyle::SP_MessageBoxCritical), tr(&quot;Critical&quot;),
+            QSystemTrayIcon::Critical);
+    typeComboBox-&amp;gt;addItem(QIcon(), tr(&quot;Custom icon&quot;),
+            -1);
+    typeComboBox-&amp;gt;setCurrentIndex(1);
+
+    durationLabel = new QLabel(tr(&quot;Duration:&quot;));
+
+    durationSpinBox = new QSpinBox;
+    durationSpinBox-&amp;gt;setRange(5, 60);
+    durationSpinBox-&amp;gt;setSuffix(&quot; s&quot;);
+    durationSpinBox-&amp;gt;setValue(15);
+
+    durationWarningLabel = new QLabel(tr(&quot;(some systems might ignore this &quot;
+                                         &quot;hint)&quot;));
+    durationWarningLabel-&amp;gt;setIndent(10);
+
+    titleLabel = new QLabel(tr(&quot;Title:&quot;));
+
+    titleEdit = new QLineEdit(tr(&quot;Cannot connect to network&quot;));
+
+    bodyLabel = new QLabel(tr(&quot;Body:&quot;));
+
+    bodyEdit = new QTextEdit;
+    bodyEdit-&amp;gt;setPlainText(tr(&quot;Don't believe me. Honestly, I don't have a &quot;
+                              &quot;clue.\nClick this balloon for details.&quot;));
+
+    showMessageButton = new QPushButton(tr(&quot;Show Message&quot;));
+    showMessageButton-&amp;gt;setDefault(true);
+
+    QGridLayout *messageLayout = new QGridLayout;
+    messageLayout-&amp;gt;addWidget(typeLabel, 0, 0);
+    messageLayout-&amp;gt;addWidget(typeComboBox, 0, 1, 1, 2);
+    messageLayout-&amp;gt;addWidget(durationLabel, 1, 0);
+    messageLayout-&amp;gt;addWidget(durationSpinBox, 1, 1);
+    messageLayout-&amp;gt;addWidget(durationWarningLabel, 1, 2, 1, 3);
+    messageLayout-&amp;gt;addWidget(titleLabel, 2, 0);
+    messageLayout-&amp;gt;addWidget(titleEdit, 2, 1, 1, 4);
+    messageLayout-&amp;gt;addWidget(bodyLabel, 3, 0);
+    messageLayout-&amp;gt;addWidget(bodyEdit, 3, 1, 2, 4);
+    messageLayout-&amp;gt;addWidget(showMessageButton, 5, 4);
+    messageLayout-&amp;gt;setColumnStretch(3, 1);
+    messageLayout-&amp;gt;setRowStretch(4, 1);
+    messageGroupBox-&amp;gt;setLayout(messageLayout);
+}
+
+void Window::createActions()
+{
+    minimizeAction = new QAction(tr(&quot;Mi&amp;amp;nimize&quot;), this);
+    connect(minimizeAction, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::hide);
+
+    maximizeAction = new QAction(tr(&quot;Ma&amp;amp;ximize&quot;), this);
+    connect(maximizeAction, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::showMaximized);
+
+    restoreAction = new QAction(tr(&quot;&amp;amp;Restore&quot;), this);
+    connect(restoreAction, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::showNormal);
+
+    quitAction = new QAction(tr(&quot;&amp;amp;Quit&quot;), this);
+    connect(quitAction, &amp;amp;QAction::triggered, qApp, &amp;amp;QCoreApplication::quit);
+}
+
+void Window::createTrayIcon()
+{
+    trayIconMenu = new QMenu(this);
+    trayIconMenu-&amp;gt;addAction(minimizeAction);
+    trayIconMenu-&amp;gt;addAction(maximizeAction);
+    trayIconMenu-&amp;gt;addAction(restoreAction);
+    trayIconMenu-&amp;gt;addSeparator();
+    trayIconMenu-&amp;gt;addAction(quitAction);
+
+    trayIcon = new QSystemTrayIcon(this);
+    trayIcon-&amp;gt;setContextMenu(trayIconMenu);
+}
+
+#endif
+
+</db:programlisting>
+</db:article>

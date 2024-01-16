@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>File System Example</db:title>
+<db:productname>QtXmlPatterns</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt XML Patterns Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Using Qt XML Patterns for querying non-XML data that is modeled to look like XML.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QLibraryInfo&amp;gt;
+#include &amp;lt;QtXmlPatterns&amp;gt;
+
+#include &quot;mainwindow.h&quot;
+#include &quot;xmlsyntaxhighlighter.h&quot;
+
+MainWindow::MainWindow() : m_fileTree(m_namePool)
+{
+    setupUi(this);
+
+    new XmlSyntaxHighlighter(fileTree-&amp;gt;document());
+
+    // Set up the font.
+    {
+        QFont font(&quot;Courier&quot;,10);
+        font.setFixedPitch(true);
+
+        fileTree-&amp;gt;setFont(font);
+        queryEdit-&amp;gt;setFont(font);
+        output-&amp;gt;setFont(font);
+    }
+
+    const QString dir(QLibraryInfo::location(QLibraryInfo::ExamplesPath) + &quot;/xmlpatterns/filetree&quot;);
+    qDebug() &amp;lt;&amp;lt; dir;
+
+    if (QDir(dir).exists())
+        loadDirectory(dir);
+    else
+        fileTree-&amp;gt;setPlainText(tr(&quot;Use the Open menu entry to select a directory.&quot;));
+
+    const QStringList queries(QDir(&quot;:/queries/&quot;, &quot;*.xq&quot;).entryList());
+    int len = queries.count();
+
+    for (int i = 0; i &amp;lt; len; ++i)
+        queryBox-&amp;gt;addItem(queries.at(i));
+
+}
+
+void MainWindow::on_queryBox_currentIndexChanged(const QString &amp;amp;currentText)
+{
+    QFile queryFile(&quot;:/queries/&quot; + currentText);
+    queryFile.open(QIODevice::ReadOnly);
+
+    queryEdit-&amp;gt;setPlainText(QString::fromLatin1(queryFile.readAll()));
+    evaluateResult();
+}
+
+void MainWindow::evaluateResult()
+{
+    if (queryBox-&amp;gt;currentText().isEmpty() || m_fileNode.isNull())
+        return;
+
+    QXmlQuery query(m_namePool);
+    query.bindVariable(&quot;fileTree&quot;, m_fileNode);
+    query.setQuery(QUrl(&quot;qrc:/queries/&quot; + queryBox-&amp;gt;currentText()));
+
+    QByteArray formatterOutput;
+    QBuffer buffer(&amp;amp;formatterOutput);
+    buffer.open(QIODevice::WriteOnly);
+
+    QXmlFormatter formatter(query, &amp;amp;buffer);
+    query.evaluateTo(&amp;amp;formatter);
+
+    output-&amp;gt;setText(QString::fromLatin1(formatterOutput.constData()));
+}
+
+void MainWindow::on_actionOpenDirectory_triggered()
+{
+    const QString directoryName = QFileDialog::getExistingDirectory(this);
+    if (!directoryName.isEmpty())
+        loadDirectory(directoryName);
+}
+
+void MainWindow::loadDirectory(const QString &amp;amp;directory)
+{
+    Q_ASSERT(QDir(directory).exists());
+
+    m_fileNode = m_fileTree.nodeFor(directory);
+
+    QXmlQuery query(m_namePool);
+    query.bindVariable(&quot;fileTree&quot;, m_fileNode);
+    query.setQuery(QUrl(&quot;qrc:/queries/wholeTree.xq&quot;));
+
+    QByteArray output;
+    QBuffer buffer(&amp;amp;output);
+    buffer.open(QIODevice::WriteOnly);
+
+    QXmlFormatter formatter(query, &amp;amp;buffer);
+    query.evaluateTo(&amp;amp;formatter);
+
+    treeInfo-&amp;gt;setText(tr(&quot;Model of %1 output as XML.&quot;).arg(directory));
+    fileTree-&amp;gt;setText(QString::fromLatin1(output.constData()));
+    evaluateResult();
+}
+
+void MainWindow::on_actionAbout_triggered()
+{
+    QMessageBox::about(this, tr(&quot;About File Tree&quot;),
+                   tr(&quot;&amp;lt;p&amp;gt;Select &amp;lt;b&amp;gt;File-&amp;gt;Open Directory&amp;lt;/b&amp;gt; and &quot;
+                      &quot;choose a directory. The directory is then &quot;
+                      &quot;loaded into the model, and the model is &quot;
+                      &quot;displayed on the left as XML.&amp;lt;/p&amp;gt;&quot;
+
+                      &quot;&amp;lt;p&amp;gt;From the query menu on the right, select &quot;
+                      &quot;a query. The query is displayed and then run &quot;
+                      &quot;on the model. The results are displayed below &quot;
+                      &quot;the query.&amp;lt;/p&amp;gt;&quot;));
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,438 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Application Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Application example shows how to implement a standard GUI application with menus, toolbars, and a status bar. The example itself is a simple text editor program built around <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the Application example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/application.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Nearly all of the code for the Application example is in the MainWindow class, which inherits <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link>. <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> provides the framework for windows that have menus, toolbars, dock windows, and a status bar. The application provides <db:guilabel>File</db:guilabel>, <db:guilabel>Edit</db:guilabel>, and <db:guilabel>Help</db:guilabel> entries in the menu bar, with the following popup menus:</db:para>
+<db:mediaobject>
+<db:alt>The Application example's menu system</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/application-menus.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The status bar at the bottom of the main window shows a description of the menu item or toolbar button under the cursor.</db:para>
+<db:para>To keep the example simple, recently opened files aren't shown in the <db:guilabel>File</db:guilabel> menu, even though this feature is desired in 90% of applications. Furthermore, this example can only load one file at a time. The <db:link xlink:href="qtwidgets-mainwindows-sdi-example.xml">SDI</db:link> and <db:link xlink:href="qtwidgets-mainwindows-mdi-example.xml">MDI</db:link> examples show how to lift these restrictions and how to implement recently opened files handling.</db:para>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>Here's the class definition:</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow();
+
+    void loadFile(const QString &amp;amp;fileName);
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
+private slots:
+    void newFile();
+    void open();
+    bool save();
+    bool saveAs();
+    void about();
+    void documentWasModified();
+#ifndef QT_NO_SESSIONMANAGER
+    void commitData(QSessionManager &amp;amp;);
+#endif
+
+private:
+    void createActions();
+    void createStatusBar();
+    void readSettings();
+    void writeSettings();
+    bool maybeSave();
+    bool saveFile(const QString &amp;amp;fileName);
+    void setCurrentFile(const QString &amp;amp;fileName);
+    QString strippedName(const QString &amp;amp;fullFileName);
+
+    QPlainTextEdit *textEdit;
+    QString curFile;
+};
+</db:programlisting>
+<db:para>The public API is restricted to the constructor. In the protected section, we reimplement <db:link xlink:href="qwidget.xml#closeEvent">QWidget::closeEvent</db:link>() to detect when the user attempts to close the window, and warn the user about unsaved changes. In the private slots section, we declare slots that correspond to menu entries, as well as a mysterious documentWasModified() slot. Finally, in the private section of the class, we have various members that will be explained in due time.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:programlisting language="cpp">#include &amp;lt;QtWidgets&amp;gt;
+
+#include &quot;mainwindow.h&quot;
+</db:programlisting>
+<db:para>We start by including &lt;QtWidgets&gt;, a header file that contains the definition of all classes in the Qt Core, Qt GUI and Qt Widgets modules. This saves us from the trouble of having to include every class individually. We also include mainwindow.h.</db:para>
+<db:para>You might wonder why we don't include &lt;QtWidgets&gt; in mainwindow.h and be done with it. The reason is that including such a large header from another header file can rapidly degrade performances. Here, it wouldn't do any harm, but it's still generally a good idea to include only the header files that are strictly necessary from another header file.</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow()
+    : textEdit(new QPlainTextEdit)
+{
+    setCentralWidget(textEdit);
+
+    createActions();
+    createStatusBar();
+
+    readSettings();
+
+    connect(textEdit-&amp;gt;document(), &amp;amp;QTextDocument::contentsChanged,
+            this, &amp;amp;MainWindow::documentWasModified);
+
+#ifndef QT_NO_SESSIONMANAGER
+    QGuiApplication::setFallbackSessionManagementEnabled(false);
+    connect(qApp, &amp;amp;QGuiApplication::commitDataRequest,
+            this, &amp;amp;MainWindow::commitData);
+#endif
+
+    setCurrentFile(QString());
+    setUnifiedTitleAndToolBarOnMac(true);
+}
+</db:programlisting>
+<db:para>In the constructor, we start by creating a <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link> widget as a child of the main window (the this object). Then we call <db:link xlink:href="qmainwindow.xml#setCentralWidget">QMainWindow::setCentralWidget</db:link>() to tell that this is going to be the widget that occupies the central area of the main window, between the toolbars and the status bar.</db:para>
+<db:para>Then we call createActions() and createStatusBar(), two private functions that set up the user interface. After that, we call readSettings() to restore the user's preferences.</db:para>
+<db:para>We establish a signal-slot connection between the <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>'s document object and our documentWasModified() slot. Whenever the user modifies the text in the <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>, we want to update the title bar to show that the file was modified.</db:para>
+<db:para>At the end, we set the window title using the private setCurrentFile() function. We'll come back to this later.</db:para>
+<db:anchor xml:id="close-event-handler"/>
+<db:programlisting language="cpp">void MainWindow::closeEvent(QCloseEvent *event)
+{
+    if (maybeSave()) {
+        writeSettings();
+        event-&amp;gt;accept();
+    } else {
+        event-&amp;gt;ignore();
+    }
+}
+</db:programlisting>
+<db:para>When the user attempts to close the window, we call the private function maybeSave() to give the user the possibility to save pending changes. The function returns true if the user wants the application to close; otherwise, it returns false. In the first case, we save the user's preferences to disk and accept the close event; in the second case, we ignore the close event, meaning that the application will stay up and running as if nothing happened.</db:para>
+<db:programlisting language="cpp">void MainWindow::newFile()
+{
+    if (maybeSave()) {
+        textEdit-&amp;gt;clear();
+        setCurrentFile(QString());
+    }
+}
+</db:programlisting>
+<db:para>The newFile() slot is invoked when the user selects <db:guilabel>File|New</db:guilabel> from the menu. We call maybeSave() to save any pending changes and if the user accepts to go on, we clear the <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link> and call the private function setCurrentFile() to update the window title and clear the <db:link xlink:href="qwidget.xml#windowModified-prop">windowModified</db:link> flag.</db:para>
+<db:programlisting language="cpp">void MainWindow::open()
+{
+    if (maybeSave()) {
+        QString fileName = QFileDialog::getOpenFileName(this);
+        if (!fileName.isEmpty())
+            loadFile(fileName);
+    }
+}
+</db:programlisting>
+<db:para>The open() slot is invoked when the user clicks <db:guilabel>File|Open</db:guilabel>. We pop up a <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link> asking the user to choose a file. If the user chooses a file (i.e., fileName is not an empty string), we call the private function loadFile() to actually load the file.</db:para>
+<db:programlisting language="cpp">bool MainWindow::save()
+{
+    if (curFile.isEmpty()) {
+        return saveAs();
+    } else {
+        return saveFile(curFile);
+    }
+}
+</db:programlisting>
+<db:para>The save() slot is invoked when the user clicks <db:guilabel>File|Save</db:guilabel>. If the user hasn't provided a name for the file yet, we call saveAs(); otherwise, we call the private function saveFile() to actually save the file.</db:para>
+<db:programlisting language="cpp">bool MainWindow::saveAs()
+{
+    QFileDialog dialog(this);
+    dialog.setWindowModality(Qt::WindowModal);
+    dialog.setAcceptMode(QFileDialog::AcceptSave);
+    if (dialog.exec() != QDialog::Accepted)
+        return false;
+    return saveFile(dialog.selectedFiles().first());
+}
+</db:programlisting>
+<db:para>In saveAs(), we start by popping up a <db:link xlink:href="qfiledialog.xml">QFileDialog</db:link> asking the user to provide a name. If the user clicks <db:guilabel>Cancel</db:guilabel>, the returned file name is empty, and we do nothing.</db:para>
+<db:programlisting language="cpp">void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About Application&quot;),
+            tr(&quot;The &amp;lt;b&amp;gt;Application&amp;lt;/b&amp;gt; example demonstrates how to &quot;
+               &quot;write modern GUI applications using Qt, with a menu bar, &quot;
+               &quot;toolbars, and a status bar.&quot;));
+}
+</db:programlisting>
+<db:para>The application's About box is done using one statement, using the <db:link xlink:href="qmessagebox.xml#about">QMessageBox::about</db:link>() static function and relying on its support for an HTML subset.</db:para>
+<db:para>The <db:link xlink:href="qobject.xml#tr">tr</db:link>() call around the literal string marks the string for translation. It is a good habit to call <db:link xlink:href="qobject.xml#tr">tr</db:link>() on all user-visible strings, in case you later decide to translate your application to other languages. The <db:link xlink:href="internationalization.xml">Internationalization with Qt</db:link> overview covers <db:link xlink:href="qobject.xml#tr">tr</db:link>() in more detail.</db:para>
+<db:programlisting language="cpp">void MainWindow::documentWasModified()
+{
+    setWindowModified(textEdit-&amp;gt;document()-&amp;gt;isModified());
+}
+</db:programlisting>
+<db:para>The documentWasModified() slot is invoked each time the text in the <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link> changes because of user edits. We call <db:link xlink:href="qwidget.xml#windowModified-prop">QWidget::setWindowModified</db:link>() to make the title bar show that the file was modified. How this is done varies on each platform.</db:para>
+<db:programlisting language="cpp">void MainWindow::createActions()
+{
+
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    QToolBar *fileToolBar = addToolBar(tr(&quot;File&quot;));
+    const QIcon newIcon = QIcon::fromTheme(&quot;document-new&quot;, QIcon(&quot;:/images/new.png&quot;));
+    QAction *newAct = new QAction(newIcon, tr(&quot;&amp;amp;New&quot;), this);
+    newAct-&amp;gt;setShortcuts(QKeySequence::New);
+    newAct-&amp;gt;setStatusTip(tr(&quot;Create a new file&quot;));
+    connect(newAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::newFile);
+    fileMenu-&amp;gt;addAction(newAct);
+    fileToolBar-&amp;gt;addAction(newAct);
+
+    const QIcon openIcon = QIcon::fromTheme(&quot;document-open&quot;, QIcon(&quot;:/images/open.png&quot;));
+    QAction *openAct = new QAction(openIcon, tr(&quot;&amp;amp;Open...&quot;), this);
+    openAct-&amp;gt;setShortcuts(QKeySequence::Open);
+    openAct-&amp;gt;setStatusTip(tr(&quot;Open an existing file&quot;));
+    connect(openAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::open);
+    fileMenu-&amp;gt;addAction(openAct);
+    fileToolBar-&amp;gt;addAction(openAct);
+    ...
+    QAction *aboutQtAct = helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, &amp;amp;QApplication::aboutQt);
+    aboutQtAct-&amp;gt;setStatusTip(tr(&quot;Show the Qt library's About box&quot;));
+</db:programlisting>
+<db:para>The createActions() private function, which is called from the MainWindow constructor, creates <db:link xlink:href="qaction.xml">QAction</db:link>s and populates the menus and two toolbars. The code is very repetitive, so we show only the actions corresponding to <db:guilabel>File|New</db:guilabel>, <db:guilabel>File|Open</db:guilabel>, and <db:guilabel>Help|About Qt</db:guilabel>.</db:para>
+<db:para>A <db:link xlink:href="qaction.xml">QAction</db:link> is an object that represents one user action, such as saving a file or invoking a dialog. An action can be put in a <db:link xlink:href="qmenu.xml">QMenu</db:link> or a <db:link xlink:href="qtoolbar.xml">QToolBar</db:link>, or both, or in any other widget that reimplements <db:link xlink:href="qwidget.xml#actionEvent">QWidget::actionEvent</db:link>().</db:para>
+<db:para>An action has a text that is shown in the menu, an icon, a shortcut key, a tooltip, a status tip (shown in the status bar), a &quot;What's This?&quot; text, and more. It emits a <db:link xlink:href="qaction.xml#triggered">triggered</db:link>() signal whenever the user invokes the action (e.g., by clicking the associated menu item or toolbar button).</db:para>
+<db:para>Instances of <db:link xlink:href="qaction.xml">QAction</db:link> can be created by passing a parent <db:link xlink:href="qobject.xml">QObject</db:link> or by using one of the convenience functions of <db:link xlink:href="qmenu.xml">QMenu</db:link>, <db:link xlink:href="qmenubar.xml">QMenuBar</db:link> or <db:link xlink:href="qtoolbar.xml">QToolBar</db:link>. We create the actions that are in a menu as well as in a toolbar parented on the window to prevent ownership issues. For actions that are only in the menu, we use the convenience function <db:link xlink:href="qmenu.xml#addAction">QMenu::addAction</db:link>(), which allows us to pass text, icon and the target object and its slot member function.</db:para>
+<db:para>Creating toolbars is very similar to creating menus. The same actions that we put in the menus can be reused in the toolbars. After creating the action, we add it to the toolbar using <db:link xlink:href="qtoolbar.xml#addAction">QToolBar::addAction</db:link>().</db:para>
+<db:para>The code above contains one more idiom that must be explained. For some of the actions, we specify an icon as a <db:link xlink:href="qicon.xml">QIcon</db:link> to the <db:link xlink:href="qaction.xml">QAction</db:link> constructor. We use <db:link xlink:href="qicon.xml#fromTheme">QIcon::fromTheme</db:link>() to obtain the correct standard icon from the underlying window system. If that fails due to the platform not supporting it, we pass a file name as fallback. Here, the file name starts with :. Such file names aren't ordinary file names, but rather path in the executable's stored resources. We'll come back to this when we review the application.qrc file that's part of the project.</db:para>
+<db:programlisting language="cpp">#ifndef QT_NO_CLIPBOARD
+    cutAct-&amp;gt;setEnabled(false);
+    copyAct-&amp;gt;setEnabled(false);
+    connect(textEdit, &amp;amp;QPlainTextEdit::copyAvailable, cutAct, &amp;amp;QAction::setEnabled);
+    connect(textEdit, &amp;amp;QPlainTextEdit::copyAvailable, copyAct, &amp;amp;QAction::setEnabled);
+#endif // !QT_NO_CLIPBOARD
+}
+</db:programlisting>
+<db:para>The <db:guilabel>Edit|Cut</db:guilabel> and <db:guilabel>Edit|Copy</db:guilabel> actions must be available only when the <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link> contains selected text. We disable them by default and connect the <db:link xlink:href="qplaintextedit.xml#copyAvailable">QPlainTextEdit::copyAvailable</db:link>() signal to the <db:link xlink:href="qaction.xml#enabled-prop">QAction::setEnabled</db:link>() slot, ensuring that the actions are disabled when the text editor has no selection.</db:para>
+<db:para>Just before we create the <db:guilabel>Help</db:guilabel> menu, we call <db:link xlink:href="qmenubar.xml#addSeparator">QMenuBar::addSeparator</db:link>(). This has no effect for most widget styles (e.g., Windows and macOS styles), but for some styles this makes sure that <db:guilabel>Help</db:guilabel> is pushed to the right side of the menu bar.</db:para>
+<db:programlisting language="cpp">void MainWindow::createStatusBar()
+{
+    statusBar()-&amp;gt;showMessage(tr(&quot;Ready&quot;));
+}
+</db:programlisting>
+<db:para><db:link xlink:href="qmainwindow.xml#statusBar">QMainWindow::statusBar</db:link>() returns a pointer to the main window's <db:link xlink:href="qstatusbar.xml">QStatusBar</db:link> widget. Like with <db:link xlink:href="qmainwindow.xml#menuBar">QMainWindow::menuBar</db:link>(), the widget is automatically created the first time the function is called.</db:para>
+<db:programlisting language="cpp">void MainWindow::readSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    const QByteArray geometry = settings.value(&quot;geometry&quot;, QByteArray()).toByteArray();
+    if (geometry.isEmpty()) {
+        const QRect availableGeometry = QApplication::desktop()-&amp;gt;availableGeometry(this);
+        resize(availableGeometry.width() / 3, availableGeometry.height() / 2);
+        move((availableGeometry.width() - width()) / 2,
+             (availableGeometry.height() - height()) / 2);
+    } else {
+        restoreGeometry(geometry);
+    }
+}
+</db:programlisting>
+<db:para>The readSettings() function is called from the constructor to load the user's preferences and other application settings. The <db:link xlink:href="qsettings.xml">QSettings</db:link> class provides a high-level interface for storing settings permanently on disk. On Windows, it uses the (in)famous Windows registry; on macOS, it uses the native XML-based CFPreferences API; on Unix/X11, it uses text files.</db:para>
+<db:para>The <db:link xlink:href="qsettings.xml">QSettings</db:link> constructor takes arguments that identify your company and the name of the product. This ensures that the settings for different applications are kept separately.</db:para>
+<db:para>We use <db:link xlink:href="qsettings.xml#value">QSettings::value</db:link>() to extract the value of the geometry setting. The second argument to <db:link xlink:href="qsettings.xml#value">QSettings::value</db:link>() is optional and specifies a default value for the setting if there exists none. This value is used the first time the application is run.</db:para>
+<db:para>We use <db:link xlink:href="qwidget.xml#saveGeometry">QWidget::saveGeometry</db:link>() and Widget::restoreGeometry() to save the position. They use an opaque <db:link xlink:href="qbytearray.xml">QByteArray</db:link> to store screen number, geometry and window state.</db:para>
+<db:programlisting language="cpp">void MainWindow::writeSettings()
+{
+    QSettings settings(QCoreApplication::organizationName(), QCoreApplication::applicationName());
+    settings.setValue(&quot;geometry&quot;, saveGeometry());
+}
+</db:programlisting>
+<db:para>The writeSettings() function is called from closeEvent(). Writing settings is similar to reading them, except simpler. The arguments to the <db:link xlink:href="qsettings.xml">QSettings</db:link> constructor must be the same as in readSettings().</db:para>
+<db:programlisting language="cpp">bool MainWindow::maybeSave()
+{
+    if (!textEdit-&amp;gt;document()-&amp;gt;isModified())
+        return true;
+    const QMessageBox::StandardButton ret
+        = QMessageBox::warning(this, tr(&quot;Application&quot;),
+                               tr(&quot;The document has been modified.\n&quot;
+                                  &quot;Do you want to save your changes?&quot;),
+                               QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+    switch (ret) {
+    case QMessageBox::Save:
+        return save();
+    case QMessageBox::Cancel:
+        return false;
+    default:
+        break;
+    }
+    return true;
+}
+</db:programlisting>
+<db:para>The maybeSave() function is called to save pending changes. If there are pending changes, it pops up a <db:link xlink:href="qmessagebox.xml">QMessageBox</db:link> giving the user to save the document. The options are <db:link xlink:href="qmessagebox.xml#StandardButton-enum">QMessageBox::Yes</db:link>, <db:link xlink:href="qmessagebox.xml#StandardButton-enum">QMessageBox::No</db:link>, and <db:link xlink:href="qmessagebox.xml#StandardButton-enum">QMessageBox::Cancel</db:link>. The <db:guilabel>Yes</db:guilabel> button is made the default button (the button that is invoked when the user presses <db:guilabel>Return</db:guilabel>) using the <db:link xlink:href="qmessagebox.xml#StandardButton-enum">QMessageBox::Default</db:link> flag; the <db:guilabel>Cancel</db:guilabel> button is made the escape button (the button that is invoked when the user presses <db:guilabel>Esc</db:guilabel>) using the <db:link xlink:href="qmessagebox.xml#StandardButton-enum">QMessageBox::Escape</db:link> flag.</db:para>
+<db:para>The maybeSave() function returns true in all cases, except when the user clicks <db:guilabel>Cancel</db:guilabel> or saving the file fails. The caller must check the return value and stop whatever it was doing if the return value is false.</db:para>
+<db:programlisting language="cpp">void MainWindow::loadFile(const QString &amp;amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::ReadOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;Application&quot;),
+                             tr(&quot;Cannot read file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName), file.errorString()));
+        return;
+    }
+
+    QTextStream in(&amp;amp;file);
+#ifndef QT_NO_CURSOR
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+#endif
+    textEdit-&amp;gt;setPlainText(in.readAll());
+#ifndef QT_NO_CURSOR
+    QApplication::restoreOverrideCursor();
+#endif
+
+    setCurrentFile(fileName);
+    statusBar()-&amp;gt;showMessage(tr(&quot;File loaded&quot;), 2000);
+}
+</db:programlisting>
+<db:para>In loadFile(), we use <db:link xlink:href="qfile.xml">QFile</db:link> and <db:link xlink:href="qtextstream.xml">QTextStream</db:link> to read in the data. The <db:link xlink:href="qfile.xml">QFile</db:link> object provides access to the bytes stored in a file.</db:para>
+<db:para>We start by opening the file in read-only mode. The QFile::Text flag indicates that the file is a text file, not a binary file. On Unix and macOS, this makes no difference, but on Windows, it ensures that the &quot;\r\n&quot; end-of-line sequence is converted to &quot;\n&quot; when reading.</db:para>
+<db:para>If we successfully opened the file, we use a <db:link xlink:href="qtextstream.xml">QTextStream</db:link> object to read in the data. <db:link xlink:href="qtextstream.xml">QTextStream</db:link> automatically converts the 8-bit data into a Unicode <db:link xlink:href="qstring.xml">QString</db:link> and supports various encodings. If no encoding is specified, <db:link xlink:href="qtextstream.xml">QTextStream</db:link> assumes the file is written using the system's default 8-bit encoding (for example, Latin-1; see <db:link xlink:href="qtextcodec.xml#codecForLocale">QTextCodec::codecForLocale</db:link>() for details).</db:para>
+<db:para>Since the call to <db:link xlink:href="qtextstream.xml#readAll">QTextStream::readAll</db:link>() might take some time, we set the cursor to be <db:link xlink:href="qt.xml#CursorShape-enum">Qt::WaitCursor</db:link> for the entire application while it goes on.</db:para>
+<db:para>At the end, we call the private setCurrentFile() function, which we'll cover in a moment, and we display the string &quot;File loaded&quot; in the status bar for 2 seconds (2000 milliseconds).</db:para>
+<db:programlisting language="cpp">bool MainWindow::saveFile(const QString &amp;amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QFile::WriteOnly | QFile::Text)) {
+        QMessageBox::warning(this, tr(&quot;Application&quot;),
+                             tr(&quot;Cannot write file %1:\n%2.&quot;)
+                             .arg(QDir::toNativeSeparators(fileName),
+                                  file.errorString()));
+        return false;
+    }
+
+    QTextStream out(&amp;amp;file);
+#ifndef QT_NO_CURSOR
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+#endif
+    out &amp;lt;&amp;lt; textEdit-&amp;gt;toPlainText();
+#ifndef QT_NO_CURSOR
+    QApplication::restoreOverrideCursor();
+#endif
+
+    setCurrentFile(fileName);
+    statusBar()-&amp;gt;showMessage(tr(&quot;File saved&quot;), 2000);
+    return true;
+}
+</db:programlisting>
+<db:para>Saving a file is very similar to loading one. Here, the QFile::Text flag ensures that on Windows, &quot;\n&quot; is converted into &quot;\r\n&quot; to conform to the Windows convension.</db:para>
+<db:programlisting language="cpp">void MainWindow::setCurrentFile(const QString &amp;amp;fileName)
+{
+    curFile = fileName;
+    textEdit-&amp;gt;document()-&amp;gt;setModified(false);
+    setWindowModified(false);
+
+    QString shownName = curFile;
+    if (curFile.isEmpty())
+        shownName = &quot;untitled.txt&quot;;
+    setWindowFilePath(shownName);
+}
+</db:programlisting>
+<db:para>The setCurrentFile() function is called to reset the state of a few variables when a file is loaded or saved, or when the user starts editing a new file (in which case fileName is empty). We update the curFile variable, clear the <db:link xlink:href="qtextdocument.xml#modified-prop">QTextDocument::modified</db:link> flag and the associated QWidget:windowModified flag, and update the window title to contain the new file name (or untitled.txt).</db:para>
+<db:para>The strippedName() function call around curFile in the <db:link xlink:href="qwidget.xml#windowTitle-prop">QWidget::setWindowTitle</db:link>() call shortens the file name to exclude the path. Here's the function:</db:para>
+<db:programlisting language="cpp">QString MainWindow::strippedName(const QString &amp;amp;fullFileName)
+{
+    return QFileInfo(fullFileName).fileName();
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:para>The main() function for this application is typical of applications that contain one main window:</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QCommandLineParser&amp;gt;
+#include &amp;lt;QCommandLineOption&amp;gt;
+
+#include &quot;mainwindow.h&quot;
+
+int main(int argc, char *argv[])
+{
+    Q_INIT_RESOURCE(application);
+
+    QApplication app(argc, argv);
+    QCoreApplication::setOrganizationName(&quot;QtProject&quot;);
+    QCoreApplication::setApplicationName(&quot;Application Example&quot;);
+    QCoreApplication::setApplicationVersion(QT_VERSION_STR);
+    QCommandLineParser parser;
+    parser.setApplicationDescription(QCoreApplication::applicationName());
+    parser.addHelpOption();
+    parser.addVersionOption();
+    parser.addPositionalArgument(&quot;file&quot;, &quot;The file to open.&quot;);
+    parser.process(app);
+
+    MainWindow mainWin;
+    if (!parser.positionalArguments().isEmpty())
+        mainWin.loadFile(parser.positionalArguments().first());
+    mainWin.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The main function uses <db:link xlink:href="qcommandlineparser.xml">QCommandLineParser</db:link> to check whether some file argument was passed to the application and loads it via MainWindow::loadFile().</db:para>
+</db:section>
+<db:section xml:id="the-resource-file">
+<db:title>The Resource File</db:title>
+<db:para>As you will probably recall, for some of the actions, we specified icons with file names starting with : and mentioned that such file names aren't ordinary file names, but path in the executable's stored resources. These resources are compiled</db:para>
+<db:para>The resources associated with an application are specified in a .qrc file, an XML-based file format that lists files on the disk. Here's the application.qrc file that's used by the Application example:</db:para>
+<db:programlisting language="cpp">&amp;lt;!DOCTYPE RCC&amp;gt;&amp;lt;RCC version=&quot;1.0&quot;&amp;gt;
+&amp;lt;qresource&amp;gt;
+    &amp;lt;file&amp;gt;images/copy.png&amp;lt;/file&amp;gt;
+    &amp;lt;file&amp;gt;images/cut.png&amp;lt;/file&amp;gt;
+    &amp;lt;file&amp;gt;images/new.png&amp;lt;/file&amp;gt;
+    &amp;lt;file&amp;gt;images/open.png&amp;lt;/file&amp;gt;
+    &amp;lt;file&amp;gt;images/paste.png&amp;lt;/file&amp;gt;
+    &amp;lt;file&amp;gt;images/save.png&amp;lt;/file&amp;gt;
+&amp;lt;/qresource&amp;gt;
+&amp;lt;/RCC&amp;gt;
+</db:programlisting>
+<db:para>The .png files listed in the application.qrc file are files that are part of the Application example's source tree. Paths are relative to the directory where the application.qrc file is located (the mainwindows/application directory).</db:para>
+<db:para>The resource file must be mentioned in the application.pro file so that qmake knows about it:</db:para>
+<db:programlisting language="cpp">RESOURCES     = application.qrc
+</db:programlisting>
+<db:para>qmake will produce make rules to generate a file called qrc_application.cpp that is linked into the application. This file contains all the data for the images and other resources as static C++ arrays of compressed binary data. See <db:link xlink:href="resources.xml">The Qt Resource System</db:link> for more information about resources.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/application.pro">mainwindows/application/application.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/application.qrc">mainwindows/application/application.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/main.cpp">mainwindows/application/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/mainwindow.cpp">mainwindows/application/mainwindow.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/mainwindow.h">mainwindows/application/mainwindow.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/copy.png">mainwindows/application/images/copy.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/cut.png">mainwindows/application/images/cut.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/new.png">mainwindows/application/images/new.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/open.png">mainwindows/application/images/open.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/paste.png">mainwindows/application/images/paste.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="mainwindows/application/images/save.png">mainwindows/application/images/save.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

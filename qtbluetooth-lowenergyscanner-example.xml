@@ -1,0 +1,208 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Scanner Example</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>An application designed to browse the content of Bluetooth Low Energy peripheral devices. The example demonstrates the use of all Qt Bluetooth Low Energy classes.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Bluetooth Low Energy Scanner Example shows how to develop Bluetooth Low Energy applications using the Qt Bluetooth API. The application covers scanning for Low Energy devices, scanning their services and reading the service characteristics and descriptors.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/lowenergyscanner-services.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The example introduces the following Qt classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergycontroller.xml">QLowEnergyController</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergyservice.xml">QLowEnergyService</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergycharacteristic.xml">QLowEnergyCharacteristic</db:link></db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qlowenergydescriptor.xml">QLowEnergyDescriptor</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The example can be used with any arbitrary Bluetooth Low Energy peripheral device. It creates a snapshot of all services, characteristics and descriptors and presents them to the user. Therefore the application provides an easy way of browsing the content offered by a peripheral device.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="scanning-for-devices">
+<db:title>Scanning for Devices</db:title>
+<db:para>The first step is to find all peripheral devices. The devices can be found using the <db:link xlink:href="qbluetoothdevicediscoveryagent.xml">QBluetoothDeviceDiscoveryAgent</db:link> class. The discovery process is started using <db:link xlink:href="qbluetoothdevicediscoveryagent.xml#start">start</db:link>(). Each new device is advertised via the <db:link xlink:href="qbluetoothdevicediscoveryagent.xml#deviceDiscovered">deviceDiscovered</db:link>() signal:</db:para>
+<db:programlisting language="cpp">discoveryAgent = new QBluetoothDeviceDiscoveryAgent();
+discoveryAgent-&amp;gt;setLowEnergyDiscoveryTimeout(5000);
+connect(discoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
+        this, &amp;amp;Device::addDevice);
+connect(discoveryAgent, QOverload&amp;lt;QBluetoothDeviceDiscoveryAgent::Error&amp;gt;::of(&amp;amp;QBluetoothDeviceDiscoveryAgent::error),
+        this, &amp;amp;Device::deviceScanError);
+connect(discoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::finished, this, &amp;amp;Device::deviceScanFinished);
+discoveryAgent-&amp;gt;start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
+</db:programlisting>
+<db:para>The below <db:code>addDevice()</db:code> slot is triggered as a reaction to the discovery of a new device. It filters all found devices which have the <db:link xlink:href="qbluetoothdeviceinfo.xml#CoreConfiguration-enum">QBluetoothDeviceInfo::LowEnergyCoreConfiguration</db:link> flag and adds them to a list which is shown to the user.</db:para>
+<db:programlisting language="cpp">void Device::addDevice(const QBluetoothDeviceInfo &amp;amp;info)
+{
+    if (info.coreConfigurations() &amp;amp; QBluetoothDeviceInfo::LowEnergyCoreConfiguration) {
+        auto d = new DeviceInfo(info);
+        devices.append(d);
+        setUpdate(&quot;Last device added: &quot; + d-&amp;gt;getName());
+    }
+}
+</db:programlisting>
+<db:para>The list of devices may look like in the image below.</db:para>
+<db:note>
+<db:para>It is a prerequisite that the remote devices actively advertise their presence.</db:para>
+</db:note>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/lowenergyscanner-devices.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section xml:id="connecting-to-services">
+<db:title>Connecting to Services</db:title>
+<db:para>After the user has selected a device from the list the application connects to the device and scans all services. The <db:link xlink:href="qlowenergycontroller.xml">QLowEnergyController</db:link> class is used to connect to the device. The <db:link xlink:href="qlowenergycontroller.xml#connectToDevice">QLowEnergyController::connectToDevice</db:link>() function triggers the connection process which lasts until the <db:link xlink:href="qlowenergycontroller.xml#connected">QLowEnergyController::connected</db:link>() signal is received or an error has occurred:</db:para>
+<db:programlisting language="cpp">if (!controller) {
+    // Connecting signals and slots for connecting to LE services.
+    controller = QLowEnergyController::createCentral(currentDevice.getDevice());
+    connect(controller, &amp;amp;QLowEnergyController::connected,
+            this, &amp;amp;Device::deviceConnected);
+    connect(controller, QOverload&amp;lt;QLowEnergyController::Error&amp;gt;::of(&amp;amp;QLowEnergyController::error),
+            this, &amp;amp;Device::errorReceived);
+    connect(controller, &amp;amp;QLowEnergyController::disconnected,
+            this, &amp;amp;Device::deviceDisconnected);
+    connect(controller, &amp;amp;QLowEnergyController::serviceDiscovered,
+            this, &amp;amp;Device::addLowEnergyService);
+    connect(controller, &amp;amp;QLowEnergyController::discoveryFinished,
+            this, &amp;amp;Device::serviceScanDone);
+}
+
+if (isRandomAddress())
+    controller-&amp;gt;setRemoteAddressType(QLowEnergyController::RandomAddress);
+else
+    controller-&amp;gt;setRemoteAddressType(QLowEnergyController::PublicAddress);
+controller-&amp;gt;connectToDevice();
+</db:programlisting>
+<db:para>The slot triggered by the <db:link xlink:href="qlowenergycontroller.xml#connected">connected</db:link>() signal immediately calls <db:link xlink:href="qlowenergycontroller.xml#discoverServices">QLowEnergyController::discoverServices</db:link>() to start the service discovery on the connected peripheral device.</db:para>
+<db:programlisting language="cpp">controller-&amp;gt;discoverServices();
+</db:programlisting>
+<db:para>The resulting list is presented to the user.The image below displays the results when the SensorTag device is selected. The view lists the names of the services, whether they are primary or secondary services and the UUID which determines the service type.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/lowenergyscanner-services.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>As soon as the service is chosen the related <db:link xlink:href="qlowenergyservice.xml">QLowEnergyService</db:link> instance is created to permit interaction with it:</db:para>
+<db:programlisting language="cpp">QLowEnergyService *service = controller-&amp;gt;createServiceObject(serviceUuid);
+if (!service) {
+    qWarning() &amp;lt;&amp;lt; &quot;Cannot create service for uuid&quot;;
+    return;
+}
+</db:programlisting>
+<db:para>The service object provides the required signals and functions to discover the service details, read and write characteristics and descriptors, as well as receive data change notifications. Change notifications can be triggered as a result of writing a value or due to an on-device update potentially triggered by the internal logic. During the initial detail search the service's <db:link xlink:href="qlowenergyservice.xml#state">state</db:link>() transitions from <db:link xlink:href="qlowenergyservice.xml#ServiceState-enum">DiscoveryRequired</db:link> to <db:link xlink:href="qlowenergyservice.xml#ServiceState-enum">DiscoveringServices</db:link> and eventually ends with <db:link xlink:href="qlowenergyservice.xml#ServiceState-enum">ServiceDiscovered</db:link>:</db:para>
+<db:programlisting language="cpp">connect(service, &amp;amp;QLowEnergyService::stateChanged,
+        this, &amp;amp;Device::serviceDetailsDiscovered);
+service-&amp;gt;discoverDetails();
+setUpdate(&quot;Back\n(Discovering details...)&quot;);
+</db:programlisting>
+</db:section>
+<db:section xml:id="reading-service-data">
+<db:title>Reading Service Data</db:title>
+<db:para>Upon selection of a service the service details are shown. Each characteristic is listed together with its name, UUID, value, handle and properties.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/lowenergyscanner-chars.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>It is possible to retrieve the service's characteristics via <db:link xlink:href="qlowenergyservice.xml#characteristics">QLowEnergyService::characteristics</db:link>() and in turn, each descriptor can be obtained via <db:link xlink:href="qlowenergycharacteristic.xml#descriptors">QLowEnergyCharacteristic::descriptors</db:link>().</db:para>
+<db:programlisting language="cpp">const QList&amp;lt;QLowEnergyCharacteristic&amp;gt; chars = service-&amp;gt;characteristics();
+for (const QLowEnergyCharacteristic &amp;amp;ch : chars) {
+    auto cInfo = new CharacteristicInfo(ch);
+    m_characteristics.append(cInfo);
+}
+</db:programlisting>
+<db:para>Although the example application does not display descriptors it uses descriptors to get the name of an individual characteristic if its name cannot be discerned based on its UUID. The second way to obtain the name is the existence of a descriptor of the type <db:link xlink:href="qbluetoothuuid.xml#DescriptorType-enum">QBluetoothUuid::CharacteristicUserDescription</db:link>. The code below demonstrates how this may be achieved:</db:para>
+<db:programlisting language="cpp">QString name = m_characteristic.name();
+if (!name.isEmpty())
+    return name;
+
+// find descriptor with CharacteristicUserDescription
+const QList&amp;lt;QLowEnergyDescriptor&amp;gt; descriptors = m_characteristic.descriptors();
+for (const QLowEnergyDescriptor &amp;amp;descriptor : descriptors) {
+    if (descriptor.type() == QBluetoothUuid::CharacteristicUserDescription) {
+        name = descriptor.value();
+        break;
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Characteristics.qml">lowenergyscanner/assets/Characteristics.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Dialog.qml">lowenergyscanner/assets/Dialog.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Header.qml">lowenergyscanner/assets/Header.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Label.qml">lowenergyscanner/assets/Label.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Menu.qml">lowenergyscanner/assets/Menu.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/Services.qml">lowenergyscanner/assets/Services.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/main.qml">lowenergyscanner/assets/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/characteristicinfo.cpp">lowenergyscanner/characteristicinfo.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/characteristicinfo.h">lowenergyscanner/characteristicinfo.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/device.cpp">lowenergyscanner/device.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/device.h">lowenergyscanner/device.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/deviceinfo.cpp">lowenergyscanner/deviceinfo.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/deviceinfo.h">lowenergyscanner/deviceinfo.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/lowenergyscanner.pro">lowenergyscanner/lowenergyscanner.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/main.cpp">lowenergyscanner/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/resources.qrc">lowenergyscanner/resources.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/serviceinfo.cpp">lowenergyscanner/serviceinfo.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/serviceinfo.h">lowenergyscanner/serviceinfo.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="lowenergyscanner/assets/busy_dark.png">lowenergyscanner/assets/busy_dark.png</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

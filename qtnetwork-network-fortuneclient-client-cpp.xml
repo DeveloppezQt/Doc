@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Fortune Client Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create a client for a network service.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtNetwork&amp;gt;
+
+#include &quot;client.h&quot;
+
+Client::Client(QWidget *parent)
+    : QDialog(parent)
+    , hostCombo(new QComboBox)
+    , portLineEdit(new QLineEdit)
+    , getFortuneButton(new QPushButton(tr(&quot;Get Fortune&quot;)))
+    , tcpSocket(new QTcpSocket(this))
+{
+    setWindowFlags(windowFlags() &amp;amp; ~Qt::WindowContextHelpButtonHint);
+    hostCombo-&amp;gt;setEditable(true);
+    // find out name of this machine
+    QString name = QHostInfo::localHostName();
+    if (!name.isEmpty()) {
+        hostCombo-&amp;gt;addItem(name);
+        QString domain = QHostInfo::localDomainName();
+        if (!domain.isEmpty())
+            hostCombo-&amp;gt;addItem(name + QChar('.') + domain);
+    }
+    if (name != QLatin1String(&quot;localhost&quot;))
+        hostCombo-&amp;gt;addItem(QString(&quot;localhost&quot;));
+    // find out IP addresses of this machine
+    QList&amp;lt;QHostAddress&amp;gt; ipAddressesList = QNetworkInterface::allAddresses();
+    // add non-localhost addresses
+    for (int i = 0; i &amp;lt; ipAddressesList.size(); ++i) {
+        if (!ipAddressesList.at(i).isLoopback())
+            hostCombo-&amp;gt;addItem(ipAddressesList.at(i).toString());
+    }
+    // add localhost addresses
+    for (int i = 0; i &amp;lt; ipAddressesList.size(); ++i) {
+        if (ipAddressesList.at(i).isLoopback())
+            hostCombo-&amp;gt;addItem(ipAddressesList.at(i).toString());
+    }
+
+    portLineEdit-&amp;gt;setValidator(new QIntValidator(1, 65535, this));
+
+    auto hostLabel = new QLabel(tr(&quot;&amp;amp;Server name:&quot;));
+    hostLabel-&amp;gt;setBuddy(hostCombo);
+    auto portLabel = new QLabel(tr(&quot;S&amp;amp;erver port:&quot;));
+    portLabel-&amp;gt;setBuddy(portLineEdit);
+
+    statusLabel = new QLabel(tr(&quot;This examples requires that you run the &quot;
+                                &quot;Fortune Server example as well.&quot;));
+
+    getFortuneButton-&amp;gt;setDefault(true);
+    getFortuneButton-&amp;gt;setEnabled(false);
+
+    auto quitButton = new QPushButton(tr(&quot;Quit&quot;));
+
+    auto buttonBox = new QDialogButtonBox;
+    buttonBox-&amp;gt;addButton(getFortuneButton, QDialogButtonBox::ActionRole);
+    buttonBox-&amp;gt;addButton(quitButton, QDialogButtonBox::RejectRole);
+
+    in.setDevice(tcpSocket);
+    in.setVersion(QDataStream::Qt_4_0);
+
+    connect(hostCombo, &amp;amp;QComboBox::editTextChanged,
+            this, &amp;amp;Client::enableGetFortuneButton);
+    connect(portLineEdit, &amp;amp;QLineEdit::textChanged,
+            this, &amp;amp;Client::enableGetFortuneButton);
+    connect(getFortuneButton, &amp;amp;QAbstractButton::clicked,
+            this, &amp;amp;Client::requestNewFortune);
+    connect(quitButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;QWidget::close);
+    connect(tcpSocket, &amp;amp;QIODevice::readyRead, this, &amp;amp;Client::readFortune);
+    connect(tcpSocket, QOverload&amp;lt;QAbstractSocket::SocketError&amp;gt;::of(&amp;amp;QAbstractSocket::error),
+            this, &amp;amp;Client::displayError);
+
+    QGridLayout *mainLayout = nullptr;
+    if (QGuiApplication::styleHints()-&amp;gt;showIsFullScreen() || QGuiApplication::styleHints()-&amp;gt;showIsMaximized()) {
+        auto outerVerticalLayout = new QVBoxLayout(this);
+        outerVerticalLayout-&amp;gt;addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding));
+        auto outerHorizontalLayout = new QHBoxLayout;
+        outerHorizontalLayout-&amp;gt;addItem(new QSpacerItem(0, 0, QSizePolicy::MinimumExpanding, QSizePolicy::Ignored));
+        auto groupBox = new QGroupBox(QGuiApplication::applicationDisplayName());
+        mainLayout = new QGridLayout(groupBox);
+        outerHorizontalLayout-&amp;gt;addWidget(groupBox);
+        outerHorizontalLayout-&amp;gt;addItem(new QSpacerItem(0, 0, QSizePolicy::MinimumExpanding, QSizePolicy::Ignored));
+        outerVerticalLayout-&amp;gt;addLayout(outerHorizontalLayout);
+        outerVerticalLayout-&amp;gt;addItem(new QSpacerItem(0, 0, QSizePolicy::Ignored, QSizePolicy::MinimumExpanding));
+    } else {
+        mainLayout = new QGridLayout(this);
+    }
+    mainLayout-&amp;gt;addWidget(hostLabel, 0, 0);
+    mainLayout-&amp;gt;addWidget(hostCombo, 0, 1);
+    mainLayout-&amp;gt;addWidget(portLabel, 1, 0);
+    mainLayout-&amp;gt;addWidget(portLineEdit, 1, 1);
+    mainLayout-&amp;gt;addWidget(statusLabel, 2, 0, 1, 2);
+    mainLayout-&amp;gt;addWidget(buttonBox, 3, 0, 1, 2);
+
+    setWindowTitle(QGuiApplication::applicationDisplayName());
+    portLineEdit-&amp;gt;setFocus();
+
+    QNetworkConfigurationManager manager;
+    if (manager.capabilities() &amp;amp; QNetworkConfigurationManager::NetworkSessionRequired) {
+        // Get saved network configuration
+        QSettings settings(QSettings::UserScope, QLatin1String(&quot;QtProject&quot;));
+        settings.beginGroup(QLatin1String(&quot;QtNetwork&quot;));
+        const QString id = settings.value(QLatin1String(&quot;DefaultNetworkConfiguration&quot;)).toString();
+        settings.endGroup();
+
+        // If the saved network configuration is not currently discovered use the system default
+        QNetworkConfiguration config = manager.configurationFromIdentifier(id);
+        if ((config.state() &amp;amp; QNetworkConfiguration::Discovered) !=
+            QNetworkConfiguration::Discovered) {
+            config = manager.defaultConfiguration();
+        }
+
+        networkSession = new QNetworkSession(config, this);
+        connect(networkSession, &amp;amp;QNetworkSession::opened, this, &amp;amp;Client::sessionOpened);
+
+        getFortuneButton-&amp;gt;setEnabled(false);
+        statusLabel-&amp;gt;setText(tr(&quot;Opening network session.&quot;));
+        networkSession-&amp;gt;open();
+    }
+}
+
+void Client::requestNewFortune()
+{
+    getFortuneButton-&amp;gt;setEnabled(false);
+    tcpSocket-&amp;gt;abort();
+    tcpSocket-&amp;gt;connectToHost(hostCombo-&amp;gt;currentText(),
+                             portLineEdit-&amp;gt;text().toInt());
+}
+
+void Client::readFortune()
+{
+    in.startTransaction();
+
+    QString nextFortune;
+    in &amp;gt;&amp;gt; nextFortune;
+
+    if (!in.commitTransaction())
+        return;
+
+    if (nextFortune == currentFortune) {
+        QTimer::singleShot(0, this, &amp;amp;Client::requestNewFortune);
+        return;
+    }
+
+    currentFortune = nextFortune;
+    statusLabel-&amp;gt;setText(currentFortune);
+    getFortuneButton-&amp;gt;setEnabled(true);
+}
+
+void Client::displayError(QAbstractSocket::SocketError socketError)
+{
+    switch (socketError) {
+    case QAbstractSocket::RemoteHostClosedError:
+        break;
+    case QAbstractSocket::HostNotFoundError:
+        QMessageBox::information(this, tr(&quot;Fortune Client&quot;),
+                                 tr(&quot;The host was not found. Please check the &quot;
+                                    &quot;host name and port settings.&quot;));
+        break;
+    case QAbstractSocket::ConnectionRefusedError:
+        QMessageBox::information(this, tr(&quot;Fortune Client&quot;),
+                                 tr(&quot;The connection was refused by the peer. &quot;
+                                    &quot;Make sure the fortune server is running, &quot;
+                                    &quot;and check that the host name and port &quot;
+                                    &quot;settings are correct.&quot;));
+        break;
+    default:
+        QMessageBox::information(this, tr(&quot;Fortune Client&quot;),
+                                 tr(&quot;The following error occurred: %1.&quot;)
+                                 .arg(tcpSocket-&amp;gt;errorString()));
+    }
+
+    getFortuneButton-&amp;gt;setEnabled(true);
+}
+
+void Client::enableGetFortuneButton()
+{
+    getFortuneButton-&amp;gt;setEnabled((!networkSession || networkSession-&amp;gt;isOpen()) &amp;amp;&amp;amp;
+                                 !hostCombo-&amp;gt;currentText().isEmpty() &amp;amp;&amp;amp;
+                                 !portLineEdit-&amp;gt;text().isEmpty());
+
+}
+
+void Client::sessionOpened()
+{
+    // Save the used configuration
+    QNetworkConfiguration config = networkSession-&amp;gt;configuration();
+    QString id;
+    if (config.type() == QNetworkConfiguration::UserChoice)
+        id = networkSession-&amp;gt;sessionProperty(QLatin1String(&quot;UserChoiceConfiguration&quot;)).toString();
+    else
+        id = config.identifier();
+
+    QSettings settings(QSettings::UserScope, QLatin1String(&quot;QtProject&quot;));
+    settings.beginGroup(QLatin1String(&quot;QtNetwork&quot;));
+    settings.setValue(QLatin1String(&quot;DefaultNetworkConfiguration&quot;), id);
+    settings.endGroup();
+
+    statusLabel-&amp;gt;setText(tr(&quot;This examples requires that you run the &quot;
+                            &quot;Fortune Server example as well.&quot;));
+
+    enableGetFortuneButton();
+}
+
+</db:programlisting>
+</db:article>

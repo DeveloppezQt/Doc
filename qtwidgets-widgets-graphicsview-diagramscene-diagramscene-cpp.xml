@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Diagram Scene Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrate how to use the Graphics View framework.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;diagramscene.h&quot;
+#include &quot;arrow.h&quot;
+
+#include &amp;lt;QTextCursor&amp;gt;
+#include &amp;lt;QGraphicsSceneMouseEvent&amp;gt;
+
+DiagramScene::DiagramScene(QMenu *itemMenu, QObject *parent)
+    : QGraphicsScene(parent)
+{
+    myItemMenu = itemMenu;
+    myMode = MoveItem;
+    myItemType = DiagramItem::Step;
+    line = 0;
+    textItem = 0;
+    myItemColor = Qt::white;
+    myTextColor = Qt::black;
+    myLineColor = Qt::black;
+}
+
+void DiagramScene::setLineColor(const QColor &amp;amp;color)
+{
+    myLineColor = color;
+    if (isItemChange(Arrow::Type)) {
+        Arrow *item = qgraphicsitem_cast&amp;lt;Arrow *&amp;gt;(selectedItems().first());
+        item-&amp;gt;setColor(myLineColor);
+        update();
+    }
+}
+
+void DiagramScene::setTextColor(const QColor &amp;amp;color)
+{
+    myTextColor = color;
+    if (isItemChange(DiagramTextItem::Type)) {
+        DiagramTextItem *item = qgraphicsitem_cast&amp;lt;DiagramTextItem *&amp;gt;(selectedItems().first());
+        item-&amp;gt;setDefaultTextColor(myTextColor);
+    }
+}
+
+void DiagramScene::setItemColor(const QColor &amp;amp;color)
+{
+    myItemColor = color;
+    if (isItemChange(DiagramItem::Type)) {
+        DiagramItem *item = qgraphicsitem_cast&amp;lt;DiagramItem *&amp;gt;(selectedItems().first());
+        item-&amp;gt;setBrush(myItemColor);
+    }
+}
+
+void DiagramScene::setFont(const QFont &amp;amp;font)
+{
+    myFont = font;
+
+    if (isItemChange(DiagramTextItem::Type)) {
+        QGraphicsTextItem *item = qgraphicsitem_cast&amp;lt;DiagramTextItem *&amp;gt;(selectedItems().first());
+        //At this point the selection can change so the first selected item might not be a DiagramTextItem
+        if (item)
+            item-&amp;gt;setFont(myFont);
+    }
+}
+
+void DiagramScene::setMode(Mode mode)
+{
+    myMode = mode;
+}
+
+void DiagramScene::setItemType(DiagramItem::DiagramType type)
+{
+    myItemType = type;
+}
+
+void DiagramScene::editorLostFocus(DiagramTextItem *item)
+{
+    QTextCursor cursor = item-&amp;gt;textCursor();
+    cursor.clearSelection();
+    item-&amp;gt;setTextCursor(cursor);
+
+    if (item-&amp;gt;toPlainText().isEmpty()) {
+        removeItem(item);
+        item-&amp;gt;deleteLater();
+    }
+}
+
+void DiagramScene::mousePressEvent(QGraphicsSceneMouseEvent *mouseEvent)
+{
+    if (mouseEvent-&amp;gt;button() != Qt::LeftButton)
+        return;
+
+    DiagramItem *item;
+    switch (myMode) {
+        case InsertItem:
+            item = new DiagramItem(myItemType, myItemMenu);
+            item-&amp;gt;setBrush(myItemColor);
+            addItem(item);
+            item-&amp;gt;setPos(mouseEvent-&amp;gt;scenePos());
+            emit itemInserted(item);
+            break;
+        case InsertLine:
+            line = new QGraphicsLineItem(QLineF(mouseEvent-&amp;gt;scenePos(),
+                                        mouseEvent-&amp;gt;scenePos()));
+            line-&amp;gt;setPen(QPen(myLineColor, 2));
+            addItem(line);
+            break;
+        case InsertText:
+            textItem = new DiagramTextItem();
+            textItem-&amp;gt;setFont(myFont);
+            textItem-&amp;gt;setTextInteractionFlags(Qt::TextEditorInteraction);
+            textItem-&amp;gt;setZValue(1000.0);
+            connect(textItem, SIGNAL(lostFocus(DiagramTextItem*)),
+                    this, SLOT(editorLostFocus(DiagramTextItem*)));
+            connect(textItem, SIGNAL(selectedChange(QGraphicsItem*)),
+                    this, SIGNAL(itemSelected(QGraphicsItem*)));
+            addItem(textItem);
+            textItem-&amp;gt;setDefaultTextColor(myTextColor);
+            textItem-&amp;gt;setPos(mouseEvent-&amp;gt;scenePos());
+            emit textInserted(textItem);
+    default:
+        ;
+    }
+    QGraphicsScene::mousePressEvent(mouseEvent);
+}
+
+void DiagramScene::mouseMoveEvent(QGraphicsSceneMouseEvent *mouseEvent)
+{
+    if (myMode == InsertLine &amp;amp;&amp;amp; line != 0) {
+        QLineF newLine(line-&amp;gt;line().p1(), mouseEvent-&amp;gt;scenePos());
+        line-&amp;gt;setLine(newLine);
+    } else if (myMode == MoveItem) {
+        QGraphicsScene::mouseMoveEvent(mouseEvent);
+    }
+}
+
+void DiagramScene::mouseReleaseEvent(QGraphicsSceneMouseEvent *mouseEvent)
+{
+    if (line != 0 &amp;amp;&amp;amp; myMode == InsertLine) {
+        QList&amp;lt;QGraphicsItem *&amp;gt; startItems = items(line-&amp;gt;line().p1());
+        if (startItems.count() &amp;amp;&amp;amp; startItems.first() == line)
+            startItems.removeFirst();
+        QList&amp;lt;QGraphicsItem *&amp;gt; endItems = items(line-&amp;gt;line().p2());
+        if (endItems.count() &amp;amp;&amp;amp; endItems.first() == line)
+            endItems.removeFirst();
+
+        removeItem(line);
+        delete line;
+
+        if (startItems.count() &amp;gt; 0 &amp;amp;&amp;amp; endItems.count() &amp;gt; 0 &amp;amp;&amp;amp;
+            startItems.first()-&amp;gt;type() == DiagramItem::Type &amp;amp;&amp;amp;
+            endItems.first()-&amp;gt;type() == DiagramItem::Type &amp;amp;&amp;amp;
+            startItems.first() != endItems.first()) {
+            DiagramItem *startItem = qgraphicsitem_cast&amp;lt;DiagramItem *&amp;gt;(startItems.first());
+            DiagramItem *endItem = qgraphicsitem_cast&amp;lt;DiagramItem *&amp;gt;(endItems.first());
+            Arrow *arrow = new Arrow(startItem, endItem);
+            arrow-&amp;gt;setColor(myLineColor);
+            startItem-&amp;gt;addArrow(arrow);
+            endItem-&amp;gt;addArrow(arrow);
+            arrow-&amp;gt;setZValue(-1000.0);
+            addItem(arrow);
+            arrow-&amp;gt;updatePosition();
+        }
+    }
+    line = 0;
+    QGraphicsScene::mouseReleaseEvent(mouseEvent);
+}
+
+bool DiagramScene::isItemChange(int type)
+{
+    foreach (QGraphicsItem *item, selectedItems()) {
+        if (item-&amp;gt;type() == type)
+            return true;
+    }
+    return false;
+}
+
+</db:programlisting>
+</db:article>

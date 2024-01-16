@@ -1,0 +1,271 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>CAN Bus example</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example sends and receives CAN bus frames.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtSerialBus module.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;connectdialog.h&quot;
+#include &quot;ui_connectdialog.h&quot;
+
+#include &amp;lt;QCanBus&amp;gt;
+
+ConnectDialog::ConnectDialog(QWidget *parent) :
+    QDialog(parent),
+    m_ui(new Ui::ConnectDialog)
+{
+    m_ui-&amp;gt;setupUi(this);
+
+    m_ui-&amp;gt;errorFilterEdit-&amp;gt;setValidator(new QIntValidator(0, 0x1FFFFFFFU, this));
+
+    m_ui-&amp;gt;loopbackBox-&amp;gt;addItem(tr(&quot;unspecified&quot;), QVariant());
+    m_ui-&amp;gt;loopbackBox-&amp;gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&amp;gt;loopbackBox-&amp;gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    m_ui-&amp;gt;receiveOwnBox-&amp;gt;addItem(tr(&quot;unspecified&quot;), QVariant());
+    m_ui-&amp;gt;receiveOwnBox-&amp;gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&amp;gt;receiveOwnBox-&amp;gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    m_ui-&amp;gt;canFdBox-&amp;gt;addItem(tr(&quot;false&quot;), QVariant(false));
+    m_ui-&amp;gt;canFdBox-&amp;gt;addItem(tr(&quot;true&quot;), QVariant(true));
+
+    m_ui-&amp;gt;dataBitrateBox-&amp;gt;setFlexibleDateRateEnabled(true);
+
+    connect(m_ui-&amp;gt;okButton, &amp;amp;QPushButton::clicked, this, &amp;amp;ConnectDialog::ok);
+    connect(m_ui-&amp;gt;cancelButton, &amp;amp;QPushButton::clicked, this, &amp;amp;ConnectDialog::cancel);
+    connect(m_ui-&amp;gt;useConfigurationBox, &amp;amp;QCheckBox::clicked,
+            m_ui-&amp;gt;configurationBox, &amp;amp;QGroupBox::setEnabled);
+    connect(m_ui-&amp;gt;pluginListBox, &amp;amp;QComboBox::currentTextChanged,
+            this, &amp;amp;ConnectDialog::pluginChanged);
+    connect(m_ui-&amp;gt;interfaceListBox, &amp;amp;QComboBox::currentTextChanged,
+            this, &amp;amp;ConnectDialog::interfaceChanged);
+    m_ui-&amp;gt;rawFilterEdit-&amp;gt;hide();
+    m_ui-&amp;gt;rawFilterLabel-&amp;gt;hide();
+
+    m_ui-&amp;gt;pluginListBox-&amp;gt;addItems(QCanBus::instance()-&amp;gt;plugins());
+
+    updateSettings();
+}
+
+ConnectDialog::~ConnectDialog()
+{
+    delete m_ui;
+}
+
+ConnectDialog::Settings ConnectDialog::settings() const
+{
+    return m_currentSettings;
+}
+
+void ConnectDialog::pluginChanged(const QString &amp;amp;plugin)
+{
+    m_ui-&amp;gt;interfaceListBox-&amp;gt;clear();
+    m_interfaces = QCanBus::instance()-&amp;gt;availableDevices(plugin);
+    for (const QCanBusDeviceInfo &amp;amp;info : qAsConst(m_interfaces))
+        m_ui-&amp;gt;interfaceListBox-&amp;gt;addItem(info.name());
+}
+
+void ConnectDialog::interfaceChanged(const QString &amp;amp;interface)
+{
+    m_ui-&amp;gt;isVirtual-&amp;gt;setChecked(false);
+    m_ui-&amp;gt;isFlexibleDataRateCapable-&amp;gt;setChecked(false);
+
+    for (const QCanBusDeviceInfo &amp;amp;info : qAsConst(m_interfaces)) {
+        if (info.name() == interface) {
+            m_ui-&amp;gt;descriptionLabel-&amp;gt;setText(info.description());
+            QString serialNumber = info.serialNumber();
+            if (serialNumber.isEmpty())
+                serialNumber = tr(&quot;n/a&quot;);
+            m_ui-&amp;gt;serialNumberLabel-&amp;gt;setText(tr(&quot;Serial: %1&quot;).arg(serialNumber));
+            m_ui-&amp;gt;channelLabel-&amp;gt;setText(tr(&quot;Channel: %1&quot;).arg(info.channel()));
+            m_ui-&amp;gt;isVirtual-&amp;gt;setChecked(info.isVirtual());
+            m_ui-&amp;gt;isFlexibleDataRateCapable-&amp;gt;setChecked(info.hasFlexibleDataRate());
+            break;
+        }
+    }
+}
+
+void ConnectDialog::ok()
+{
+    updateSettings();
+    accept();
+}
+
+void ConnectDialog::cancel()
+{
+    revertSettings();
+    reject();
+}
+
+QString ConnectDialog::configurationValue(QCanBusDevice::ConfigurationKey key)
+{
+    QVariant result;
+
+    for (const ConfigurationItem &amp;amp;item : qAsConst(m_currentSettings.configurations)) {
+        if (item.first == key) {
+            result = item.second;
+            break;
+        }
+    }
+
+    if (result.isNull() &amp;amp;&amp;amp; (
+                key == QCanBusDevice::LoopbackKey ||
+                key == QCanBusDevice::ReceiveOwnKey)) {
+        return tr(&quot;unspecified&quot;);
+    }
+
+    return result.toString();
+}
+
+void ConnectDialog::revertSettings()
+{
+    m_ui-&amp;gt;pluginListBox-&amp;gt;setCurrentText(m_currentSettings.pluginName);
+    m_ui-&amp;gt;interfaceListBox-&amp;gt;setCurrentText(m_currentSettings.deviceInterfaceName);
+    m_ui-&amp;gt;useConfigurationBox-&amp;gt;setChecked(m_currentSettings.useConfigurationEnabled);
+
+    QString value = configurationValue(QCanBusDevice::LoopbackKey);
+    m_ui-&amp;gt;loopbackBox-&amp;gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::ReceiveOwnKey);
+    m_ui-&amp;gt;receiveOwnBox-&amp;gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::ErrorFilterKey);
+    m_ui-&amp;gt;errorFilterEdit-&amp;gt;setText(value);
+
+    value = configurationValue(QCanBusDevice::BitRateKey);
+    m_ui-&amp;gt;bitrateBox-&amp;gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::CanFdKey);
+    m_ui-&amp;gt;canFdBox-&amp;gt;setCurrentText(value);
+
+    value = configurationValue(QCanBusDevice::DataBitRateKey);
+    m_ui-&amp;gt;dataBitrateBox-&amp;gt;setCurrentText(value);
+}
+
+void ConnectDialog::updateSettings()
+{
+    m_currentSettings.pluginName = m_ui-&amp;gt;pluginListBox-&amp;gt;currentText();
+    m_currentSettings.deviceInterfaceName = m_ui-&amp;gt;interfaceListBox-&amp;gt;currentText();
+    m_currentSettings.useConfigurationEnabled = m_ui-&amp;gt;useConfigurationBox-&amp;gt;isChecked();
+
+    if (m_currentSettings.useConfigurationEnabled) {
+        m_currentSettings.configurations.clear();
+        // process LoopBack
+        if (m_ui-&amp;gt;loopbackBox-&amp;gt;currentIndex() != 0) {
+            ConfigurationItem item;
+            item.first = QCanBusDevice::LoopbackKey;
+            item.second = m_ui-&amp;gt;loopbackBox-&amp;gt;currentData();
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process ReceiveOwnKey
+        if (m_ui-&amp;gt;receiveOwnBox-&amp;gt;currentIndex() != 0) {
+            ConfigurationItem item;
+            item.first = QCanBusDevice::ReceiveOwnKey;
+            item.second = m_ui-&amp;gt;receiveOwnBox-&amp;gt;currentData();
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process error filter
+        if (!m_ui-&amp;gt;errorFilterEdit-&amp;gt;text().isEmpty()) {
+            QString value = m_ui-&amp;gt;errorFilterEdit-&amp;gt;text();
+            bool ok = false;
+            int dec = value.toInt(&amp;amp;ok);
+            if (ok) {
+                ConfigurationItem item;
+                item.first = QCanBusDevice::ErrorFilterKey;
+                item.second = QVariant::fromValue(QCanBusFrame::FrameErrors(dec));
+                m_currentSettings.configurations.append(item);
+            }
+        }
+
+        // process raw filter list
+        if (!m_ui-&amp;gt;rawFilterEdit-&amp;gt;text().isEmpty()) {
+            //TODO current ui not sfficient to reflect this param
+        }
+
+        // process bitrate
+        const int bitrate = m_ui-&amp;gt;bitrateBox-&amp;gt;bitRate();
+        if (bitrate &amp;gt; 0) {
+            const ConfigurationItem item(QCanBusDevice::BitRateKey, QVariant(bitrate));
+            m_currentSettings.configurations.append(item);
+        }
+
+        // process CAN FD setting
+        ConfigurationItem fdItem;
+        fdItem.first = QCanBusDevice::CanFdKey;
+        fdItem.second = m_ui-&amp;gt;canFdBox-&amp;gt;currentData();
+        m_currentSettings.configurations.append(fdItem);
+
+        // process data bitrate
+        const int dataBitrate = m_ui-&amp;gt;dataBitrateBox-&amp;gt;bitRate();
+        if (dataBitrate &amp;gt; 0) {
+            const ConfigurationItem item(QCanBusDevice::DataBitRateKey, QVariant(dataBitrate));
+            m_currentSettings.configurations.append(item);
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

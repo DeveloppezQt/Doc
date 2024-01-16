@@ -1,0 +1,465 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Master Detail Example</db:title>
+<db:productname>QtSql</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt SQL Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Master Detail Example shows how to present data from different data sources in the same application. The album titles, and the corresponding artists and release dates, are kept in a database, while each album's tracks are stored in an XML file.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;dialog.h&quot;
+
+#include &amp;lt;QtWidgets&amp;gt;
+#include &amp;lt;QtSql&amp;gt;
+#include &amp;lt;QtXml&amp;gt;
+
+extern int uniqueAlbumId;
+extern int uniqueArtistId;
+
+MainWindow::MainWindow(const QString &amp;amp;artistTable, const QString &amp;amp;albumTable,
+                       QFile *albumDetails, QWidget *parent)
+     : QMainWindow(parent)
+{
+    file = albumDetails;
+    readAlbumData();
+
+    model = new QSqlRelationalTableModel(this);
+    model-&amp;gt;setTable(albumTable);
+    model-&amp;gt;setRelation(2, QSqlRelation(artistTable, &quot;id&quot;, &quot;artist&quot;));
+    model-&amp;gt;select();
+
+    QGroupBox *artists = createArtistGroupBox();
+    QGroupBox *albums = createAlbumGroupBox();
+    QGroupBox *details = createDetailsGroupBox();
+
+    artistView-&amp;gt;setCurrentIndex(0);
+    uniqueAlbumId = model-&amp;gt;rowCount();
+    uniqueArtistId = artistView-&amp;gt;count();
+
+    connect(model, &amp;amp;QSqlRelationalTableModel::rowsInserted,
+            this, &amp;amp;MainWindow::updateHeader);
+    connect(model, &amp;amp;QSqlRelationalTableModel::rowsRemoved,
+            this, &amp;amp;MainWindow::updateHeader);
+
+    QGridLayout *layout = new QGridLayout;
+    layout-&amp;gt;addWidget(artists, 0, 0);
+    layout-&amp;gt;addWidget(albums, 1, 0);
+    layout-&amp;gt;addWidget(details, 0, 1, 2, 1);
+    layout-&amp;gt;setColumnStretch(1, 1);
+    layout-&amp;gt;setColumnMinimumWidth(0, 500);
+
+    QWidget *widget = new QWidget;
+    widget-&amp;gt;setLayout(layout);
+    setCentralWidget(widget);
+    createMenuBar();
+
+    showImageLabel();
+    resize(850, 400);
+    setWindowTitle(tr(&quot;Music Archive&quot;));
+}
+
+void MainWindow::changeArtist(int row)
+{
+    if (row &amp;gt; 0) {
+        QModelIndex index = model-&amp;gt;relationModel(2)-&amp;gt;index(row, 1);
+        model-&amp;gt;setFilter(&quot;artist = '&quot; + index.data().toString() + '\'') ;
+        showArtistProfile(index);
+    } else if (row == 0) {
+        model-&amp;gt;setFilter(QString());
+        showImageLabel();
+    } else {
+        return;
+    }
+}
+
+void MainWindow::showArtistProfile(QModelIndex index)
+{
+    QSqlRecord record = model-&amp;gt;relationModel(2)-&amp;gt;record(index.row());
+
+    QString name = record.value(&quot;artist&quot;).toString();
+    QString count = record.value(&quot;albumcount&quot;).toString();
+    profileLabel-&amp;gt;setText(tr(&quot;Artist : %1 \n&quot; \
+                             &quot;Number of Albums: %2&quot;).arg(name).arg(count));
+
+    profileLabel-&amp;gt;show();
+    iconLabel-&amp;gt;show();
+
+    titleLabel-&amp;gt;hide();
+    trackList-&amp;gt;hide();
+    imageLabel-&amp;gt;hide();
+}
+
+void MainWindow::showAlbumDetails(QModelIndex index)
+{
+    QSqlRecord record = model-&amp;gt;record(index.row());
+
+    QString artist = record.value(&quot;artist&quot;).toString();
+    QString title = record.value(&quot;title&quot;).toString();
+    QString year = record.value(&quot;year&quot;).toString();
+    QString albumId = record.value(&quot;albumid&quot;).toString();
+
+    showArtistProfile(indexOfArtist(artist));
+    titleLabel-&amp;gt;setText(tr(&quot;Title: %1 (%2)&quot;).arg(title).arg(year));
+    titleLabel-&amp;gt;show();
+
+    QDomNodeList albums = albumData.elementsByTagName(&quot;album&quot;);
+    for (int i = 0; i &amp;lt; albums.count(); ++i) {
+        QDomNode album = albums.item(i);
+        if (album.toElement().attribute(&quot;id&quot;) == albumId) {
+            getTrackList(album.toElement());
+            break;
+        }
+    }
+    if (trackList-&amp;gt;count() != 0)
+        trackList-&amp;gt;show();
+}
+
+void MainWindow::getTrackList(QDomNode album)
+{
+    trackList-&amp;gt;clear();
+
+    QDomNodeList tracks = album.childNodes();
+    QDomNode track;
+    QString trackNumber;
+
+    for (int i = 0; i &amp;lt; tracks.count(); ++i) {
+
+        track = tracks.item(i);
+        trackNumber = track.toElement().attribute(&quot;number&quot;);
+
+        QListWidgetItem *item = new QListWidgetItem(trackList);
+        item-&amp;gt;setText(trackNumber + &quot;: &quot; + track.toElement().text());
+    }
+}
+
+void MainWindow::addAlbum()
+{
+    Dialog *dialog = new Dialog(model, albumData, file, this);
+    int accepted = dialog-&amp;gt;exec();
+
+    if (accepted == 1) {
+        int lastRow = model-&amp;gt;rowCount() - 1;
+        albumView-&amp;gt;selectRow(lastRow);
+        albumView-&amp;gt;scrollToBottom();
+        showAlbumDetails(model-&amp;gt;index(lastRow, 0));
+    }
+}
+
+void MainWindow::deleteAlbum()
+{
+    QModelIndexList selection = albumView-&amp;gt;selectionModel()-&amp;gt;selectedRows(0);
+
+    if (!selection.empty()) {
+        QModelIndex idIndex = selection.at(0);
+        int id = idIndex.data().toInt();
+        QString title = idIndex.sibling(idIndex.row(), 1).data().toString();
+        QString artist = idIndex.sibling(idIndex.row(), 2).data().toString();
+
+        QMessageBox::StandardButton button;
+        button = QMessageBox::question(this, tr(&quot;Delete Album&quot;),
+                                       tr(&quot;Are you sure you want to &quot;
+                                          &quot;delete '%1' by '%2'?&quot;)
+                                       .arg(title, artist),
+                                       QMessageBox::Yes | QMessageBox::No);
+
+        if (button == QMessageBox::Yes) {
+            removeAlbumFromFile(id);
+            removeAlbumFromDatabase(idIndex);
+            decreaseAlbumCount(indexOfArtist(artist));
+
+            showImageLabel();
+        }
+    } else {
+        QMessageBox::information(this, tr(&quot;Delete Album&quot;),
+                                 tr(&quot;Select the album you want to delete.&quot;));
+    }
+}
+
+void MainWindow::removeAlbumFromFile(int id)
+{
+
+    QDomNodeList albums = albumData.elementsByTagName(&quot;album&quot;);
+
+    for (int i = 0; i &amp;lt; albums.count(); ++i) {
+        QDomNode node = albums.item(i);
+        if (node.toElement().attribute(&quot;id&quot;).toInt() == id) {
+            albumData.elementsByTagName(&quot;archive&quot;).item(0).removeChild(node);
+            break;
+        }
+    }
+/*
+    The following code is commented out since the example uses an in
+    memory database, i.e., altering the XML file will bring the data
+    out of sync.
+
+    if (!file-&amp;gt;open(QIODevice::WriteOnly)) {
+        return;
+    } else {
+        QTextStream stream(file);
+        albumData.elementsByTagName(&quot;archive&quot;).item(0).save(stream, 4);
+        file-&amp;gt;close();
+    }
+*/
+}
+
+void MainWindow::removeAlbumFromDatabase(QModelIndex index)
+{
+    model-&amp;gt;removeRow(index.row());
+}
+
+void MainWindow::decreaseAlbumCount(QModelIndex artistIndex)
+{
+    int row = artistIndex.row();
+    QModelIndex albumCountIndex = artistIndex.sibling(row, 2);
+    int albumCount = albumCountIndex.data().toInt();
+
+    QSqlTableModel *artists = model-&amp;gt;relationModel(2);
+
+    if (albumCount == 1) {
+        artists-&amp;gt;removeRow(row);
+        showImageLabel();
+    } else {
+        artists-&amp;gt;setData(albumCountIndex, QVariant(albumCount - 1));
+    }
+}
+
+void MainWindow::readAlbumData()
+{
+    if (!file-&amp;gt;open(QIODevice::ReadOnly))
+        return;
+
+    if (!albumData.setContent(file)) {
+        file-&amp;gt;close();
+        return;
+    }
+    file-&amp;gt;close();
+}
+
+QGroupBox* MainWindow::createArtistGroupBox()
+{
+    artistView = new QComboBox;
+    artistView-&amp;gt;setModel(model-&amp;gt;relationModel(2));
+    artistView-&amp;gt;setModelColumn(1);
+
+    connect(artistView, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;MainWindow::changeArtist);
+
+    QGroupBox *box = new QGroupBox(tr(&quot;Artist&quot;));
+
+    QGridLayout *layout = new QGridLayout;
+    layout-&amp;gt;addWidget(artistView, 0, 0);
+    box-&amp;gt;setLayout(layout);
+
+    return box;
+}
+
+QGroupBox* MainWindow::createAlbumGroupBox()
+{
+    QGroupBox *box = new QGroupBox(tr(&quot;Album&quot;));
+
+    albumView = new QTableView;
+    albumView-&amp;gt;setEditTriggers(QAbstractItemView::NoEditTriggers);
+    albumView-&amp;gt;setSortingEnabled(true);
+    albumView-&amp;gt;setSelectionBehavior(QAbstractItemView::SelectRows);
+    albumView-&amp;gt;setSelectionMode(QAbstractItemView::SingleSelection);
+    albumView-&amp;gt;setShowGrid(false);
+    albumView-&amp;gt;verticalHeader()-&amp;gt;hide();
+    albumView-&amp;gt;setAlternatingRowColors(true);
+    albumView-&amp;gt;setModel(model);
+    adjustHeader();
+
+    QLocale locale = albumView-&amp;gt;locale();
+    locale.setNumberOptions(QLocale::OmitGroupSeparator);
+    albumView-&amp;gt;setLocale(locale);
+
+    connect(albumView, &amp;amp;QTableView::clicked,
+            this, &amp;amp;MainWindow::showAlbumDetails);
+    connect(albumView, &amp;amp;QTableView::activated,
+            this, &amp;amp;MainWindow::showAlbumDetails);
+
+    QVBoxLayout *layout = new QVBoxLayout;
+    layout-&amp;gt;addWidget(albumView, 0, 0);
+    box-&amp;gt;setLayout(layout);
+
+    return box;
+}
+
+QGroupBox* MainWindow::createDetailsGroupBox()
+{
+    QGroupBox *box = new QGroupBox(tr(&quot;Details&quot;));
+
+    profileLabel = new QLabel;
+    profileLabel-&amp;gt;setWordWrap(true);
+    profileLabel-&amp;gt;setAlignment(Qt::AlignBottom);
+
+    titleLabel = new QLabel;
+    titleLabel-&amp;gt;setWordWrap(true);
+    titleLabel-&amp;gt;setAlignment(Qt::AlignBottom);
+
+    iconLabel = new QLabel();
+    iconLabel-&amp;gt;setAlignment(Qt::AlignBottom | Qt::AlignRight);
+    iconLabel-&amp;gt;setPixmap(QPixmap(&quot;:/images/icon.png&quot;));
+
+    imageLabel = new QLabel;
+    imageLabel-&amp;gt;setWordWrap(true);
+    imageLabel-&amp;gt;setAlignment(Qt::AlignCenter);
+    imageLabel-&amp;gt;setPixmap(QPixmap(&quot;:/images/image.png&quot;));
+
+    trackList = new QListWidget;
+
+    QGridLayout *layout = new QGridLayout;
+    layout-&amp;gt;addWidget(imageLabel, 0, 0, 3, 2);
+    layout-&amp;gt;addWidget(profileLabel, 0, 0);
+    layout-&amp;gt;addWidget(iconLabel, 0, 1);
+    layout-&amp;gt;addWidget(titleLabel, 1, 0, 1, 2);
+    layout-&amp;gt;addWidget(trackList, 2, 0, 1, 2);
+    layout-&amp;gt;setRowStretch(2, 1);
+    box-&amp;gt;setLayout(layout);
+
+    return box;
+}
+
+void MainWindow::createMenuBar()
+{
+    QAction *addAction = new QAction(tr(&quot;&amp;amp;Add album...&quot;), this);
+    QAction *deleteAction = new QAction(tr(&quot;&amp;amp;Delete album...&quot;), this);
+    QAction *quitAction = new QAction(tr(&quot;&amp;amp;Quit&quot;), this);
+    QAction *aboutAction = new QAction(tr(&quot;&amp;amp;About&quot;), this);
+    QAction *aboutQtAction = new QAction(tr(&quot;About &amp;amp;Qt&quot;), this);
+
+    addAction-&amp;gt;setShortcut(tr(&quot;Ctrl+A&quot;));
+    deleteAction-&amp;gt;setShortcut(tr(&quot;Ctrl+D&quot;));
+    quitAction-&amp;gt;setShortcuts(QKeySequence::Quit);
+
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    fileMenu-&amp;gt;addAction(addAction);
+    fileMenu-&amp;gt;addAction(deleteAction);
+    fileMenu-&amp;gt;addSeparator();
+    fileMenu-&amp;gt;addAction(quitAction);
+
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(aboutAction);
+    helpMenu-&amp;gt;addAction(aboutQtAction);
+
+    connect(addAction, &amp;amp;QAction::triggered,
+            this, &amp;amp;MainWindow::addAlbum);
+    connect(deleteAction, &amp;amp;QAction::triggered,
+            this, &amp;amp;MainWindow::deleteAlbum);
+    connect(quitAction, &amp;amp;QAction::triggered,
+            this, &amp;amp;MainWindow::close);
+    connect(aboutAction, &amp;amp;QAction::triggered,
+            this, &amp;amp;MainWindow::about);
+    connect(aboutQtAction, &amp;amp;QAction::triggered,
+            qApp, &amp;amp;QApplication::aboutQt);
+}
+
+void MainWindow::showImageLabel()
+{
+    profileLabel-&amp;gt;hide();
+    titleLabel-&amp;gt;hide();
+    iconLabel-&amp;gt;hide();
+    trackList-&amp;gt;hide();
+
+    imageLabel-&amp;gt;show();
+}
+
+QModelIndex MainWindow::indexOfArtist(const QString &amp;amp;artist)
+{
+    QSqlTableModel *artistModel = model-&amp;gt;relationModel(2);
+
+    for (int i = 0; i &amp;lt; artistModel-&amp;gt;rowCount(); i++) {
+        QSqlRecord record =  artistModel-&amp;gt;record(i);
+        if (record.value(&quot;artist&quot;) == artist)
+            return artistModel-&amp;gt;index(i, 1);
+    }
+    return QModelIndex();
+}
+
+void MainWindow::updateHeader(QModelIndex, int, int)
+{
+    adjustHeader();
+}
+
+void MainWindow::adjustHeader()
+{
+    albumView-&amp;gt;hideColumn(0);
+    albumView-&amp;gt;horizontalHeader()-&amp;gt;setSectionResizeMode(1, QHeaderView::Stretch);
+    albumView-&amp;gt;resizeColumnToContents(2);
+    albumView-&amp;gt;resizeColumnToContents(3);
+}
+
+void MainWindow::about()
+{
+    QMessageBox::about(this, tr(&quot;About Music Archive&quot;),
+            tr(&quot;&amp;lt;p&amp;gt;The &amp;lt;b&amp;gt;Music Archive&amp;lt;/b&amp;gt; example shows how to present &quot;
+               &quot;data from different data sources in the same application. &quot;
+               &quot;The album titles, and the corresponding artists and release dates, &quot;
+               &quot;are kept in a database, while each album's tracks are stored &quot;
+               &quot;in an XML file. &amp;lt;/p&amp;gt;&amp;lt;p&amp;gt;The example also shows how to add as &quot;
+               &quot;well as remove data from both the database and the &quot;
+               &quot;associated XML file using the API provided by the Qt SQL and &quot;
+               &quot;Qt XML modules, respectively.&amp;lt;/p&amp;gt;&quot;));
+}
+
+</db:programlisting>
+</db:article>

@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Audio Input Example</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Recording audio using the <db:link xlink:href="qaudioinput.xml">QAudioInput</db:link> class.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;audioinput.h&quot;
+
+#include &amp;lt;stdlib.h&amp;gt;
+#include &amp;lt;math.h&amp;gt;
+
+#include &amp;lt;QDateTime&amp;gt;
+#include &amp;lt;QDebug&amp;gt;
+#include &amp;lt;QPainter&amp;gt;
+#include &amp;lt;QVBoxLayout&amp;gt;
+#include &amp;lt;QAudioDeviceInfo&amp;gt;
+#include &amp;lt;QAudioInput&amp;gt;
+#include &amp;lt;qendian.h&amp;gt;
+
+AudioInfo::AudioInfo(const QAudioFormat &amp;amp;format)
+    : m_format(format)
+{
+    switch (m_format.sampleSize()) {
+    case 8:
+        switch (m_format.sampleType()) {
+        case QAudioFormat::UnSignedInt:
+            m_maxAmplitude = 255;
+            break;
+        case QAudioFormat::SignedInt:
+            m_maxAmplitude = 127;
+            break;
+        default:
+            break;
+        }
+        break;
+    case 16:
+        switch (m_format.sampleType()) {
+        case QAudioFormat::UnSignedInt:
+            m_maxAmplitude = 65535;
+            break;
+        case QAudioFormat::SignedInt:
+            m_maxAmplitude = 32767;
+            break;
+        default:
+            break;
+        }
+        break;
+
+    case 32:
+        switch (m_format.sampleType()) {
+        case QAudioFormat::UnSignedInt:
+            m_maxAmplitude = 0xffffffff;
+            break;
+        case QAudioFormat::SignedInt:
+            m_maxAmplitude = 0x7fffffff;
+            break;
+        case QAudioFormat::Float:
+            m_maxAmplitude = 0x7fffffff; // Kind of
+        default:
+            break;
+        }
+        break;
+
+    default:
+        break;
+    }
+}
+
+void AudioInfo::start()
+{
+    open(QIODevice::WriteOnly);
+}
+
+void AudioInfo::stop()
+{
+    close();
+}
+
+qint64 AudioInfo::readData(char *data, qint64 maxlen)
+{
+    Q_UNUSED(data)
+    Q_UNUSED(maxlen)
+
+    return 0;
+}
+
+qint64 AudioInfo::writeData(const char *data, qint64 len)
+{
+    if (m_maxAmplitude) {
+        Q_ASSERT(m_format.sampleSize() % 8 == 0);
+        const int channelBytes = m_format.sampleSize() / 8;
+        const int sampleBytes = m_format.channelCount() * channelBytes;
+        Q_ASSERT(len % sampleBytes == 0);
+        const int numSamples = len / sampleBytes;
+
+        quint32 maxValue = 0;
+        const unsigned char *ptr = reinterpret_cast&amp;lt;const unsigned char *&amp;gt;(data);
+
+        for (int i = 0; i &amp;lt; numSamples; ++i) {
+            for (int j = 0; j &amp;lt; m_format.channelCount(); ++j) {
+                quint32 value = 0;
+
+                if (m_format.sampleSize() == 8 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::UnSignedInt) {
+                    value = *reinterpret_cast&amp;lt;const quint8*&amp;gt;(ptr);
+                } else if (m_format.sampleSize() == 8 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::SignedInt) {
+                    value = qAbs(*reinterpret_cast&amp;lt;const qint8*&amp;gt;(ptr));
+                } else if (m_format.sampleSize() == 16 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::UnSignedInt) {
+                    if (m_format.byteOrder() == QAudioFormat::LittleEndian)
+                        value = qFromLittleEndian&amp;lt;quint16&amp;gt;(ptr);
+                    else
+                        value = qFromBigEndian&amp;lt;quint16&amp;gt;(ptr);
+                } else if (m_format.sampleSize() == 16 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::SignedInt) {
+                    if (m_format.byteOrder() == QAudioFormat::LittleEndian)
+                        value = qAbs(qFromLittleEndian&amp;lt;qint16&amp;gt;(ptr));
+                    else
+                        value = qAbs(qFromBigEndian&amp;lt;qint16&amp;gt;(ptr));
+                } else if (m_format.sampleSize() == 32 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::UnSignedInt) {
+                    if (m_format.byteOrder() == QAudioFormat::LittleEndian)
+                        value = qFromLittleEndian&amp;lt;quint32&amp;gt;(ptr);
+                    else
+                        value = qFromBigEndian&amp;lt;quint32&amp;gt;(ptr);
+                } else if (m_format.sampleSize() == 32 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::SignedInt) {
+                    if (m_format.byteOrder() == QAudioFormat::LittleEndian)
+                        value = qAbs(qFromLittleEndian&amp;lt;qint32&amp;gt;(ptr));
+                    else
+                        value = qAbs(qFromBigEndian&amp;lt;qint32&amp;gt;(ptr));
+                } else if (m_format.sampleSize() == 32 &amp;amp;&amp;amp; m_format.sampleType() == QAudioFormat::Float) {
+                    value = qAbs(*reinterpret_cast&amp;lt;const float*&amp;gt;(ptr) * 0x7fffffff); // assumes 0-1.0
+                }
+
+                maxValue = qMax(value, maxValue);
+                ptr += channelBytes;
+            }
+        }
+
+        maxValue = qMin(maxValue, m_maxAmplitude);
+        m_level = qreal(maxValue) / m_maxAmplitude;
+    }
+
+    emit update();
+    return len;
+}
+
+RenderArea::RenderArea(QWidget *parent)
+    : QWidget(parent)
+{
+    setBackgroundRole(QPalette::Base);
+    setAutoFillBackground(true);
+
+    setMinimumHeight(30);
+    setMinimumWidth(200);
+}
+
+void RenderArea::paintEvent(QPaintEvent * /* event */)
+{
+    QPainter painter(this);
+
+    painter.setPen(Qt::black);
+    painter.drawRect(QRect(painter.viewport().left()+10,
+                           painter.viewport().top()+10,
+                           painter.viewport().right()-20,
+                           painter.viewport().bottom()-20));
+    if (m_level == 0.0)
+        return;
+
+    int pos = ((painter.viewport().right()-20)-(painter.viewport().left()+11))*m_level;
+    painter.fillRect(painter.viewport().left()+11,
+                     painter.viewport().top()+10,
+                     pos,
+                     painter.viewport().height()-21,
+                     Qt::red);
+}
+
+void RenderArea::setLevel(qreal value)
+{
+    m_level = value;
+    update();
+}
+
+InputTest::InputTest()
+{
+    initializeWindow();
+    initializeAudio(QAudioDeviceInfo::defaultInputDevice());
+}
+
+void InputTest::initializeWindow()
+{
+    QWidget *window = new QWidget;
+    QVBoxLayout *layout = new QVBoxLayout;
+
+    m_canvas = new RenderArea(this);
+    layout-&amp;gt;addWidget(m_canvas);
+
+    m_deviceBox = new QComboBox(this);
+    const QAudioDeviceInfo &amp;amp;defaultDeviceInfo = QAudioDeviceInfo::defaultInputDevice();
+    m_deviceBox-&amp;gt;addItem(defaultDeviceInfo.deviceName(), qVariantFromValue(defaultDeviceInfo));
+    for (auto &amp;amp;deviceInfo: QAudioDeviceInfo::availableDevices(QAudio::AudioInput)) {
+        if (deviceInfo != defaultDeviceInfo)
+            m_deviceBox-&amp;gt;addItem(deviceInfo.deviceName(), qVariantFromValue(deviceInfo));
+    }
+
+    connect(m_deviceBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::activated), this, &amp;amp;InputTest::deviceChanged);
+    layout-&amp;gt;addWidget(m_deviceBox);
+
+    m_volumeSlider = new QSlider(Qt::Horizontal, this);
+    m_volumeSlider-&amp;gt;setRange(0, 100);
+    m_volumeSlider-&amp;gt;setValue(100);
+    connect(m_volumeSlider, &amp;amp;QSlider::valueChanged, this, &amp;amp;InputTest::sliderChanged);
+    layout-&amp;gt;addWidget(m_volumeSlider);
+
+    m_modeButton = new QPushButton(this);
+    connect(m_modeButton, &amp;amp;QPushButton::clicked, this, &amp;amp;InputTest::toggleMode);
+    layout-&amp;gt;addWidget(m_modeButton);
+
+    m_suspendResumeButton = new QPushButton(this);
+    connect(m_suspendResumeButton, &amp;amp;QPushButton::clicked, this, &amp;amp;InputTest::toggleSuspend);
+    layout-&amp;gt;addWidget(m_suspendResumeButton);
+
+    window-&amp;gt;setLayout(layout);
+
+    setCentralWidget(window);
+    window-&amp;gt;show();
+}
+
+void InputTest::initializeAudio(const QAudioDeviceInfo &amp;amp;deviceInfo)
+{
+    QAudioFormat format;
+    format.setSampleRate(8000);
+    format.setChannelCount(1);
+    format.setSampleSize(16);
+    format.setSampleType(QAudioFormat::SignedInt);
+    format.setByteOrder(QAudioFormat::LittleEndian);
+    format.setCodec(&quot;audio/pcm&quot;);
+
+    if (!deviceInfo.isFormatSupported(format)) {
+        qWarning() &amp;lt;&amp;lt; &quot;Default format not supported - trying to use nearest&quot;;
+        format = deviceInfo.nearestFormat(format);
+    }
+
+    m_audioInfo.reset(new AudioInfo(format));
+    connect(m_audioInfo.data(), &amp;amp;AudioInfo::update, [this]() {
+        m_canvas-&amp;gt;setLevel(m_audioInfo-&amp;gt;level());
+    });
+
+    m_audioInput.reset(new QAudioInput(deviceInfo, format));
+    qreal initialVolume = QAudio::convertVolume(m_audioInput-&amp;gt;volume(),
+                                                QAudio::LinearVolumeScale,
+                                                QAudio::LogarithmicVolumeScale);
+    m_volumeSlider-&amp;gt;setValue(qRound(initialVolume * 100));
+    m_audioInfo-&amp;gt;start();
+    toggleMode();
+}
+
+void InputTest::toggleMode()
+{
+    m_audioInput-&amp;gt;stop();
+    toggleSuspend();
+
+    // Change bewteen pull and push modes
+    if (m_pullMode) {
+        m_modeButton-&amp;gt;setText(tr(&quot;Enable push mode&quot;));
+        m_audioInput-&amp;gt;start(m_audioInfo.data());
+    } else {
+        m_modeButton-&amp;gt;setText(tr(&quot;Enable pull mode&quot;));
+        auto io = m_audioInput-&amp;gt;start();
+        connect(io, &amp;amp;QIODevice::readyRead,
+            [&amp;amp;, io]() {
+                qint64 len = m_audioInput-&amp;gt;bytesReady();
+                const int BufferSize = 4096;
+                if (len &amp;gt; BufferSize)
+                    len = BufferSize;
+
+                QByteArray buffer(len, 0);
+                qint64 l = io-&amp;gt;read(buffer.data(), len);
+                if (l &amp;gt; 0)
+                    m_audioInfo-&amp;gt;write(buffer.constData(), l);
+            });
+    }
+
+    m_pullMode = !m_pullMode;
+}
+
+void InputTest::toggleSuspend()
+{
+    // toggle suspend/resume
+    if (m_audioInput-&amp;gt;state() == QAudio::SuspendedState || m_audioInput-&amp;gt;state() == QAudio::StoppedState) {
+        m_audioInput-&amp;gt;resume();
+        m_suspendResumeButton-&amp;gt;setText(tr(&quot;Suspend recording&quot;));
+    } else if (m_audioInput-&amp;gt;state() == QAudio::ActiveState) {
+        m_audioInput-&amp;gt;suspend();
+        m_suspendResumeButton-&amp;gt;setText(tr(&quot;Resume recording&quot;));
+    } else if (m_audioInput-&amp;gt;state() == QAudio::IdleState) {
+        // no-op
+    }
+}
+
+void InputTest::deviceChanged(int index)
+{
+    m_audioInfo-&amp;gt;stop();
+    m_audioInput-&amp;gt;stop();
+    m_audioInput-&amp;gt;disconnect(this);
+
+    initializeAudio(m_deviceBox-&amp;gt;itemData(index).value&amp;lt;QAudioDeviceInfo&amp;gt;());
+}
+
+void InputTest::sliderChanged(int value)
+{
+    qreal linearVolume = QAudio::convertVolume(value / qreal(100),
+                                               QAudio::LogarithmicVolumeScale,
+                                               QAudio::LinearVolumeScale);
+
+    m_audioInput-&amp;gt;setVolume(linearVolume);
+}
+
+</db:programlisting>
+</db:article>

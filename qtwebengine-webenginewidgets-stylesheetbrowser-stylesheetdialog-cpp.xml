@@ -1,0 +1,198 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine StyleSheet Browser Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to inject CSS into web pages using user scripts.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;mainwindow.h&quot;
+#include &quot;stylesheetdialog.h&quot;
+#include &quot;ui_stylesheetdialog.h&quot;
+
+StylesheetDialog::StylesheetDialog(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::StylesheetDialog)
+{
+    ui-&amp;gt;setupUi(this);
+
+    connect(ui-&amp;gt;styleSheetList, &amp;amp;QListWidget::currentItemChanged, this, &amp;amp;StylesheetDialog::currentStyleSheetChanged);
+    connect(ui-&amp;gt;styleSheetList, &amp;amp;QListWidget::itemClicked, this, &amp;amp;StylesheetDialog::listItemClicked);
+    connect(ui-&amp;gt;fileNameEdit, &amp;amp;QLineEdit::textChanged, this, &amp;amp;StylesheetDialog::fileNameChanged);
+
+    connect(ui-&amp;gt;addButton, &amp;amp;QPushButton::clicked, this, &amp;amp;StylesheetDialog::addButtonClicked);
+    connect(ui-&amp;gt;removeButton, &amp;amp;QPushButton::clicked, this, &amp;amp;StylesheetDialog::removeButtonClicked);
+
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    for (auto name : settings.allKeys()) {
+        QListWidgetItem *listItem = new QListWidgetItem(name,  ui-&amp;gt;styleSheetList);
+        listItem-&amp;gt;setFlags(listItem-&amp;gt;flags() | Qt::ItemIsUserCheckable);
+        bool checked = settings.value(name).value&amp;lt;StyleSheet&amp;gt;().second;
+        listItem-&amp;gt;setCheckState(checked ? Qt::Checked : Qt::Unchecked);
+    }
+    settings.endGroup();
+}
+
+StylesheetDialog::~StylesheetDialog()
+{
+    delete ui;
+}
+
+void StylesheetDialog::currentStyleSheetChanged(QListWidgetItem *current, QListWidgetItem *previous)
+{
+    if (!previous) {
+        // Select the first item on startup
+        ui-&amp;gt;styleSheetList-&amp;gt;setCurrentItem(current);
+    }
+
+    if (!current) {
+        ui-&amp;gt;fileNameEdit-&amp;gt;setText(QString());
+        ui-&amp;gt;sourceCodeEdit-&amp;gt;setPlainText(QString());
+        return;
+    }
+
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    ui-&amp;gt;fileNameEdit-&amp;gt;setText(current-&amp;gt;text());
+    const QString source = settings.value(current-&amp;gt;text()).value&amp;lt;StyleSheet&amp;gt;().first;
+    ui-&amp;gt;sourceCodeEdit-&amp;gt;setPlainText(source);
+    settings.endGroup();
+}
+
+void StylesheetDialog::listItemClicked(QListWidgetItem *item)
+{
+    MainWindow *window = static_cast&amp;lt;MainWindow *&amp;gt;(parent());
+    const QString name = item-&amp;gt;text();
+    bool checkedStateChanged =
+            (item-&amp;gt;checkState() == Qt::Checked &amp;amp;&amp;amp; !window-&amp;gt;hasStyleSheet(name)) ||
+            (item-&amp;gt;checkState() == Qt::Unchecked &amp;amp;&amp;amp; window-&amp;gt;hasStyleSheet(name));
+    if (!checkedStateChanged)
+        return;
+
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    const QString source = settings.value(name).value&amp;lt;StyleSheet&amp;gt;().first;
+
+    if (item-&amp;gt;checkState() == Qt::Checked) {
+        settings.setValue(name, QVariant::fromValue(qMakePair(source, true)));
+        window-&amp;gt;insertStyleSheet(name, source, true);
+    } else {
+        settings.setValue(name, QVariant::fromValue(qMakePair(source, false)));
+        window-&amp;gt;removeStyleSheet(name, true);
+    }
+
+    settings.endGroup();
+}
+
+void StylesheetDialog::fileNameChanged(const QString &amp;amp;text)
+{
+    QList&amp;lt;QListWidgetItem *&amp;gt; items = ui-&amp;gt;styleSheetList-&amp;gt;findItems(text, Qt::MatchFixedString);
+    if (items.size())
+        ui-&amp;gt;addButton-&amp;gt;setEnabled(false);
+    else
+        ui-&amp;gt;addButton-&amp;gt;setEnabled(true);
+}
+
+void StylesheetDialog::addButtonClicked()
+{
+    const QString name = ui-&amp;gt;fileNameEdit-&amp;gt;text();
+    const QString source = ui-&amp;gt;sourceCodeEdit-&amp;gt;toPlainText();
+    if (name.isEmpty() || source.isEmpty())
+        return;
+
+    QListWidgetItem *listItem = new QListWidgetItem(ui-&amp;gt;fileNameEdit-&amp;gt;text(),  ui-&amp;gt;styleSheetList);
+    listItem-&amp;gt;setFlags(listItem-&amp;gt;flags() | Qt::ItemIsUserCheckable);
+    listItem-&amp;gt;setCheckState(Qt::Checked);
+
+    MainWindow *window = static_cast&amp;lt;MainWindow *&amp;gt;(parent());
+    window-&amp;gt;insertStyleSheet(name, source, true);
+
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+    settings.setValue(name, QVariant::fromValue(qMakePair(source, true)));
+    settings.endGroup();
+
+    ui-&amp;gt;addButton-&amp;gt;setEnabled(false);
+}
+
+void StylesheetDialog::removeButtonClicked()
+{
+    if (ui-&amp;gt;styleSheetList-&amp;gt;selectedItems().isEmpty())
+        return;
+
+    MainWindow *window = static_cast&amp;lt;MainWindow *&amp;gt;(parent());
+    QSettings settings;
+    settings.beginGroup(&quot;styleSheets&quot;);
+
+    QListWidgetItem *item = ui-&amp;gt;styleSheetList-&amp;gt;selectedItems().first();
+    const QString name = item-&amp;gt;text();
+    window-&amp;gt;removeStyleSheet(name, true);
+    settings.remove(name);
+    delete item;
+
+    settings.endGroup();
+}
+
+</db:programlisting>
+</db:article>

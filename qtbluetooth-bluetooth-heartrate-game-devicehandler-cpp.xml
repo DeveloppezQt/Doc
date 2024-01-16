@@ -1,0 +1,371 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Low Energy Heart Rate Game</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A game demonstrating the interaction with a Bluetooth Low Energy Heart Rate device/service.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/***************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the QtBluetooth module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;heartrate-global.h&quot;
+#include &quot;devicehandler.h&quot;
+#include &quot;deviceinfo.h&quot;
+#include &amp;lt;QtEndian&amp;gt;
+#include &amp;lt;QRandomGenerator&amp;gt;
+
+DeviceHandler::DeviceHandler(QObject *parent) :
+    BluetoothBaseClass(parent),
+    m_foundHeartRateService(false),
+    m_measuring(false),
+    m_currentValue(0),
+    m_min(0), m_max(0), m_sum(0), m_avg(0), m_calories(0)
+{
+#ifdef SIMULATOR
+    m_demoTimer.setSingleShot(false);
+    m_demoTimer.setInterval(2000);
+    connect(&amp;amp;m_demoTimer, &amp;amp;QTimer::timeout, this, &amp;amp;DeviceHandler::updateDemoHR);
+    m_demoTimer.start();
+    updateDemoHR();
+#endif
+}
+
+void DeviceHandler::setAddressType(AddressType type)
+{
+    switch (type) {
+    case DeviceHandler::AddressType::PublicAddress:
+        m_addressType = QLowEnergyController::PublicAddress;
+        break;
+    case DeviceHandler::AddressType::RandomAddress:
+        m_addressType = QLowEnergyController::RandomAddress;
+        break;
+    }
+}
+
+DeviceHandler::AddressType DeviceHandler::addressType() const
+{
+    if (m_addressType == QLowEnergyController::RandomAddress)
+        return DeviceHandler::AddressType::RandomAddress;
+
+    return DeviceHandler::AddressType::PublicAddress;
+}
+
+void DeviceHandler::setDevice(DeviceInfo *device)
+{
+    clearMessages();
+    m_currentDevice = device;
+
+#ifdef SIMULATOR
+    setInfo(tr(&quot;Demo device connected.&quot;));
+    return;
+#endif
+
+    // Disconnect and delete old connection
+    if (m_control) {
+        m_control-&amp;gt;disconnectFromDevice();
+        delete m_control;
+        m_control = nullptr;
+    }
+
+    // Create new controller and connect it if device available
+    if (m_currentDevice) {
+
+        // Make connections
+        m_control = QLowEnergyController::createCentral(m_currentDevice-&amp;gt;getDevice(), this);
+        m_control-&amp;gt;setRemoteAddressType(m_addressType);
+        connect(m_control, &amp;amp;QLowEnergyController::serviceDiscovered,
+                this, &amp;amp;DeviceHandler::serviceDiscovered);
+        connect(m_control, &amp;amp;QLowEnergyController::discoveryFinished,
+                this, &amp;amp;DeviceHandler::serviceScanDone);
+
+        connect(m_control, static_cast&amp;lt;void (QLowEnergyController::*)(QLowEnergyController::Error)&amp;gt;(&amp;amp;QLowEnergyController::error),
+                this, [this](QLowEnergyController::Error error) {
+            Q_UNUSED(error);
+            setError(&quot;Cannot connect to remote device.&quot;);
+        });
+        connect(m_control, &amp;amp;QLowEnergyController::connected, this, [this]() {
+            setInfo(&quot;Controller connected. Search services...&quot;);
+            m_control-&amp;gt;discoverServices();
+        });
+        connect(m_control, &amp;amp;QLowEnergyController::disconnected, this, [this]() {
+            setError(&quot;LowEnergy controller disconnected&quot;);
+        });
+
+        // Connect
+        m_control-&amp;gt;connectToDevice();
+    }
+}
+
+void DeviceHandler::startMeasurement()
+{
+    if (alive()) {
+        m_start = QDateTime::currentDateTime();
+        m_min = 0;
+        m_max = 0;
+        m_avg = 0;
+        m_sum = 0;
+        m_calories = 0;
+        m_measuring = true;
+        m_measurements.clear();
+        emit measuringChanged();
+    }
+}
+
+void DeviceHandler::stopMeasurement()
+{
+    m_measuring = false;
+    emit measuringChanged();
+}
+
+void DeviceHandler::serviceDiscovered(const QBluetoothUuid &amp;amp;gatt)
+{
+    if (gatt == QBluetoothUuid(QBluetoothUuid::HeartRate)) {
+        setInfo(&quot;Heart Rate service discovered. Waiting for service scan to be done...&quot;);
+        m_foundHeartRateService = true;
+    }
+}
+
+void DeviceHandler::serviceScanDone()
+{
+    setInfo(&quot;Service scan done.&quot;);
+
+    // Delete old service if available
+    if (m_service) {
+        delete m_service;
+        m_service = nullptr;
+    }
+
+    // If heartRateService found, create new service
+    if (m_foundHeartRateService)
+        m_service = m_control-&amp;gt;createServiceObject(QBluetoothUuid(QBluetoothUuid::HeartRate), this);
+
+    if (m_service) {
+        connect(m_service, &amp;amp;QLowEnergyService::stateChanged, this, &amp;amp;DeviceHandler::serviceStateChanged);
+        connect(m_service, &amp;amp;QLowEnergyService::characteristicChanged, this, &amp;amp;DeviceHandler::updateHeartRateValue);
+        connect(m_service, &amp;amp;QLowEnergyService::descriptorWritten, this, &amp;amp;DeviceHandler::confirmedDescriptorWrite);
+        m_service-&amp;gt;discoverDetails();
+    } else {
+        setError(&quot;Heart Rate Service not found.&quot;);
+    }
+}
+
+// Service functions
+void DeviceHandler::serviceStateChanged(QLowEnergyService::ServiceState s)
+{
+    switch (s) {
+    case QLowEnergyService::DiscoveringServices:
+        setInfo(tr(&quot;Discovering services...&quot;));
+        break;
+    case QLowEnergyService::ServiceDiscovered:
+    {
+        setInfo(tr(&quot;Service discovered.&quot;));
+
+        const QLowEnergyCharacteristic hrChar = m_service-&amp;gt;characteristic(QBluetoothUuid(QBluetoothUuid::HeartRateMeasurement));
+        if (!hrChar.isValid()) {
+            setError(&quot;HR Data not found.&quot;);
+            break;
+        }
+
+        m_notificationDesc = hrChar.descriptor(QBluetoothUuid::ClientCharacteristicConfiguration);
+        if (m_notificationDesc.isValid())
+            m_service-&amp;gt;writeDescriptor(m_notificationDesc, QByteArray::fromHex(&quot;0100&quot;));
+
+        break;
+    }
+    default:
+        //nothing for now
+        break;
+    }
+
+    emit aliveChanged();
+}
+
+void DeviceHandler::updateHeartRateValue(const QLowEnergyCharacteristic &amp;amp;c, const QByteArray &amp;amp;value)
+{
+    // ignore any other characteristic change -&amp;gt; shouldn't really happen though
+    if (c.uuid() != QBluetoothUuid(QBluetoothUuid::HeartRateMeasurement))
+        return;
+
+    auto data = reinterpret_cast&amp;lt;const quint8 *&amp;gt;(value.constData());
+    quint8 flags = *data;
+
+    //Heart Rate
+    int hrvalue = 0;
+    if (flags &amp;amp; 0x1) // HR 16 bit? otherwise 8 bit
+        hrvalue = static_cast&amp;lt;int&amp;gt;(qFromLittleEndian&amp;lt;quint16&amp;gt;(data[1]));
+    else
+        hrvalue = static_cast&amp;lt;int&amp;gt;(data[1]);
+
+    addMeasurement(hrvalue);
+}
+
+#ifdef SIMULATOR
+void DeviceHandler::updateDemoHR()
+{
+    int randomValue = 0;
+    if (m_currentValue &amp;lt; 30) { // Initial value
+        randomValue = 55 + QRandomGenerator::global()-&amp;gt;bounded(30);
+    } else if (!m_measuring) { // Value when relax
+        randomValue = qBound(55, m_currentValue - 2 + QRandomGenerator::global()-&amp;gt;bounded(5), 75);
+    } else { // Measuring
+        randomValue = m_currentValue + QRandomGenerator::global()-&amp;gt;bounded(10) - 2;
+    }
+
+    addMeasurement(randomValue);
+}
+#endif
+
+void DeviceHandler::confirmedDescriptorWrite(const QLowEnergyDescriptor &amp;amp;d, const QByteArray &amp;amp;value)
+{
+    if (d.isValid() &amp;amp;&amp;amp; d == m_notificationDesc &amp;amp;&amp;amp; value == QByteArray::fromHex(&quot;0000&quot;)) {
+        //disabled notifications -&amp;gt; assume disconnect intent
+        m_control-&amp;gt;disconnectFromDevice();
+        delete m_service;
+        m_service = nullptr;
+    }
+}
+
+void DeviceHandler::disconnectService()
+{
+    m_foundHeartRateService = false;
+
+    //disable notifications
+    if (m_notificationDesc.isValid() &amp;amp;&amp;amp; m_service
+            &amp;amp;&amp;amp; m_notificationDesc.value() == QByteArray::fromHex(&quot;0100&quot;)) {
+        m_service-&amp;gt;writeDescriptor(m_notificationDesc, QByteArray::fromHex(&quot;0000&quot;));
+    } else {
+        if (m_control)
+            m_control-&amp;gt;disconnectFromDevice();
+
+        delete m_service;
+        m_service = nullptr;
+    }
+}
+
+bool DeviceHandler::measuring() const
+{
+    return m_measuring;
+}
+
+bool DeviceHandler::alive() const
+{
+#ifdef SIMULATOR
+    return true;
+#endif
+
+    if (m_service)
+        return m_service-&amp;gt;state() == QLowEnergyService::ServiceDiscovered;
+
+    return false;
+}
+
+int DeviceHandler::hr() const
+{
+    return m_currentValue;
+}
+
+int DeviceHandler::time() const
+{
+    return m_start.secsTo(m_stop);
+}
+
+int DeviceHandler::maxHR() const
+{
+    return m_max;
+}
+
+int DeviceHandler::minHR() const
+{
+    return m_min;
+}
+
+float DeviceHandler::average() const
+{
+    return m_avg;
+}
+
+float DeviceHandler::calories() const
+{
+    return m_calories;
+}
+
+void DeviceHandler::addMeasurement(int value)
+{
+    m_currentValue = value;
+
+    // If measuring and value is appropriate
+    if (m_measuring &amp;amp;&amp;amp; value &amp;gt; 30 &amp;amp;&amp;amp; value &amp;lt; 250) {
+
+        m_stop = QDateTime::currentDateTime();
+        m_measurements &amp;lt;&amp;lt; value;
+
+        m_min = m_min == 0 ? value : qMin(value, m_min);
+        m_max = qMax(value, m_max);
+        m_sum += value;
+        m_avg = (double)m_sum / m_measurements.size();
+        m_calories = ((-55.0969 + (0.6309 * m_avg) + (0.1988 * 94) + (0.2017 * 24)) / 4.184) * 60 * time()/3600;
+    }
+
+    emit statsChanged();
+}
+
+</db:programlisting>
+</db:article>

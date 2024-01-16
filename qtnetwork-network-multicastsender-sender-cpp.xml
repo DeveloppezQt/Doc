@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Multicast Sender Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to send messages to a multicast group.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;sender.h&quot;
+
+Sender::Sender(QWidget *parent)
+    : QDialog(parent),
+      groupAddress4(QStringLiteral(&quot;239.255.43.21&quot;)),
+      groupAddress6(QStringLiteral(&quot;ff12::2115&quot;))
+{
+    // force binding to their respective families
+    udpSocket4.bind(QHostAddress(QHostAddress::AnyIPv4), 0);
+    udpSocket6.bind(QHostAddress(QHostAddress::AnyIPv6), udpSocket4.localPort());
+
+    QString msg = tr(&quot;Ready to multicast datagrams to groups %1 and [%2] on port 45454&quot;).arg(groupAddress4.toString());
+    if (udpSocket6.state() != QAbstractSocket::BoundState)
+        msg = tr(&quot;IPv6 failed. Ready to multicast datagrams to group %1 on port 45454&quot;).arg(groupAddress4.toString());
+    else
+        msg = msg.arg(groupAddress6.toString());
+    statusLabel = new QLabel(msg);
+
+    auto ttlLabel = new QLabel(tr(&quot;TTL for IPv4 multicast datagrams:&quot;));
+    auto ttlSpinBox = new QSpinBox;
+    ttlSpinBox-&amp;gt;setRange(0, 255);
+
+    auto ttlLayout = new QHBoxLayout;
+    ttlLayout-&amp;gt;addWidget(ttlLabel);
+    ttlLayout-&amp;gt;addWidget(ttlSpinBox);
+
+    startButton = new QPushButton(tr(&quot;&amp;amp;Start&quot;));
+    auto quitButton = new QPushButton(tr(&quot;&amp;amp;Quit&quot;));
+
+    auto buttonBox = new QDialogButtonBox;
+    buttonBox-&amp;gt;addButton(startButton, QDialogButtonBox::ActionRole);
+    buttonBox-&amp;gt;addButton(quitButton, QDialogButtonBox::RejectRole);
+
+    connect(ttlSpinBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QSpinBox::valueChanged), this, &amp;amp;Sender::ttlChanged);
+    connect(startButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Sender::startSending);
+    connect(quitButton, &amp;amp;QPushButton::clicked, this, &amp;amp;Sender::close);
+    connect(&amp;amp;timer, &amp;amp;QTimer::timeout, this, &amp;amp;Sender::sendDatagram);
+
+    auto mainLayout = new QVBoxLayout;
+    mainLayout-&amp;gt;addWidget(statusLabel);
+    mainLayout-&amp;gt;addLayout(ttlLayout);
+    mainLayout-&amp;gt;addWidget(buttonBox);
+    setLayout(mainLayout);
+
+    setWindowTitle(tr(&quot;Multicast Sender&quot;));
+    ttlSpinBox-&amp;gt;setValue(1);
+}
+
+void Sender::ttlChanged(int newTtl)
+{
+    // we only set the TTL on the IPv4 socket, as that changes the multicast scope
+    udpSocket4.setSocketOption(QAbstractSocket::MulticastTtlOption, newTtl);
+}
+
+void Sender::startSending()
+{
+    startButton-&amp;gt;setEnabled(false);
+    timer.start(1000);
+}
+
+void Sender::sendDatagram()
+{
+    statusLabel-&amp;gt;setText(tr(&quot;Now sending datagram %1&quot;).arg(messageNo));
+    QByteArray datagram = &quot;Multicast message &quot; + QByteArray::number(messageNo);
+    udpSocket4.writeDatagram(datagram, groupAddress4, 45454);
+    if (udpSocket6.state() == QAbstractSocket::BoundState)
+        udpSocket6.writeDatagram(datagram, groupAddress6, 45454);
+    ++messageNo;
+}
+
+</db:programlisting>
+</db:article>

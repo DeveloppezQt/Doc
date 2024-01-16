@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick Text Editor Guide - Logic</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qtquickcontrols-texteditor-ui.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Qt Quick Text Editor Guide - UI"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="qtquickcontrols-texteditor-action.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Qt Quick Text Editor - Connecting Actions"/></db:extendedlink>
+<db:abstract>
+<db:para>Walkthrough of an application built with Qt Quick Controls.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This part of the guide is about adding logic and backend to the text editor example. At this stage, the user interface is set up from the <db:link xlink:href="qtquickcontrols-texteditor-logic.xml">previous</db:link> stage.</db:para>
+<db:section xml:id="implementing-the-logic-and-c-backend">
+<db:title>Implementing the Logic and C++ Backend</db:title>
+<db:para><db:emphasis>Text Editor</db:emphasis> has a QML user interface and a C++ backend to implement the document handling. To connect QML and C++, we need to create <db:emphasis>actions</db:emphasis> associated to the tool buttons, which will call the document handling logic in C++.</db:para>
+</db:section>
+<db:section xml:id="creating-the-document-handler">
+<db:title>Creating the Document Handler</db:title>
+<db:para>The document handler implements the file loading and file saving logic with Qt's C++ APIs. First, we need to create the header file and the implementation file in Qt Creator's <db:guilabel>Edit</db:guilabel> mode.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Right-click a folder, and select <db:guilabel>Add New</db:guilabel>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Follow the wizard and create a new <db:guilabel>C++ Class</db:guilabel>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Create a class called <db:guilabel>DocumentHandler</db:guilabel> and select <db:guilabel>Inherits <db:link xlink:href="qobject.xml">QObject</db:link></db:guilabel> in the <db:guilabel>Type information</db:guilabel>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>You can use default values for the rest and finish the wizard.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The wizard creates a <db:guilabel>DocumentHandler</db:guilabel> class in two files, <db:emphasis>documenthandler.h</db:emphasis> and <db:emphasis>documenthandler.cpp</db:emphasis>.</db:para>
+<db:para>There are two functionalities we can expose to QML, the file loading and saving. We can do this by creating <db:emphasis>properties</db:emphasis> and binding them to C++ functions through the <db:link xlink:href="properties.xml">Qt Property System</db:link>.</db:para>
+<db:para>In the <db:emphasis>documenthandler.h</db:emphasis> header file, add the following functions with their respective access modifier:</db:para>
+<db:programlisting language="cpp">    Q_PROPERTY(QUrl fileUrl READ fileUrl WRITE setFileUrl NOTIFY fileUrlChanged)
+    Q_PROPERTY(QString text READ text WRITE setText NOTIFY textChanged)
+    Q_PROPERTY(QString documentTitle READ documentTitle WRITE setDocumentTitle NOTIFY documentTitleChanged)
+
+public:
+    QUrl fileUrl() const;
+    QString text() const;
+    QString documentTitle() const;
+
+public slots:
+    void setFileUrl(const QUrl &amp;amp;arg);
+    void setText(const QString &amp;amp;arg);
+    void setDocumentTitle(QString arg);
+
+signals:
+    void fileUrlChanged();
+    void textChanged();
+    void documentTitleChanged();
+</db:programlisting>
+<db:para>The lines with <db:code>Q_PROPERTY()</db:code> macro declares the <db:emphasis>property</db:emphasis> and its <db:emphasis>write</db:emphasis> and <db:emphasis>read</db:emphasis> methods as well as its <db:emphasis>notify</db:emphasis> signal. For example, setting the <db:code>fileUrl</db:code> property calls <db:code>setFileUrl()</db:code> and reading the property calls the <db:code>fileUrl()</db:code> function. Similarly, when the value of fileUrl changes the <db:code>fileUrlChanged()</db:code> function is called.</db:para>
+<db:para>Internally, the properties are represented by private member variables. For our needs, here are the three variables in <db:emphasis>documenthandler.h</db:emphasis> which correspond to the properties:</db:para>
+<db:programlisting language="cpp">private:
+    QUrl m_fileUrl;
+    QString m_text;
+    QString m_documentTitle;
+</db:programlisting>
+<db:para>Implementing the read functions is straightforward. They simply return the private member variables. For example, the implementation of <db:code>documentTitle()</db:code> in <db:emphasis>documenthandler.cpp</db:emphasis> is:</db:para>
+<db:programlisting language="cpp">QString DocumentHandler::documentTitle() const
+{
+    return m_documentTitle;
+}
+</db:programlisting>
+<db:para>Implementing the write (<db:code>setText()</db:code>, for example) functions is also straightforward as they simply assign a value to a private member variable. They also handle basic error handling and they emit their respective notify signals. For example, the <db:code>setDocumentTitle()</db:code> function is implemented in <db:emphasis>documenthandler.cpp</db:emphasis> as:</db:para>
+<db:programlisting language="cpp">void DocumentHandler::setDocumentTitle(QString arg)
+{
+    if (m_documentTitle != arg) {
+        m_documentTitle = arg;
+        emit documentTitleChanged();
+    }
+}
+</db:programlisting>
+<db:para>The opening of the file is done in the <db:code>setFileUrl()</db:code> function:</db:para>
+<db:programlisting language="cpp">void DocumentHandler::setFileUrl(const QUrl &amp;amp;arg)
+{
+    if (m_fileUrl != arg) {
+        m_fileUrl = arg;
+        QString fileName = arg.fileName();
+        QFile file(arg.toLocalFile());
+        if (file.open(QFile::ReadOnly)) {
+            setText(QString(file.readAll()));
+            if (fileName.isEmpty())
+                m_documentTitle = QStringLiteral(&quot;untitled&quot;);
+            else
+                m_documentTitle = fileName;
+            emit textChanged();
+            emit documentTitleChanged();
+        }
+        emit fileUrlChanged();
+    }
+}
+</db:programlisting>
+<db:para>Note how the function emits the notify signals with the <db:code>emit</db:code> keyword.</db:para>
+<db:para>Similarly, we use <db:link xlink:href="qfile.xml">QFile</db:link> and text streams to save files. The function signature in <db:emphasis>documenthandler.h</db:emphasis> is placed under <db:code>public slots</db:code> because that is one way to expose functions to the QML engine. <db:code>saveFile()</db:code> is called from the QML file during saving.</db:para>
+<db:programlisting language="cpp">public slots:
+
+    Q_INVOKABLE void saveFile(const QUrl &amp;amp;arg) const;
+</db:programlisting>
+<db:para>The implementation of <db:code>saveFile()</db:code> is in documenthandler.cpp:</db:para>
+<db:programlisting language="cpp">void DocumentHandler::saveFile(const QUrl &amp;amp;arg) const
+{
+    QFile file(arg.toLocalFile());
+    if (file.open(QFile::WriteOnly | QFile::Truncate)) {
+        QTextStream out(&amp;amp;file);
+        out &amp;lt;&amp;lt; text();
+    }
+}
+</db:programlisting>
+<db:para>For information about reading files and data storage, visit the <db:link xlink:href="qfile.xml">QFile</db:link> and the <db:link xlink:href="topics-data-storage.xml">Data Storage</db:link> documentation.</db:para>
+</db:section>
+<db:section xml:id="registering-the-documenthandler-class">
+<db:title>Registering the DocumentHandler Class</db:title>
+<db:para>We now need to let the QML engine know about the <db:code>DocumentHandler</db:code> and its type. The <db:code>qmlRegisterType()</db:code> function is called in the application's <db:code>main()</db:code> function in <db:emphasis>main.cpp</db:emphasis>:</db:para>
+<db:programlisting language="cpp">qmlRegisterType&amp;lt;DocumentHandler&amp;gt;(&quot;org.qtproject.example&quot;, 1, 0, &quot;DocumentHandler&quot;);
+</db:programlisting>
+<db:para>The <db:code>org.qtproject.example</db:code> is the library with the version <db:code>1.0</db:code> and the QML type registered is <db:code>DocumentHandler</db:code>. The import statement for the DocumentHandler QML type is then</db:para>
+<db:programlisting language="cpp">import org.qtproject.example 1.0
+</db:programlisting>
+<db:note>
+<db:para>The <db:code>qmlRegisterType()</db:code> function should be called before the engine loads the QML file.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="using-the-documenthandler-qml-type">
+<db:title>Using the DocumentHandler QML type</db:title>
+<db:para>With the basic loading implemented, we can use the functionalities in the QML file by creating an instance of the DocumentHandler class and by accessing its properties.</db:para>
+<db:para>The <db:link xlink:href="qtquickcontrols-texteditor-action.xml">next page</db:link> is about using these C++ functions in QML files.</db:para>
+</db:section>
+<db:section xml:id="example-files">
+<db:title>Example Files</db:title>
+<db:para>The accompanying examples files are found in the following page:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qtquickcontrols1-texteditor-example.xml">Qt Quick Controls 1 - Text Editor Example</db:link></db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:article>

@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Network Download Example</db:title>
+<db:productname>QtNetwork</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Network Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to use networking APIs for multiple downloads.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &amp;lt;QtCore&amp;gt;
+#include &amp;lt;QtNetwork&amp;gt;
+
+#include &amp;lt;cstdio&amp;gt;
+
+class QSslError;
+
+using namespace std;
+
+class DownloadManager: public QObject
+{
+    Q_OBJECT
+    QNetworkAccessManager manager;
+    QVector&amp;lt;QNetworkReply *&amp;gt; currentDownloads;
+
+public:
+    DownloadManager();
+    void doDownload(const QUrl &amp;amp;url);
+    static QString saveFileName(const QUrl &amp;amp;url);
+    bool saveToDisk(const QString &amp;amp;filename, QIODevice *data);
+    static bool isHttpRedirect(QNetworkReply *reply);
+
+public slots:
+    void execute();
+    void downloadFinished(QNetworkReply *reply);
+    void sslErrors(const QList&amp;lt;QSslError&amp;gt; &amp;amp;errors);
+};
+
+DownloadManager::DownloadManager()
+{
+    connect(&amp;amp;manager, SIGNAL(finished(QNetworkReply*)),
+            SLOT(downloadFinished(QNetworkReply*)));
+}
+
+void DownloadManager::doDownload(const QUrl &amp;amp;url)
+{
+    QNetworkRequest request(url);
+    QNetworkReply *reply = manager.get(request);
+
+#if QT_CONFIG(ssl)
+    connect(reply, SIGNAL(sslErrors(QList&amp;lt;QSslError&amp;gt;)),
+            SLOT(sslErrors(QList&amp;lt;QSslError&amp;gt;)));
+#endif
+
+    currentDownloads.append(reply);
+}
+
+QString DownloadManager::saveFileName(const QUrl &amp;amp;url)
+{
+    QString path = url.path();
+    QString basename = QFileInfo(path).fileName();
+
+    if (basename.isEmpty())
+        basename = &quot;download&quot;;
+
+    if (QFile::exists(basename)) {
+        // already exists, don't overwrite
+        int i = 0;
+        basename += '.';
+        while (QFile::exists(basename + QString::number(i)))
+            ++i;
+
+        basename += QString::number(i);
+    }
+
+    return basename;
+}
+
+bool DownloadManager::saveToDisk(const QString &amp;amp;filename, QIODevice *data)
+{
+    QFile file(filename);
+    if (!file.open(QIODevice::WriteOnly)) {
+        fprintf(stderr, &quot;Could not open %s for writing: %s\n&quot;,
+                qPrintable(filename),
+                qPrintable(file.errorString()));
+        return false;
+    }
+
+    file.write(data-&amp;gt;readAll());
+    file.close();
+
+    return true;
+}
+
+bool DownloadManager::isHttpRedirect(QNetworkReply *reply)
+{
+    int statusCode = reply-&amp;gt;attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    return statusCode == 301 || statusCode == 302 || statusCode == 303
+           || statusCode == 305 || statusCode == 307 || statusCode == 308;
+}
+
+void DownloadManager::execute()
+{
+    QStringList args = QCoreApplication::instance()-&amp;gt;arguments();
+    args.takeFirst();           // skip the first argument, which is the program's name
+    if (args.isEmpty()) {
+        printf(&quot;Qt Download example - downloads all URLs in parallel\n&quot;
+               &quot;Usage: download url1 [url2... urlN]\n&quot;
+               &quot;\n&quot;
+               &quot;Downloads the URLs passed in the command-line to the local directory\n&quot;
+               &quot;If the target file already exists, a .0, .1, .2, etc. is appended to\n&quot;
+               &quot;differentiate.\n&quot;);
+        QCoreApplication::instance()-&amp;gt;quit();
+        return;
+    }
+
+    for (const QString &amp;amp;arg : qAsConst(args)) {
+        QUrl url = QUrl::fromEncoded(arg.toLocal8Bit());
+        doDownload(url);
+    }
+}
+
+void DownloadManager::sslErrors(const QList&amp;lt;QSslError&amp;gt; &amp;amp;sslErrors)
+{
+#if QT_CONFIG(ssl)
+    for (const QSslError &amp;amp;error : sslErrors)
+        fprintf(stderr, &quot;SSL error: %s\n&quot;, qPrintable(error.errorString()));
+#else
+    Q_UNUSED(sslErrors);
+#endif
+}
+
+void DownloadManager::downloadFinished(QNetworkReply *reply)
+{
+    QUrl url = reply-&amp;gt;url();
+    if (reply-&amp;gt;error()) {
+        fprintf(stderr, &quot;Download of %s failed: %s\n&quot;,
+                url.toEncoded().constData(),
+                qPrintable(reply-&amp;gt;errorString()));
+    } else {
+        if (isHttpRedirect(reply)) {
+            fputs(&quot;Request was redirected.\n&quot;, stderr);
+        } else {
+            QString filename = saveFileName(url);
+            if (saveToDisk(filename, reply)) {
+                printf(&quot;Download of %s succeeded (saved to %s)\n&quot;,
+                       url.toEncoded().constData(), qPrintable(filename));
+            }
+        }
+    }
+
+    currentDownloads.removeAll(reply);
+    reply-&amp;gt;deleteLater();
+
+    if (currentDownloads.isEmpty()) {
+        // all downloads finished
+        QCoreApplication::instance()-&amp;gt;quit();
+    }
+}
+
+int main(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+
+    DownloadManager manager;
+    QTimer::singleShot(0, &amp;amp;manager, SLOT(execute()));
+
+    app.exec();
+}
+
+#include &quot;main.moc&quot;
+
+</db:programlisting>
+</db:article>

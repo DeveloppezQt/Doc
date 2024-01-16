@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Image Gestures Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates the use of simple gestures in a widget.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This example shows how to enable gestures for a widget and use gesture input to perform actions.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/imagegestures-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>We use two classes to create the user interface for the application: MainWidget and ImageWidget. The MainWidget class is simply used as a container for the ImageWidget class, which we will configure to accept gesture input. Since we are interested in the way gestures are used, we will concentrate on the implementation of the ImageWidget class.</db:para>
+<db:section xml:id="imagewidget-class-definition">
+<db:title>ImageWidget Class Definition</db:title>
+<db:para>The ImageWidget class is a simple <db:link xlink:href="qwidget.xml">QWidget</db:link> subclass that reimplements the general <db:link xlink:href="qwidget.xml#event">QWidget::event</db:link>() handler function in addition to several more specific event handlers:</db:para>
+<db:programlisting language="cpp">class ImageWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    ImageWidget(QWidget *parent = 0);
+    void openDirectory(const QString &amp;amp;path);
+    void grabGestures(const QList&amp;lt;Qt::GestureType&amp;gt; &amp;amp;gestures);
+
+protected:
+    bool event(QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
+    void mouseDoubleClickEvent(QMouseEvent *event) override;
+
+private:
+    bool gestureEvent(QGestureEvent *event);
+    void panTriggered(QPanGesture*);
+    void pinchTriggered(QPinchGesture*);
+    void swipeTriggered(QSwipeGesture*);
+    ...
+};
+</db:programlisting>
+<db:para>We also implement a private helper function, gestureEvent(), to help manage gesture events delivered to the widget, and three functions to perform actions based on gestures: panTriggered(), pinchTriggered() and swipeTriggered().</db:para>
+</db:section>
+<db:section xml:id="imagewidget-class-implementation">
+<db:title>ImageWidget Class Implementation</db:title>
+<db:para>In the widget's constructor, we begin by setting up various parameters that will be used to control the way images are displayed.</db:para>
+<db:programlisting language="cpp">ImageWidget::ImageWidget(QWidget *parent)
+    : QWidget(parent),
+    position(0),
+    horizontalOffset(0),
+    verticalOffset(0),
+    rotationAngle(0),
+    scaleFactor(1),
+    currentStepScaleFactor(1)
+
+{
+    setMinimumSize(QSize(100,100));
+}
+</db:programlisting>
+<db:para>We enable three of the standard gestures for the widget by calling <db:link xlink:href="qwidget.xml#grabGesture">QWidget::grabGesture</db:link>() with the types of gesture we need. These will be recognized by the application's default gesture recognizer, and events will be delivered to our widget.</db:para>
+<db:para>Since <db:link xlink:href="qwidget.xml">QWidget</db:link> does not define a specific event handler for gestures, the widget needs to reimplement the general <db:link xlink:href="qwidget.xml#event">QWidget::event</db:link>() to receive gesture events.</db:para>
+<db:programlisting language="cpp">bool ImageWidget::event(QEvent *event)
+{
+    if (event-&amp;gt;type() == QEvent::Gesture)
+        return gestureEvent(static_cast&amp;lt;QGestureEvent*&amp;gt;(event));
+    return QWidget::event(event);
+}
+</db:programlisting>
+<db:para>We implement the event handler to delegate gesture events to a private function specifically written for the task, and pass all other events to <db:link xlink:href="qwidget.xml">QWidget</db:link>'s implementation.</db:para>
+<db:para>The gestureHandler() function examines the gestures supplied by the newly-delivered <db:link xlink:href="qgestureevent.xml">QGestureEvent</db:link>. Since only one gesture of a given type can be used on a widget at any particular time, we can check for each gesture type using the <db:link xlink:href="qgestureevent.xml#gesture">QGestureEvent::gesture</db:link>() function:</db:para>
+<db:programlisting language="cpp">bool ImageWidget::gestureEvent(QGestureEvent *event)
+{
+    qCDebug(lcExample) &amp;lt;&amp;lt; &quot;gestureEvent():&quot; &amp;lt;&amp;lt; event;
+    if (QGesture *swipe = event-&amp;gt;gesture(Qt::SwipeGesture))
+        swipeTriggered(static_cast&amp;lt;QSwipeGesture *&amp;gt;(swipe));
+    else if (QGesture *pan = event-&amp;gt;gesture(Qt::PanGesture))
+        panTriggered(static_cast&amp;lt;QPanGesture *&amp;gt;(pan));
+    if (QGesture *pinch = event-&amp;gt;gesture(Qt::PinchGesture))
+        pinchTriggered(static_cast&amp;lt;QPinchGesture *&amp;gt;(pinch));
+    return true;
+}
+</db:programlisting>
+<db:para>If a <db:link xlink:href="qgesture.xml">QGesture</db:link> object is supplied for a certain type of gesture, we call a special purpose function to deal with it, casting the gesture object to the appropriate <db:link xlink:href="qgesture.xml">QGesture</db:link> subclass.</db:para>
+<db:para>To illustrate how a standard gesture can be interpreted by an application, we show the implementation of the pinchTriggered() function, which handles the pinch gesture when the user moves two fingers around on the display or input device:</db:para>
+<db:programlisting language="cpp">void ImageWidget::pinchTriggered(QPinchGesture *gesture)
+{
+    QPinchGesture::ChangeFlags changeFlags = gesture-&amp;gt;changeFlags();
+    if (changeFlags &amp;amp; QPinchGesture::RotationAngleChanged) {
+        qreal rotationDelta = gesture-&amp;gt;rotationAngle() - gesture-&amp;gt;lastRotationAngle();
+        rotationAngle += rotationDelta;
+        qCDebug(lcExample) &amp;lt;&amp;lt; &quot;pinchTriggered(): rotate by&quot; &amp;lt;&amp;lt;
+            rotationDelta &amp;lt;&amp;lt; &quot;-&amp;gt;&quot; &amp;lt;&amp;lt; rotationAngle;
+    }
+    if (changeFlags &amp;amp; QPinchGesture::ScaleFactorChanged) {
+        currentStepScaleFactor = gesture-&amp;gt;totalScaleFactor();
+        qCDebug(lcExample) &amp;lt;&amp;lt; &quot;pinchTriggered(): zoom by&quot; &amp;lt;&amp;lt;
+            gesture-&amp;gt;scaleFactor() &amp;lt;&amp;lt; &quot;-&amp;gt;&quot; &amp;lt;&amp;lt; currentStepScaleFactor;
+    }
+    if (gesture-&amp;gt;state() == Qt::GestureFinished) {
+        scaleFactor *= currentStepScaleFactor;
+        currentStepScaleFactor = 1;
+    }
+    update();
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qpinchgesture.xml">QPinchGesture</db:link> class provides properties to interpret the changing distance between the two touch points as a zoom factor, and the angle delta as a rotation to be applied to the image. The center point between the touch points could be used to drag the image, but in this example we use the pan gesture for that purpose.</db:para>
+<db:para>The scaleFactor() is a relative value representing how much the zoom should change from one event to the next, whereas totalScaleFactor() provides the amount of zoom that has been expressed since the gesture began. When the touch points are released and another gesture begins, totalScaleFactor() will begin again at 1.0. In this case we store totalScaleFactor() into the currentStepScaleFactor variable so that it can be used in paintEvent() to scale the image. Alternatively it would be possible to simply multiply the stored total scale factor by scaleFactor() here in the pinch handler.</db:para>
+<db:para>In contrast, rotationAngle() represents the amount of rotation since the pinch gesture began, while lastRotationAngle() provides the previous value. So it is necessary to subtract in order to get an incremental delta. When the user begins a new pinch gesture, rotationAngle() will start from zero, and we want the image to begin to rotate from its current angle. This is achieved by adding the delta to the stored rotationAngle (which will be applied in paintEvent()). If we simply assigned totalRotationAngle() to the stored rotationAngle, a new gesture would cause the image to reset to a right-side-up orientation before beginning to rotate again. But it would be possible to store the rotation angle since the gesture began and add it to rotationAngle in paintEvent(), just as we store the amount of zoom since the gesture began.</db:para>
+<db:para>The pan and swipe gestures in this example are also handled in separate functions, and use the values of properties from the <db:link xlink:href="qgesture.xml">QGesture</db:link> objects passed to them.</db:para>
+<db:programlisting language="cpp">void ImageWidget::paintEvent(QPaintEvent*)
+{
+    QPainter p(this);
+
+    const qreal iw = currentImage.width();
+    const qreal ih = currentImage.height();
+    const qreal wh = height();
+    const qreal ww = width();
+
+    p.translate(ww/2, wh/2);
+    p.translate(horizontalOffset, verticalOffset);
+    p.rotate(rotationAngle);
+    p.scale(currentStepScaleFactor * scaleFactor, currentStepScaleFactor * scaleFactor);
+    p.translate(-iw/2, -ih/2);
+    p.drawImage(0, 0, currentImage);
+}
+</db:programlisting>
+<db:para>In paintEvent(), scaleFactor represents the zoom level before the pinch gesture began, while currentStepScaleFactor represents the additional zoom factor while a pinch gesture is in progress. But for rotation, only the current rotationAngle is stored. The horizontal and vertical offsets represent the distance that the image has been dragged by the pan gesture.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/imagegestures.pro">gestures/imagegestures/imagegestures.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/imagewidget.cpp">gestures/imagegestures/imagewidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/imagewidget.h">gestures/imagegestures/imagewidget.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/main.cpp">gestures/imagegestures/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/mainwidget.cpp">gestures/imagegestures/mainwidget.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="gestures/imagegestures/mainwidget.h">gestures/imagegestures/mainwidget.h</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

@@ -1,0 +1,160 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Diagram Scene Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrate how to use the Graphics View framework.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;arrow.h&quot;
+
+#include &amp;lt;qmath.h&amp;gt;
+#include &amp;lt;QPen&amp;gt;
+#include &amp;lt;QPainter&amp;gt;
+
+Arrow::Arrow(DiagramItem *startItem, DiagramItem *endItem, QGraphicsItem *parent)
+    : QGraphicsLineItem(parent)
+{
+    myStartItem = startItem;
+    myEndItem = endItem;
+    setFlag(QGraphicsItem::ItemIsSelectable, true);
+    myColor = Qt::black;
+    setPen(QPen(myColor, 2, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+}
+
+QRectF Arrow::boundingRect() const
+{
+    qreal extra = (pen().width() + 20) / 2.0;
+
+    return QRectF(line().p1(), QSizeF(line().p2().x() - line().p1().x(),
+                                      line().p2().y() - line().p1().y()))
+        .normalized()
+        .adjusted(-extra, -extra, extra, extra);
+}
+
+QPainterPath Arrow::shape() const
+{
+    QPainterPath path = QGraphicsLineItem::shape();
+    path.addPolygon(arrowHead);
+    return path;
+}
+
+void Arrow::updatePosition()
+{
+    QLineF line(mapFromItem(myStartItem, 0, 0), mapFromItem(myEndItem, 0, 0));
+    setLine(line);
+}
+
+void Arrow::paint(QPainter *painter, const QStyleOptionGraphicsItem *,
+          QWidget *)
+{
+    if (myStartItem-&amp;gt;collidesWithItem(myEndItem))
+        return;
+
+    QPen myPen = pen();
+    myPen.setColor(myColor);
+    qreal arrowSize = 20;
+    painter-&amp;gt;setPen(myPen);
+    painter-&amp;gt;setBrush(myColor);
+
+    QLineF centerLine(myStartItem-&amp;gt;pos(), myEndItem-&amp;gt;pos());
+    QPolygonF endPolygon = myEndItem-&amp;gt;polygon();
+    QPointF p1 = endPolygon.first() + myEndItem-&amp;gt;pos();
+    QPointF p2;
+    QPointF intersectPoint;
+    QLineF polyLine;
+    for (int i = 1; i &amp;lt; endPolygon.count(); ++i) {
+        p2 = endPolygon.at(i) + myEndItem-&amp;gt;pos();
+        polyLine = QLineF(p1, p2);
+        QLineF::IntersectType intersectType =
+            polyLine.intersect(centerLine, &amp;amp;intersectPoint);
+        if (intersectType == QLineF::BoundedIntersection)
+            break;
+        p1 = p2;
+    }
+
+    setLine(QLineF(intersectPoint, myStartItem-&amp;gt;pos()));
+
+    double angle = std::atan2(-line().dy(), line().dx());
+
+    QPointF arrowP1 = line().p1() + QPointF(sin(angle + M_PI / 3) * arrowSize,
+                                    cos(angle + M_PI / 3) * arrowSize);
+    QPointF arrowP2 = line().p1() + QPointF(sin(angle + M_PI - M_PI / 3) * arrowSize,
+                                    cos(angle + M_PI - M_PI / 3) * arrowSize);
+
+    arrowHead.clear();
+    arrowHead &amp;lt;&amp;lt; line().p1() &amp;lt;&amp;lt; arrowP1 &amp;lt;&amp;lt; arrowP2;
+    painter-&amp;gt;drawLine(line());
+    painter-&amp;gt;drawPolygon(arrowHead);
+    if (isSelected()) {
+        painter-&amp;gt;setPen(QPen(myColor, 1, Qt::DashLine));
+        QLineF myLine = line();
+        myLine.translate(0, 4.0);
+        painter-&amp;gt;drawLine(myLine);
+        myLine.translate(0,-8.0);
+        painter-&amp;gt;drawLine(myLine);
+    }
+}
+
+</db:programlisting>
+</db:article>

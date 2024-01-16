@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Plug &amp; Paint Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to extend Qt applications using plugins.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;interfaces.h&quot;
+#include &quot;mainwindow.h&quot;
+#include &quot;paintarea.h&quot;
+#include &quot;plugindialog.h&quot;
+
+#include &amp;lt;QAction&amp;gt;
+#include &amp;lt;QActionGroup&amp;gt;
+#include &amp;lt;QApplication&amp;gt;
+#include &amp;lt;QColorDialog&amp;gt;
+#include &amp;lt;QFileDialog&amp;gt;
+#include &amp;lt;QInputDialog&amp;gt;
+#include &amp;lt;QMenu&amp;gt;
+#include &amp;lt;QMenuBar&amp;gt;
+#include &amp;lt;QMessageBox&amp;gt;
+#include &amp;lt;QPluginLoader&amp;gt;
+#include &amp;lt;QScrollArea&amp;gt;
+#include &amp;lt;QTimer&amp;gt;
+
+MainWindow::MainWindow() :
+    paintArea(new PaintArea),
+    scrollArea(new QScrollArea)
+{
+    scrollArea-&amp;gt;setBackgroundRole(QPalette::Dark);
+    scrollArea-&amp;gt;setWidget(paintArea);
+    setCentralWidget(scrollArea);
+
+    createActions();
+    createMenus();
+    loadPlugins();
+
+    setWindowTitle(tr(&quot;Plug &amp;amp; Paint&quot;));
+
+    if (!brushActionGroup-&amp;gt;actions().isEmpty())
+        brushActionGroup-&amp;gt;actions().first()-&amp;gt;trigger();
+
+    QTimer::singleShot(500, this, &amp;amp;MainWindow::aboutPlugins);
+}
+
+void MainWindow::open()
+{
+    const QString fileName = QFileDialog::getOpenFileName(this,
+                                                          tr(&quot;Open File&quot;),
+                                                          QDir::currentPath());
+    if (!fileName.isEmpty()) {
+        if (!paintArea-&amp;gt;openImage(fileName)) {
+            QMessageBox::information(this, tr(&quot;Plug &amp;amp; Paint&quot;),
+                                     tr(&quot;Cannot load %1.&quot;).arg(fileName));
+            return;
+        }
+        paintArea-&amp;gt;adjustSize();
+    }
+}
+
+bool MainWindow::saveAs()
+{
+    const QString initialPath = QDir::currentPath() + &quot;/untitled.png&quot;;
+
+    const QString fileName = QFileDialog::getSaveFileName(this, tr(&quot;Save As&quot;),
+                                                          initialPath);
+    if (fileName.isEmpty())
+        return false;
+
+    return paintArea-&amp;gt;saveImage(fileName, &quot;png&quot;);
+}
+
+void MainWindow::brushColor()
+{
+    const QColor newColor = QColorDialog::getColor(paintArea-&amp;gt;brushColor());
+    if (newColor.isValid())
+        paintArea-&amp;gt;setBrushColor(newColor);
+}
+
+void MainWindow::brushWidth()
+{
+    bool ok;
+    const int newWidth = QInputDialog::getInt(this, tr(&quot;Plug &amp;amp; Paint&quot;),
+                                              tr(&quot;Select brush width:&quot;),
+                                              paintArea-&amp;gt;brushWidth(),
+                                              1, 50, 1, &amp;amp;ok);
+    if (ok)
+        paintArea-&amp;gt;setBrushWidth(newWidth);
+}
+
+void MainWindow::changeBrush()
+{
+    auto action = qobject_cast&amp;lt;QAction *&amp;gt;(sender());
+    auto iBrush = qobject_cast&amp;lt;BrushInterface *&amp;gt;(action-&amp;gt;parent());
+    const QString brush = action-&amp;gt;text();
+
+    paintArea-&amp;gt;setBrush(iBrush, brush);
+}
+
+void MainWindow::insertShape()
+{
+    auto action = qobject_cast&amp;lt;QAction *&amp;gt;(sender());
+    auto iShape = qobject_cast&amp;lt;ShapeInterface *&amp;gt;(action-&amp;gt;parent());
+
+    const QPainterPath path = iShape-&amp;gt;generateShape(action-&amp;gt;text(), this);
+    if (!path.isEmpty())
+        paintArea-&amp;gt;insertShape(path);
+}
+
+void MainWindow::applyFilter()
+{
+    auto action = qobject_cast&amp;lt;QAction *&amp;gt;(sender());
+    auto iFilter = qobject_cast&amp;lt;FilterInterface *&amp;gt;(action-&amp;gt;parent());
+
+    const QImage image = iFilter-&amp;gt;filterImage(action-&amp;gt;text(), paintArea-&amp;gt;image(),
+                                              this);
+    paintArea-&amp;gt;setImage(image);
+}
+
+void MainWindow::about()
+{
+   QMessageBox::about(this, tr(&quot;About Plug &amp;amp; Paint&quot;),
+            tr(&quot;The &amp;lt;b&amp;gt;Plug &amp;amp; Paint&amp;lt;/b&amp;gt; example demonstrates how to write Qt &quot;
+               &quot;applications that can be extended through plugins.&quot;));
+}
+
+void MainWindow::aboutPlugins()
+{
+    PluginDialog dialog(pluginsDir.path(), pluginFileNames, this);
+    dialog.exec();
+}
+
+void MainWindow::createActions()
+{
+    openAct = new QAction(tr(&quot;&amp;amp;Open...&quot;), this);
+    openAct-&amp;gt;setShortcuts(QKeySequence::Open);
+    connect(openAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::open);
+
+    saveAsAct = new QAction(tr(&quot;&amp;amp;Save As...&quot;), this);
+    saveAsAct-&amp;gt;setShortcuts(QKeySequence::SaveAs);
+    connect(saveAsAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::saveAs);
+
+    exitAct = new QAction(tr(&quot;E&amp;amp;xit&quot;), this);
+    exitAct-&amp;gt;setShortcuts(QKeySequence::Quit);
+    connect(exitAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::close);
+
+    brushColorAct = new QAction(tr(&quot;&amp;amp;Brush Color...&quot;), this);
+    connect(brushColorAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::brushColor);
+
+    brushWidthAct = new QAction(tr(&quot;&amp;amp;Brush Width...&quot;), this);
+    connect(brushWidthAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::brushWidth);
+
+    brushActionGroup = new QActionGroup(this);
+
+    aboutAct = new QAction(tr(&quot;&amp;amp;About&quot;), this);
+    connect(aboutAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::about);
+
+    aboutQtAct = new QAction(tr(&quot;About &amp;amp;Qt&quot;), this);
+    connect(aboutQtAct, &amp;amp;QAction::triggered, qApp, &amp;amp;QApplication::aboutQt);
+
+    aboutPluginsAct = new QAction(tr(&quot;About &amp;amp;Plugins&quot;), this);
+    connect(aboutPluginsAct, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::aboutPlugins);
+}
+
+void MainWindow::createMenus()
+{
+    fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+    fileMenu-&amp;gt;addAction(openAct);
+    fileMenu-&amp;gt;addAction(saveAsAct);
+    fileMenu-&amp;gt;addSeparator();
+    fileMenu-&amp;gt;addAction(exitAct);
+
+    brushMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Brush&quot;));
+    brushMenu-&amp;gt;addAction(brushColorAct);
+    brushMenu-&amp;gt;addAction(brushWidthAct);
+    brushMenu-&amp;gt;addSeparator();
+
+    shapesMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Shapes&quot;));
+
+    filterMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Filter&quot;));
+
+    menuBar()-&amp;gt;addSeparator();
+
+    helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(aboutAct);
+    helpMenu-&amp;gt;addAction(aboutQtAct);
+    helpMenu-&amp;gt;addAction(aboutPluginsAct);
+}
+
+void MainWindow::loadPlugins()
+{
+    const auto staticInstances = QPluginLoader::staticInstances();
+    for (QObject *plugin : staticInstances)
+        populateMenus(plugin);
+
+    pluginsDir = QDir(qApp-&amp;gt;applicationDirPath());
+
+#if defined(Q_OS_WIN)
+    if (pluginsDir.dirName().toLower() == &quot;debug&quot; || pluginsDir.dirName().toLower() == &quot;release&quot;)
+        pluginsDir.cdUp();
+#elif defined(Q_OS_MAC)
+    if (pluginsDir.dirName() == &quot;MacOS&quot;) {
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+        pluginsDir.cdUp();
+    }
+#endif
+    pluginsDir.cd(&quot;plugins&quot;);
+
+    const auto entryList = pluginsDir.entryList(QDir::Files);
+    for (const QString &amp;amp;fileName : entryList) {
+        QPluginLoader loader(pluginsDir.absoluteFilePath(fileName));
+        QObject *plugin = loader.instance();
+        if (plugin) {
+            populateMenus(plugin);
+            pluginFileNames += fileName;
+        }
+    }
+
+    brushMenu-&amp;gt;setEnabled(!brushActionGroup-&amp;gt;actions().isEmpty());
+    shapesMenu-&amp;gt;setEnabled(!shapesMenu-&amp;gt;actions().isEmpty());
+    filterMenu-&amp;gt;setEnabled(!filterMenu-&amp;gt;actions().isEmpty());
+}
+
+void MainWindow::populateMenus(QObject *plugin)
+{
+    auto iBrush = qobject_cast&amp;lt;BrushInterface *&amp;gt;(plugin);
+    if (iBrush)
+        addToMenu(plugin, iBrush-&amp;gt;brushes(), brushMenu, &amp;amp;MainWindow::changeBrush,
+                  brushActionGroup);
+
+    auto iShape = qobject_cast&amp;lt;ShapeInterface *&amp;gt;(plugin);
+    if (iShape)
+        addToMenu(plugin, iShape-&amp;gt;shapes(), shapesMenu, &amp;amp;MainWindow::insertShape);
+
+    auto iFilter = qobject_cast&amp;lt;FilterInterface *&amp;gt;(plugin);
+    if (iFilter)
+        addToMenu(plugin, iFilter-&amp;gt;filters(), filterMenu, &amp;amp;MainWindow::applyFilter);
+}
+
+void MainWindow::addToMenu(QObject *plugin, const QStringList &amp;amp;texts,
+                           QMenu *menu, Member member,
+                           QActionGroup *actionGroup)
+{
+    for (const QString &amp;amp;text : texts) {
+        auto action = new QAction(text, plugin);
+        connect(action, &amp;amp;QAction::triggered, this, member);
+        menu-&amp;gt;addAction(action);
+
+        if (actionGroup) {
+            action-&amp;gt;setCheckable(true);
+            actionGroup-&amp;gt;addAction(action);
+        }
+    }
+}
+
+</db:programlisting>
+</db:article>

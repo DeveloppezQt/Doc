@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Drag and Drop Puzzle Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Drag and Drop Puzzle example demonstrates a way of using the drag and drop system with item view widgets.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;puzzlewidget.h&quot;
+#include &quot;pieceslist.h&quot;
+
+#include &amp;lt;QDrag&amp;gt;
+#include &amp;lt;QDragEnterEvent&amp;gt;
+#include &amp;lt;QMimeData&amp;gt;
+#include &amp;lt;QPainter&amp;gt;
+
+PuzzleWidget::PuzzleWidget(int imageSize, QWidget *parent)
+    : QWidget(parent), m_ImageSize(imageSize)
+{
+    setAcceptDrops(true);
+    setMinimumSize(m_ImageSize, m_ImageSize);
+    setMaximumSize(m_ImageSize, m_ImageSize);
+}
+
+void PuzzleWidget::clear()
+{
+    pieces.clear();
+    highlightedRect = QRect();
+    inPlace = 0;
+    update();
+}
+
+void PuzzleWidget::dragEnterEvent(QDragEnterEvent *event)
+{
+    if (event-&amp;gt;mimeData()-&amp;gt;hasFormat(PiecesList::puzzleMimeType()))
+        event-&amp;gt;accept();
+    else
+        event-&amp;gt;ignore();
+}
+
+void PuzzleWidget::dragLeaveEvent(QDragLeaveEvent *event)
+{
+    QRect updateRect = highlightedRect;
+    highlightedRect = QRect();
+    update(updateRect);
+    event-&amp;gt;accept();
+}
+
+void PuzzleWidget::dragMoveEvent(QDragMoveEvent *event)
+{
+    QRect updateRect = highlightedRect.united(targetSquare(event-&amp;gt;pos()));
+
+    if (event-&amp;gt;mimeData()-&amp;gt;hasFormat(PiecesList::puzzleMimeType())
+        &amp;amp;&amp;amp; findPiece(targetSquare(event-&amp;gt;pos())) == -1) {
+
+        highlightedRect = targetSquare(event-&amp;gt;pos());
+        event-&amp;gt;setDropAction(Qt::MoveAction);
+        event-&amp;gt;accept();
+    } else {
+        highlightedRect = QRect();
+        event-&amp;gt;ignore();
+    }
+
+    update(updateRect);
+}
+
+void PuzzleWidget::dropEvent(QDropEvent *event)
+{
+    if (event-&amp;gt;mimeData()-&amp;gt;hasFormat(PiecesList::puzzleMimeType())
+        &amp;amp;&amp;amp; findPiece(targetSquare(event-&amp;gt;pos())) == -1) {
+
+        QByteArray pieceData = event-&amp;gt;mimeData()-&amp;gt;data(PiecesList::puzzleMimeType());
+        QDataStream dataStream(&amp;amp;pieceData, QIODevice::ReadOnly);
+        Piece piece;
+        piece.rect = targetSquare(event-&amp;gt;pos());
+        dataStream &amp;gt;&amp;gt; piece.pixmap &amp;gt;&amp;gt; piece.location;
+
+        pieces.append(piece);
+
+        highlightedRect = QRect();
+        update(piece.rect);
+
+        event-&amp;gt;setDropAction(Qt::MoveAction);
+        event-&amp;gt;accept();
+
+        if (piece.location == piece.rect.topLeft() / pieceSize()) {
+            inPlace++;
+            if (inPlace == 25)
+                emit puzzleCompleted();
+        }
+    } else {
+        highlightedRect = QRect();
+        event-&amp;gt;ignore();
+    }
+}
+
+int PuzzleWidget::findPiece(const QRect &amp;amp;pieceRect) const
+{
+    for (int i = 0, size = pieces.size(); i &amp;lt; size; ++i) {
+        if (pieces.at(i).rect == pieceRect)
+            return i;
+    }
+    return -1;
+}
+
+void PuzzleWidget::mousePressEvent(QMouseEvent *event)
+{
+    QRect square = targetSquare(event-&amp;gt;pos());
+    const int found = findPiece(square);
+
+    if (found == -1)
+        return;
+
+    Piece piece = pieces.takeAt(found);
+
+    if (piece.location == square.topLeft() / pieceSize())
+        inPlace--;
+
+    update(square);
+
+    QByteArray itemData;
+    QDataStream dataStream(&amp;amp;itemData, QIODevice::WriteOnly);
+
+    dataStream &amp;lt;&amp;lt; piece.pixmap &amp;lt;&amp;lt; piece.location;
+
+    QMimeData *mimeData = new QMimeData;
+    mimeData-&amp;gt;setData(PiecesList::puzzleMimeType(), itemData);
+
+    QDrag *drag = new QDrag(this);
+    drag-&amp;gt;setMimeData(mimeData);
+    drag-&amp;gt;setHotSpot(event-&amp;gt;pos() - square.topLeft());
+    drag-&amp;gt;setPixmap(piece.pixmap);
+
+    if (drag-&amp;gt;exec(Qt::MoveAction) != Qt::MoveAction) {
+        pieces.insert(found, piece);
+        update(targetSquare(event-&amp;gt;pos()));
+
+        if (piece.location == square.topLeft() / pieceSize())
+            inPlace++;
+    }
+}
+
+void PuzzleWidget::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    painter.fillRect(event-&amp;gt;rect(), Qt::white);
+
+    if (highlightedRect.isValid()) {
+        painter.setBrush(QColor(&quot;#ffcccc&quot;));
+        painter.setPen(Qt::NoPen);
+        painter.drawRect(highlightedRect.adjusted(0, 0, -1, -1));
+    }
+
+    for (const Piece &amp;amp;piece : pieces)
+        painter.drawPixmap(piece.rect, piece.pixmap);
+}
+
+const QRect PuzzleWidget::targetSquare(const QPoint &amp;amp;position) const
+{
+    return QRect(position / pieceSize() * pieceSize(),
+                 QSize(pieceSize(), pieceSize()));
+}
+
+int PuzzleWidget::pieceSize() const
+{
+    return m_ImageSize / 5;
+}
+
+int PuzzleWidget::imageSize() const
+{
+    return m_ImageSize;
+}
+
+</db:programlisting>
+</db:article>

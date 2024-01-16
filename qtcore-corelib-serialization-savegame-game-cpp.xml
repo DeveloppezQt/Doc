@@ -1,0 +1,217 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>JSON Save Game Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The JSON Save Game example demonstrates how to save and load a small game using <db:link xlink:href="qjsondocument.xml">QJsonDocument</db:link>, <db:link xlink:href="qjsonobject.xml">QJsonObject</db:link> and <db:link xlink:href="qjsonarray.xml">QJsonArray</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the examples of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;game.h&quot;
+
+#include &amp;lt;QFile&amp;gt;
+#include &amp;lt;QJsonArray&amp;gt;
+#include &amp;lt;QJsonDocument&amp;gt;
+#include &amp;lt;QRandomGenerator&amp;gt;
+#include &amp;lt;QTextStream&amp;gt;
+
+Character Game::player() const
+{
+    return mPlayer;
+}
+
+QVector&amp;lt;Level&amp;gt; Game::levels() const
+{
+    return mLevels;
+}
+
+void Game::newGame()
+{
+    mPlayer = Character();
+    mPlayer.setName(QStringLiteral(&quot;Hero&quot;));
+    mPlayer.setClassType(Character::Archer);
+    mPlayer.setLevel(QRandomGenerator::global()-&amp;gt;bounded(15, 21));
+
+    mLevels.clear();
+    mLevels.reserve(2);
+
+    Level village(QStringLiteral(&quot;Village&quot;));
+    QVector&amp;lt;Character&amp;gt; villageNpcs;
+    villageNpcs.reserve(2);
+    villageNpcs.append(Character(QStringLiteral(&quot;Barry the Blacksmith&quot;),
+                                 QRandomGenerator::global()-&amp;gt;bounded(8, 11),
+                                 Character::Warrior));
+    villageNpcs.append(Character(QStringLiteral(&quot;Terry the Trader&quot;),
+                                 QRandomGenerator::global()-&amp;gt;bounded(6, 8),
+                                 Character::Warrior));
+    village.setNpcs(villageNpcs);
+    mLevels.append(village);
+
+    Level dungeon(QStringLiteral(&quot;Dungeon&quot;));
+    QVector&amp;lt;Character&amp;gt; dungeonNpcs;
+    dungeonNpcs.reserve(3);
+    dungeonNpcs.append(Character(QStringLiteral(&quot;Eric the Evil&quot;),
+                                 QRandomGenerator::global()-&amp;gt;bounded(18, 26),
+                                 Character::Mage));
+    dungeonNpcs.append(Character(QStringLiteral(&quot;Eric's Left Minion&quot;),
+                                 QRandomGenerator::global()-&amp;gt;bounded(5, 7),
+                                 Character::Warrior));
+    dungeonNpcs.append(Character(QStringLiteral(&quot;Eric's Right Minion&quot;),
+                                 QRandomGenerator::global()-&amp;gt;bounded(4, 9),
+                                 Character::Warrior));
+    dungeon.setNpcs(dungeonNpcs);
+    mLevels.append(dungeon);
+}
+
+bool Game::loadGame(Game::SaveFormat saveFormat)
+{
+    QFile loadFile(saveFormat == Json
+        ? QStringLiteral(&quot;save.json&quot;)
+        : QStringLiteral(&quot;save.dat&quot;));
+
+    if (!loadFile.open(QIODevice::ReadOnly)) {
+        qWarning(&quot;Couldn't open save file.&quot;);
+        return false;
+    }
+
+    QByteArray saveData = loadFile.readAll();
+
+    QJsonDocument loadDoc(saveFormat == Json
+        ? QJsonDocument::fromJson(saveData)
+        : QJsonDocument::fromBinaryData(saveData));
+
+    read(loadDoc.object());
+
+    QTextStream(stdout) &amp;lt;&amp;lt; &quot;Loaded save for &quot;
+                        &amp;lt;&amp;lt; loadDoc[&quot;player&quot;][&quot;name&quot;].toString()
+                        &amp;lt;&amp;lt; &quot; using &quot;
+                        &amp;lt;&amp;lt; (saveFormat != Json ? &quot;binary &quot; : &quot;&quot;) &amp;lt;&amp;lt; &quot;JSON...\n&quot;;
+    return true;
+}
+
+bool Game::saveGame(Game::SaveFormat saveFormat) const
+{
+    QFile saveFile(saveFormat == Json
+        ? QStringLiteral(&quot;save.json&quot;)
+        : QStringLiteral(&quot;save.dat&quot;));
+
+    if (!saveFile.open(QIODevice::WriteOnly)) {
+        qWarning(&quot;Couldn't open save file.&quot;);
+        return false;
+    }
+
+    QJsonObject gameObject;
+    write(gameObject);
+    QJsonDocument saveDoc(gameObject);
+    saveFile.write(saveFormat == Json
+        ? saveDoc.toJson()
+        : saveDoc.toBinaryData());
+
+    return true;
+}
+
+void Game::read(const QJsonObject &amp;amp;json)
+{
+    if (json.contains(&quot;player&quot;) &amp;amp;&amp;amp; json[&quot;player&quot;].isObject())
+        mPlayer.read(json[&quot;player&quot;].toObject());
+
+    if (json.contains(&quot;levels&quot;) &amp;amp;&amp;amp; json[&quot;levels&quot;].isArray()) {
+        QJsonArray levelArray = json[&quot;levels&quot;].toArray();
+        mLevels.clear();
+        mLevels.reserve(levelArray.size());
+        for (int levelIndex = 0; levelIndex &amp;lt; levelArray.size(); ++levelIndex) {
+            QJsonObject levelObject = levelArray[levelIndex].toObject();
+            Level level;
+            level.read(levelObject);
+            mLevels.append(level);
+        }
+    }
+}
+
+void Game::write(QJsonObject &amp;amp;json) const
+{
+    QJsonObject playerObject;
+    mPlayer.write(playerObject);
+    json[&quot;player&quot;] = playerObject;
+
+    QJsonArray levelArray;
+    foreach (const Level level, mLevels) {
+        QJsonObject levelObject;
+        level.write(levelObject);
+        levelArray.append(levelObject);
+    }
+    json[&quot;levels&quot;] = levelArray;
+}
+
+void Game::print(int indentation) const
+{
+    const QString indent(indentation * 2, ' ');
+    QTextStream(stdout) &amp;lt;&amp;lt; indent &amp;lt;&amp;lt; &quot;Player\n&quot;;
+    mPlayer.print(indentation + 1);
+
+    QTextStream(stdout) &amp;lt;&amp;lt; indent &amp;lt;&amp;lt; &quot;Levels\n&quot;;
+    for (Level level : mLevels)
+        level.print(indentation + 1);
+}
+
+</db:programlisting>
+</db:article>

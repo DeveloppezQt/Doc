@@ -1,0 +1,241 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Terminal Example</db:title>
+<db:productname>QtSerialPort</db:productname>
+<db:edition>Qt 5.12.12 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Port Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use various features of <db:link xlink:href="qserialport.xml">QSerialPort</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2012 Denis Shienkov &amp;lt;denis.shienkov@gmail.com&amp;gt;
+** Copyright (C) 2012 Laszlo Papp &amp;lt;lpapp@kde.org&amp;gt;
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtSerialPort module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:BSD$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** BSD License Usage
+** Alternatively, you may use this file under the terms of the BSD license
+** as follows:
+**
+** &quot;Redistribution and use in source and binary forms, with or without
+** modification, are permitted provided that the following conditions are
+** met:
+**   * Redistributions of source code must retain the above copyright
+**     notice, this list of conditions and the following disclaimer.
+**   * Redistributions in binary form must reproduce the above copyright
+**     notice, this list of conditions and the following disclaimer in
+**     the documentation and/or other materials provided with the
+**     distribution.
+**   * Neither the name of The Qt Company Ltd nor the names of its
+**     contributors may be used to endorse or promote products derived
+**     from this software without specific prior written permission.
+**
+**
+** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+** &quot;AS IS&quot; AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.&quot;
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;settingsdialog.h&quot;
+#include &quot;ui_settingsdialog.h&quot;
+
+#include &amp;lt;QIntValidator&amp;gt;
+#include &amp;lt;QLineEdit&amp;gt;
+#include &amp;lt;QSerialPortInfo&amp;gt;
+
+static const char blankString[] = QT_TRANSLATE_NOOP(&quot;SettingsDialog&quot;, &quot;N/A&quot;);
+
+SettingsDialog::SettingsDialog(QWidget *parent) :
+    QDialog(parent),
+    m_ui(new Ui::SettingsDialog),
+    m_intValidator(new QIntValidator(0, 4000000, this))
+{
+    m_ui-&amp;gt;setupUi(this);
+
+    m_ui-&amp;gt;baudRateBox-&amp;gt;setInsertPolicy(QComboBox::NoInsert);
+
+    connect(m_ui-&amp;gt;applyButton, &amp;amp;QPushButton::clicked,
+            this, &amp;amp;SettingsDialog::apply);
+    connect(m_ui-&amp;gt;serialPortInfoListBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;SettingsDialog::showPortInfo);
+    connect(m_ui-&amp;gt;baudRateBox,  QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;SettingsDialog::checkCustomBaudRatePolicy);
+    connect(m_ui-&amp;gt;serialPortInfoListBox, QOverload&amp;lt;int&amp;gt;::of(&amp;amp;QComboBox::currentIndexChanged),
+            this, &amp;amp;SettingsDialog::checkCustomDevicePathPolicy);
+
+    fillPortsParameters();
+    fillPortsInfo();
+
+    updateSettings();
+}
+
+SettingsDialog::~SettingsDialog()
+{
+    delete m_ui;
+}
+
+SettingsDialog::Settings SettingsDialog::settings() const
+{
+    return m_currentSettings;
+}
+
+void SettingsDialog::showPortInfo(int idx)
+{
+    if (idx == -1)
+        return;
+
+    const QStringList list = m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;itemData(idx).toStringList();
+    m_ui-&amp;gt;descriptionLabel-&amp;gt;setText(tr(&quot;Description: %1&quot;).arg(list.count() &amp;gt; 1 ? list.at(1) : tr(blankString)));
+    m_ui-&amp;gt;manufacturerLabel-&amp;gt;setText(tr(&quot;Manufacturer: %1&quot;).arg(list.count() &amp;gt; 2 ? list.at(2) : tr(blankString)));
+    m_ui-&amp;gt;serialNumberLabel-&amp;gt;setText(tr(&quot;Serial number: %1&quot;).arg(list.count() &amp;gt; 3 ? list.at(3) : tr(blankString)));
+    m_ui-&amp;gt;locationLabel-&amp;gt;setText(tr(&quot;Location: %1&quot;).arg(list.count() &amp;gt; 4 ? list.at(4) : tr(blankString)));
+    m_ui-&amp;gt;vidLabel-&amp;gt;setText(tr(&quot;Vendor Identifier: %1&quot;).arg(list.count() &amp;gt; 5 ? list.at(5) : tr(blankString)));
+    m_ui-&amp;gt;pidLabel-&amp;gt;setText(tr(&quot;Product Identifier: %1&quot;).arg(list.count() &amp;gt; 6 ? list.at(6) : tr(blankString)));
+}
+
+void SettingsDialog::apply()
+{
+    updateSettings();
+    hide();
+}
+
+void SettingsDialog::checkCustomBaudRatePolicy(int idx)
+{
+    const bool isCustomBaudRate = !m_ui-&amp;gt;baudRateBox-&amp;gt;itemData(idx).isValid();
+    m_ui-&amp;gt;baudRateBox-&amp;gt;setEditable(isCustomBaudRate);
+    if (isCustomBaudRate) {
+        m_ui-&amp;gt;baudRateBox-&amp;gt;clearEditText();
+        QLineEdit *edit = m_ui-&amp;gt;baudRateBox-&amp;gt;lineEdit();
+        edit-&amp;gt;setValidator(m_intValidator);
+    }
+}
+
+void SettingsDialog::checkCustomDevicePathPolicy(int idx)
+{
+    const bool isCustomPath = !m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;itemData(idx).isValid();
+    m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;setEditable(isCustomPath);
+    if (isCustomPath)
+        m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;clearEditText();
+}
+
+void SettingsDialog::fillPortsParameters()
+{
+    m_ui-&amp;gt;baudRateBox-&amp;gt;addItem(QStringLiteral(&quot;9600&quot;), QSerialPort::Baud9600);
+    m_ui-&amp;gt;baudRateBox-&amp;gt;addItem(QStringLiteral(&quot;19200&quot;), QSerialPort::Baud19200);
+    m_ui-&amp;gt;baudRateBox-&amp;gt;addItem(QStringLiteral(&quot;38400&quot;), QSerialPort::Baud38400);
+    m_ui-&amp;gt;baudRateBox-&amp;gt;addItem(QStringLiteral(&quot;115200&quot;), QSerialPort::Baud115200);
+    m_ui-&amp;gt;baudRateBox-&amp;gt;addItem(tr(&quot;Custom&quot;));
+
+    m_ui-&amp;gt;dataBitsBox-&amp;gt;addItem(QStringLiteral(&quot;5&quot;), QSerialPort::Data5);
+    m_ui-&amp;gt;dataBitsBox-&amp;gt;addItem(QStringLiteral(&quot;6&quot;), QSerialPort::Data6);
+    m_ui-&amp;gt;dataBitsBox-&amp;gt;addItem(QStringLiteral(&quot;7&quot;), QSerialPort::Data7);
+    m_ui-&amp;gt;dataBitsBox-&amp;gt;addItem(QStringLiteral(&quot;8&quot;), QSerialPort::Data8);
+    m_ui-&amp;gt;dataBitsBox-&amp;gt;setCurrentIndex(3);
+
+    m_ui-&amp;gt;parityBox-&amp;gt;addItem(tr(&quot;None&quot;), QSerialPort::NoParity);
+    m_ui-&amp;gt;parityBox-&amp;gt;addItem(tr(&quot;Even&quot;), QSerialPort::EvenParity);
+    m_ui-&amp;gt;parityBox-&amp;gt;addItem(tr(&quot;Odd&quot;), QSerialPort::OddParity);
+    m_ui-&amp;gt;parityBox-&amp;gt;addItem(tr(&quot;Mark&quot;), QSerialPort::MarkParity);
+    m_ui-&amp;gt;parityBox-&amp;gt;addItem(tr(&quot;Space&quot;), QSerialPort::SpaceParity);
+
+    m_ui-&amp;gt;stopBitsBox-&amp;gt;addItem(QStringLiteral(&quot;1&quot;), QSerialPort::OneStop);
+#ifdef Q_OS_WIN
+    m_ui-&amp;gt;stopBitsBox-&amp;gt;addItem(tr(&quot;1.5&quot;), QSerialPort::OneAndHalfStop);
+#endif
+    m_ui-&amp;gt;stopBitsBox-&amp;gt;addItem(QStringLiteral(&quot;2&quot;), QSerialPort::TwoStop);
+
+    m_ui-&amp;gt;flowControlBox-&amp;gt;addItem(tr(&quot;None&quot;), QSerialPort::NoFlowControl);
+    m_ui-&amp;gt;flowControlBox-&amp;gt;addItem(tr(&quot;RTS/CTS&quot;), QSerialPort::HardwareControl);
+    m_ui-&amp;gt;flowControlBox-&amp;gt;addItem(tr(&quot;XON/XOFF&quot;), QSerialPort::SoftwareControl);
+}
+
+void SettingsDialog::fillPortsInfo()
+{
+    m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;clear();
+    QString description;
+    QString manufacturer;
+    QString serialNumber;
+    const auto infos = QSerialPortInfo::availablePorts();
+    for (const QSerialPortInfo &amp;amp;info : infos) {
+        QStringList list;
+        description = info.description();
+        manufacturer = info.manufacturer();
+        serialNumber = info.serialNumber();
+        list &amp;lt;&amp;lt; info.portName()
+             &amp;lt;&amp;lt; (!description.isEmpty() ? description : blankString)
+             &amp;lt;&amp;lt; (!manufacturer.isEmpty() ? manufacturer : blankString)
+             &amp;lt;&amp;lt; (!serialNumber.isEmpty() ? serialNumber : blankString)
+             &amp;lt;&amp;lt; info.systemLocation()
+             &amp;lt;&amp;lt; (info.vendorIdentifier() ? QString::number(info.vendorIdentifier(), 16) : blankString)
+             &amp;lt;&amp;lt; (info.productIdentifier() ? QString::number(info.productIdentifier(), 16) : blankString);
+
+        m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;addItem(list.first(), list);
+    }
+
+    m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;addItem(tr(&quot;Custom&quot;));
+}
+
+void SettingsDialog::updateSettings()
+{
+    m_currentSettings.name = m_ui-&amp;gt;serialPortInfoListBox-&amp;gt;currentText();
+
+    if (m_ui-&amp;gt;baudRateBox-&amp;gt;currentIndex() == 4) {
+        m_currentSettings.baudRate = m_ui-&amp;gt;baudRateBox-&amp;gt;currentText().toInt();
+    } else {
+        m_currentSettings.baudRate = static_cast&amp;lt;QSerialPort::BaudRate&amp;gt;(
+                    m_ui-&amp;gt;baudRateBox-&amp;gt;itemData(m_ui-&amp;gt;baudRateBox-&amp;gt;currentIndex()).toInt());
+    }
+    m_currentSettings.stringBaudRate = QString::number(m_currentSettings.baudRate);
+
+    m_currentSettings.dataBits = static_cast&amp;lt;QSerialPort::DataBits&amp;gt;(
+                m_ui-&amp;gt;dataBitsBox-&amp;gt;itemData(m_ui-&amp;gt;dataBitsBox-&amp;gt;currentIndex()).toInt());
+    m_currentSettings.stringDataBits = m_ui-&amp;gt;dataBitsBox-&amp;gt;currentText();
+
+    m_currentSettings.parity = static_cast&amp;lt;QSerialPort::Parity&amp;gt;(
+                m_ui-&amp;gt;parityBox-&amp;gt;itemData(m_ui-&amp;gt;parityBox-&amp;gt;currentIndex()).toInt());
+    m_currentSettings.stringParity = m_ui-&amp;gt;parityBox-&amp;gt;currentText();
+
+    m_currentSettings.stopBits = static_cast&amp;lt;QSerialPort::StopBits&amp;gt;(
+                m_ui-&amp;gt;stopBitsBox-&amp;gt;itemData(m_ui-&amp;gt;stopBitsBox-&amp;gt;currentIndex()).toInt());
+    m_currentSettings.stringStopBits = m_ui-&amp;gt;stopBitsBox-&amp;gt;currentText();
+
+    m_currentSettings.flowControl = static_cast&amp;lt;QSerialPort::FlowControl&amp;gt;(
+                m_ui-&amp;gt;flowControlBox-&amp;gt;itemData(m_ui-&amp;gt;flowControlBox-&amp;gt;currentIndex()).toInt());
+    m_currentSettings.stringFlowControl = m_ui-&amp;gt;flowControlBox-&amp;gt;currentText();
+
+    m_currentSettings.localEchoEnabled = m_ui-&amp;gt;localEchoCheckBox-&amp;gt;isChecked();
+}
+
+</db:programlisting>
+</db:article>

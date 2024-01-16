@@ -1,0 +1,770 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Volumetric rendering Example</db:title>
+<db:productname>QtDataVisualization</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Rendering volumetric objects.</db:para>
+<db:para>This documentation was introduced in QtDataVisualization 1.2.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Data Visualization module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:GPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
+
+#include &quot;volumetric.h&quot;
+#include &amp;lt;QtDataVisualization/qvalue3daxis.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dscene.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dcamera.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dtheme.h&amp;gt;
+#include &amp;lt;QtDataVisualization/qcustom3dlabel.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dscatter.h&amp;gt;
+#include &amp;lt;QtDataVisualization/q3dinputhandler.h&amp;gt;
+#include &amp;lt;QtCore/qmath.h&amp;gt;
+#include &amp;lt;QtWidgets/QLabel&amp;gt;
+#include &amp;lt;QtWidgets/QRadioButton&amp;gt;
+#include &amp;lt;QtWidgets/QSlider&amp;gt;
+#include &amp;lt;QtCore/QDebug&amp;gt;
+#include &amp;lt;QtGui/QOpenGLContext&amp;gt;
+
+using namespace QtDataVisualization;
+
+const int lowDetailSize(128);
+const int mediumDetailSize(256);
+const int highDetailSize(512);
+const int colorTableSize(256);
+const int layerDataSize(512);
+const int mineShaftDiameter(1);
+
+const int airColorIndex(254);
+const int mineShaftColorIndex(255);
+const int layerColorThickness(60);
+const int heightToColorDiv(140);
+const int magmaColorsMin(0);
+const int magmaColorsMax(layerColorThickness);
+const int aboveWaterGroundColorsMin(magmaColorsMax + 1);
+const int aboveWaterGroundColorsMax(aboveWaterGroundColorsMin + layerColorThickness);
+const int underWaterGroundColorsMin(aboveWaterGroundColorsMax + 1);
+const int underWaterGroundColorsMax(underWaterGroundColorsMin + layerColorThickness);
+const int waterColorsMin(underWaterGroundColorsMax + 1);
+const int waterColorsMax(waterColorsMin + layerColorThickness);
+const int terrainTransparency(12);
+
+static bool isOpenGLES()
+{
+#if defined(QT_OPENGL_ES_2)
+    return true;
+#elif (QT_VERSION &amp;lt; QT_VERSION_CHECK(5, 3, 0))
+    return false;
+#else
+    return QOpenGLContext::currentContext()-&amp;gt;isOpenGLES();
+#endif
+}
+
+VolumetricModifier::VolumetricModifier(Q3DScatter *scatter)
+    : m_graph(scatter),
+      m_volumeItem(0),
+      m_sliceIndexX(lowDetailSize / 2),
+      m_sliceIndexY(lowDetailSize / 4),
+      m_sliceIndexZ(lowDetailSize / 2),
+      m_slicingX(false),
+      m_slicingY(false),
+      m_slicingZ(false),
+      m_mediumDetailRB(0),
+      m_highDetailRB(0),
+      m_lowDetailData(0),
+      m_mediumDetailData(0),
+      m_highDetailData(0),
+      m_mediumDetailIndex(0),
+      m_highDetailIndex(0),
+      m_mediumDetailShaftIndex(0),
+      m_highDetailShaftIndex(0),
+      m_sliceSliderX(0),
+      m_sliceSliderY(0),
+      m_sliceSliderZ(0),
+      m_usingPrimaryTable(true),
+      m_sliceLabelX(0),
+      m_sliceLabelY(0),
+      m_sliceLabelZ(0)
+{
+    m_graph-&amp;gt;activeTheme()-&amp;gt;setType(Q3DTheme::ThemeQt);
+    m_graph-&amp;gt;setShadowQuality(QAbstract3DGraph::ShadowQualityNone);
+    m_graph-&amp;gt;scene()-&amp;gt;activeCamera()-&amp;gt;setCameraPreset(Q3DCamera::CameraPresetFront);
+    m_graph-&amp;gt;setOrthoProjection(true);
+    m_graph-&amp;gt;activeTheme()-&amp;gt;setBackgroundEnabled(false);
+
+    // Only allow zooming at the center and limit the zoom to 200% to avoid clipping issues
+    static_cast&amp;lt;Q3DInputHandler *&amp;gt;(m_graph-&amp;gt;activeInputHandler())-&amp;gt;setZoomAtTargetEnabled(false);
+    m_graph-&amp;gt;scene()-&amp;gt;activeCamera()-&amp;gt;setMaxZoomLevel(200.0f);
+
+    toggleAreaAll(true);
+
+    if (!isOpenGLES()) {
+        m_lowDetailData = new QVector&amp;lt;uchar&amp;gt;(lowDetailSize * lowDetailSize * lowDetailSize / 2);
+        m_mediumDetailData = new QVector&amp;lt;uchar&amp;gt;(mediumDetailSize * mediumDetailSize * mediumDetailSize / 2);
+        m_highDetailData = new QVector&amp;lt;uchar&amp;gt;(highDetailSize * highDetailSize * highDetailSize / 2);
+
+        initHeightMap(QStringLiteral(&quot;:/heightmaps/layer_ground.png&quot;), m_groundLayer);
+        initHeightMap(QStringLiteral(&quot;:/heightmaps/layer_water.png&quot;), m_waterLayer);
+        initHeightMap(QStringLiteral(&quot;:/heightmaps/layer_magma.png&quot;), m_magmaLayer);
+
+        initMineShaftArray();
+
+        createVolume(lowDetailSize, 0, lowDetailSize, m_lowDetailData);
+        excavateMineShaft(lowDetailSize, 0, m_mineShaftArray.size(), m_lowDetailData);
+
+        m_volumeItem = new QCustom3DVolume;
+        // Adjust water level to zero with a minor tweak to y-coordinate position and scaling
+        m_volumeItem-&amp;gt;setScaling(
+                    QVector3D(m_graph-&amp;gt;axisX()-&amp;gt;max() - m_graph-&amp;gt;axisX()-&amp;gt;min(),
+                              (m_graph-&amp;gt;axisY()-&amp;gt;max() - m_graph-&amp;gt;axisY()-&amp;gt;min()) * 0.91f,
+                              m_graph-&amp;gt;axisZ()-&amp;gt;max() - m_graph-&amp;gt;axisZ()-&amp;gt;min()));
+        m_volumeItem-&amp;gt;setPosition(
+                    QVector3D((m_graph-&amp;gt;axisX()-&amp;gt;max() + m_graph-&amp;gt;axisX()-&amp;gt;min()) / 2.0f,
+                              -0.045f * (m_graph-&amp;gt;axisY()-&amp;gt;max() - m_graph-&amp;gt;axisY()-&amp;gt;min()) +
+                              (m_graph-&amp;gt;axisY()-&amp;gt;max() + m_graph-&amp;gt;axisY()-&amp;gt;min()) / 2.0f,
+                              (m_graph-&amp;gt;axisZ()-&amp;gt;max() + m_graph-&amp;gt;axisZ()-&amp;gt;min()) / 2.0f));
+        m_volumeItem-&amp;gt;setScalingAbsolute(false);
+        m_volumeItem-&amp;gt;setTextureWidth(lowDetailSize);
+        m_volumeItem-&amp;gt;setTextureHeight(lowDetailSize / 2);
+        m_volumeItem-&amp;gt;setTextureDepth(lowDetailSize);
+        m_volumeItem-&amp;gt;setTextureFormat(QImage::Format_Indexed8);
+        m_volumeItem-&amp;gt;setTextureData(new QVector&amp;lt;uchar&amp;gt;(*m_lowDetailData));
+
+        // Generate color tables.
+        m_colorTable1.resize(colorTableSize);
+        m_colorTable2.resize(colorTableSize);
+
+        for (int i = 0; i &amp;lt; colorTableSize - 2; i++) {
+            if (i &amp;lt; magmaColorsMax) {
+                m_colorTable1[i] = qRgba(130 - (i * 2), 0, 0, 255);
+            } else if (i &amp;lt; aboveWaterGroundColorsMax) {
+                m_colorTable1[i] = qRgba((i - magmaColorsMax) * 4,
+                                         ((i - magmaColorsMax) * 2) + 120,
+                                         (i - magmaColorsMax) * 5, terrainTransparency);
+            } else if (i &amp;lt; underWaterGroundColorsMax) {
+                m_colorTable1[i] = qRgba(((layerColorThickness - i - aboveWaterGroundColorsMax)) + 70,
+                                         ((layerColorThickness - i - aboveWaterGroundColorsMax) * 2) + 20,
+                                         ((layerColorThickness - i - aboveWaterGroundColorsMax)) + 50,
+                                         terrainTransparency);
+            } else if (i &amp;lt; waterColorsMax) {
+                m_colorTable1[i] = qRgba(0, 0, ((i - underWaterGroundColorsMax) * 2) + 120,
+                                         terrainTransparency);
+            } else {
+                m_colorTable1[i] = qRgba(0, 0, 0, 0); // Not used
+            }
+        }
+        m_colorTable1[airColorIndex] = qRgba(0, 0, 0, 0);
+        m_colorTable1[mineShaftColorIndex] = qRgba(50, 50, 50, 255);
+
+        // The alternate color table just has gray gradients for all terrain except water
+        for (int i = 0; i &amp;lt; colorTableSize - 2; i++) {
+            if (i &amp;lt; magmaColorsMax) {
+                m_colorTable2[i] = qRgba(((i - aboveWaterGroundColorsMax) * 2),
+                                         ((i - aboveWaterGroundColorsMax) * 2),
+                                         ((i - aboveWaterGroundColorsMax) * 2), 255);
+            } else if (i &amp;lt; underWaterGroundColorsMax) {
+                m_colorTable2[i] = qRgba(((i - aboveWaterGroundColorsMax) * 2),
+                                         ((i - aboveWaterGroundColorsMax) * 2),
+                                         ((i - aboveWaterGroundColorsMax) * 2), terrainTransparency);
+            } else if (i &amp;lt; waterColorsMax) {
+                m_colorTable2[i] = qRgba(0, 0, ((i - underWaterGroundColorsMax) * 2) + 120,
+                                         terrainTransparency);
+            } else {
+                m_colorTable2[i] = qRgba(0, 0, 0, 0); // Not used
+            }
+        }
+        m_colorTable2[airColorIndex] = qRgba(0, 0, 0, 0);
+        m_colorTable2[mineShaftColorIndex] = qRgba(255, 255, 0, 255);
+
+        m_volumeItem-&amp;gt;setColorTable(m_colorTable1);
+
+        m_volumeItem-&amp;gt;setSliceFrameGaps(QVector3D(0.01f, 0.02f, 0.01f));
+        m_volumeItem-&amp;gt;setSliceFrameThicknesses(QVector3D(0.0025f, 0.005f, 0.0025f));
+        m_volumeItem-&amp;gt;setSliceFrameWidths(QVector3D(0.0025f, 0.005f, 0.0025f));
+        m_volumeItem-&amp;gt;setDrawSliceFrames(false);
+        handleSlicingChanges();
+
+        m_graph-&amp;gt;addCustomItem(m_volumeItem);
+
+        m_timer.start(0);
+    } else {
+        // OpenGL ES2 doesn't support 3D textures, so show a warning label instead
+        QCustom3DLabel *warningLabel = new QCustom3DLabel(
+                    &quot;QCustom3DVolume is not supported with OpenGL ES2&quot;,
+                    QFont(),
+                    QVector3D(0.0f, 0.5f, 0.0f),
+                    QVector3D(1.5f, 1.5f, 0.0f),
+                    QQuaternion());
+        warningLabel-&amp;gt;setPositionAbsolute(true);
+        warningLabel-&amp;gt;setFacingCamera(true);
+        m_graph-&amp;gt;addCustomItem(warningLabel);
+    }
+
+    QObject::connect(m_graph, &amp;amp;QAbstract3DGraph::currentFpsChanged, this,
+                     &amp;amp;VolumetricModifier::handleFpsChange);
+    QObject::connect(&amp;amp;m_timer, &amp;amp;QTimer::timeout, this,
+                     &amp;amp;VolumetricModifier::handleTimeout);
+
+}
+
+VolumetricModifier::~VolumetricModifier()
+{
+    delete m_graph;
+}
+
+void VolumetricModifier::setFpsLabel(QLabel *fpsLabel)
+{
+    m_fpsLabel = fpsLabel;
+}
+
+void VolumetricModifier::setMediumDetailRB(QRadioButton *button)
+{
+    m_mediumDetailRB = button;
+}
+
+void VolumetricModifier::setHighDetailRB(QRadioButton *button)
+{
+    m_highDetailRB = button;
+}
+
+void VolumetricModifier::setSliceLabels(QLabel *xLabel, QLabel *yLabel, QLabel *zLabel)
+{
+    m_sliceLabelX = xLabel;
+    m_sliceLabelY = yLabel;
+    m_sliceLabelZ = zLabel;
+
+    adjustSliceX(m_sliceSliderX-&amp;gt;value());
+    adjustSliceY(m_sliceSliderY-&amp;gt;value());
+    adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+}
+
+void VolumetricModifier::setAlphaMultiplierLabel(QLabel *label)
+{
+    m_alphaMultiplierLabel = label;
+}
+
+void VolumetricModifier::sliceX(int enabled)
+{
+    m_slicingX = enabled;
+    handleSlicingChanges();
+}
+
+void VolumetricModifier::sliceY(int enabled)
+{
+    m_slicingY = enabled;
+    handleSlicingChanges();
+}
+
+void VolumetricModifier::sliceZ(int enabled)
+{
+    m_slicingZ = enabled;
+    handleSlicingChanges();
+}
+
+void VolumetricModifier::adjustSliceX(int value)
+{
+    if (m_volumeItem) {
+        m_sliceIndexX = value / (1024 / m_volumeItem-&amp;gt;textureWidth());
+        if (m_sliceIndexX == m_volumeItem-&amp;gt;textureWidth())
+            m_sliceIndexX--;
+        if (m_volumeItem-&amp;gt;sliceIndexX() != -1)
+            m_volumeItem-&amp;gt;setSliceIndexX(m_sliceIndexX);
+        m_sliceLabelX-&amp;gt;setPixmap(
+                    QPixmap::fromImage(m_volumeItem-&amp;gt;renderSlice(Qt::XAxis, m_sliceIndexX)));
+    }
+}
+
+void VolumetricModifier::adjustSliceY(int value)
+{
+    if (m_volumeItem) {
+        m_sliceIndexY = value / (1024 / m_volumeItem-&amp;gt;textureHeight());
+        if (m_sliceIndexY == m_volumeItem-&amp;gt;textureHeight())
+            m_sliceIndexY--;
+        if (m_volumeItem-&amp;gt;sliceIndexY() != -1)
+            m_volumeItem-&amp;gt;setSliceIndexY(m_sliceIndexY);
+        m_sliceLabelY-&amp;gt;setPixmap(
+                    QPixmap::fromImage(m_volumeItem-&amp;gt;renderSlice(Qt::YAxis, m_sliceIndexY)));
+    }
+}
+
+void VolumetricModifier::adjustSliceZ(int value)
+{
+    if (m_volumeItem) {
+        m_sliceIndexZ = value / (1024 / m_volumeItem-&amp;gt;textureDepth());
+        if (m_sliceIndexZ == m_volumeItem-&amp;gt;textureDepth())
+            m_sliceIndexZ--;
+        if (m_volumeItem-&amp;gt;sliceIndexZ() != -1)
+            m_volumeItem-&amp;gt;setSliceIndexZ(m_sliceIndexZ);
+        m_sliceLabelZ-&amp;gt;setPixmap(
+                    QPixmap::fromImage(m_volumeItem-&amp;gt;renderSlice(Qt::ZAxis, m_sliceIndexZ)));
+    }
+}
+
+void VolumetricModifier::handleFpsChange(qreal fps)
+{
+    const QString fpsFormat = QStringLiteral(&quot;FPS: %1&quot;);
+    int fps10 = int(fps * 10.0);
+    m_fpsLabel-&amp;gt;setText(fpsFormat.arg(qreal(fps10) / 10.0));
+}
+
+void VolumetricModifier::handleTimeout()
+{
+    if (!m_mediumDetailRB-&amp;gt;isEnabled()) {
+        if (m_mediumDetailIndex != mediumDetailSize) {
+            m_mediumDetailIndex = createVolume(mediumDetailSize, m_mediumDetailIndex, 4,
+                                               m_mediumDetailData);
+        } else if (m_mediumDetailShaftIndex != m_mineShaftArray.size()) {
+            m_mediumDetailShaftIndex = excavateMineShaft(mediumDetailSize, m_mediumDetailShaftIndex,
+                                                         1, m_mediumDetailData );
+        } else {
+            m_mediumDetailRB-&amp;gt;setEnabled(true);
+            QString label = QStringLiteral(&quot;Medium (%1x%2x%1)&quot;);
+            m_mediumDetailRB-&amp;gt;setText(label.arg(mediumDetailSize).arg(mediumDetailSize / 2));
+        }
+    } else if (!m_highDetailRB-&amp;gt;isEnabled()) {
+        if (m_highDetailIndex != highDetailSize) {
+            m_highDetailIndex = createVolume(highDetailSize, m_highDetailIndex, 1,
+                                             m_highDetailData);
+        } else if (m_highDetailShaftIndex != m_mineShaftArray.size()) {
+            m_highDetailShaftIndex = excavateMineShaft(highDetailSize, m_highDetailShaftIndex, 1,
+                                                       m_highDetailData);
+        } else  {
+            m_highDetailRB-&amp;gt;setEnabled(true);
+            QString label = QStringLiteral(&quot;High (%1x%2x%1)&quot;);
+            m_highDetailRB-&amp;gt;setText(label.arg(highDetailSize).arg(highDetailSize / 2));
+            m_timer.stop();
+        }
+    }
+}
+
+void VolumetricModifier::toggleLowDetail(bool enabled)
+{
+    if (enabled &amp;amp;&amp;amp; m_volumeItem) {
+        m_volumeItem-&amp;gt;setTextureData(new QVector&amp;lt;uchar&amp;gt;(*m_lowDetailData));
+        m_volumeItem-&amp;gt;setTextureDimensions(lowDetailSize, lowDetailSize / 2, lowDetailSize);
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::toggleMediumDetail(bool enabled)
+{
+    if (enabled &amp;amp;&amp;amp; m_volumeItem) {
+        m_volumeItem-&amp;gt;setTextureData(new QVector&amp;lt;uchar&amp;gt;(*m_mediumDetailData));
+        m_volumeItem-&amp;gt;setTextureDimensions(mediumDetailSize, mediumDetailSize / 2, mediumDetailSize);
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::toggleHighDetail(bool enabled)
+{
+    if (enabled &amp;amp;&amp;amp; m_volumeItem) {
+        m_volumeItem-&amp;gt;setTextureData(new QVector&amp;lt;uchar&amp;gt;(*m_highDetailData));
+        m_volumeItem-&amp;gt;setTextureDimensions(highDetailSize, highDetailSize / 2, highDetailSize);
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::setFpsMeasurement(bool enabled)
+{
+    m_graph-&amp;gt;setMeasureFps(enabled);
+    if (enabled)
+        m_fpsLabel-&amp;gt;setText(QStringLiteral(&quot;Measuring...&quot;));
+    else
+        m_fpsLabel-&amp;gt;setText(QString());
+}
+
+void VolumetricModifier::setSliceSliders(QSlider *sliderX, QSlider *sliderY, QSlider *sliderZ)
+{
+    m_sliceSliderX = sliderX;
+    m_sliceSliderY = sliderY;
+    m_sliceSliderZ = sliderZ;
+
+    // Set sliders to interesting values
+    m_sliceSliderX-&amp;gt;setValue(715);
+    m_sliceSliderY-&amp;gt;setValue(612);
+    m_sliceSliderZ-&amp;gt;setValue(715);
+}
+
+void VolumetricModifier::changeColorTable(int enabled)
+{
+    if (m_volumeItem) {
+        if (enabled)
+            m_volumeItem-&amp;gt;setColorTable(m_colorTable2);
+        else
+            m_volumeItem-&amp;gt;setColorTable(m_colorTable1);
+
+        m_usingPrimaryTable = !enabled;
+
+        // Rerender image labels
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::setPreserveOpacity(bool enabled)
+{
+
+    if (m_volumeItem) {
+        m_volumeItem-&amp;gt;setPreserveOpacity(enabled);
+
+        // Rerender image labels
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::setTransparentGround(bool enabled)
+{
+    if (m_volumeItem) {
+        int newAlpha = enabled ? terrainTransparency : 255;
+        for (int i = aboveWaterGroundColorsMin; i &amp;lt; underWaterGroundColorsMax; i++) {
+            QRgb oldColor1 = m_colorTable1.at(i);
+            QRgb oldColor2 = m_colorTable2.at(i);
+            m_colorTable1[i] = qRgba(qRed(oldColor1), qGreen(oldColor1), qBlue(oldColor1), newAlpha);
+            m_colorTable2[i] = qRgba(qRed(oldColor2), qGreen(oldColor2), qBlue(oldColor2), newAlpha);
+        }
+        if (m_usingPrimaryTable)
+            m_volumeItem-&amp;gt;setColorTable(m_colorTable1);
+        else
+            m_volumeItem-&amp;gt;setColorTable(m_colorTable2);
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::setUseHighDefShader(bool enabled)
+{
+    if (m_volumeItem) {
+        m_volumeItem-&amp;gt;setUseHighDefShader(enabled);
+    }
+}
+
+void VolumetricModifier::adjustAlphaMultiplier(int value)
+{
+    if (m_volumeItem) {
+        float mult;
+        if (value &amp;gt; 100)
+            mult = float(value - 99) / 2.0f;
+        else
+            mult = float(value) / float(500 - value * 4);
+        m_volumeItem-&amp;gt;setAlphaMultiplier(mult);
+        QString labelFormat = QStringLiteral(&quot;Alpha multiplier: %1&quot;);
+        m_alphaMultiplierLabel-&amp;gt;setText(labelFormat.arg(
+                                            QString::number(m_volumeItem-&amp;gt;alphaMultiplier(), 'f', 3)));
+
+        // Rerender image labels
+        adjustSliceX(m_sliceSliderX-&amp;gt;value());
+        adjustSliceY(m_sliceSliderY-&amp;gt;value());
+        adjustSliceZ(m_sliceSliderZ-&amp;gt;value());
+    }
+}
+
+void VolumetricModifier::toggleAreaAll(bool enabled)
+{
+    if (enabled) {
+        m_graph-&amp;gt;axisX()-&amp;gt;setRange(0.0f, 1000.0f);
+        m_graph-&amp;gt;axisY()-&amp;gt;setRange(-600.0f, 600.0f);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setRange(0.0f, 1000.0f);
+        m_graph-&amp;gt;axisX()-&amp;gt;setSegmentCount(5);
+        m_graph-&amp;gt;axisY()-&amp;gt;setSegmentCount(6);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setSegmentCount(5);
+    }
+}
+
+void VolumetricModifier::toggleAreaMine(bool enabled)
+{
+    if (enabled) {
+        m_graph-&amp;gt;axisX()-&amp;gt;setRange(350.0f, 850.0f);
+        m_graph-&amp;gt;axisY()-&amp;gt;setRange(-500.0f, 100.0f);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setRange(350.0f, 900.0f);
+        m_graph-&amp;gt;axisX()-&amp;gt;setSegmentCount(10);
+        m_graph-&amp;gt;axisY()-&amp;gt;setSegmentCount(6);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setSegmentCount(11);
+    }
+}
+
+void VolumetricModifier::toggleAreaMountain(bool enabled)
+{
+    if (enabled) {
+        m_graph-&amp;gt;axisX()-&amp;gt;setRange(300.0f, 600.0f);
+        m_graph-&amp;gt;axisY()-&amp;gt;setRange(-100.0f, 400.0f);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setRange(300.0f, 600.0f);
+        m_graph-&amp;gt;axisX()-&amp;gt;setSegmentCount(9);
+        m_graph-&amp;gt;axisY()-&amp;gt;setSegmentCount(5);
+        m_graph-&amp;gt;axisZ()-&amp;gt;setSegmentCount(9);
+    }
+}
+
+void VolumetricModifier::setDrawSliceFrames(int enabled)
+{
+    if (m_volumeItem)
+        m_volumeItem-&amp;gt;setDrawSliceFrames(enabled);
+}
+
+void VolumetricModifier::initHeightMap(QString fileName, QVector&amp;lt;uchar&amp;gt; &amp;amp;layerData)
+{
+    QImage heightImage(fileName);
+
+    layerData.resize(layerDataSize * layerDataSize);
+    const uchar *bits = heightImage.bits();
+    int index = 0;
+    QVector&amp;lt;QRgb&amp;gt; colorTable = heightImage.colorTable();
+    for (int i = 0; i &amp;lt; layerDataSize; i++) {
+        for (int j = 0; j &amp;lt; layerDataSize; j++) {
+            layerData[index] = qRed(colorTable.at(bits[index]));
+            index++;
+        }
+    }
+}
+
+int VolumetricModifier::createVolume(int textureSize, int startIndex, int count,
+                                     QVector&amp;lt;uchar&amp;gt; *textureData)
+{
+    // Generate volume from layer data.
+    int index = startIndex * textureSize * textureSize / 2.0f;
+    int endIndex = startIndex + count;
+    if (endIndex &amp;gt; textureSize)
+        endIndex = textureSize;
+    QVector&amp;lt;uchar&amp;gt; magmaHeights(textureSize);
+    QVector&amp;lt;uchar&amp;gt; waterHeights(textureSize);
+    QVector&amp;lt;uchar&amp;gt; groundHeights(textureSize);
+    float multiplier = float(layerDataSize) / float(textureSize);
+    for (int i = startIndex; i &amp;lt; endIndex; i++) {
+        // Generate layer height arrays
+        for (int l = 0; l &amp;lt; textureSize; l++) {
+            int layerIndex = (int(i * multiplier) * layerDataSize + int(l * multiplier));
+            magmaHeights[l] = int(m_magmaLayer.at(layerIndex));
+            waterHeights[l] = int(m_waterLayer.at(layerIndex));
+            groundHeights[l] = int(m_groundLayer.at(layerIndex));
+        }
+        for (int j = 0; j &amp;lt; textureSize / 2; j++) {
+            for (int k = 0; k &amp;lt; textureSize; k++) {
+                int colorIndex;
+                int height((layerDataSize - (j * 2 * multiplier)) / 2);
+                if (height &amp;lt; magmaHeights.at(k)) {
+                    // Magma layer
+                    colorIndex = int((float(height) / heightToColorDiv)
+                                     * float(layerColorThickness)) + magmaColorsMin;
+                } else if (height &amp;lt; groundHeights.at(k) &amp;amp;&amp;amp; height &amp;lt; waterHeights.at(k)) {
+                    // Ground layer below water
+                    colorIndex = int((float(waterHeights.at(k) - height) / heightToColorDiv)
+                                     * float(layerColorThickness)) + underWaterGroundColorsMin;
+                } else if (height &amp;lt; waterHeights.at(k)) {
+                    // Water layer where water goes over ground
+                    colorIndex = int((float(height - magmaHeights.at(k)) / heightToColorDiv)
+                                     * float(layerColorThickness)) + waterColorsMin;
+                } else if (height &amp;lt;= groundHeights.at(k)) {
+                    // Ground above water
+                    colorIndex = int((float(height - waterHeights.at(k)) / heightToColorDiv)
+                                     * float(layerColorThickness)) + aboveWaterGroundColorsMin;
+                } else {
+                    // Rest is air
+                    colorIndex = airColorIndex;
+                }
+
+                (*textureData)[index] = colorIndex;
+                index++;
+            }
+        }
+    }
+    return endIndex;
+}
+
+int VolumetricModifier::excavateMineShaft(int textureSize, int startIndex, int count,
+                                          QVector&amp;lt;uchar&amp;gt; *textureData)
+{
+    int endIndex = startIndex + count;
+    if (endIndex &amp;gt; m_mineShaftArray.size())
+        endIndex = m_mineShaftArray.size();
+    int shaftSize = mineShaftDiameter * textureSize / lowDetailSize;
+    for (int i = startIndex; i &amp;lt; endIndex; i++) {
+        QVector3D shaftStart(m_mineShaftArray.at(i).first);
+        QVector3D shaftEnd(m_mineShaftArray.at(i).second);
+        int shaftLen = (shaftEnd - shaftStart).length() * lowDetailSize;
+        int dataX = shaftStart.x() * textureSize - (shaftSize / 2);
+        int dataY = (shaftStart.y() * textureSize - (shaftSize / 2)) / 2;
+        int dataZ = shaftStart.z() * textureSize - (shaftSize / 2);
+        int dataIndex = dataX + (dataY * textureSize) + dataZ * (textureSize * textureSize / 2);
+        if (shaftStart.x() != shaftEnd.x()) {
+            for (int j = 0; j &amp;lt;= shaftLen; j++) {
+                excavateMineBlock(textureSize, dataIndex, shaftSize, textureData);
+                dataIndex += shaftSize;
+            }
+        } else if (shaftStart.y() != shaftEnd.y()) {
+            shaftLen /= 2; // Vertical shafts are half as long
+            for (int j = 0; j &amp;lt;= shaftLen; j++) {
+                excavateMineBlock(textureSize, dataIndex, shaftSize, textureData);
+                dataIndex += textureSize * shaftSize;
+            }
+        } else {
+            for (int j = 0; j &amp;lt;= shaftLen; j++) {
+                excavateMineBlock(textureSize, dataIndex, shaftSize, textureData);
+                dataIndex += (textureSize * textureSize / 2) * shaftSize;
+            }
+        }
+
+    }
+    return endIndex;
+}
+
+void VolumetricModifier::excavateMineBlock(int textureSize, int dataIndex, int size,
+                                           QVector&amp;lt;uchar&amp;gt; *textureData)
+{
+    for (int k = 0; k &amp;lt; size; k++) {
+        int curIndex = dataIndex + (k * textureSize * textureSize / 2);
+        for (int l = 0; l &amp;lt; size; l++) {
+            curIndex = dataIndex + (k * textureSize * textureSize / 2)
+                    + (l * textureSize);
+            for (int m = 0; m &amp;lt; size; m++) {
+                if (textureData-&amp;gt;at(curIndex) != airColorIndex)
+                    (*textureData)[curIndex] = mineShaftColorIndex;
+                curIndex++;
+            }
+
+        }
+    }
+}
+
+void VolumetricModifier::handleSlicingChanges()
+{
+    if (m_volumeItem) {
+        if (m_slicingX || m_slicingY || m_slicingZ) {
+            // Only show slices of selected dimensions
+            m_volumeItem-&amp;gt;setDrawSlices(true);
+            m_volumeItem-&amp;gt;setSliceIndexX(m_slicingX ? m_sliceIndexX : -1);
+            m_volumeItem-&amp;gt;setSliceIndexY(m_slicingY ? m_sliceIndexY : -1);
+            m_volumeItem-&amp;gt;setSliceIndexZ(m_slicingZ ? m_sliceIndexZ : -1);
+        } else {
+            // Show slice frames for all dimenstions when not actually slicing
+            m_volumeItem-&amp;gt;setDrawSlices(false);
+            m_volumeItem-&amp;gt;setSliceIndexX(m_sliceIndexX);
+            m_volumeItem-&amp;gt;setSliceIndexY(m_sliceIndexY);
+            m_volumeItem-&amp;gt;setSliceIndexZ(m_sliceIndexZ);
+        }
+    }
+}
+
+void VolumetricModifier::initMineShaftArray()
+{
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.1f, 0.7f),
+                                                    QVector3D(0.7f, 0.8f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.7f, 0.5f),
+                                                    QVector3D(0.7f, 0.7f, 0.7f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.4f, 0.7f, 0.7f),
+                                                    QVector3D(0.7f, 0.7f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.4f, 0.7f, 0.7f),
+                                                    QVector3D(0.4f, 0.7f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.45f, 0.7f, 0.7f),
+                                                    QVector3D(0.45f, 0.7f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.5f, 0.7f, 0.7f),
+                                                    QVector3D(0.5f, 0.7f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.55f, 0.7f, 0.7f),
+                                                    QVector3D(0.55f, 0.7f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.7f),
+                                                    QVector3D(0.6f, 0.7f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.65f, 0.7f, 0.7f),
+                                                    QVector3D(0.65f, 0.7f, 0.8f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.5f, 0.6f, 0.7f),
+                                                    QVector3D(0.7f, 0.6f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.5f, 0.6f, 0.7f),
+                                                    QVector3D(0.5f, 0.6f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.55f, 0.6f, 0.7f),
+                                                    QVector3D(0.55f, 0.6f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.7f),
+                                                    QVector3D(0.6f, 0.6f, 0.8f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.65f, 0.6f, 0.7f),
+                                                    QVector3D(0.65f, 0.6f, 0.8f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.6f, 0.4f),
+                                                    QVector3D(0.7f, 0.6f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.45f),
+                                                    QVector3D(0.8f, 0.6f, 0.45f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.5f),
+                                                    QVector3D(0.8f, 0.6f, 0.5f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.55f),
+                                                    QVector3D(0.8f, 0.6f, 0.55f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.6f),
+                                                    QVector3D(0.8f, 0.6f, 0.6f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.65f),
+                                                    QVector3D(0.8f, 0.6f, 0.65f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.6f, 0.7f),
+                                                    QVector3D(0.8f, 0.6f, 0.7f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.7f, 0.4f),
+                                                    QVector3D(0.7f, 0.7f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.45f),
+                                                    QVector3D(0.8f, 0.7f, 0.45f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.5f),
+                                                    QVector3D(0.8f, 0.7f, 0.5f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.55f),
+                                                    QVector3D(0.8f, 0.7f, 0.55f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.6f),
+                                                    QVector3D(0.8f, 0.7f, 0.6f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.65f),
+                                                    QVector3D(0.8f, 0.7f, 0.65f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.7f, 0.7f),
+                                                    QVector3D(0.8f, 0.7f, 0.7f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.8f, 0.5f),
+                                                    QVector3D(0.7f, 0.8f, 0.7f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.8f, 0.55f),
+                                                    QVector3D(0.8f, 0.8f, 0.55f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.8f, 0.6f),
+                                                    QVector3D(0.8f, 0.8f, 0.6f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.8f, 0.65f),
+                                                    QVector3D(0.8f, 0.8f, 0.65f));
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.6f, 0.8f, 0.7f),
+                                                    QVector3D(0.8f, 0.8f, 0.7f));
+
+    m_mineShaftArray &amp;lt;&amp;lt; QPair&amp;lt;QVector3D, QVector3D&amp;gt;(QVector3D(0.7f, 0.1f, 0.4f),
+                                                    QVector3D(0.7f, 0.7f, 0.4f));
+}
+
+</db:programlisting>
+</db:article>
