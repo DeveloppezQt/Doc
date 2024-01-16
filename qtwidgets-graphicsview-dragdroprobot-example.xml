@@ -1,0 +1,407 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Drag and Drop Robot Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to drag and drop items in a graphics view.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Drag and Drop Robot example shows how to implement Drag and Drop in a <db:link xlink:href="qgraphicsitem.xml">QGraphicsItem</db:link> subclass, as well as how to animate items using Qt's <db:link xlink:href="animation.xml">Animation Framework</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/dragdroprobot-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Graphics View provides the <db:link xlink:href="qgraphicsscene.xml">QGraphicsScene</db:link> class for managing and interacting with a large number of custom-made 2D graphical items derived from the <db:link xlink:href="qgraphicsitem.xml">QGraphicsItem</db:link> class, and a <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> widget for visualizing the items, with support for zooming and rotation.</db:para>
+<db:para>This example consists of a Robot class, a ColorItem class, and a main function: the Robot class describes a simple robot consisting of several RobotPart derived limbs, including RobotHead and RobotLimb, the ColorItem class provides a draggable colored ellipse, and the main() function provides the main application window.</db:para>
+<db:para>We will first review the Robot class to see how to assemble the different parts so that they can be individually rotated and animated using <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link>, and we will then review the ColorItem class to demonstrate how to implement Drag and Drop between items. Finally we will review the main() function to see how we can put all the pieces together, to form the final application.</db:para>
+<db:section xml:id="robot-class-definition">
+<db:title>Robot Class Definition</db:title>
+<db:para>The robot consists of three main classes: the RobotHead, the RobotTorso, and the RobotLimb, which is used for the upper and lower arms and legs. All parts derive from the RobotPart class, which in turn inherits QGraphicsObject. The Robot class itself has no visual appearance and serves only as a root node for the robot.</db:para>
+<db:para>Let's start with the RobotPart class declaration.</db:para>
+<db:programlisting language="cpp">class RobotPart : public QGraphicsObject
+{
+public:
+    RobotPart(QGraphicsItem *parent = nullptr);
+
+protected:
+    void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
+    void dragLeaveEvent(QGraphicsSceneDragDropEvent *event) override;
+    void dropEvent(QGraphicsSceneDragDropEvent *event) override;
+
+    QColor color = Qt::lightGray;
+    bool dragOver = false;
+};
+</db:programlisting>
+<db:para>This base class inherits <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link>. <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link> provides signals and slots through inheriting <db:link xlink:href="qobject.xml">QObject</db:link>, and it also declares <db:link xlink:href="qgraphicsitem.xml">QGraphicsItem</db:link>'s properties using <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link>, which makes the properties accessible for <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link>.</db:para>
+<db:para>RobotPart also implements the three most important event handlers for accepting drop events: <db:link xlink:href="qgraphicsitem.xml#dragEnterEvent">dragEnterEvent</db:link>(), <db:link xlink:href="qgraphicsitem.xml#dragLeaveEvent">dragLeaveEvent</db:link>(), and <db:link xlink:href="qgraphicsitem.xml#dropEvent">dropEvent</db:link>().</db:para>
+<db:para>The color is stored as a member variable, along with the dragOver variable, which we will use later to indicate visually that the limb can accept colors that are is dragged onto it.</db:para>
+<db:programlisting language="cpp">RobotPart::RobotPart(QGraphicsItem *parent)
+    : QGraphicsObject(parent), color(Qt::lightGray)
+{
+    setAcceptDrops(true);
+}
+</db:programlisting>
+<db:para>RobotPart's constructor initializes the dragOver member and sets the color to <db:link xlink:href="qt.xml#GlobalColor-enum">Qt::lightGray</db:link>. In the constructor body we enable support for accepting drop events by calling <db:link xlink:href="qgraphicsitem.xml#setAcceptDrops">setAcceptDrops</db:link>(true).</db:para>
+<db:para>The rest of this class's implementation is to support Drag and Drop.</db:para>
+<db:programlisting language="cpp">void RobotPart::dragEnterEvent(QGraphicsSceneDragDropEvent *event)
+{
+    if (event-&amp;gt;mimeData()-&amp;gt;hasColor()) {
+        event-&amp;gt;setAccepted(true);
+        dragOver = true;
+        update();
+    } else {
+        event-&amp;gt;setAccepted(false);
+    }
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#dragEnterEvent">dragEnterEvent</db:link>() handler is called when a Drag and Drop element is dragged into the robot part's area.</db:para>
+<db:para>The handler implementation determines whether or not this item as a whole can accept the mime data assiciated with the incoming drag object. RobotPart provides a base behavior for all parts that accepts color drops. So if the incoming drag object contains a color, the event is accepted, we set dragOver to true and call update() to help provide positive visual feedback to the user; otherwise the event is ignored, which in turn allows the event to propagate to parent elements.</db:para>
+<db:programlisting language="cpp">void RobotPart::dragLeaveEvent(QGraphicsSceneDragDropEvent *event)
+{
+    Q_UNUSED(event);
+    dragOver = false;
+    update();
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#dragLeaveEvent">dragLeaveEvent</db:link>() handler is called when a Drag and Drop element is dragged away from the robot part's area. Our implementation simply resets <db:emphasis>dragOver</db:emphasis> to false and calls <db:link xlink:href="qgraphicsitem.xml#update">update</db:link>() to help provide visual feedback that the drag has left this item.</db:para>
+<db:programlisting language="cpp">void RobotPart::dropEvent(QGraphicsSceneDragDropEvent *event)
+{
+    dragOver = false;
+    if (event-&amp;gt;mimeData()-&amp;gt;hasColor())
+        color = qvariant_cast&amp;lt;QColor&amp;gt;(event-&amp;gt;mimeData()-&amp;gt;colorData());
+    update();
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#dropEvent">dropEvent</db:link>() handler is called when a Drag and Drop element is dropped onto an item (i.e., when the mouse button is released over the item while dragging).</db:para>
+<db:para>We reset dragOver to false, assign the item's new color, and call <db:link xlink:href="qgraphicsitem.xml#update">update</db:link>().</db:para>
+<db:para>The declaration and implementation of RobotHead, RobotTorso, and RobotLimb are practically identical. We will review RobotHead in detail, as this class has one minor difference, and leave the other classes as an exercise for the reader.</db:para>
+<db:programlisting language="cpp">class RobotHead : public RobotPart
+{
+public:
+    RobotHead(QGraphicsItem *parent = nullptr);
+
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
+
+protected:
+    void dragEnterEvent(QGraphicsSceneDragDropEvent *event) override;
+    void dropEvent(QGraphicsSceneDragDropEvent *event) override;
+
+private:
+    QPixmap pixmap;
+};
+</db:programlisting>
+<db:para>The RobotHead class inherits RobotPart and provides the necessary implementations of <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() and <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>(). It also reimplements <db:link xlink:href="qgraphicsitem.xml#dragEnterEvent">dragEnterEvent</db:link>() and dropEvent() to provide special handling of image drops.</db:para>
+<db:para>The class contains a private pixmap member that we can use to implement support for accepting image drops.</db:para>
+<db:programlisting language="cpp">RobotHead::RobotHead(QGraphicsItem *parent)
+    : RobotPart(parent)
+{
+}
+</db:programlisting>
+<db:para>RobotHead has a rather plain constructor that simply forwards to RobotPart's constructor.</db:para>
+<db:programlisting language="cpp">QRectF RobotHead::boundingRect() const
+{
+    return QRectF(-15, -50, 30, 50);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() reimplementation returns the extents for the head. Because we want the center of rotation to be the bottom center of the item, we have chosen a bounding rectangle that starts at (-15, -50) and extends to 30 units wide and 50 units tall. When rotating the head, the &quot;neck&quot; will stay still while the top of the head tilts from side to side.</db:para>
+<db:programlisting language="cpp">void RobotHead::paint(QPainter *painter,
+           const QStyleOptionGraphicsItem *option, QWidget *widget)
+{
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+    if (pixmap.isNull()) {
+        painter-&amp;gt;setBrush(dragOver ? color.lighter(130) : color);
+        painter-&amp;gt;drawRoundedRect(-10, -30, 20, 30, 25, 25, Qt::RelativeSize);
+        painter-&amp;gt;setBrush(Qt::white);
+        painter-&amp;gt;drawEllipse(-7, -3 - 20, 7, 7);
+        painter-&amp;gt;drawEllipse(0, -3 - 20, 7, 7);
+        painter-&amp;gt;setBrush(Qt::black);
+        painter-&amp;gt;drawEllipse(-5, -1 - 20, 2, 2);
+        painter-&amp;gt;drawEllipse(2, -1 - 20, 2, 2);
+        painter-&amp;gt;setPen(QPen(Qt::black, 2));
+        painter-&amp;gt;setBrush(Qt::NoBrush);
+        painter-&amp;gt;drawArc(-6, -2 - 20, 12, 15, 190 * 16, 160 * 16);
+    } else {
+        painter-&amp;gt;scale(.2272, .2824);
+        painter-&amp;gt;drawPixmap(QPointF(-15 * 4.4, -50 * 3.54), pixmap);
+    }
+}
+</db:programlisting>
+<db:para>In <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() we draw the actual head. The implementation is split into two sections; if an image has been dropped onto the head, we draw the image, otherwise we draw a round rectangular robot head with simple vector graphics.</db:para>
+<db:para>For performance reasons, depending on the complexity of what is painted, it can often be faster to draw the head as an image rather than using a sequence of vector operations.</db:para>
+<db:programlisting language="cpp">void RobotHead::dragEnterEvent(QGraphicsSceneDragDropEvent *event)
+{
+    if (event-&amp;gt;mimeData()-&amp;gt;hasImage()) {
+        event-&amp;gt;setAccepted(true);
+        dragOver = true;
+        update();
+    } else {
+        RobotPart::dragEnterEvent(event);
+    }
+}
+</db:programlisting>
+<db:para>The robot head can accept image drops. In order to support this, its reimplementation of <db:link xlink:href="qgraphicsitem.xml#dragEnterEvent">dragEnterEvent</db:link>() checks if the drag object contains image data, and if it does, then the event is accepted. Otherwise we fall back to the base RobotPart implementation.</db:para>
+<db:programlisting language="cpp">void RobotHead::dropEvent(QGraphicsSceneDragDropEvent *event)
+{
+    if (event-&amp;gt;mimeData()-&amp;gt;hasImage()) {
+        dragOver = false;
+        pixmap = qvariant_cast&amp;lt;QPixmap&amp;gt;(event-&amp;gt;mimeData()-&amp;gt;imageData());
+        update();
+    } else {
+        RobotPart::dropEvent(event);
+    }
+}
+</db:programlisting>
+<db:para>To follow up on image support, we must also implement <db:link xlink:href="qgraphicsitem.xml#dropEvent">dropEvent</db:link>(). We check if the drag object contains image data, and if it does, we store this data as a member pixmap and call <db:link xlink:href="qgraphicsitem.xml#update">update</db:link>(). This pixmap is used inside the <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() implementation that we reviewed before.</db:para>
+<db:para>RobotTorso and RobotLimb are similar to RobotHead, so let's skip directly to the Robot class.</db:para>
+<db:programlisting language="cpp">class Robot : public RobotPart
+{
+public:
+    Robot(QGraphicsItem *parent = nullptr);
+
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget = nullptr) override;
+};
+</db:programlisting>
+<db:para>The Robot class also inherits RobotPart, and like the other parts it also implements <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() and <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>(). It provides a rather special implementation, though:</db:para>
+<db:programlisting language="cpp">QRectF Robot::boundingRect() const
+{
+    return QRectF();
+}
+
+void Robot::paint(QPainter *painter,
+                  const QStyleOptionGraphicsItem *option, QWidget *widget)
+{
+    Q_UNUSED(painter);
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+}
+</db:programlisting>
+<db:para>Because the Robot class is only used as a base node for the rest of the robot, it has no visual representation. Its <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() implementation can therefore return a null <db:link xlink:href="qrectf.xml">QRectF</db:link>, and its paint() function does nothing.</db:para>
+<db:programlisting language="cpp">Robot::Robot(QGraphicsItem *parent)
+    : RobotPart(parent)
+{
+    setFlag(ItemHasNoContents);
+
+    QGraphicsObject *torsoItem = new RobotTorso(this);
+    QGraphicsObject *headItem = new RobotHead(torsoItem);
+    QGraphicsObject *upperLeftArmItem = new RobotLimb(torsoItem);
+    QGraphicsObject *lowerLeftArmItem = new RobotLimb(upperLeftArmItem);
+    QGraphicsObject *upperRightArmItem = new RobotLimb(torsoItem);
+    QGraphicsObject *lowerRightArmItem = new RobotLimb(upperRightArmItem);
+    QGraphicsObject *upperRightLegItem = new RobotLimb(torsoItem);
+    QGraphicsObject *lowerRightLegItem = new RobotLimb(upperRightLegItem);
+    QGraphicsObject *upperLeftLegItem = new RobotLimb(torsoItem);
+    QGraphicsObject *lowerLeftLegItem = new RobotLimb(upperLeftLegItem);
+</db:programlisting>
+<db:para>The constructor starts by setting the flag <db:link xlink:href="qgraphicsitem.xml#GraphicsItemFlag-enum">ItemHasNoContents</db:link>, which is a minor optimization for items that have no visual appearance.</db:para>
+<db:para>We then construct all the robot parts (head, torso, and upper/lower arms and legs). The stacking order is very important, and we use the parent-child hierarchy to ensure the elements rotate and move properly. We construct the torso first, as this is the root element. We then construct the head and pass the torso to HeadItem's constructor. This will make the head a child of the torso; if you rotate the torso, the head will follow. The same pattern is applied to the rest of the limbs.</db:para>
+<db:programlisting language="cpp">    headItem-&amp;gt;setPos(0, -18);
+    upperLeftArmItem-&amp;gt;setPos(-15, -10);
+    lowerLeftArmItem-&amp;gt;setPos(30, 0);
+    upperRightArmItem-&amp;gt;setPos(15, -10);
+    lowerRightArmItem-&amp;gt;setPos(30, 0);
+    upperRightLegItem-&amp;gt;setPos(10, 32);
+    lowerRightLegItem-&amp;gt;setPos(30, 0);
+    upperLeftLegItem-&amp;gt;setPos(-10, 32);
+    lowerLeftLegItem-&amp;gt;setPos(30, 0);
+</db:programlisting>
+<db:para>Each robot part is carefully positioned. For example, the upper left arm is moved precisely to the top-left area of the torso, and the upper right arm is moved to the top-right area.</db:para>
+<db:programlisting language="cpp">    QParallelAnimationGroup *animation = new QParallelAnimationGroup(this);
+
+    QPropertyAnimation *headAnimation = new QPropertyAnimation(headItem, &quot;rotation&quot;);
+    headAnimation-&amp;gt;setStartValue(20);
+    headAnimation-&amp;gt;setEndValue(-20);
+    QPropertyAnimation *headScaleAnimation = new QPropertyAnimation(headItem, &quot;scale&quot;);
+    headScaleAnimation-&amp;gt;setEndValue(1.1);
+    animation-&amp;gt;addAnimation(headAnimation);
+    animation-&amp;gt;addAnimation(headScaleAnimation);
+</db:programlisting>
+<db:para>The next section creates all animation objects. This snippet shows the two animations that operate on the head's scale and rotation. The two <db:link xlink:href="qpropertyanimation.xml">QPropertyAnimation</db:link> instances simply set the object, property, and respective start and end values.</db:para>
+<db:para>All animations are controlled by one top-level parallel animation group. The scale and rotation animations are added to this group.</db:para>
+<db:para>The rest of the animations are defined in a similar way.</db:para>
+<db:programlisting language="cpp">    for (int i = 0; i &amp;lt; animation-&amp;gt;animationCount(); ++i) {
+        QPropertyAnimation *anim = qobject_cast&amp;lt;QPropertyAnimation *&amp;gt;(animation-&amp;gt;animationAt(i));
+        anim-&amp;gt;setEasingCurve(QEasingCurve::SineCurve);
+        anim-&amp;gt;setDuration(2000);
+    }
+
+    animation-&amp;gt;setLoopCount(-1);
+    animation-&amp;gt;start();
+</db:programlisting>
+<db:para>Finally we set an easing curve and duration on each animation, ensure the toplevel animation group loops forever, and start the toplevel animation.</db:para>
+</db:section>
+<db:section xml:id="coloritem-class-definition">
+<db:title>ColorItem Class Definition</db:title>
+<db:para>The ColorItem class represents a circular item that can be pressed to drag colors onto robot parts.</db:para>
+<db:programlisting language="cpp">class ColorItem : public QGraphicsItem
+{
+public:
+    ColorItem();
+
+    QRectF boundingRect() const override;
+    void paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget) override;
+
+protected:
+    void mousePressEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseMoveEvent(QGraphicsSceneMouseEvent *event) override;
+    void mouseReleaseEvent(QGraphicsSceneMouseEvent *event) override;
+
+private:
+    QColor color;
+};
+</db:programlisting>
+<db:para>This class is very simple. It does not use animations, and has no need for properties nor signals and slots, so to save resources, it's most natural that it inherits <db:link xlink:href="qgraphicsitem.xml">QGraphicsItem</db:link> (as opposed to <db:link xlink:href="qgraphicsobject.xml">QGraphicsObject</db:link>).</db:para>
+<db:para>It declares the mandatory <db:link xlink:href="qgraphicsitem.xml#boundingRect">boundingRect</db:link>() and <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() functions, and adds reimplementations of <db:link xlink:href="qgraphicsitem.xml#mousePressEvent">mousePressEvent</db:link>(), <db:link xlink:href="qgraphicsitem.xml#mouseMoveEvent">mouseMoveEvent</db:link>(), and <db:link xlink:href="qgraphicsitem.xml#mouseReleaseEvent">mouseReleaseEvent</db:link>(). It contains a single private color member.</db:para>
+<db:para>Let's take a look at its implementation.</db:para>
+<db:programlisting language="cpp">ColorItem::ColorItem()
+    : color(QRandomGenerator::global()-&amp;gt;bounded(256), QRandomGenerator::global()-&amp;gt;bounded(256), QRandomGenerator::global()-&amp;gt;bounded(256))
+{
+    setToolTip(QString(&quot;QColor(%1, %2, %3)\n%4&quot;)
+              .arg(color.red()).arg(color.green()).arg(color.blue())
+              .arg(&quot;Click and drag this color onto the robot!&quot;));
+    setCursor(Qt::OpenHandCursor);
+    setAcceptedMouseButtons(Qt::LeftButton);
+}
+</db:programlisting>
+<db:para>ColorItem's constructor assigns an opaque random color to its color member by making use of <db:link xlink:href="qrandomgenerator.xml">QRandomGenerator</db:link>. For improved usability, it assigns a tooltip that provides a useful hint to the user, and it also sets a suitable cursor. This ensures that the cursor will chance to <db:link xlink:href="qt.xml#CursorShape-enum">Qt::OpenHandCursor</db:link> when the mouse pointer hovers over the item.</db:para>
+<db:para>Finally, we call <db:link xlink:href="qgraphicsitem.xml#setAcceptedMouseButtons">setAcceptedMouseButtons</db:link>() to ensure that this item can only process <db:link xlink:href="qt.xml#MouseButton-enum">Qt::LeftButton</db:link>. This simplifies the mouse event handlers greatly, as we can always assume that only the left mouse button is pressed and released.</db:para>
+<db:programlisting language="cpp">QRectF ColorItem::boundingRect() const
+{
+    return QRectF(-15.5, -15.5, 34, 34);
+}
+</db:programlisting>
+<db:para>The item's bounding rect is a fixed 30x30 units centered around the item's origin (0, 0), and adjusted by 0.5 units in all directions to allow a scalable pen to draw its outline. For a final visual touch the bounds also compensate with a few units down and to the right to make room for a simple dropshadow.</db:para>
+<db:programlisting language="cpp">void ColorItem::paint(QPainter *painter, const QStyleOptionGraphicsItem *option, QWidget *widget)
+{
+    Q_UNUSED(option);
+    Q_UNUSED(widget);
+    painter-&amp;gt;setPen(Qt::NoPen);
+    painter-&amp;gt;setBrush(Qt::darkGray);
+    painter-&amp;gt;drawEllipse(-12, -12, 30, 30);
+    painter-&amp;gt;setPen(QPen(Qt::black, 1));
+    painter-&amp;gt;setBrush(QBrush(color));
+    painter-&amp;gt;drawEllipse(-15, -15, 30, 30);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#paint">paint</db:link>() implementation draws an ellipse with a 1-unit black outline, a plain color fill, and a dark gray dropshadow.</db:para>
+<db:programlisting language="cpp">void ColorItem::mousePressEvent(QGraphicsSceneMouseEvent *)
+{
+    setCursor(Qt::ClosedHandCursor);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#mousePressEvent">mousePressEvent</db:link>() handler is called when you press the mouse button inside the item's area. Our implementation simply sets the cursor to <db:link xlink:href="qt.xml#CursorShape-enum">Qt::ClosedHandCursor</db:link>.</db:para>
+<db:programlisting language="cpp">void ColorItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *)
+{
+    setCursor(Qt::OpenHandCursor);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#mouseReleaseEvent">mouseReleaseEvent</db:link>() handler is called when you release the mouse button after having pressed it inside an item's area. Our implementation sets the cursor back to <db:link xlink:href="qt.xml#CursorShape-enum">Qt::OpenHandCursor</db:link>. The mouse press and release event handlers together provide useful visual feedback to the user: when you move the mouse pointer over a CircleItem, the cursor changes to an open hand. Pressing the item will show a closed hand cursor. Releasing will restore to an open hand cursor again.</db:para>
+<db:programlisting language="cpp">void ColorItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
+{
+    if (QLineF(event-&amp;gt;screenPos(), event-&amp;gt;buttonDownScreenPos(Qt::LeftButton))
+        .length() &amp;lt; QApplication::startDragDistance()) {
+        return;
+    }
+
+    QDrag *drag = new QDrag(event-&amp;gt;widget());
+    QMimeData *mime = new QMimeData;
+    drag-&amp;gt;setMimeData(mime);
+</db:programlisting>
+<db:para>The <db:link xlink:href="qgraphicsitem.xml#mouseMoveEvent">mouseMoveEvent</db:link>() handler is called when you move the mouse around after pressing the mouse button inside the ColorItem's area. This implementation provides the most important piece of logic for CircleItem: the code that starts and manages drags.</db:para>
+<db:para>The implementation starts by checking if the mouse has been dragged far enough to eliminate mouse jitter noise. We only want to start a drag if the mouse has been dragged farther than the application start drag distance.</db:para>
+<db:para>Continuing, we create a <db:link xlink:href="qdrag.xml">QDrag</db:link> object, passing the event <db:link xlink:href="qgraphicssceneevent.xml#widget">widget</db:link> (i.e., the <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> viewport) to its constructor. Qt will ensure that this object is deleted at the right time. We also create a <db:link xlink:href="qmimedata.xml">QMimeData</db:link> instance that can contain our color or image data, and assign this to the drag object.</db:para>
+<db:programlisting language="cpp">    static int n = 0;
+    if (n++ &amp;gt; 2 &amp;amp;&amp;amp; QRandomGenerator::global()-&amp;gt;bounded(3) == 0) {
+        QImage image(&quot;:/images/head.png&quot;);
+        mime-&amp;gt;setImageData(image);
+
+        drag-&amp;gt;setPixmap(QPixmap::fromImage(image).scaled(30, 40));
+        drag-&amp;gt;setHotSpot(QPoint(15, 30));
+</db:programlisting>
+<db:para>This snippet has a somewhat random outcome: once in a while, a special image is assigned to the drag object's mime data. The pixmap is also assiged as the drag object's pixmap. This will ensure that you can see the image that is being dragged as a pixmap under the mouse cursor.</db:para>
+<db:programlisting language="cpp">    } else {
+        mime-&amp;gt;setColorData(color);
+        mime-&amp;gt;setText(QString(&quot;#%1%2%3&quot;)
+                      .arg(color.red(), 2, 16, QLatin1Char('0'))
+                      .arg(color.green(), 2, 16, QLatin1Char('0'))
+                      .arg(color.blue(), 2, 16, QLatin1Char('0')));
+
+        QPixmap pixmap(34, 34);
+        pixmap.fill(Qt::white);
+
+        QPainter painter(&amp;amp;pixmap);
+        painter.translate(15, 15);
+        painter.setRenderHint(QPainter::Antialiasing);
+        paint(&amp;amp;painter, nullptr, nullptr);
+        painter.end();
+
+        pixmap.setMask(pixmap.createHeuristicMask());
+
+        drag-&amp;gt;setPixmap(pixmap);
+        drag-&amp;gt;setHotSpot(QPoint(15, 20));
+    }
+</db:programlisting>
+<db:para>Otherwise, and this is the most common outcome, a simple color is assigned to the drag object's mime data. We render this ColorItem into a new pixmap to give the user visual feedback that the color is being &quot;dragged&quot;.</db:para>
+<db:programlisting language="cpp">    drag-&amp;gt;exec();
+    setCursor(Qt::OpenHandCursor);
+}
+</db:programlisting>
+<db:para>Finally we execute the drag. <db:link xlink:href="qdrag.xml#exec">QDrag::exec</db:link>() will reenter the event loop, and only exit if the drag has either been dropped, or canceled. In any case we reset the cursor to <db:link xlink:href="qt.xml#CursorShape-enum">Qt::OpenHandCursor</db:link>.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The main() Function</db:title>
+<db:para>Now that the Robot and ColorItem classes are complete, we can put all the pieces together inside the main() function.</db:para>
+<db:programlisting language="cpp">int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+</db:programlisting>
+<db:para>We start off by constructing <db:link xlink:href="qapplication.xml">QApplication</db:link>, and initializing the random number generator. This ensures that the color items have different colors every time the application starts.</db:para>
+<db:programlisting language="cpp">    QGraphicsScene scene(-200, -200, 400, 400);
+
+    for (int i = 0; i &amp;lt; 10; ++i) {
+        ColorItem *item = new ColorItem;
+        item-&amp;gt;setPos(::sin((i * 6.28) / 10.0) * 150,
+                     ::cos((i * 6.28) / 10.0) * 150);
+
+        scene.addItem(item);
+    }
+
+    Robot *robot = new Robot;
+    robot-&amp;gt;setTransform(QTransform::fromScale(1.2, 1.2), true);
+    robot-&amp;gt;setPos(0, -20);
+    scene.addItem(robot);
+</db:programlisting>
+<db:para>We construct a fixed size scene, and create 10 ColorItem instances arranged in a circle. Each item is added to the scene.</db:para>
+<db:para>In the center of this circle we create one Robot instance. The robot is scaled and moved up a few units. It is then added to the scene.</db:para>
+<db:programlisting language="cpp">    GraphicsView view(&amp;amp;scene);
+    view.setRenderHint(QPainter::Antialiasing);
+    view.setViewportUpdateMode(QGraphicsView::BoundingRectViewportUpdate);
+    view.setBackgroundBrush(QColor(230, 200, 167));
+    view.setWindowTitle(&quot;Drag and Drop Robot&quot;);
+    view.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>Finally we create a <db:link xlink:href="qgraphicsview.xml">QGraphicsView</db:link> window, and assign the scene to it.</db:para>
+<db:para>For increased visual quality, we enable antialiasing. We also choose to use bounding rectangle updates to simplify visual update handling. The view is given a fixed sand-colored background, and a window title.</db:para>
+<db:para>We then show the view. The animations start immediately after control enters the event loop.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/graphicsview/dragdroprobot?h=6.3">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

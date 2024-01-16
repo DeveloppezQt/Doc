@@ -1,0 +1,711 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Performance Considerations And Suggestions</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Discussion of performance-related tradeoffs and best-practices.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="timing-considerations">
+<db:title>Timing Considerations</db:title>
+<db:para>As an application developer, you must strive to allow the rendering engine to achieve a consistent 60 frames-per-second refresh rate. 60 FPS means that there is approximately 16 milliseconds between each frame in which processing can be done, which includes the processing required to upload the draw primitives to the graphics hardware.</db:para>
+<db:para>In practice, this means that the application developer should:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>use asynchronous, event-driven programming wherever possible</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>use worker threads to do significant processing</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>never manually spin the event loop</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>never spend more than a couple of milliseconds per frame within blocking functions</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Failure to do so will result in skipped frames, which has a drastic effect on the user experience.</db:para>
+<db:note>
+<db:para>A pattern which is tempting, but should <db:emphasis>never</db:emphasis> be used, is creating your own <db:link xlink:href="qeventloop.xml">QEventLoop</db:link> or calling <db:link xlink:href="qcoreapplication.xml#processEvents">QCoreApplication::processEvents</db:link>() in order to avoid blocking within a C++ code block invoked from QML. This is dangerous, because when an event loop is entered in a signal handler or binding, the QML engine continues to run other bindings, animations, transitions, etc. Those bindings can then cause side effects which, for example, destroy the hierarchy containing your event loop.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="profiling">
+<db:title>Profiling</db:title>
+<db:para>The most important tip is: use the QML profiler included with Qt Creator. Knowing where time is spent in an application will allow you to focus on problem areas which actually exist, rather than problem areas which potentially exist. See the Qt Creator manual for more information on how to use the QML profiling tool.</db:para>
+<db:para>Determining which bindings are being run the most often, or which functions your application is spending the most time in, will allow you to decide whether you need to optimize the problem areas, or redesign some implementation details of your application so that the performance is improved. Attempting to optimize code without profiling is likely to result in very minor rather than significant performance improvements.</db:para>
+</db:section>
+<db:section xml:id="javascript-code">
+<db:title>JavaScript Code</db:title>
+<db:para>Most QML applications will have a large amount of JavaScript code in them, in the form of dynamic functions, signal handlers, and property binding expressions. This is generally not a problem. Thanks to some optimizations in the QML engine, such as those done to the bindings compiler, it can (in some use-cases) be faster than calling a C++ function. However, care must be taken to ensure that unnecessary processing isn't triggered accidentally.</db:para>
+<db:section xml:id="type-conversion">
+<db:title>Type-Conversion</db:title>
+<db:para>One major cost of using JavaScript is that in most cases when a property from a QML type is accessed, a JavaScript object with an external resource containing the underlying C++ data (or a reference to it) is created. In most cases, this is fairly inexpensive, but in others it can be quite expensive. One example of where it is expensive is assigning a C++ <db:link xlink:href="qvariant.xml#QVariantMap-typedef">QVariantMap</db:link> <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> to a QML &quot;variant&quot; property. Lists can also be expensive, although sequences of specific types (<db:link xlink:href="qlist.xml">QList</db:link> of int, qreal, bool, <db:link xlink:href="qstring.xml">QString</db:link>, and <db:link xlink:href="qurl.xml">QUrl</db:link>) should be inexpensive; other list types involve an expensive conversion cost (creating a new JavaScript Array, and adding new types one by one, with per-type conversion from C++ type instance to JavaScript value).</db:para>
+<db:para>Converting between some basic property types (such as &quot;string&quot; and &quot;url&quot; properties) can also be expensive. Using the closest matching property type will avoid unnecessary conversion.</db:para>
+<db:para>If you must expose a <db:link xlink:href="qvariant.xml#QVariantMap-typedef">QVariantMap</db:link> to QML, use a &quot;var&quot; property rather than a &quot;variant&quot; property. In general, &quot;property var&quot; should be considered to be superior to &quot;property variant&quot; for every use-case from <db:link xlink:href="qtquick-module.xml">QtQuick</db:link> 2.0 and newer (note that &quot;property variant&quot; is marked as obsolete), as it allows a true JavaScript reference to be stored (which can reduce the number of conversions required in certain expressions).</db:para>
+</db:section>
+<db:section xml:id="resolving-properties">
+<db:title>Resolving Properties</db:title>
+<db:para>Property resolution takes time. While in some cases the result of a lookup can be cached and reused, it is always best to avoid doing unnecessary work altogether, if possible.</db:para>
+<db:para>In the following example, we have a block of code which is run often (in this case, it is the contents of an explicit loop; but it could be a commonly-evaluated binding expression, for example) and in it, we resolve the object with the &quot;rect&quot; id and its &quot;color&quot; property multiple times:</db:para>
+<db:programlisting language="qml">// bad.qml
+import QtQuick
+
+Item {
+    width: 400
+    height: 200
+    Rectangle {
+        id: rect
+        anchors.fill: parent
+        color: &quot;blue&quot;
+    }
+
+    function printValue(which, value) {
+        console.log(which + &quot; = &quot; + value);
+    }
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        for (var i = 0; i &amp;lt; 1000; ++i) {
+            printValue(&quot;red&quot;, rect.color.r);
+            printValue(&quot;green&quot;, rect.color.g);
+            printValue(&quot;blue&quot;, rect.color.b);
+            printValue(&quot;alpha&quot;, rect.color.a);
+        }
+        var t1 = new Date();
+        console.log(&quot;Took: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds for 1000 iterations&quot;);
+    }
+}
+</db:programlisting>
+<db:para>We could instead resolve the common base just once in the block:</db:para>
+<db:programlisting language="qml">// good.qml
+import QtQuick
+
+Item {
+    width: 400
+    height: 200
+    Rectangle {
+        id: rect
+        anchors.fill: parent
+        color: &quot;blue&quot;
+    }
+
+    function printValue(which, value) {
+        console.log(which + &quot; = &quot; + value);
+    }
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        for (var i = 0; i &amp;lt; 1000; ++i) {
+            var rectColor = rect.color; // resolve the common base.
+            printValue(&quot;red&quot;, rectColor.r);
+            printValue(&quot;green&quot;, rectColor.g);
+            printValue(&quot;blue&quot;, rectColor.b);
+            printValue(&quot;alpha&quot;, rectColor.a);
+        }
+        var t1 = new Date();
+        console.log(&quot;Took: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds for 1000 iterations&quot;);
+    }
+}
+</db:programlisting>
+<db:para>Just this simple change results in a significant performance improvement. Note that the code above can be improved even further (since the property being looked up never changes during the loop processing), by hoisting the property resolution out of the loop, as follows:</db:para>
+<db:programlisting language="qml">// better.qml
+import QtQuick
+
+Item {
+    width: 400
+    height: 200
+    Rectangle {
+        id: rect
+        anchors.fill: parent
+        color: &quot;blue&quot;
+    }
+
+    function printValue(which, value) {
+        console.log(which + &quot; = &quot; + value);
+    }
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        var rectColor = rect.color; // resolve the common base outside the tight loop.
+        for (var i = 0; i &amp;lt; 1000; ++i) {
+            printValue(&quot;red&quot;, rectColor.r);
+            printValue(&quot;green&quot;, rectColor.g);
+            printValue(&quot;blue&quot;, rectColor.b);
+            printValue(&quot;alpha&quot;, rectColor.a);
+        }
+        var t1 = new Date();
+        console.log(&quot;Took: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds for 1000 iterations&quot;);
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="property-bindings">
+<db:title>Property Bindings</db:title>
+<db:para>A property binding expression will be re-evaluated if any of the properties it references are changed. As such, binding expressions should be kept as simple as possible.</db:para>
+<db:para>If you have a loop where you do some processing, but only the final result of the processing is important, it is often better to update a temporary accumulator which you afterwards assign to the property you need to update, rather than incrementally updating the property itself, in order to avoid triggering re-evaluation of binding expressions during the intermediate stages of accumulation.</db:para>
+<db:para>The following contrived example illustrates this point:</db:para>
+<db:programlisting language="qml">// bad.qml
+import QtQuick
+
+Item {
+    id: root
+    width: 200
+    height: 200
+    property int accumulatedValue: 0
+
+    Text {
+        anchors.fill: parent
+        text: root.accumulatedValue.toString()
+        onTextChanged: console.log(&quot;text binding re-evaluated&quot;)
+    }
+
+    Component.onCompleted: {
+        var someData = [ 1, 2, 3, 4, 5, 20 ];
+        for (var i = 0; i &amp;lt; someData.length; ++i) {
+            accumulatedValue = accumulatedValue + someData[i];
+        }
+    }
+}
+</db:programlisting>
+<db:para>The loop in the onCompleted handler causes the &quot;text&quot; property binding to be re-evaluated six times (which then results in any other property bindings which rely on the text value, as well as the onTextChanged signal handler, to be re-evaluated each time, and lays out the text for display each time). This is clearly unnecessary in this case, since we really only care about the final value of the accumulation.</db:para>
+<db:para>It could be rewritten as follows:</db:para>
+<db:programlisting language="qml">// good.qml
+import QtQuick
+
+Item {
+    id: root
+    width: 200
+    height: 200
+    property int accumulatedValue: 0
+
+    Text {
+        anchors.fill: parent
+        text: root.accumulatedValue.toString()
+        onTextChanged: console.log(&quot;text binding re-evaluated&quot;)
+    }
+
+    Component.onCompleted: {
+        var someData = [ 1, 2, 3, 4, 5, 20 ];
+        var temp = accumulatedValue;
+        for (var i = 0; i &amp;lt; someData.length; ++i) {
+            temp = temp + someData[i];
+        }
+        accumulatedValue = temp;
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="sequence-tips">
+<db:title>Sequence tips</db:title>
+<db:para>As mentioned earlier, some sequence types are fast (for example, <db:link xlink:href="qlist.xml">QList</db:link>&lt;int&gt;, <db:link xlink:href="qlist.xml">QList</db:link>&lt;qreal&gt;, <db:link xlink:href="qlist.xml">QList</db:link>&lt;bool&gt;, <db:link xlink:href="qlist.xml">QList</db:link>&lt;<db:link xlink:href="qstring.xml">QString</db:link>&gt;, <db:link xlink:href="qstringlist.xml">QStringList</db:link> and <db:link xlink:href="qlist.xml">QList</db:link>&lt;<db:link xlink:href="qurl.xml">QUrl</db:link>&gt;) while others will be much slower. Aside from using these types wherever possible instead of slower types, there are some other performance-related semantics you need to be aware of to achieve the best performance.</db:para>
+<db:para>Firstly, there are two different implementations for sequence types: one for where the sequence is a <db:link xlink:href="qobject.xml#Q_PROPERTY">Q_PROPERTY</db:link> of a <db:link xlink:href="qobject.xml">QObject</db:link> (we'll call this a reference sequence), and another for where the sequence is returned from a <db:link xlink:href="qobject.xml#Q_INVOKABLE">Q_INVOKABLE</db:link> function of a <db:link xlink:href="qobject.xml">QObject</db:link> (we'll call this a copy sequence).</db:para>
+<db:para>A reference sequence is read and written via <db:link xlink:href="qmetaobject.xml#property">QMetaObject::property</db:link>() and thus is read and written as a <db:link xlink:href="qvariant.xml">QVariant</db:link>. This means that changing the value of any element in the sequence from JavaScript will result in three steps occurring: the complete sequence will be read from the <db:link xlink:href="qobject.xml">QObject</db:link> (as a <db:link xlink:href="qvariant.xml">QVariant</db:link>, but then cast to a sequence of the correct type); the element at the specified index will be changed in that sequence; and the complete sequence will be written back to the <db:link xlink:href="qobject.xml">QObject</db:link> (as a <db:link xlink:href="qvariant.xml">QVariant</db:link>).</db:para>
+<db:para>A copy sequence is far simpler as the actual sequence is stored in the JavaScript object's resource data, so no read/modify/write cycle occurs (instead, the resource data is modified directly).</db:para>
+<db:para>Therefore, writes to elements of a reference sequence will be much slower than writes to elements of a copy sequence. In fact, writing to a single element of an N-element reference sequence is equivalent in cost to assigning a N-element copy sequence to that reference sequence, so you're usually better off modifying a temporary copy sequence and then assigning the result to a reference sequence, during computation.</db:para>
+<db:para>Assume the existence (and prior registration into the &quot;Qt.example&quot; namespace) of the following C++ type:</db:para>
+<db:programlisting language="cpp">class SequenceTypeExample : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY (QList&amp;lt;qreal&amp;gt; qrealListProperty READ qrealListProperty WRITE setQrealListProperty NOTIFY qrealListPropertyChanged)
+
+public:
+    SequenceTypeExample() : QQuickItem() { m_list &amp;lt;&amp;lt; 1.1 &amp;lt;&amp;lt; 2.2 &amp;lt;&amp;lt; 3.3; }
+    ~SequenceTypeExample() {}
+
+    QList&amp;lt;qreal&amp;gt; qrealListProperty() const { return m_list; }
+    void setQrealListProperty(const QList&amp;lt;qreal&amp;gt; &amp;amp;list) { m_list = list; emit qrealListPropertyChanged(); }
+
+signals:
+    void qrealListPropertyChanged();
+
+private:
+    QList&amp;lt;qreal&amp;gt; m_list;
+};
+</db:programlisting>
+<db:para>The following example writes to elements of a reference sequence in a tight loop, resulting in bad performance:</db:para>
+<db:programlisting language="qml">// bad.qml
+import QtQuick
+import Qt.example
+
+SequenceTypeExample {
+    id: root
+    width: 200
+    height: 200
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        qrealListProperty.length = 100;
+        for (var i = 0; i &amp;lt; 500; ++i) {
+            for (var j = 0; j &amp;lt; 100; ++j) {
+                qrealListProperty[j] = j;
+            }
+        }
+        var t1 = new Date();
+        console.log(&quot;elapsed: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds&quot;);
+    }
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qobject.xml">QObject</db:link> property read and write in the inner loop caused by the &quot;qrealListProperty[j] = j&quot; expression makes this code very suboptimal. Instead, something functionally equivalent but much faster would be:</db:para>
+<db:programlisting language="qml">// good.qml
+import QtQuick
+import Qt.example
+
+SequenceTypeExample {
+    id: root
+    width: 200
+    height: 200
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        var someData = [1.1, 2.2, 3.3]
+        someData.length = 100;
+        for (var i = 0; i &amp;lt; 500; ++i) {
+            for (var j = 0; j &amp;lt; 100; ++j) {
+                someData[j] = j;
+            }
+            qrealListProperty = someData;
+        }
+        var t1 = new Date();
+        console.log(&quot;elapsed: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds&quot;);
+    }
+}
+</db:programlisting>
+<db:para>Secondly, a change signal for the property is emitted if any element in it changes. If you have many bindings to a particular element in a sequence property, it is better to create a dynamic property which is bound to that element, and use that dynamic property as the symbol in the binding expressions instead of the sequence element, as it will only cause re-evaluation of bindings if its value changes.</db:para>
+<db:para>This is an unusual use-case which most clients should never hit, but is worth being aware of, in case you find yourself doing something like this:</db:para>
+<db:programlisting language="qml">// bad.qml
+import QtQuick
+import Qt.example
+
+SequenceTypeExample {
+    id: root
+
+    property int firstBinding: qrealListProperty[1] + 10;
+    property int secondBinding: qrealListProperty[1] + 20;
+    property int thirdBinding: qrealListProperty[1] + 30;
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        for (var i = 0; i &amp;lt; 1000; ++i) {
+            qrealListProperty[2] = i;
+        }
+        var t1 = new Date();
+        console.log(&quot;elapsed: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds&quot;);
+    }
+}
+</db:programlisting>
+<db:para>Note that even though only the element at index 2 is modified in the loop, the three bindings will all be re-evaluated since the granularity of the change signal is that the entire property has changed. As such, adding an intermediate binding can sometimes be beneficial:</db:para>
+<db:programlisting language="qml">// good.qml
+import QtQuick
+import Qt.example
+
+SequenceTypeExample {
+    id: root
+
+    property int intermediateBinding: qrealListProperty[1]
+    property int firstBinding: intermediateBinding + 10;
+    property int secondBinding: intermediateBinding + 20;
+    property int thirdBinding: intermediateBinding + 30;
+
+    Component.onCompleted: {
+        var t0 = new Date();
+        for (var i = 0; i &amp;lt; 1000; ++i) {
+            qrealListProperty[2] = i;
+        }
+        var t1 = new Date();
+        console.log(&quot;elapsed: &quot; + (t1.valueOf() - t0.valueOf()) + &quot; milliseconds&quot;);
+    }
+}
+</db:programlisting>
+<db:para>In the above example, only the intermediate binding will be re-evaluated each time, resulting in a significant performance increase.</db:para>
+</db:section>
+<db:section xml:id="value-type-tips">
+<db:title>Value-Type tips</db:title>
+<db:para>Value-type properties (font, color, vector3d, etc) have similar <db:link xlink:href="qobject.xml">QObject</db:link> property and change notification semantics to sequence type properties. As such, the tips given above for sequences are also applicable for value-type properties. While they are usually less of a problem with value-types (since the number of sub-properties of a value-type is usually far less than the number of elements in a sequence), any increase in the number of bindings being re-evaluated needlessly will have a negative impact on performance.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="general-performance-tips">
+<db:title>General Performance Tips</db:title>
+<db:para>General JavaScript performance considerations resulting from the language design are applicable also to QML. Most prominently:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Avoid using eval() if at all possible</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Do not delete properties of objects</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="common-interface-elements">
+<db:title>Common Interface Elements</db:title>
+<db:section xml:id="text-elements">
+<db:title>Text Elements</db:title>
+<db:para>Calculating text layouts can be a slow operation. Consider using the PlainText format instead of StyledText wherever possible, as this reduces the amount of work required of the layout engine. If you cannot use PlainText (as you need to embed images, or use tags to specify ranges of characters to have certain formatting (bold, italic, etc) as opposed to the entire text) then you should use StyledText.</db:para>
+<db:para>You should only use AutoText if the text might be (but probably isn't) StyledText as this mode will incur a parsing cost. The RichText mode should not be used, as StyledText provides almost all of its features at a fraction of its cost.</db:para>
+</db:section>
+<db:section xml:id="images">
+<db:title>Images</db:title>
+<db:para>Images are a vital part of any user interface. Unfortunately, they are also a big source of problems due to the time it takes to load them, the amount of memory they consume, and the way in which they are used.</db:para>
+<db:section xml:id="asynchronous-loading">
+<db:title>Asynchronous Loading</db:title>
+<db:para>Images are often quite large, and so it is wise to ensure that loading an image doesn't block the UI thread. Set the &quot;asynchronous&quot; property of the QML Image element to true to enable asynchronous loading of images from the local file system (remote images are always loaded asynchronously) where this would not result in a negative impact upon the aesthetics of the user interface.</db:para>
+<db:para>Image elements with the &quot;asynchronous&quot; property set to true will load images in a low-priority worker thread.</db:para>
+</db:section>
+<db:section xml:id="explicit-source-size">
+<db:title>Explicit Source Size</db:title>
+<db:para>If your application loads a large image but displays it in a small-sized element, set the &quot;sourceSize&quot; property to the size of the element being rendered to ensure that the smaller-scaled version of the image is kept in memory, rather than the large one.</db:para>
+<db:para>Beware that changing the sourceSize will cause the image to be reloaded.</db:para>
+</db:section>
+<db:section xml:id="avoid-run-time-composition">
+<db:title>Avoid Run-time Composition</db:title>
+<db:para>Also remember that you can avoid doing composition work at run-time by providing the pre-composed image resource with your application (for example, providing elements with shadow effects).</db:para>
+</db:section>
+<db:section xml:id="avoid-smoothing-images">
+<db:title>Avoid Smoothing Images</db:title>
+<db:para>Enable image.smooth only if required. It is slower on some hardware, and it has no visual effect if the image is displayed in its natural size.</db:para>
+</db:section>
+<db:section xml:id="painting">
+<db:title>Painting</db:title>
+<db:para>Avoid painting the same area several times. Use Item as root element rather than Rectangle to avoid painting the background several times.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="position-elements-with-anchors">
+<db:title>Position Elements With Anchors</db:title>
+<db:para>It is more efficient to use anchors rather than bindings to position items relative to each other. Consider this use of bindings to position rect2 relative to rect1:</db:para>
+<db:programlisting language="cpp">Rectangle {
+    id: rect1
+    x: 20
+    width: 200; height: 200
+}
+Rectangle {
+    id: rect2
+    x: rect1.x
+    y: rect1.y + rect1.height
+    width: rect1.width - 20
+    height: 200
+}
+</db:programlisting>
+<db:para>This is achieved more efficiently using anchors:</db:para>
+<db:programlisting language="cpp">Rectangle {
+    id: rect1
+    x: 20
+    width: 200; height: 200
+}
+Rectangle {
+    id: rect2
+    height: 200
+    anchors.left: rect1.left
+    anchors.top: rect1.bottom
+    anchors.right: rect1.right
+    anchors.rightMargin: 20
+}
+</db:programlisting>
+<db:para>Positioning with bindings (by assigning binding expressions to the x, y, width and height properties of visual objects, rather than using anchors) is relatively slow, although it allows maximum flexibility.</db:para>
+<db:para>If the layout is not dynamic, the most performant way to specify the layout is via static initialization of the x, y, width and height properties. Item coordinates are always relative to their parent, so if you wanted to be a fixed offset from your parent's 0,0 coordinate you should not use anchors. In the following example the child Rectangle objects are in the same place, but the anchors code shown is not as resource efficient as the code which uses fixed positioning via static initialization:</db:para>
+<db:programlisting language="cpp">Rectangle {
+    width: 60
+    height: 60
+    Rectangle {
+        id: fixedPositioning
+        x: 20
+        y: 20
+        width: 20
+        height: 20
+    }
+    Rectangle {
+        id: anchorPositioning
+        anchors.fill: parent
+        anchors.margins: 20
+    }
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="models-and-views">
+<db:title>Models and Views</db:title>
+<db:para>Most applications will have at least one model feeding data to a view. There are some semantics which application developers need to be aware of, in order to achieve maximal performance.</db:para>
+<db:section xml:id="custom-c-models">
+<db:title>Custom C++ Models</db:title>
+<db:para>It is often desirable to write your own custom model in C++ for use with a view in QML. While the optimal implementation of any such model will depend heavily on the use-case it must fulfil, some general guidelines are as follows:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Be as asynchronous as possible</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Do all processing in a (low priority) worker thread</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Batch up backend operations so that (potentially slow) I/O and IPC is minimized</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>It is important to note that using a low-priority worker thread is recommended to minimize the risk of starving the GUI thread (which could result in worse perceived performance). Also, remember that synchronization and locking mechanisms can be a significant cause of slow performance, and so care should be taken to avoid unnecessary locking.</db:para>
+</db:section>
+<db:section xml:id="listmodel-qml-type">
+<db:title>ListModel QML Type</db:title>
+<db:para>QML provides a <db:link xlink:href="qml-qtqml-models-listmodel.xml">ListModel</db:link> type which can be used to feed data to a <db:link xlink:href="qml-qtquick-listview.xml">ListView</db:link>. It should suffice for most use-cases and be relatively performant so long as it is used correctly.</db:para>
+<db:section xml:id="populate-within-a-worker-thread">
+<db:title>Populate Within A Worker Thread</db:title>
+<db:para><db:link xlink:href="qml-qtqml-models-listmodel.xml">ListModel</db:link> elements can be populated in a (low priority) worker thread in JavaScript. The developer must explicitly call &quot;sync()&quot; on the <db:link xlink:href="qml-qtqml-models-listmodel.xml">ListModel</db:link> from within the <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> to have the changes synchronized to the main thread. See the <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> documentation for more information.</db:para>
+<db:para>Please note that using a <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> element will result in a separate JavaScript engine being created (as the JavaScript engine is per-thread). This will result in increased memory usage. Multiple <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> elements will all use the same worker thread, however, so the memory impact of using a second or third <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> element is negligible once an application already uses one.</db:para>
+</db:section>
+<db:section xml:id="don-t-use-dynamic-roles">
+<db:title>Don't Use Dynamic Roles</db:title>
+<db:para>The <db:link xlink:href="qml-qtqml-models-listmodel.xml">ListModel</db:link> element in <db:link xlink:href="qtquick-module.xml">QtQuick</db:link> 2 is much more performant than in <db:link xlink:href="qtquick-module.xml">QtQuick</db:link> 1. The performance improvements mainly come from assumptions about the type of roles within each element in a given model - if the type doesn't change, the caching performance improves dramatically. If the type can change dynamically from element to element, this optimization becomes impossible, and the performance of the model will be an order of magnitude worse.</db:para>
+<db:para>Therefore, dynamic typing is disabled by default; the developer must specifically set the boolean &quot;dynamicRoles&quot; property of the model to enable dynamic typing (and suffer the attendant performance degradation). We recommend that you do not use dynamic typing if it is possible to redesign your application to avoid it.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="views">
+<db:title>Views</db:title>
+<db:para>View delegates should be kept as simple as possible. Have just enough QML in the delegate to display the necessary information. Any additional functionality which is not immediately required (for example, if it displays more information when clicked) should not be created until needed (see the upcoming section on lazy initialization).</db:para>
+<db:para>The following list is a good summary of things to keep in mind when designing a delegate:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The fewer elements that are in a delegate, the faster they can be created, and thus the faster the view can be scrolled.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Keep the number of bindings in a delegate to a minimum; in particular, use anchors rather than bindings for relative positioning within a delegate.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Avoid using <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link> elements within delegates.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Never enable clipping on a delegate.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>You may set the cacheBuffer property of a view to allow asynchronous creation and buffering of delegates outside of the visible area. Utilizing a cacheBuffer is recommended for view delegates that are non-trivial and unlikely to be created within a single frame.</db:para>
+<db:para>Bear in mind that a cacheBuffer keeps additional delegates in-memory. Therefore, the value derived from utilizing the cacheBuffer must be balanced against additional memory usage. Developers should use benchmarking to find the best value for their use-case, since the increased memory pressure caused by utilizing a cacheBuffer can, in some rare cases, cause reduced frame rate when scrolling.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="visual-effects">
+<db:title>Visual Effects</db:title>
+<db:para><db:link xlink:href="qtquick-index.xml">Qt Quick 2</db:link> includes several features which allow developers and designers to create exceptionally appealing user interfaces. Fluidity and dynamic transitions as well as visual effects can be used to great effect in an application, but some care must be taken when using some of the features in QML as they can have performance implications.</db:para>
+<db:section xml:id="animations">
+<db:title>Animations</db:title>
+<db:para>In general, animating a property will cause any bindings which reference that property to be re-evaluated. Usually, this is what is desired but in other cases it may be better to disable the binding prior to performing the animation, and then reassign the binding once the animation has completed.</db:para>
+<db:para>Avoid running JavaScript during animation. For example, running a complex JavaScript expression for each frame of an x property animation should be avoided.</db:para>
+<db:para>Developers should be especially careful using script animations, as these are run in the main thread (and therefore can cause frames to be skipped if they take too long to complete).</db:para>
+</db:section>
+<db:section xml:id="particles">
+<db:title>Particles</db:title>
+<db:para>The <db:link xlink:href="qtquick-particles-qmlmodule.xml">Qt Quick Particles</db:link> module allows beautiful particle effects to be integrated seamlessly into user interfaces. However, every platform has different graphics hardware capabilities, and the Particles module is unable to limit parameters to what your hardware can gracefully support. The more particles you attempt to render (and the larger they are), the faster your graphics hardware will need to be in order to render at 60 FPS. Affecting more particles requires a faster CPU. It is therefore important to test all particle effects on your target platform carefully, to calibrate the number and size of particles you can render at 60 FPS.</db:para>
+<db:para>It should be noted that a particle system can be disabled when not in use (for example, on a non-visible element) to avoid doing unnecessary simulation.</db:para>
+<db:para>See the <db:link xlink:href="qtquick-particles-performance.xml">Particle System Performance Guide</db:link> for more in-depth information.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="controlling-element-lifetime">
+<db:title>Controlling Element Lifetime</db:title>
+<db:para>By partitioning an application into simple, modular components, each contained in a single QML file, you can achieve faster application startup time and better control over memory usage, and reduce the number of active-but-invisible elements in your application.</db:para>
+<db:section xml:id="lazy-initialization">
+<db:title>Lazy Initialization</db:title>
+<db:para>The QML engine does some tricky things to try to ensure that loading and initialization of components doesn't cause frames to be skipped. However, there is no better way to reduce startup time than to avoid doing work you don't need to do, and delaying the work until it is necessary. This may be achieved by using either <db:link xlink:href="qml-qtquick-loader.xml">Loader</db:link> or creating components <db:link xlink:href="qtqml-javascript-dynamicobjectcreation.xml">dynamically</db:link>.</db:para>
+<db:section xml:id="using-loader">
+<db:title>Using Loader</db:title>
+<db:para>The Loader is an element which allows dynamic loading and unloading of components.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Using the &quot;active&quot; property of a Loader, initialization can be delayed until required.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Using the overloaded version of the &quot;setSource()&quot; function, initial property values can be supplied.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Setting the Loader <db:link xlink:href="qml-qtquick-loader.xml#asynchronous-prop">asynchronous</db:link> property to true may also improve fluidity while a component is instantiated.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="using-dynamic-creation">
+<db:title>Using Dynamic Creation</db:title>
+<db:para>Developers can use the Qt.createComponent() function to create a component dynamically at runtime from within JavaScript, and then call createObject() to instantiate it. Depending on the ownership semantics specified in the call, the developer may have to delete the created object manually. See <db:link xlink:href="qtqml-javascript-dynamicobjectcreation.xml">Dynamic QML Object Creation from JavaScript</db:link> for more information.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="destroy-unused-elements">
+<db:title>Destroy Unused Elements</db:title>
+<db:para>Elements which are invisible because they are a child of a non-visible element (for example, the second tab in a tab-widget, while the first tab is shown) should be initialized lazily in most cases, and deleted when no longer in use, to avoid the ongoing cost of leaving them active (for example, rendering, animations, property binding evaluation, etc).</db:para>
+<db:para>An item loaded with a Loader element may be released by resetting the &quot;source&quot; or &quot;sourceComponent&quot; property of the Loader, while other items may be explicitly released by calling destroy() on them. In some cases, it may be necessary to leave the item active, in which case it should be made invisible at the very least.</db:para>
+<db:para>See the upcoming section on Rendering for more information on active but invisible elements.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="rendering">
+<db:title>Rendering</db:title>
+<db:para>The scene graph used for rendering in <db:link xlink:href="qtquick-module.xml">QtQuick</db:link> 2 allows highly dynamic, animated user interfaces to be rendered fluidly at 60 FPS. There are some things which can dramatically decrease rendering performance, however, and developers should be careful to avoid these pitfalls wherever possible.</db:para>
+<db:anchor xml:id="clipping-performance"/>
+<db:section xml:id="clipping">
+<db:title>Clipping</db:title>
+<db:para>Clipping is disabled by default, and should only be enabled when required.</db:para>
+<db:para>Clipping is a visual effect, NOT an optimization. It increases (rather than reduces) complexity for the renderer. If clipping is enabled, an item will clip its own painting, as well as the painting of its children, to its bounding rectangle. This stops the renderer from being able to reorder the drawing order of elements freely, resulting in a sub-optimal best-case scene graph traversal.</db:para>
+<db:para>Clipping inside a delegate is especially bad and should be avoided at all costs.</db:para>
+</db:section>
+<db:section xml:id="over-drawing-and-invisible-elements">
+<db:title>Over-drawing and Invisible Elements</db:title>
+<db:para>If you have elements which are totally covered by other (opaque) elements, it is best to set their &quot;visible&quot; property to false or they will be drawn needlessly.</db:para>
+<db:para>Similarly, elements which are invisible (for example, the second tab in a tab widget, while the first tab is shown) but need to be initialized at startup time (for example, if the cost of instantiating the second tab takes too long to be able to do it only when the tab is activated), should have their &quot;visible&quot; property set to false, in order to avoid the cost of drawing them (although as previously explained, they will still incur the cost of any animations or bindings evaluation since they are still active).</db:para>
+</db:section>
+<db:section xml:id="translucent-vs-opaque">
+<db:title>Translucent vs Opaque</db:title>
+<db:para>Opaque content is generally a lot faster to draw than translucent. The reason being that translucent content needs blending and that the renderer can potentially optimize opaque content better.</db:para>
+<db:para>An image with one translucent pixel is treated as fully translucent, even though it is mostly opaque. The same is true for an <db:link xlink:href="qml-qtquick-borderimage.xml">BorderImage</db:link> with transparent edges.</db:para>
+</db:section>
+<db:section xml:id="shaders">
+<db:title>Shaders</db:title>
+<db:para>The <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link> type makes it possible to place GLSL code inline in a Qt Quick application with very little overhead. However, it is important to realize that the fragment program needs to run for every pixel in the rendered shape. When deploying to low-end hardware and the shader is covering a large amount of pixels, one should keep the fragment shader to a few instructions to avoid poor performance.</db:para>
+<db:para>Shaders written in GLSL allow for complex transformations and visual effects to be written, however they should be used with care. Using a <db:link xlink:href="qml-qtquick-shadereffectsource.xml">ShaderEffectSource</db:link> causes a scene to be prerendered into an FBO before it can be drawn. This extra overhead can be quite expensive.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="memory-allocation-and-collection">
+<db:title>Memory Allocation And Collection</db:title>
+<db:para>The amount of memory which will be allocated by an application and the way in which that memory will be allocated are very important considerations. Aside from the obvious concerns about out-of-memory conditions on memory-constrained devices, allocating memory on the heap is a fairly computationally expensive operation, and certain allocation strategies can result in increased fragmentation of data across pages. JavaScript uses a managed memory heap which is automatically garbage collected, and this has some advantages, but also some important implications.</db:para>
+<db:para>An application written in QML uses memory from both the C++ heap and an automatically managed JavaScript heap. The application developer needs to be aware of the subtleties of each in order to maximise performance.</db:para>
+<db:section xml:id="tips-for-qml-application-developers">
+<db:title>Tips For QML Application Developers</db:title>
+<db:para>The tips and suggestions contained in this section are guidelines only, and may not be applicable in all circumstances. Be sure to benchmark and analyze your application carefully using empirical metrics, in order to make the best decisions possible.</db:para>
+<db:section xml:id="instantiate-and-initialize-components-lazily">
+<db:title>Instantiate and initialize components lazily</db:title>
+<db:para>If your application consists of multiple views (for example, multiple tabs) but only one is required at any one time, you can use lazy instantiation to minimize the amount of memory you need to have allocated at any given time. See the prior section on <db:link xlink:href="qtquick-performance.xml#lazy-initialization">Lazy Initialization</db:link> for more information.</db:para>
+</db:section>
+<db:section xml:id="destroy-unused-objects">
+<db:title>Destroy unused objects</db:title>
+<db:para>If you lazy load components, or create objects dynamically during a JavaScript expression, it is often better to destroy() them manually rather than wait for automatic garbage collection to do so. See the prior section on <db:link xlink:href="qtquick-performance.xml#controlling-element-lifetime">Controlling Element Lifetime</db:link> for more information.</db:para>
+</db:section>
+<db:section xml:id="don-t-manually-invoke-the-garbage-collector">
+<db:title>Don't manually invoke the garbage collector</db:title>
+<db:para>In most cases, it is not wise to manually invoke the garbage collector, as it will block the GUI thread for a substantial period of time. This can result in skipped frames and jerky animations, which should be avoided at all costs.</db:para>
+<db:para>There are some cases where manually invoking the garbage collector is acceptable (and this is explained in greater detail in an upcoming section), but in most cases, invoking the garbage collector is unnecessary and counter-productive.</db:para>
+</db:section>
+<db:section xml:id="avoid-defining-multiple-identical-implicit-types">
+<db:title>Avoid defining multiple identical implicit types</db:title>
+<db:para>If a QML element has a custom property defined in QML, it becomes its own implicit type. This is explained in greater detail in an upcoming section. If multiple identical implicit types are defined inline in a component, some memory will be wasted. In that situation it is usually better to explicitly define a new component which can then be reused.</db:para>
+<db:para>Defining a custom property can often be a beneficial performance optimization (for example, to reduce the number of bindings which are required or re-evaluated), or it can improve the modularity and maintainability of a component. In those cases, using custom properties is encouraged. However, the new type should, if it is used more than once, be split into its own component (.qml file) in order to conserve memory.</db:para>
+</db:section>
+<db:section xml:id="reuse-existing-components">
+<db:title>Reuse existing components</db:title>
+<db:para>If you are considering defining a new component, it's worth double checking that such a component doesn't already exist in the component set for your platform. Otherwise, you will be forcing the QML engine to generate and store type-data for a type which is essentially a duplicate of another pre-existing and potentially already loaded component.</db:para>
+</db:section>
+<db:section xml:id="use-singleton-types-instead-of-pragma-library-scripts">
+<db:title>Use singleton types instead of pragma library scripts</db:title>
+<db:para>If you are using a pragma library script to store application-wide instance data, consider using a <db:link xlink:href="qobject.xml">QObject</db:link> singleton type instead. This should result in better performance, and will result in less JavaScript heap memory being used.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="memory-allocation-in-a-qml-application">
+<db:title>Memory Allocation in a QML Application</db:title>
+<db:para>The memory usage of a QML application may be split into two parts: its C++ heap usage and its JavaScript heap usage. Some of the memory allocated in each will be unavoidable, as it is allocated by the QML engine or the JavaScript engine, while the rest is dependent upon decisions made by the application developer.</db:para>
+<db:para>The C++ heap will contain:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>the fixed and unavoidable overhead of the QML engine (implementation data structures, context information, and so on);</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>per-component compiled data and type information, including per-type property metadata, which is generated by the QML engine depending on which modules and which components are loaded by the application;</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>per-object C++ data (including property values) plus a per-element metaobject hierarchy, depending on which components the application instantiates;</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>any data which is allocated specifically by QML imports (libraries).</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The JavaScript heap will contain:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>the fixed and unavoidable overhead of the JavaScript engine itself (including built-in JavaScript types);</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>the fixed and unavoidable overhead of our JavaScript integration (constructor functions for loaded types, function templates, and so on);</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>per-type layout information and other internal type-data generated by the JavaScript engine at runtime, for each type (see note below, regarding types);</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>per-object JavaScript data (&quot;var&quot; properties, JavaScript functions and signal handlers, and non-optimized binding expressions);</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>variables allocated during expression evaluation.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Furthermore, there will be one JavaScript heap allocated for use in the main thread, and optionally one other JavaScript heap allocated for use in the <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> thread. If an application does not use a <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> element, that overhead will not be incurred. The JavaScript heap can be several megabytes in size, and so applications written for memory-constrained devices may be best served by avoiding the <db:link xlink:href="qml-qtqml-workerscript-workerscript.xml">WorkerScript</db:link> element despite its usefulness in populating list models asynchronously.</db:para>
+<db:para>Note that both the QML engine and the JavaScript engine will automatically generate their own caches of type-data about observed types. Every component loaded by an application is a distinct (explicit) type, and every element (component instance) that defines its own custom properties in QML is an implicit type. Any element (instance of a component) that does not define any custom property is considered by the JavaScript and QML engines to be of the type explicitly defined by the component, rather than its own implicit type.</db:para>
+<db:para>Consider the following example:</db:para>
+<db:programlisting language="qml">import QtQuick
+
+Item {
+    id: root
+
+    Rectangle {
+        id: r0
+        color: &quot;red&quot;
+    }
+
+    Rectangle {
+        id: r1
+        color: &quot;blue&quot;
+        width: 50
+    }
+
+    Rectangle {
+        id: r2
+        property int customProperty: 5
+    }
+
+    Rectangle {
+        id: r3
+        property string customProperty: &quot;hello&quot;
+    }
+
+    Rectangle {
+        id: r4
+        property string customProperty: &quot;hello&quot;
+    }
+}
+</db:programlisting>
+<db:para>In the previous example, the rectangles r0 and r1 do not have any custom properties, and thus the JavaScript and QML engines consider them both to be of the same type. That is, r0 and r1 are both considered to be of the explicitly defined Rectangle type. The rectangles r2, r3 and r4 each have custom properties and are each considered to be of different (implicit) types. Note that r3 and r4 are each considered to be of different types, even though they have identical property information, simply because the custom property was not declared in the component which they are instances of.</db:para>
+<db:para>If r3 and r4 were both instances of a RectangleWithString component, and that component definition included the declaration of a string property named customProperty, then r3 and r4 would be considered to be of the same type (that is, they would be instances of the RectangleWithString type, rather than defining their own implicit type).</db:para>
+</db:section>
+<db:section xml:id="in-depth-memory-allocation-considerations">
+<db:title>In-Depth Memory Allocation Considerations</db:title>
+<db:para>Whenever making decisions regarding memory allocation or performance trade-offs, it is important to keep in mind the impact of CPU-cache performance, operating system paging, and JavaScript engine garbage collection. Potential solutions should be benchmarked carefully in order to ensure that the best one is selected.</db:para>
+<db:para>No set of general guidelines can replace a solid understanding of the underlying principles of computer science combined with a practical knowledge of the implementation details of the platform for which the application developer is developing. Furthermore, no amount of theoretical calculation can replace a good set of benchmarks and analysis tools when making trade-off decisions.</db:para>
+<db:section xml:id="fragmentation">
+<db:title>Fragmentation</db:title>
+<db:para>Fragmentation is a C++ development issue. If the application developer is not defining any C++ types or plugins, they may safely ignore this section.</db:para>
+<db:para>Over time, an application will allocate large portions of memory, write data to that memory, and subsequently free some portions of it once it has finished using some of the data. This can result in &quot;free&quot; memory being located in non-contiguous chunks, which cannot be returned to the operating system for other applications to use. It also has an impact on the caching and access characteristics of the application, as the &quot;living&quot; data may be spread across many different pages of physical memory. This in turn could force the operating system to swap, which can cause filesystem I/O - which is, comparatively speaking, an extremely slow operation.</db:para>
+<db:para>Fragmentation can be avoided by utilizing pool allocators (and other contiguous memory allocators), by reducing the amount of memory which is allocated at any one time by carefully managing object lifetimes, by periodically cleansing and rebuilding caches, or by utilizing a memory-managed runtime with garbage collection (such as JavaScript).</db:para>
+</db:section>
+<db:section xml:id="garbage-collection">
+<db:title>Garbage Collection</db:title>
+<db:para>JavaScript provides garbage collection. Memory which is allocated on the JavaScript heap (as opposed to the C++ heap) is owned by the JavaScript engine. The engine will periodically collect all unreferenced data on the JavaScript heap.</db:para>
+<db:section xml:id="implications-of-garbage-collection">
+<db:title>Implications of Garbage Collection</db:title>
+<db:para>Garbage collection has advantages and disadvantages. It means that manually managing object lifetime is less important. However, it also means that a potentially long-lasting operation may be initiated by the JavaScript engine at a time which is out of the application developer's control. Unless JavaScript heap usage is considered carefully by the application developer, the frequency and duration of garbage collection may have a negative impact upon the application experience.</db:para>
+</db:section>
+<db:section xml:id="manually-invoking-the-garbage-collector">
+<db:title>Manually Invoking the Garbage Collector</db:title>
+<db:para>An application written in QML will (most likely) require garbage collection to be performed at some stage. While garbage collection will be automatically triggered by the JavaScript engine when the amount of available free memory is low, it is occasionally better if the application developer makes decisions about when to invoke the garbage collector manually (although usually this is not the case).</db:para>
+<db:para>The application developer is likely to have the best understanding of when an application is going to be idle for substantial periods of time. If a QML application uses a lot of JavaScript heap memory, causing regular and disruptive garbage collection cycles during particularly performance-sensitive tasks (for example, list scrolling, animations, and so forth), the application developer may be well served to manually invoke the garbage collector during periods of zero activity. Idle periods are ideal for performing garbage collection since the user will not notice any degradation of user experience (skipped frames, jerky animations, and so on) which would result from invoking the garbage collector while activity is occurring.</db:para>
+<db:para>The garbage collector may be invoked manually by calling gc() within JavaScript. This will cause a comprehensive collection cycle to be performed, which may take from between a few hundred to more than a thousand milliseconds to complete, and so should be avoided if at all possible.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="memory-vs-performance-trade-offs">
+<db:title>Memory vs Performance Trade-offs</db:title>
+<db:para>In some situations, it is possible to trade-off increased memory usage for decreased processing time. For example, caching the result of a symbol lookup used in a tight loop to a temporary variable in a JavaScript expression will result in a significant performance improvement when evaluating that expression, but it involves allocating a temporary variable. In some cases, these trade-offs are sensible (such as the case above, which is almost always sensible), but in other cases it may be better to allow processing to take slightly longer in order to avoid increasing the memory pressure on the system.</db:para>
+<db:para>In some cases, the impact of increased memory pressure can be extreme. In some situations, trading off memory usage for an assumed performance gain can result in increased page-thrash or cache-thrash, causing a huge reduction in performance. It is always necessary to benchmark the impact of trade-offs carefully in order to determine which solution is best in a given situation.</db:para>
+<db:para>For in-depth information on cache performance and memory-time trade-offs, refer to the following articles:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Ulrich Drepper's excellent article: &quot;What Every Programmer Should Know About Memory&quot;, at: <db:link xlink:href="https://people.freebsd.org/~lstewart/articles/cpumemory.pdf">https://people.freebsd.org/~lstewart/articles/cpumemory.pdf</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Agner Fog's excellent manuals on optimizing C++ applications at: <db:link xlink:href="http://www.agner.org/optimize/">http://www.agner.org/optimize/</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+</db:section>
+</db:article>
