@@ -1,0 +1,459 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Bluetooth Chat</db:title>
+<db:productname>QtBluetooth</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows communication through Bluetooth using RFCOMM protocol.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Bluetooth Chat example shows how to use the <db:link xlink:href="qtbluetooth-index.xml">Qt Bluetooth</db:link> API to communicate with another application on a remote device using Bluetooth RFCOMM protocol.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/btchat-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The Bluetooth Chat example implements a simple chat program between multiple parties. The application always acts as both a server and a client eliminating the need to determine who should connect to whom.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, see <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Qt Creator: Tutorial: Build and run</db:link>.</db:para>
+</db:section>
+<db:section xml:id="chat-server">
+<db:title>Chat Server</db:title>
+<db:para>The chat server is implemented by the <db:code>ChatServer</db:code> class. The <db:code>ChatServer</db:code> class is declared as:</db:para>
+<db:programlisting language="cpp">class ChatServer : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit ChatServer(QObject *parent = nullptr);
+    ~ChatServer();
+
+    void startServer(const QBluetoothAddress &amp;localAdapter = QBluetoothAddress());
+    void stopServer();
+
+public slots:
+    void sendMessage(const QString &amp;message);
+
+signals:
+    void messageReceived(const QString &amp;sender, const QString &amp;message);
+    void clientConnected(const QString &amp;name);
+    void clientDisconnected(const QString &amp;name);
+
+private slots:
+    void clientConnected();
+    void clientDisconnected();
+    void readSocket();
+
+private:
+    QBluetoothServer *rfcommServer = nullptr;
+    QBluetoothServiceInfo serviceInfo;
+    QList&lt;QBluetoothSocket *&gt; clientSockets;
+    QMap&lt;QBluetoothSocket *, QString&gt; clientNames;
+};
+</db:programlisting>
+<db:para>The first thing the chat server needs to do is create an instance of <db:link xlink:href="qbluetoothserver.xml">QBluetoothServer</db:link> to listen for incoming Bluetooth connections. The <db:code>clientConnected()</db:code> slot will be called whenever a new connection is created.</db:para>
+<db:programlisting language="cpp">rfcommServer = new QBluetoothServer(QBluetoothServiceInfo::RfcommProtocol, this);
+connect(rfcommServer, &amp;QBluetoothServer::newConnection,
+        this, QOverload&lt;&gt;::of(&amp;ChatServer::clientConnected));
+bool result = rfcommServer-&gt;listen(localAdapter);
+if (!result) {
+    qWarning() &lt;&lt; &quot;Cannot bind chat server to&quot; &lt;&lt; localAdapter.toString();
+    return;
+}
+</db:programlisting>
+<db:para>The chat server is only useful if others know that it is there. To enable other devices to discover it, a record describing the service needs to be published in the system's SDP (Service Discovery Protocol) database. The <db:link xlink:href="qbluetoothserviceinfo.xml">QBluetoothServiceInfo</db:link> class encapsulates a service record.</db:para>
+<db:para>We will publish a service record that contains some textual descriptions of the services, a UUID that uniquely identifies the service, the discoverability attribute, and connection parameters.</db:para>
+<db:para>The textual description of the service is stored in the <db:code>ServiceName</db:code>, <db:code>ServiceDescription</db:code>, and <db:code>ServiceProvider</db:code> attributes.</db:para>
+<db:programlisting language="cpp">serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceName, tr(&quot;Bt Chat Server&quot;));
+serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceDescription,
+                         tr(&quot;Example bluetooth chat server&quot;));
+serviceInfo.setAttribute(QBluetoothServiceInfo::ServiceProvider, tr(&quot;qt-project.org&quot;));
+</db:programlisting>
+<db:para>Bluetooth uses UUIDs as unique identifiers. The chat service uses a randomly generated UUID.</db:para>
+<db:programlisting language="cpp">static constexpr auto serviceUuid = &quot;e8e10f95-1a70-4b27-9ccf-02010264e9c8&quot;_L1;
+serviceInfo.setServiceUuid(QBluetoothUuid(serviceUuid));
+</db:programlisting>
+<db:para>A Bluetooth service is only discoverable if it is in the <db:link xlink:href="qbluetoothuuid.xml#ServiceClassUuid-enum">PublicBrowseGroup</db:link>.</db:para>
+<db:programlisting language="cpp">const auto groupUuid = QBluetoothUuid(QBluetoothUuid::ServiceClassUuid::PublicBrowseGroup);
+QBluetoothServiceInfo::Sequence publicBrowse;
+publicBrowse &lt;&lt; QVariant::fromValue(groupUuid);
+serviceInfo.setAttribute(QBluetoothServiceInfo::BrowseGroupList, publicBrowse);
+</db:programlisting>
+<db:para>The <db:code>ProtocolDescriptorList</db:code> attribute is used to publish the connection parameters that the remote device requires to connect to our service. Here we specify that the <db:code>Rfcomm</db:code> protocol is used and set the port number to the port that our <db:code>rfcommServer</db:code> instance is listening to.</db:para>
+<db:programlisting language="cpp">QBluetoothServiceInfo::Sequence protocolDescriptorList;
+QBluetoothServiceInfo::Sequence protocol;
+protocol &lt;&lt; QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::ProtocolUuid::L2cap));
+protocolDescriptorList.append(QVariant::fromValue(protocol));
+protocol.clear();
+protocol &lt;&lt; QVariant::fromValue(QBluetoothUuid(QBluetoothUuid::ProtocolUuid::Rfcomm))
+         &lt;&lt; QVariant::fromValue(quint8(rfcommServer-&gt;serverPort()));
+protocolDescriptorList.append(QVariant::fromValue(protocol));
+serviceInfo.setAttribute(QBluetoothServiceInfo::ProtocolDescriptorList,
+                         protocolDescriptorList);
+</db:programlisting>
+<db:para>Finally, we register the service record with the system.</db:para>
+<db:programlisting language="cpp">serviceInfo.registerService(localAdapter);
+</db:programlisting>
+<db:para>As mentioned earlier, incoming connections are handled in the <db:code>clientConnected()</db:code> slot where pending connections are connected to the <db:link xlink:href="qiodevice.xml#readyRead">readyRead</db:link>() and <db:link xlink:href="qbluetoothsocket.xml#disconnected">disconnected</db:link>() signals. The signals notify others that a new client has connected.</db:para>
+<db:programlisting language="cpp">void ChatServer::clientConnected()
+{
+    QBluetoothSocket *socket = rfcommServer-&gt;nextPendingConnection();
+    if (!socket)
+        return;
+
+    connect(socket, &amp;QBluetoothSocket::readyRead, this, &amp;ChatServer::readSocket);
+    connect(socket, &amp;QBluetoothSocket::disconnected,
+            this, QOverload&lt;&gt;::of(&amp;ChatServer::clientDisconnected));
+    clientSockets.append(socket);
+    clientNames[socket] = socket-&gt;peerName();
+    emit clientConnected(socket-&gt;peerName());
+}
+</db:programlisting>
+<db:para>The <db:code>readSocket()</db:code> slot is called whenever data is ready to be read from a client socket. The slot reads individual lines from the socket, converts them from UTF-8, and emits the <db:code>messageReceived()</db:code> signal.</db:para>
+<db:programlisting language="cpp">void ChatServer::readSocket()
+{
+    QBluetoothSocket *socket = qobject_cast&lt;QBluetoothSocket *&gt;(sender());
+    if (!socket)
+        return;
+
+    while (socket-&gt;canReadLine()) {
+        QByteArray line = socket-&gt;readLine().trimmed();
+        emit messageReceived(clientNames[socket],
+                             QString::fromUtf8(line.constData(), line.length()));
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>clientDisconnected()</db:code> slot is called whenever a client disconnects from the service. The slot emits a signal to notify others that a client has disconnected, and deletes the socket.</db:para>
+<db:programlisting language="cpp">void ChatServer::clientDisconnected()
+{
+    QBluetoothSocket *socket = qobject_cast&lt;QBluetoothSocket *&gt;(sender());
+    if (!socket)
+        return;
+
+    emit clientDisconnected(clientNames[socket]);
+
+    clientSockets.removeOne(socket);
+    clientNames.remove(socket);
+
+    socket-&gt;deleteLater();
+}
+</db:programlisting>
+<db:para>The <db:code>sendMessage()</db:code> slot is used to send a message to all connected clients. The message is converted into UTF-8 and appended with a newline before being sent to all clients.</db:para>
+<db:programlisting language="cpp">void ChatServer::sendMessage(const QString &amp;message)
+{
+    QByteArray text = message.toUtf8() + '\n';
+
+    for (QBluetoothSocket *socket : std::as_const(clientSockets))
+        socket-&gt;write(text);
+}
+</db:programlisting>
+<db:para>When the chat server is stopped, the service record is removed from the system SDP database, all connected client sockets are deleted, and the <db:code>rfcommServer</db:code> instance is deleted.</db:para>
+<db:programlisting language="cpp">void ChatServer::stopServer()
+{
+    // Unregister service
+    serviceInfo.unregisterService();
+
+    // Close sockets
+    qDeleteAll(clientSockets);
+    clientNames.clear();
+
+    // Close server
+    delete rfcommServer;
+    rfcommServer = nullptr;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="service-discovery">
+<db:title>Service Discovery</db:title>
+<db:para>Before connecting to the server, the client needs to scan the nearby devices and search for the device that is advertising the chat service. This is done by the <db:code>RemoteSelector</db:code> class.</db:para>
+<db:para>To start service lookup, the <db:code>RemoteSelector</db:code> creates an instance of <db:link xlink:href="qbluetoothservicediscoveryagent.xml">QBluetoothServiceDiscoveryAgent</db:link> and connects to its signals.</db:para>
+<db:programlisting language="cpp">    m_discoveryAgent = new QBluetoothServiceDiscoveryAgent(localAdapter);
+
+    connect(m_discoveryAgent, &amp;QBluetoothServiceDiscoveryAgent::serviceDiscovered,
+            this, &amp;RemoteSelector::serviceDiscovered);
+    connect(m_discoveryAgent, &amp;QBluetoothServiceDiscoveryAgent::finished,
+            this, &amp;RemoteSelector::discoveryFinished);
+    connect(m_discoveryAgent, &amp;QBluetoothServiceDiscoveryAgent::canceled,
+            this, &amp;RemoteSelector::discoveryFinished);
+</db:programlisting>
+<db:para>An UUID filter is set, so that the service discovery only shows the devices that advertise the needed service. After that a <db:link xlink:href="qbluetoothservicediscoveryagent.xml#DiscoveryMode-enum">FullDiscovery</db:link> is started:</db:para>
+<db:programlisting language="cpp">    m_discoveryAgent-&gt;setUuidFilter(uuid);
+    m_discoveryAgent-&gt;start(QBluetoothServiceDiscoveryAgent::FullDiscovery);
+</db:programlisting>
+<db:para>When a matching service is discovered, a <db:link xlink:href="qbluetoothservicediscoveryagent.xml#serviceDiscovered">serviceDiscovered</db:link>() signal is emitted with an instance of <db:link xlink:href="qbluetoothserviceinfo.xml">QBluetoothServiceInfo</db:link> as a parameter. This service info is used to extract the device name and the service name, and add a new entry to the list of discovered remote devices:</db:para>
+<db:programlisting language="cpp">    QString remoteName;
+    if (serviceInfo.device().name().isEmpty())
+        remoteName = address.toString();
+    else
+        remoteName = serviceInfo.device().name();
+
+    QListWidgetItem *item =
+        new QListWidgetItem(QString::fromLatin1(&quot;%1 %2&quot;).arg(remoteName,
+                                                             serviceInfo.serviceName()));
+
+    m_discoveredServices.insert(item, serviceInfo);
+    ui-&gt;remoteDevices-&gt;addItem(item);
+</db:programlisting>
+<db:para>Later the user can select one of the devices from the list and try to connect to it.</db:para>
+</db:section>
+<db:section xml:id="chat-client">
+<db:title>Chat Client</db:title>
+<db:para>The chat client is implemented by the <db:code>ChatClient</db:code> class. The <db:code>ChatClient</db:code> class is declared as:</db:para>
+<db:programlisting language="cpp">class ChatClient : public QObject
+{
+    Q_OBJECT
+
+public:
+    explicit ChatClient(QObject *parent = nullptr);
+    ~ChatClient();
+
+    void startClient(const QBluetoothServiceInfo &amp;remoteService);
+    void stopClient();
+
+public slots:
+    void sendMessage(const QString &amp;message);
+
+signals:
+    void messageReceived(const QString &amp;sender, const QString &amp;message);
+    void connected(const QString &amp;name);
+    void disconnected();
+    void socketErrorOccurred(const QString &amp;errorString);
+
+private slots:
+    void readSocket();
+    void connected();
+    void onSocketErrorOccurred(QBluetoothSocket::SocketError);
+
+private:
+    QBluetoothSocket *socket = nullptr;
+};
+</db:programlisting>
+<db:para>The client creates a new <db:link xlink:href="qbluetoothsocket.xml">QBluetoothSocket</db:link> and connects to the remote service described by the <db:code>remoteService</db:code> parameter. Slots are connected to the socket's <db:link xlink:href="qiodevice.xml#readyRead">readyRead</db:link>(), <db:link xlink:href="qbluetoothsocket.xml#connected">connected</db:link>(), and <db:link xlink:href="qbluetoothsocket.xml#disconnected">disconnected</db:link>() signals.</db:para>
+<db:programlisting language="cpp">void ChatClient::startClient(const QBluetoothServiceInfo &amp;remoteService)
+{
+    if (socket)
+        return;
+
+    // Connect to service
+    socket = new QBluetoothSocket(QBluetoothServiceInfo::RfcommProtocol);
+    qDebug() &lt;&lt; &quot;Create socket&quot;;
+    socket-&gt;connectToService(remoteService);
+    qDebug() &lt;&lt; &quot;ConnectToService done&quot;;
+
+    connect(socket, &amp;QBluetoothSocket::readyRead, this, &amp;ChatClient::readSocket);
+    connect(socket, &amp;QBluetoothSocket::connected, this, QOverload&lt;&gt;::of(&amp;ChatClient::connected));
+    connect(socket, &amp;QBluetoothSocket::disconnected, this, &amp;ChatClient::disconnected);
+    connect(socket, &amp;QBluetoothSocket::errorOccurred, this, &amp;ChatClient::onSocketErrorOccurred);
+}
+</db:programlisting>
+<db:para>On successful socket connection we emit a signal to notify other users.</db:para>
+<db:programlisting language="cpp">void ChatClient::connected()
+{
+    emit connected(socket-&gt;peerName());
+}
+</db:programlisting>
+<db:para>Similarly to the chat server, the <db:code>readSocket()</db:code> slot is called when data is available from the socket. Lines are read individually and converted from UTF-8. The <db:code>messageReceived()</db:code> signal is emitted.</db:para>
+<db:programlisting language="cpp">void ChatClient::readSocket()
+{
+    if (!socket)
+        return;
+
+    while (socket-&gt;canReadLine()) {
+        QByteArray line = socket-&gt;readLine().trimmed();
+        emit messageReceived(socket-&gt;peerName(),
+                             QString::fromUtf8(line.constData(), line.length()));
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>sendMessage()</db:code> slot is used to send a message to the remote device. The message is converted to UTF-8 and a newline is appended.</db:para>
+<db:programlisting language="cpp">void ChatClient::sendMessage(const QString &amp;message)
+{
+    QByteArray text = message.toUtf8() + '\n';
+    socket-&gt;write(text);
+}
+</db:programlisting>
+<db:para>To disconnect from the remote chat service, the <db:link xlink:href="qbluetoothsocket.xml">QBluetoothSocket</db:link> instance is deleted.</db:para>
+<db:programlisting language="cpp">void ChatClient::stopClient()
+{
+    delete socket;
+    socket = nullptr;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="chat-dialog">
+<db:title>Chat Dialog</db:title>
+<db:para>The main window of this example is the chat dialog, implemented in the <db:code>Chat</db:code> class. This class displays a chat session between a single <db:code>ChatServer</db:code> and zero or more <db:code>ChatClient</db:code>s. The <db:code>Chat</db:code> class is declared as:</db:para>
+<db:programlisting language="cpp">class Chat : public QDialog
+{
+    Q_OBJECT
+
+public:
+    explicit Chat(QWidget *parent = nullptr);
+    ~Chat();
+
+signals:
+    void sendMessage(const QString &amp;message);
+
+private slots:
+    void connectClicked();
+    void sendClicked();
+
+    void showMessage(const QString &amp;sender, const QString &amp;message);
+
+    void clientConnected(const QString &amp;name);
+    void clientDisconnected(const QString &amp;name);
+    void clientDisconnected();
+    void connected(const QString &amp;name);
+    void reactOnSocketError(const QString &amp;error);
+
+    void newAdapterSelected();
+
+    void initBluetooth();
+
+    void updateIcons(Qt::ColorScheme scheme);
+
+private:
+    int adapterFromUserSelection() const;
+    int currentAdapterIndex = 0;
+    Ui::Chat *ui;
+
+    ChatServer *server = nullptr;
+    QList&lt;ChatClient *&gt; clients;
+    QList&lt;QBluetoothHostInfo&gt; localAdapters;
+
+    QString localName;
+};
+</db:programlisting>
+<db:para>First we construct the user interface</db:para>
+<db:programlisting language="cpp">ui-&gt;setupUi(this);
+
+connect(ui-&gt;connectButton, &amp;QPushButton::clicked, this, &amp;Chat::connectClicked);
+connect(ui-&gt;sendButton, &amp;QPushButton::clicked, this, &amp;Chat::sendClicked);
+</db:programlisting>
+<db:para>We create an instance of the <db:code>ChatServer</db:code> and respond to its <db:code>clientConnected()</db:code>, <db:code>clientDiconnected()</db:code>, and <db:code>messageReceived()</db:code> signals.</db:para>
+<db:programlisting language="cpp">server = new ChatServer(this);
+connect(server, QOverload&lt;const QString &amp;&gt;::of(&amp;ChatServer::clientConnected),
+        this, &amp;Chat::clientConnected);
+connect(server, QOverload&lt;const QString &amp;&gt;::of(&amp;ChatServer::clientDisconnected),
+        this,  QOverload&lt;const QString &amp;&gt;::of(&amp;Chat::clientDisconnected));
+connect(server, &amp;ChatServer::messageReceived,
+        this,  &amp;Chat::showMessage);
+connect(this, &amp;Chat::sendMessage, server, &amp;ChatServer::sendMessage);
+server-&gt;startServer();
+</db:programlisting>
+<db:para>In response to the <db:code>clientConnected()</db:code> and <db:code>clientDisconnected()</db:code> signals of the <db:code>ChatServer</db:code>, we display the typical &quot;X has joined chat.&quot; and &quot;Y has left.&quot; messages in the chat session.</db:para>
+<db:programlisting language="cpp">void Chat::clientConnected(const QString &amp;name)
+{
+    ui-&gt;chat-&gt;insertPlainText(QString::fromLatin1(&quot;%1 has joined chat.\n&quot;).arg(name));
+}
+
+void Chat::clientDisconnected(const QString &amp;name)
+{
+    ui-&gt;chat-&gt;insertPlainText(QString::fromLatin1(&quot;%1 has left.\n&quot;).arg(name));
+}
+</db:programlisting>
+<db:para>Incoming messages from clients connected to the <db:code>ChatServer</db:code> are handled in the <db:code>showMessage()</db:code> slot. The message text tagged with the remote device name is displayed in the chat session.</db:para>
+<db:programlisting language="cpp">void Chat::showMessage(const QString &amp;sender, const QString &amp;message)
+{
+    ui-&gt;chat-&gt;moveCursor(QTextCursor::End);
+    ui-&gt;chat-&gt;insertPlainText(QString::fromLatin1(&quot;%1: %2\n&quot;).arg(sender, message));
+    ui-&gt;chat-&gt;ensureCursorVisible();
+}
+</db:programlisting>
+<db:para>In response to the connect button being clicked, the application starts service discovery and presents a list of discovered chat services on remote devices. A <db:code>ChatClient</db:code> for the service is selected by the user.</db:para>
+<db:programlisting language="cpp">void Chat::connectClicked()
+{
+    ui-&gt;connectButton-&gt;setEnabled(false);
+
+    // scan for services
+    const QBluetoothAddress adapter = localAdapters.isEmpty() ?
+                                           QBluetoothAddress() :
+                                           localAdapters.at(currentAdapterIndex).address();
+
+    RemoteSelector remoteSelector(adapter);
+#ifdef Q_OS_ANDROID
+    // QTBUG-61392
+    Q_UNUSED(serviceUuid);
+    remoteSelector.startDiscovery(QBluetoothUuid(reverseUuid));
+#else
+    remoteSelector.startDiscovery(QBluetoothUuid(serviceUuid));
+#endif
+    if (remoteSelector.exec() == QDialog::Accepted) {
+        QBluetoothServiceInfo service = remoteSelector.service();
+
+        qDebug() &lt;&lt; &quot;Connecting to service&quot; &lt;&lt; service.serviceName()
+                 &lt;&lt; &quot;on&quot; &lt;&lt; service.device().name();
+
+        // Create client
+        ChatClient *client = new ChatClient(this);
+
+        connect(client, &amp;ChatClient::messageReceived,
+                this, &amp;Chat::showMessage);
+        connect(client, &amp;ChatClient::disconnected,
+                this, QOverload&lt;&gt;::of(&amp;Chat::clientDisconnected));
+        connect(client, QOverload&lt;const QString &amp;&gt;::of(&amp;ChatClient::connected),
+                this, &amp;Chat::connected);
+        connect(client, &amp;ChatClient::socketErrorOccurred,
+                this, &amp;Chat::reactOnSocketError);
+        connect(this, &amp;Chat::sendMessage, client, &amp;ChatClient::sendMessage);
+        client-&gt;startClient(service);
+
+        clients.append(client);
+    }
+
+    ui-&gt;connectButton-&gt;setEnabled(true);
+}
+</db:programlisting>
+<db:para>In reponse to the <db:code>connected()</db:code> signals from <db:code>ChatClient</db:code>, we display the &quot;Joined chat with X.&quot; message in the chat session.</db:para>
+<db:programlisting language="cpp">void Chat::connected(const QString &amp;name)
+{
+    ui-&gt;chat-&gt;insertPlainText(QString::fromLatin1(&quot;Joined chat with %1.\n&quot;).arg(name));
+}
+</db:programlisting>
+<db:para>Messages are sent to all remote devices via the <db:code>ChatServer</db:code> and <db:code>ChatClient</db:code> instances by emitting the <db:code>sendMessage()</db:code> signal.</db:para>
+<db:programlisting language="cpp">void Chat::sendClicked()
+{
+    ui-&gt;sendButton-&gt;setEnabled(false);
+    ui-&gt;sendText-&gt;setEnabled(false);
+
+    showMessage(localName, ui-&gt;sendText-&gt;text());
+    emit sendMessage(ui-&gt;sendText-&gt;text());
+
+    ui-&gt;sendText-&gt;clear();
+
+    ui-&gt;sendText-&gt;setEnabled(true);
+    ui-&gt;sendButton-&gt;setEnabled(true);
+#if defined(Q_OS_ANDROID) || defined(Q_OS_IOS)
+    // avoid keyboard automatically popping up again on mobile devices
+    ui-&gt;sendButton-&gt;setFocus();
+#else
+    ui-&gt;sendText-&gt;setFocus();
+#endif
+}
+</db:programlisting>
+<db:para>We need to clean up <db:code>ChatClient</db:code> instances when the remote device forces a disconnect.</db:para>
+<db:programlisting language="cpp">void Chat::clientDisconnected()
+{
+    ChatClient *client = qobject_cast&lt;ChatClient *&gt;(sender());
+    if (client) {
+        clients.removeOne(client);
+        client-&gt;deleteLater();
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtconnectivity.git/tree/examples/bluetooth/btchat?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

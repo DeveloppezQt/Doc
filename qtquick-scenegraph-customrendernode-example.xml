@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Custom QSGRenderNode</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> to implement custom rendering in the Qt Quick scenegraph.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The custom render node example shows how to implement a <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> subclass that is backed by a scene graph node derived from <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link>, providing it's own <db:link xlink:href="qrhi.xml">QRhi</db:link>-based rendering.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/customrendernode-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:note>
+<db:para>This example demonstrates advanced, low-level functionality performing portable, cross-platform 3D rendering, while relying on APIs with limited compatibility guarantee from the Qt Gui module. To be able to use the <db:link xlink:href="qrhi.xml">QRhi</db:link> APIs, the application links to <db:code>Qt::GuiPrivate</db:code> and includes <db:code>&lt;rhi/qrhi.h&gt;</db:code>.</db:para>
+</db:note>
+<db:para><db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> allows direct access to the Render Hardware Interface (RHI) within the scenegraph. This example demonstrates how to create <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> based render node and manage it with a custom item. The render node creates an RHI pipeline, updates vertex and uniform buffers, and renders into the RHI command buffer.</db:para>
+<db:para>In practice this is a portable, cross-platform approach to perform custom rendering inline with the scenegraph's own rendering, without resorting to a native 3D API such as OpenGL, Metal, or Vulkan. Rather, the application uses Qt's graphics and shader abstraction layer.</db:para>
+<db:para><db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> is the enabler for one of the three ways to integrate custom 2D/3D rendering into a Qt Quick scene. The other two options are to perform the rendering <db:code>before</db:code> or <db:code>after</db:code> the Qt Quick scene's own rendering, or to generate a whole separate render pass targeting a dedicated render target (a texture) and then have an item in the scene display the texture. The <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link>-based approach is similar to the former, in the sense that no additional render passes or render targets are involved, and allows injecting custom rendering commands &quot;inline&quot; with the Qt Quick scene's own rendering.</db:para>
+<db:para>Refer to the following examples for these three approaches:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qtquick-scenegraph-rhiunderqml-example.xml">Scene Graph - RHI Under QML</db:link> - Demonstrates an &quot;underlay&quot; approach based on the <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() signal. No additional render pass and resources are needed, but composition and blending with the rest of the Qt Quick scene is quite limited. Rendering &quot;under&quot; or &quot;over&quot; the Qt Quick scene is the simplest approach.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qtquick-scenegraph-rhitextureitem-example.xml">Scene Graph - RHI Texture Item</db:link> - Demonstrates creating a custom <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> that renders into a texture and displays a quad textured with the generated content. This is very flexible and allows complete blending and composition of the resulting 2D image with the rest of the Qt Quick scene. That comes at the expense of an additional render pass and render target.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>This example - Demonstrates the &quot;inline&quot; approach, where the Qt Quick scene graph calls into the custom item and node implementation during the main render pass. This approach can be great for performance (no extra render passes, texturing, and blending are involved), but has potential pitfalls and is the most complicated method.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The custom item derives from <db:link xlink:href="qquickitem.xml">QQuickItem</db:link>. Most importantly, it reimplements <db:link xlink:href="qquickitem.xml#updatePaintNode">updatePaintNode</db:link>().</db:para>
+<db:programlisting language="cpp">class CustomRender : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(QList&lt;QVector2D&gt; vertices READ vertices WRITE setVertices NOTIFY verticesChanged)
+    QML_ELEMENT
+
+public:
+    explicit CustomRender(QQuickItem *parent = nullptr);
+
+    QList&lt;QVector2D&gt; vertices() const;
+    void setVertices(const QList&lt;QVector2D&gt; &amp;newVertices);
+
+signals:
+    void verticesChanged();
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *old, UpdatePaintNodeData *) override;
+
+private:
+    QList&lt;QVector2D&gt; m_vertices;
+};
+</db:programlisting>
+<db:para>The constructor sets the <db:link xlink:href="qquickitem.xml#Flag-enum">ItemHasContents</db:link> flag to indicate that this is a visual item.</db:para>
+<db:programlisting language="cpp">CustomRender::CustomRender(QQuickItem *parent)
+    : QQuickItem(parent)
+{
+    setFlag(ItemHasContents, true);
+    connect(this, &amp;CustomRender::verticesChanged, this, &amp;CustomRender::update);
+}
+</db:programlisting>
+<db:para>The updatePaintNode() implementation creates an instance of the custom scenegraph node, if not yet done. The backing <db:link xlink:href="qsgnode.xml">QSGNode</db:link> tree for this item consists of a single node, an instance of a <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link>-derived class. When Qt Quick's threaded rendering model is in use, this function is called on the render thread with the main thread blocked. That is why it is safe to access main thread data (such as data stored in QQuickItems). The node, the instance of the <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> subclass, is going to &quot;live on&quot; the render thread.</db:para>
+<db:programlisting language="cpp">QSGNode *CustomRender::updatePaintNode(QSGNode *old, UpdatePaintNodeData *)
+{
+    CustomRenderNode *node = static_cast&lt;CustomRenderNode *&gt;(old);
+
+    if (!node)
+        node = new CustomRenderNode(window());
+
+    node-&gt;setVertices(m_vertices);
+
+    return node;
+}
+</db:programlisting>
+<db:para>The <db:code>CustomRenderNode</db:code> class derives from <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link>, reimplementing a number of virtual functions. To manage <db:link xlink:href="qrhi.xml">QRhi</db:link> resources (buffers, pipelines, etc.), smart pointers are quite useful in this case, because the node is destroyed by the scene graph together with the rest of the scene on the render thread (if there is one) while the <db:link xlink:href="qrhi.xml">QRhi</db:link> is still available, and therefore releasing resources from the destructor or via smart pointers is legal and safe.</db:para>
+<db:programlisting language="cpp">class CustomRenderNode : public QSGRenderNode
+{
+public:
+    CustomRenderNode(QQuickWindow *window);
+
+    void setVertices(const QList&lt;QVector2D&gt; &amp;vertices);
+
+    void prepare() override;
+    void render(const RenderState *state) override;
+    void releaseResources() override;
+    RenderingFlags flags() const override;
+    QSGRenderNode::StateFlags changedStates() const override;
+
+protected:
+    QQuickWindow *m_window;
+    std::unique_ptr&lt;QRhiBuffer&gt; m_vertexBuffer;
+    std::unique_ptr&lt;QRhiBuffer&gt; m_uniformBuffer;
+    std::unique_ptr&lt;QRhiShaderResourceBindings&gt; m_resourceBindings;
+    std::unique_ptr&lt;QRhiGraphicsPipeline&gt; m_pipeline;
+    QList&lt;QRhiShaderStage&gt; m_shaders;
+    bool m_verticesDirty = true;
+    QList&lt;QVector2D&gt; m_vertices;
+};
+</db:programlisting>
+<db:para>Well-behaving <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> subclasses also reimplement <db:link xlink:href="qsgrendernode.xml#releaseResources">releaseResources</db:link>(), which in this case can be a simple set of reset() calls.</db:para>
+<db:programlisting language="cpp">void CustomRenderNode::releaseResources()
+{
+    m_vertexBuffer.reset();
+    m_uniformBuffer.reset();
+    m_pipeline.reset();
+    m_resourceBindings.reset();
+}
+</db:programlisting>
+<db:para>This <db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link> is performing its rendering through the <db:link xlink:href="qrhi.xml">QRhi</db:link> APIs (and not directly through OpenGL, Vulkan, Metal, etc.), and it takes the item transform into account (as it only really does 2D rendering). Hence specifying the appropriate flags, which may bring a small performance improvement.</db:para>
+<db:programlisting language="cpp">QSGRenderNode::RenderingFlags CustomRenderNode::flags() const
+{
+    // We are rendering 2D content directly into the scene graph using QRhi, no
+    // direct usage of a 3D API. Hence NoExternalRendering. This is a minor
+    // optimization.
+
+    // Additionally, the node takes the item transform into account by relying
+    // on projectionMatrix() and matrix() (see prepare()) and never rendering at
+    // other Z coordinates. Hence DepthAwareRendering. This is a potentially
+    // bigger optimization.
+
+    return QSGRenderNode::NoExternalRendering | QSGRenderNode::DepthAwareRendering;
+}
+</db:programlisting>
+<db:para>The prepare() and render() functions are called every time the Qt Quick scene renders. The first is called when preparing (but not yet recording) the render pass. This typically creates resources, such as buffers, textures, and graphics pipelines, if not yet done, and enqueues uploading data to them.</db:para>
+<db:programlisting language="cpp">void CustomRenderNode::prepare()
+{
+    QRhi *rhi = m_window-&gt;rhi();
+    QRhiResourceUpdateBatch *resourceUpdates = rhi-&gt;nextResourceUpdateBatch();
+
+    if (m_verticesDirty) {
+        m_vertexBuffer.reset();
+        m_verticesDirty = false;
+    }
+
+    if (!m_vertexBuffer) {
+        m_vertexBuffer.reset(rhi-&gt;newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer,
+                                            m_vertices.count() * sizeof(QVector2D)));
+        m_vertexBuffer-&gt;create();
+        resourceUpdates-&gt;uploadStaticBuffer(m_vertexBuffer.get(), m_vertices.constData());
+    }
+</db:programlisting>
+<db:para>The render() function is called while the recording of a render pass, targeting either the <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link>'s swapchain, or a texture (in case of layered items, or when within a <db:link xlink:href="qml-qtquick-shadereffectsource.xml">ShaderEffectSource</db:link>), is active.</db:para>
+<db:programlisting language="cpp">void CustomRenderNode::render(const RenderState *)
+{
+    QRhiCommandBuffer *cb = commandBuffer();
+    cb-&gt;setGraphicsPipeline(m_pipeline.get());
+    QSize renderTargetSize = renderTarget()-&gt;pixelSize();
+    cb-&gt;setViewport(QRhiViewport(0, 0, renderTargetSize.width(), renderTargetSize.height()));
+    cb-&gt;setShaderResources();
+    QRhiCommandBuffer::VertexInput vertexBindings[] = { { m_vertexBuffer.get(), 0 } };
+    cb-&gt;setVertexInput(0, 1, vertexBindings);
+    cb-&gt;draw(m_vertices.count());
+}
+</db:programlisting>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/scenegraph/customrendernode?h=6.9">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qsgrendernode.xml">QSGRenderNode</db:link></db:member>
+<db:member><db:link xlink:href="qrhi.xml">QRhi</db:link></db:member>
+<db:member><db:link xlink:href="qtquick-scenegraph-rhiunderqml-example.xml">Scene Graph - RHI Under QML</db:link></db:member>
+<db:member><db:link xlink:href="qtquick-scenegraph-rhitextureitem-example.xml">Scene Graph - RHI Texture Item</db:link></db:member>
+<db:member><db:link xlink:href="qtquick-visualcanvas-scenegraph.xml">Qt Quick Scene Graph</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

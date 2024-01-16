@@ -1,0 +1,382 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Writing advanced QML Extensions with C++</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 6.9.1 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Qml Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Tutorial about advanced extensions to QML with Qt C++.</db:para>
+</db:abstract>
+<db:pubdate>2025-06-29</db:pubdate>
+<db:date>2025-06-29</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="birthdayparty-base-project">
+<db:title>BirthdayParty Base Project</db:title>
+<db:para>extending-qml-advanced/advanced1-Base-project</db:para>
+<db:para>This tutorial uses the example of a birthday party to demonstrate some of the features of QML. The code for the various features explained below is based on this birthday party project and relies on some of the material in the first tutorial on <db:link xlink:href="qtqml-tutorials-extending-qml-example.xml">QML extensions</db:link>. This simple example is then expanded upon to illustrate the various QML extensions explained below. The complete code for each new extension to the code can be found in the tutorials at the location specified under each section's title or by following the link to the code at the very end of this page.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/extending-qml-advanced-word-cloud.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The base project defines the Person class and the BirthdayParty class, which model the attendees and the party itself respectively.</db:para>
+<db:programlisting language="cpp">class Person : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged FINAL)
+    Q_PROPERTY(int shoeSize READ shoeSize WRITE setShoeSize NOTIFY shoeSizeChanged FINAL)
+    QML_ELEMENT
+    ...
+    QString m_name;
+    int m_shoeSize = 0;
+};
+
+class BirthdayParty : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Person *host READ host WRITE setHost NOTIFY hostChanged FINAL)
+    Q_PROPERTY(QQmlListProperty&lt;Person&gt; guests READ guests NOTIFY guestsChanged FINAL)
+    QML_ELEMENT
+    ...
+    Person *m_host = nullptr;
+    QList&lt;Person *&gt; m_guests;
+};
+
+</db:programlisting>
+<db:para>All the information about the party can then be stored in the corresponding QML file.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    host: Person {
+        name: &quot;Bob Jones&quot;
+        shoeSize: 12
+    }
+    guests: [
+        Person { name: &quot;Leo Hodges&quot; },
+        Person { name: &quot;Jack Smith&quot; },
+        Person { name: &quot;Anne Brown&quot; }
+    ]
+}
+
+</db:programlisting>
+<db:para>The main.cpp file creates a simple shell application that displays whose birthday it is and who is invited to their party.</db:para>
+<db:programlisting language="cpp">    QQmlEngine engine;
+    QQmlComponent component(&amp;engine);
+    component.loadFromModule(&quot;People&quot;, &quot;Main&quot;);
+    std::unique_ptr&lt;BirthdayParty&gt; party{ qobject_cast&lt;BirthdayParty *&gt;(component.create()) };
+
+</db:programlisting>
+<db:para>The app outputs the following summary of the party.</db:para>
+<db:programlisting language="cpp" role="bad">&quot;Bob Jones&quot; is having a birthday!
+They are inviting:
+    &quot;Leo Hodges&quot;
+    &quot;Jack Smith&quot;
+    &quot;Anne Brown&quot;
+</db:programlisting>
+<db:para>The following sections go into how to add support for Boy and Girl attendees instead of just Person by using inheritance and coercion, how to make use of default properties to implicitly assign attendees of the party as guests, how to assign properties as groups instead of one by one, how to use attached objects to keep track of invited guests' reponses, how to use a property value source to display the lyrics of the happy birthday song over time, and how to expose third party objects to QML.</db:para>
+</db:section>
+<db:section xml:id="inheritance-and-coercion">
+<db:title>Inheritance and Coercion</db:title>
+<db:para>extending-qml-advanced/advanced2-Inheritance-and-coercion</db:para>
+<db:para>Right now, each attendant is being modelled as a person. This is a bit too generic and it would be nice to be able to know more about the attendees. By specializing them as boys and girls, we can already get a better idea of who's coming.</db:para>
+<db:para>To do this, the Boy and Girl classes are introduced, both inheriting from Person.</db:para>
+<db:programlisting language="cpp">class Boy : public Person
+{
+    Q_OBJECT
+    QML_ELEMENT
+public:
+    using Person::Person;
+};
+
+class Girl : public Person
+{
+    Q_OBJECT
+    QML_ELEMENT
+public:
+    using Person::Person;
+};
+
+</db:programlisting>
+<db:para>The Person class remains unaltered and the Boy and Girl C++ classes are trivial extensions of it. The types and their QML name are registered with the QML engine with <db:link xlink:href="qqmlintegration-h.xml#QML_ELEMENT">QML_ELEMENT</db:link>.</db:para>
+<db:para>Notice that the host and guests properties in BirthdayParty still take instances of Person.</db:para>
+<db:programlisting language="cpp">class BirthdayParty : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Person *host READ host WRITE setHost NOTIFY hostChanged FINAL)
+    Q_PROPERTY(QQmlListProperty&lt;Person&gt; guests READ guests NOTIFY guestsChanged FINAL)
+    QML_ELEMENT
+    ...
+};
+
+</db:programlisting>
+<db:para>The implementation of the Person class itself has not been changed. However, as the Person class was repurposed as a common base for Boy and Girl, Person should no longer be instantiable from QML directly. An explicit Boy or Girl should be instantiated instead.</db:para>
+<db:programlisting language="cpp">class Person : public QObject
+{
+    ...
+    QML_ELEMENT
+    QML_UNCREATABLE(&quot;Person is an abstract base class.&quot;)
+    ...
+};
+
+</db:programlisting>
+<db:para>While we want to disallow instantiating Person from within QML, it still needs to be registered with the QML engine so that it can be used as a property type and other types can be coerced to it. This is what the <db:link xlink:href="qqmlintegration-h.xml#QML_UNCREATABLE">QML_UNCREATABLE</db:link> macro does. As all three types, Person, Boy and Girl, have been registered with the QML system, on assignment, QML automatically (and type-safely) converts the Boy and Girl objects into a Person.</db:para>
+<db:para>With these changes in place, we can now specify the birthday party with the extra information about the attendees as follows.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    host: Boy {
+        name: &quot;Bob Jones&quot;
+        shoeSize: 12
+    }
+    guests: [
+        Boy { name: &quot;Leo Hodges&quot; },
+        Boy { name: &quot;Jack Smith&quot; },
+        Girl { name: &quot;Anne Brown&quot; }
+    ]
+}
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="default-properties">
+<db:title>Default Properties</db:title>
+<db:para>extending-qml-advanced/advanced3-Default-properties</db:para>
+<db:para>Currently, in the QML file, each property is assigned explicitly. For example, the host property is assigned a Boy and the guests property is assigned a list of Boy or Girl. This is easy but it can be made a bit simpler for this specific use case. Instead of assigning the guests property explicitly, we can add Boy and Girl objects inside the party directly and have them assigned to guests implicitly. It makes sense that all the attendees that we specify, and that are not the host, are guests. This change is purely syntactical but it can add a more natural feel in many situations.</db:para>
+<db:para>The guests property can be designated as the default property of BirthdayParty. Meaning that each object created inside of a BirthdayParty is implicitly appended to the default property guests. The resulting QML looks like this.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    host: Boy {
+        name: &quot;Bob Jones&quot;
+        shoeSize: 12
+    }
+
+    Boy { name: &quot;Leo Hodges&quot; }
+    Boy { name: &quot;Jack Smith&quot; }
+    Girl { name: &quot;Anne Brown&quot; }
+}
+
+</db:programlisting>
+<db:para>The only change required to enable this behavior is to add the DefaultProperty class info annotation to BirthdayParty to designate guests as its default property.</db:para>
+<db:programlisting language="cpp">class BirthdayParty : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Person *host READ host WRITE setHost NOTIFY hostChanged FINAL)
+    Q_PROPERTY(QQmlListProperty&lt;Person&gt; guests READ guests NOTIFY guestsChanged FINAL)
+    Q_CLASSINFO(&quot;DefaultProperty&quot;, &quot;guests&quot;)
+    QML_ELEMENT
+    ...
+};
+
+</db:programlisting>
+<db:para>You may already be familiar with this mechanism. The default property for all descendants of Item in QML is the data property. All elements not explicitly added to a property of an Item will be added to data. This makes the structure clear and reduces unnecessary noise in the code.</db:para>
+</db:section>
+<db:section xml:id="grouped-properties">
+<db:title>Grouped Properties</db:title>
+<db:para>extending-qml-advanced/advanced4-Grouped-properties</db:para>
+<db:para>More information is needed about the shoes of the guests. Aside from their size, we also want to store the shoes' color, brand, and price. This information is stored in a ShoeDescription class.</db:para>
+<db:programlisting language="cpp">class ShoeDescription : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(int size READ size WRITE setSize NOTIFY shoeChanged FINAL)
+    Q_PROPERTY(QColor color READ color WRITE setColor NOTIFY shoeChanged FINAL)
+    Q_PROPERTY(QString brand READ brand WRITE setBrand NOTIFY shoeChanged FINAL)
+    Q_PROPERTY(qreal price READ price WRITE setPrice NOTIFY shoeChanged FINAL)
+    ...
+};
+
+</db:programlisting>
+<db:para>Each person now has two properties, a name and a shoe description shoe.</db:para>
+<db:programlisting language="cpp">class Person : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged FINAL)
+    Q_PROPERTY(ShoeDescription *shoe READ shoe WRITE setShoe NOTIFY shoeChanged FINAL)
+    ...
+};
+
+</db:programlisting>
+<db:para>Specifying the values for each element of the shoe description works but is a bit repetitive.</db:para>
+<db:programlisting language="cpp">    Girl {
+        name: &quot;Anne Brown&quot;
+        shoe.size: 7
+        shoe.color: &quot;red&quot;
+        shoe.brand: &quot;Job Macobs&quot;
+        shoe.price: 99.99
+    }
+</db:programlisting>
+<db:para>Grouped properties provide a more elegant way of assigning these properties. Instead of assigning the values to each property one-by-one, the individual values can be passed as a group to the shoe property making the code more readable. No changes are required to enable this feature as it is available by default for all of QML.</db:para>
+<db:programlisting language="cpp">    host: Boy {
+        name: &quot;Bob Jones&quot;
+        shoe { size: 12; color: &quot;white&quot;; brand: &quot;Bikey&quot;; price: 90.0 }
+    }
+
+</db:programlisting>
+</db:section>
+<db:section xml:id="attached-properties">
+<db:title>Attached Properties</db:title>
+<db:para>extending-qml-advanced/advanced5-Attached-properties</db:para>
+<db:para>The time has come for the host to send out invitations. To keep track of which guests have responded to the invitation and when, we need somewhere to store that information. Storing it in the BirthdayParty object iself would not really fit. A better way would be to store the responses as attached objects to the party object.</db:para>
+<db:para>First, we declare the BirthdayPartyAttached class which holds the guest reponses.</db:para>
+<db:programlisting language="cpp">class BirthdayPartyAttached : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QDate rsvp READ rsvp WRITE setRsvp NOTIFY rsvpChanged FINAL)
+    QML_ANONYMOUS
+    ...
+};
+
+</db:programlisting>
+<db:para>And we attach it to the BirthdayParty class and define qmlAttachedProperties() to return the attached object.</db:para>
+<db:programlisting language="cpp">class BirthdayParty : public QObject
+{
+    ...
+    QML_ATTACHED(BirthdayPartyAttached)
+    ...
+    static BirthdayPartyAttached *qmlAttachedProperties(QObject *);
+
+};
+
+</db:programlisting>
+<db:para>Now, attached objects can be used in the QML to hold the rsvp information of the invited guests.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    Boy {
+        name: &quot;Robert Campbell&quot;
+        BirthdayParty.rsvp: Date.fromLocaleString(Qt.locale(), &quot;2023-03-01&quot;, &quot;yyyy-MM-dd&quot;)
+    }
+
+    Boy {
+        name: &quot;Leo Hodges&quot;
+        shoe { size: 10; color: &quot;black&quot;; brand: &quot;Reebok&quot;; price: 59.95 }
+        BirthdayParty.rsvp: Date.fromLocaleString(Qt.locale(), &quot;2023-03-03&quot;, &quot;yyyy-MM-dd&quot;)
+    }
+
+    host: Boy {
+        name: &quot;Jack Smith&quot;
+        shoe { size: 8; color: &quot;blue&quot;; brand: &quot;Puma&quot;; price: 19.95 }
+    }
+}
+
+</db:programlisting>
+<db:para>Finally, the information can be accessed in the following way.</db:para>
+<db:programlisting language="cpp">            QDate rsvpDate;
+            QObject *attached = qmlAttachedPropertiesObject&lt;BirthdayParty&gt;(guest, false);
+
+            if (attached)
+                rsvpDate = attached-&gt;property(&quot;rsvp&quot;).toDate();
+</db:programlisting>
+<db:para>The program outputs the following summary of the party to come.</db:para>
+<db:programlisting language="cpp" role="bad">&quot;Jack Smith&quot; is having a birthday!
+He is inviting:
+    &quot;Robert Campbell&quot; RSVP date: &quot;Wed Mar 1 2023&quot;
+    &quot;Leo Hodges&quot; RSVP date: &quot;Mon Mar 6 2023&quot;
+</db:programlisting>
+</db:section>
+<db:section xml:id="property-value-source">
+<db:title>Property Value Source</db:title>
+<db:para>extending-qml-advanced/advanced6-Property-value-source</db:para>
+<db:para>During the party the guests have to sing for the host. It would be handy if the program could display the lyrics customized for the occasion to help the guests. To this end, a property value source is used to generate the verses of the song over time.</db:para>
+<db:programlisting language="cpp">class HappyBirthdaySong : public QObject, public QQmlPropertyValueSource
+{
+    Q_OBJECT
+    Q_INTERFACES(QQmlPropertyValueSource)
+    ...
+    void setTarget(const QQmlProperty &amp;) override;
+
+};
+
+</db:programlisting>
+<db:para>The class HappyBirthdaySong is added as a value source. It must inherit from QQmlPropertyValueSource and implement the <db:link xlink:href="qqmlpropertyvaluesource.xml">QQmlPropertyValueSource</db:link> interface with the <db:link xlink:href="qobject.xml#Q_INTERFACES">Q_INTERFACES</db:link> macro. The setTarget() function is used to define which property this source acts upon. In this case, the value source writes to the announcement property of the BirthdayParty to display the lyrics over time. It has an internal timer that causes the announcement property of the party to be set to the next line of the lyrics repeatedly.</db:para>
+<db:para>In QML, a HappyBirthdaySong is instantiated inside the BirthdayParty. The on keyword in its signature is used to specify the property that the value source targets, in this case announcement. The name property of the HappyBirthdaySong object is also <db:link xlink:href="qtqml-syntax-propertybinding.xml">bound</db:link> to the name of the host of the party.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    id: party
+    HappyBirthdaySong on announcement {
+        name: party.host.name
+    }
+    ...
+}
+
+</db:programlisting>
+<db:para>The program displays the time at which the party started using the partyStarted signal and then prints the following happy birthday verses over and over.</db:para>
+<db:programlisting language="cpp" role="bad">Happy birthday to you,
+Happy birthday to you,
+Happy birthday dear Bob Jones,
+Happy birthday to you!
+</db:programlisting>
+</db:section>
+<db:section xml:id="foreign-objects-integration">
+<db:title>Foreign objects integration</db:title>
+<db:para>extending-qml-advanced/advanced7-Foreign-objects-integration</db:para>
+<db:para>Instead of just printing the lyrics out to the console, the attendees would like to use a more fancy display with support for colors. They would like to integrate it in the project but currently it is not possible to configure the screen from QML because it comes from a third party library. To solve this, the necessary types need to be exposed to the QML engine so its properties are available for modification in QML directly.</db:para>
+<db:para>The display can be controlled by the ThirdPartyDisplay class. It has properties to define the content and the foreground and background colors of the text to display.</db:para>
+<db:programlisting language="cpp">class Q_DECL_EXPORT ThirdPartyDisplay : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString content READ content WRITE setContent NOTIFY contentChanged FINAL)
+    Q_PROPERTY(QColor foregroundColor READ foregroundColor WRITE setForegroundColor NOTIFY colorsChanged FINAL)
+    Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor NOTIFY colorsChanged FINAL)
+    ...
+};
+
+</db:programlisting>
+<db:para>To expose this type to QML, we can register it with the engine with <db:link xlink:href="qqmlintegration-h.xml#QML_ELEMENT">QML_ELEMENT</db:link>. However, since the class isn't accessible for modification, <db:link xlink:href="qqmlintegration-h.xml#QML_ELEMENT">QML_ELEMENT</db:link> cannot simply be added to it. To register the type with the engine, the type needs to be registered from the outside. This is what <db:link xlink:href="qqmlintegration-h.xml#QML_FOREIGN">QML_FOREIGN</db:link> is for. When used in a type in conjunction with other QML macros, the other macros apply not to the type they reside in but to the foreign type designated by <db:link xlink:href="qqmlintegration-h.xml#QML_FOREIGN">QML_FOREIGN</db:link>.</db:para>
+<db:programlisting language="cpp">class ForeignDisplay : public QObject
+{
+    Q_OBJECT
+    QML_NAMED_ELEMENT(ThirdPartyDisplay)
+    QML_FOREIGN(ThirdPartyDisplay)
+};
+
+</db:programlisting>
+<db:para>This way, the BirthdayParty now has a new property with the display.</db:para>
+<db:programlisting language="cpp">class BirthdayParty : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(Person *host READ host WRITE setHost NOTIFY hostChanged FINAL)
+    Q_PROPERTY(QQmlListProperty&lt;Person&gt; guests READ guests NOTIFY guestsChanged FINAL)
+    Q_PROPERTY(QString announcement READ announcement WRITE setAnnouncement NOTIFY announcementChanged FINAL)
+    Q_PROPERTY(ThirdPartyDisplay *display READ display WRITE setDisplay NOTIFY displayChanged FINAL)
+    ...
+};
+
+</db:programlisting>
+<db:para>And, in QML, the colors of the text on the fancy third display can be set explicitly.</db:para>
+<db:programlisting language="cpp">BirthdayParty {
+    display: ThirdPartyDisplay {
+        foregroundColor: &quot;black&quot;
+        backgroundColor: &quot;white&quot;
+    }
+    ...
+}
+
+</db:programlisting>
+<db:para>Setting the announcement property of the BirthdayParty now sends the message to the fancy display instead of printing it itself.</db:para>
+<db:programlisting language="cpp">void BirthdayParty::setAnnouncement(const QString &amp;announcement)
+{
+    if (m_announcement != announcement) {
+        m_announcement = announcement;
+        emit announcementChanged();
+    }
+    m_display-&gt;setContent(announcement);
+}
+
+</db:programlisting>
+<db:para>The output then looks like this over and over similar to the previous section.</db:para>
+<db:programlisting language="cpp" role="bad">[Fancy ThirdPartyDisplay] Happy birthday to you,
+[Fancy ThirdPartyDisplay] Happy birthday to you,
+[Fancy ThirdPartyDisplay] Happy birthday dear Bob Jones,
+[Fancy ThirdPartyDisplay] Happy birthday to you!
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtqml-cppintegration-definetypes.xml#specifying-default-and-parent-properties-for-qml-object-types">Specifying Default and Parent Properties for QML Object Types</db:link></db:member>
+<db:member><db:link xlink:href="qtqml-syntax-objectattributes.xml#grouped-properties">Grouped Properties</db:link></db:member>
+<db:member><db:link xlink:href="qtqml-cppintegration-definetypes.xml#providing-attached-properties">Providing Attached Properties</db:link></db:member>
+<db:member><db:link xlink:href="qtqml-cppintegration-definetypes.xml#property-value-sources">Property Value Sources</db:link></db:member>
+<db:member><db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-foreign-types">Registering Foreign Types</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>
