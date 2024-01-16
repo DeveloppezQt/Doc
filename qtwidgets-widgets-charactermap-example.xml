@@ -1,0 +1,418 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Character Map Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.1.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Character Map example shows how to create a custom widget that can both display its own content and respond to user input.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The example displays an array of characters which the user can click on to enter text in a line edit. The contents of the line edit can then be copied into the clipboard, and pasted into other applications. The purpose behind this sort of tool is to allow users to enter characters that may be unavailable or difficult to locate on their keyboards.</db:para>
+<db:figure>
+<db:title>Screenshot of the Character Map example</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/charactermap-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:figure>
+<db:para>The example consists of the following classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>CharacterWidget displays the available characters in the current font and style.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>MainWindow provides a standard main window that contains font and style information, a view onto the characters, a line edit, and a push button for submitting text to the clipboard.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:section xml:id="characterwidget-class-definition">
+<db:title>CharacterWidget Class Definition</db:title>
+<db:para>The CharacterWidget class is used to display an array of characters in a user-specified font and style. For flexibility, we subclass <db:link xlink:href="qwidget.xml">QWidget</db:link> and reimplement only the functions that we need to provide basic rendering and interaction features.</db:para>
+<db:para>The class definition looks like this:</db:para>
+<db:programlisting language="cpp">class CharacterWidget : public QWidget
+{
+    Q_OBJECT
+
+public:
+    CharacterWidget(QWidget *parent = nullptr);
+    QSize sizeHint() const override;
+
+public slots:
+    void updateFont(const QFont &amp;amp;font);
+    void updateSize(const QString &amp;amp;fontSize);
+    void updateStyle(const QString &amp;amp;fontStyle);
+    void updateFontMerging(bool enable);
+
+signals:
+    void characterSelected(const QString &amp;amp;character);
+
+protected:
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
+
+private:
+    void calculateSquareSize();
+
+    QFont displayFont;
+    int columns = 16;
+    int lastKey = -1;
+    int squareSize = 0;
+};
+</db:programlisting>
+<db:para>The widget does not contain any other widgets, so it must provide its own size hint to allow its contents to be displayed correctly. We reimplement <db:link xlink:href="qwidget.xml#paintEvent">QWidget::paintEvent</db:link>() to draw custom content. We also reimplement <db:link xlink:href="qwidget.xml#mousePressEvent">QWidget::mousePressEvent</db:link>() to allow the user to interact with the widget.</db:para>
+<db:para>The updateFont() and updateStyle() slots are used to update the font and style of the characters in the widget whenever the user changes the settings in the application. The class defines the characterSelected() signal so that other parts of the application are informed whenever the user selects a character in the widget. As a courtesy, the widget provides a tooltip that shows the current character value. We reimplement the <db:link xlink:href="qwidget.xml#mouseMoveEvent">QWidget::mouseMoveEvent</db:link>() event handler and define showToolTip() to enable this feature.</db:para>
+<db:para>The columns, displayFont and currentKey private data members are used to record the number of columns to be shown, the current font, and the currently highlighted character in the widget.</db:para>
+</db:section>
+<db:section xml:id="characterwidget-class-implementation">
+<db:title>CharacterWidget Class Implementation</db:title>
+<db:para>Since the widget is to be used as a simple canvas, the constructor just calls the base class constructor and defines some default values for private data members.</db:para>
+<db:programlisting language="cpp">CharacterWidget::CharacterWidget(QWidget *parent)
+    : QWidget(parent)
+{
+    calculateSquareSize();
+    setMouseTracking(true);
+}
+</db:programlisting>
+<db:para>We initialize currentKey with a value of -1 to indicate that no character is initially selected. We enable mouse tracking to allow us to follow the movement of the cursor across the widget.</db:para>
+<db:para>The class provides two functions to allow the font and style to be set up. Each of these modify the widget's display font and call update():</db:para>
+<db:programlisting language="cpp">void CharacterWidget::updateFont(const QFont &amp;amp;font)
+{
+    displayFont.setFamily(font.family());
+    calculateSquareSize();
+    adjustSize();
+    update();
+}
+
+void CharacterWidget::updateSize(const QString &amp;amp;fontSize)
+{
+    displayFont.setPointSize(fontSize.toInt());
+    calculateSquareSize();
+    adjustSize();
+    update();
+}
+</db:programlisting>
+<db:para>We use a fixed size font for the display. Similarly, a fixed size hint is provided by the sizeHint() function:</db:para>
+<db:programlisting language="cpp">QSize CharacterWidget::sizeHint() const
+{
+    return QSize(columns*squareSize, (65536 / columns) * squareSize);
+}
+</db:programlisting>
+<db:para>Three standard event functions are implemented so that the widget can respond to clicks, provide tooltips, and render the available characters. The paintEvent() shows how the contents of the widget are arranged and displayed:</db:para>
+<db:programlisting language="cpp">void CharacterWidget::paintEvent(QPaintEvent *event)
+{
+    QPainter painter(this);
+    painter.fillRect(event-&amp;gt;rect(), QBrush(Qt::white));
+    painter.setFont(displayFont);
+</db:programlisting>
+<db:para>A <db:link xlink:href="qpainter.xml">QPainter</db:link> is created for the widget and, in all cases, we ensure that the widget's background is painted. The painter's font is set to the user-specified display font.</db:para>
+<db:para>The area of the widget that needs to be redrawn is used to determine which characters need to be displayed:</db:para>
+<db:programlisting language="cpp">    QRect redrawRect = event-&amp;gt;rect();
+    int beginRow = redrawRect.top() / squareSize;
+    int endRow = redrawRect.bottom() / squareSize;
+    int beginColumn = redrawRect.left() / squareSize;
+    int endColumn = redrawRect.right() / squareSize;
+</db:programlisting>
+<db:para>Using integer division, we obtain the row and column numbers of each characters that should be displayed, and we draw a square on the widget for each character displayed.</db:para>
+<db:programlisting language="cpp">    painter.setPen(QPen(Qt::gray));
+    for (int row = beginRow; row &amp;lt;= endRow; ++row) {
+        for (int column = beginColumn; column &amp;lt;= endColumn; ++column) {
+            painter.drawRect(column * squareSize, row * squareSize, squareSize, squareSize);
+        }
+    }
+</db:programlisting>
+<db:para>The symbols for each character in the array are drawn within each square, with the symbol for the most recently selected character displayed in red:</db:para>
+<db:programlisting language="cpp">    QFontMetrics fontMetrics(displayFont);
+    painter.setPen(QPen(Qt::black));
+    for (int row = beginRow; row &amp;lt;= endRow; ++row) {
+        for (int column = beginColumn; column &amp;lt;= endColumn; ++column) {
+            int key = row * columns + column;
+            painter.setClipRect(column * squareSize, row * squareSize, squareSize, squareSize);
+
+            if (key == lastKey)
+                painter.fillRect(column * squareSize + 1, row * squareSize + 1,
+                                 squareSize, squareSize, QBrush(Qt::red));
+
+            painter.drawText(column * squareSize + (squareSize / 2) -
+                                 fontMetrics.horizontalAdvance(QChar(key)) / 2,
+                             row * squareSize + 4 + fontMetrics.ascent(),
+                             QString(QChar(key)));
+        }
+    }
+}
+</db:programlisting>
+<db:para>We do not need to take into account the difference between the area displayed in the viewport and the area we are drawing on because everything outside the visible area will be clipped.</db:para>
+<db:para>The mousePressEvent() defines how the widget responds to mouse clicks.</db:para>
+<db:programlisting language="cpp">void CharacterWidget::mousePressEvent(QMouseEvent *event)
+{
+    if (event-&amp;gt;button() == Qt::LeftButton) {
+        lastKey = (event-&amp;gt;position().toPoint().y() / squareSize) * columns + event-&amp;gt;position().toPoint().x() / squareSize;
+        if (QChar(lastKey).category() != QChar::Other_NotAssigned)
+            emit characterSelected(QString(QChar(lastKey)));
+        update();
+    }
+    else
+        QWidget::mousePressEvent(event);
+}
+</db:programlisting>
+<db:para>We are only interested when the user clicks with the left mouse button over the widget. When this happens, we calculate which character was selected and emit the characterSelected() signal. The character's number is found by dividing the x and y-coordinates of the click by the size of each character's grid square. Since the number of columns in the widget is defined by the columns variable, we simply multiply the row index by that value and add the column number to obtain the character number.</db:para>
+<db:para>If any other mouse button is pressed, the event is passed on to the <db:link xlink:href="qwidget.xml">QWidget</db:link> base class. This ensures that the event can be handled properly by any other interested widgets.</db:para>
+<db:para>The mouseMoveEvent() maps the mouse cursor's position in global coordinates to widget coordinates, and determines the character that was clicked by performing the calculation</db:para>
+<db:programlisting language="cpp">void CharacterWidget::mouseMoveEvent(QMouseEvent *event)
+{
+    QPoint widgetPosition = mapFromGlobal(event-&amp;gt;globalPosition().toPoint());
+    uint key = (widgetPosition.y() / squareSize) * columns + widgetPosition.x() / squareSize;
+
+    QString text = QString::fromLatin1(&quot;&amp;lt;p&amp;gt;Character: &amp;lt;span style=\&quot;font-size: 24pt; font-family: %1\&quot;&amp;gt;&quot;).arg(displayFont.family())
+                  + QChar(key)
+                  + QString::fromLatin1(&quot;&amp;lt;/span&amp;gt;&amp;lt;p&amp;gt;Value: 0x&quot;)
+                  + QString::number(key, 16);
+    QToolTip::showText(event-&amp;gt;globalPosition().toPoint(), text, this);
+}
+</db:programlisting>
+<db:para>The tooltip is given a position defined in global coordinates.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-definition">
+<db:title>MainWindow Class Definition</db:title>
+<db:para>The MainWindow class provides a minimal user interface for the example, with only a constructor, slots that respond to signals emitted by standard widgets, and some convenience functions that are used to set up the user interface.</db:para>
+<db:para>The class definition looks like this:</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    MainWindow(QWidget *parent = nullptr);
+
+public slots:
+    void filterChanged(int);
+    void findStyles(const QFont &amp;amp;font);
+    void findSizes(const QFont &amp;amp;font);
+    void insertCharacter(const QString &amp;amp;character);
+#ifndef QT_NO_CLIPBOARD
+    void updateClipboard();
+#endif
+    void showInfo();
+
+private:
+    CharacterWidget *characterWidget;
+    QComboBox *filterCombo;
+    QComboBox *styleCombo;
+    QComboBox *sizeCombo;
+    QFontComboBox *fontCombo;
+    QLineEdit *lineEdit;
+    QScrollArea *scrollArea;
+    QCheckBox *fontMerging;
+};
+</db:programlisting>
+<db:para>The main window contains various widgets that are used to control how the characters will be displayed, and defines the findFonts() function for clarity and convenience. The findStyles() slot is used by the widgets to determine the styles that are available, insertCharacter() inserts a user-selected character into the window's line edit, and updateClipboard() synchronizes the clipboard with the contents of the line edit.</db:para>
+</db:section>
+<db:section xml:id="mainwindow-class-implementation">
+<db:title>MainWindow Class Implementation</db:title>
+<db:para>In the constructor, we set up the window's central widget and fill it with some standard widgets (two comboboxes, a line edit, and a push button). We also construct a CharacterWidget custom widget, and add a <db:link xlink:href="qscrollarea.xml">QScrollArea</db:link> so that we can view its contents:</db:para>
+<db:programlisting language="cpp">Q_DECLARE_METATYPE(QFontComboBox::FontFilter)
+
+MainWindow::MainWindow(QWidget *parent)
+    : QMainWindow(parent)
+{
+    QMenu *fileMenu = menuBar()-&amp;gt;addMenu(tr(&quot;File&quot;));
+    fileMenu-&amp;gt;addAction(tr(&quot;Quit&quot;), this, &amp;amp;QWidget::close);
+    QMenu *helpMenu = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;Help&quot;));
+    helpMenu-&amp;gt;addAction(tr(&quot;Show Font Info&quot;), this, &amp;amp;MainWindow::showInfo);
+    helpMenu-&amp;gt;addAction(tr(&quot;About &amp;amp;Qt&quot;), qApp, &amp;amp;QApplication::aboutQt);
+
+    QWidget *centralWidget = new QWidget;
+
+    QLabel *filterLabel = new QLabel(tr(&quot;Filter:&quot;));
+    filterCombo = new QComboBox;
+    filterCombo-&amp;gt;addItem(tr(&quot;All&quot;), QVariant::fromValue(QFontComboBox::AllFonts));
+    filterCombo-&amp;gt;addItem(tr(&quot;Scalable&quot;), QVariant::fromValue(QFontComboBox::ScalableFonts));
+    filterCombo-&amp;gt;addItem(tr(&quot;Monospaced&quot;), QVariant::fromValue(QFontComboBox::MonospacedFonts));
+    filterCombo-&amp;gt;addItem(tr(&quot;Proportional&quot;), QVariant::fromValue(QFontComboBox::ProportionalFonts));
+    filterCombo-&amp;gt;setCurrentIndex(0);
+    connect(filterCombo, &amp;amp;QComboBox::currentIndexChanged,
+            this, &amp;amp;MainWindow::filterChanged);
+
+    QLabel *fontLabel = new QLabel(tr(&quot;Font:&quot;));
+    fontCombo = new QFontComboBox;
+    QLabel *sizeLabel = new QLabel(tr(&quot;Size:&quot;));
+    sizeCombo = new QComboBox;
+    QLabel *styleLabel = new QLabel(tr(&quot;Style:&quot;));
+    styleCombo = new QComboBox;
+    QLabel *fontMergingLabel = new QLabel(tr(&quot;Automatic Font Merging:&quot;));
+    fontMerging = new QCheckBox;
+    fontMerging-&amp;gt;setChecked(true);
+
+    scrollArea = new QScrollArea;
+    characterWidget = new CharacterWidget;
+    scrollArea-&amp;gt;setWidget(characterWidget);
+</db:programlisting>
+<db:para><db:link xlink:href="qscrollarea.xml">QScrollArea</db:link> provides a viewport onto the CharacterWidget when we set its widget and handles much of the work needed to provide a scrolling viewport.</db:para>
+<db:para>The font combo box is automatically popuplated with a list of available fonts. We list the available styles for the current font in the style combobox using the following function:</db:para>
+<db:programlisting language="cpp">    findStyles(fontCombo-&amp;gt;currentFont());
+</db:programlisting>
+<db:para>The line edit and push button are used to supply text to the clipboard:</db:para>
+<db:programlisting language="cpp">    lineEdit = new QLineEdit;
+    lineEdit-&amp;gt;setClearButtonEnabled(true);
+#ifndef QT_NO_CLIPBOARD
+    QPushButton *clipboardButton = new QPushButton(tr(&quot;&amp;amp;To clipboard&quot;));
+</db:programlisting>
+<db:para>We also obtain a clipboard object so that we can send text entered by the user to other applications.</db:para>
+<db:para>Most of the signals emitted in the example come from standard widgets. We connect these signals to slots in this class, and to the slots provided by other widgets.</db:para>
+<db:programlisting language="cpp">    connect(fontCombo, &amp;amp;QFontComboBox::currentFontChanged,
+            this, &amp;amp;MainWindow::findStyles);
+    connect(fontCombo, &amp;amp;QFontComboBox::currentFontChanged,
+            this, &amp;amp;MainWindow::findSizes);
+    connect(fontCombo, &amp;amp;QFontComboBox::currentFontChanged,
+            characterWidget, &amp;amp;CharacterWidget::updateFont);
+    connect(sizeCombo, &amp;amp;QComboBox::currentTextChanged,
+            characterWidget, &amp;amp;CharacterWidget::updateSize);
+    connect(styleCombo, &amp;amp;QComboBox::currentTextChanged,
+            characterWidget, &amp;amp;CharacterWidget::updateStyle);
+</db:programlisting>
+<db:para>The font combobox's <db:link xlink:href="qfontcombobox.xml#currentFontChanged">currentFontChanged</db:link>() signal is connected to the findStyles() function so that the list of available styles can be shown for each font that is used. Since both the font and the style can be changed by the user, the font combobox's currentFontChanged() signal and the style combobox's <db:link xlink:href="qcombobox.xml#currentIndexChanged">currentIndexChanged</db:link>() are connected directly to the character widget.</db:para>
+<db:para>The final two connections allow characters to be selected in the character widget, and text to be inserted into the clipboard:</db:para>
+<db:programlisting language="cpp">    connect(characterWidget, &amp;amp;CharacterWidget::characterSelected,
+            this, &amp;amp;MainWindow::insertCharacter);
+
+#ifndef QT_NO_CLIPBOARD
+    connect(clipboardButton, &amp;amp;QAbstractButton::clicked, this, &amp;amp;MainWindow::updateClipboard);
+#endif
+</db:programlisting>
+<db:para>The character widget emits the characterSelected() custom signal when the user clicks on a character, and this is handled by the insertCharacter() function in this class. The clipboard is changed when the push button emits the clicked() signal, and we handle this with the updateClipboard() function.</db:para>
+<db:para>The remaining code in the constructor sets up the layout of the central widget, and provides a window title:</db:para>
+<db:programlisting language="cpp">    QHBoxLayout *controlsLayout = new QHBoxLayout;
+    controlsLayout-&amp;gt;addWidget(filterLabel);
+    controlsLayout-&amp;gt;addWidget(filterCombo, 1);
+    controlsLayout-&amp;gt;addWidget(fontLabel);
+    controlsLayout-&amp;gt;addWidget(fontCombo, 1);
+    controlsLayout-&amp;gt;addWidget(sizeLabel);
+    controlsLayout-&amp;gt;addWidget(sizeCombo, 1);
+    controlsLayout-&amp;gt;addWidget(styleLabel);
+    controlsLayout-&amp;gt;addWidget(styleCombo, 1);
+    controlsLayout-&amp;gt;addWidget(fontMergingLabel);
+    controlsLayout-&amp;gt;addWidget(fontMerging, 1);
+    controlsLayout-&amp;gt;addStretch(1);
+
+    QHBoxLayout *lineLayout = new QHBoxLayout;
+    lineLayout-&amp;gt;addWidget(lineEdit, 1);
+    lineLayout-&amp;gt;addSpacing(12);
+#ifndef QT_NO_CLIPBOARD
+    lineLayout-&amp;gt;addWidget(clipboardButton);
+#endif
+
+    QVBoxLayout *centralLayout = new QVBoxLayout;
+    centralLayout-&amp;gt;addLayout(controlsLayout);
+    centralLayout-&amp;gt;addWidget(scrollArea, 1);
+    centralLayout-&amp;gt;addSpacing(4);
+    centralLayout-&amp;gt;addLayout(lineLayout);
+    centralWidget-&amp;gt;setLayout(centralLayout);
+
+    setCentralWidget(centralWidget);
+    setWindowTitle(tr(&quot;Character Map&quot;));
+}
+</db:programlisting>
+<db:para>The font combobox is automatically populated with a list of available font families. The styles that can be used with each font are found by the findStyles() function. This function is called whenever the user selects a different font in the font combobox.</db:para>
+<db:programlisting language="cpp">void MainWindow::findStyles(const QFont &amp;amp;font)
+{
+    QString currentItem = styleCombo-&amp;gt;currentText();
+    styleCombo-&amp;gt;clear();
+</db:programlisting>
+<db:para>We begin by recording the currently selected style, and we clear the style combobox so that we can insert the styles associated with the current font family.</db:para>
+<db:programlisting language="cpp">    const QStringList styles = QFontDatabase::styles(font.family());
+    for (const QString &amp;amp;style : styles)
+        styleCombo-&amp;gt;addItem(style);
+
+    int styleIndex = styleCombo-&amp;gt;findText(currentItem);
+
+    if (styleIndex == -1)
+        styleCombo-&amp;gt;setCurrentIndex(0);
+    else
+        styleCombo-&amp;gt;setCurrentIndex(styleIndex);
+}
+</db:programlisting>
+<db:para>We use the font database to collect the styles that are available for the current font, and insert them into the style combobox. The current item is reset if the original style is not available for this font.</db:para>
+<db:para>The last two functions are slots that respond to signals from the character widget and the main window's push button. The insertCharacter() function is used to insert characters from the character widget when the user clicks a character:</db:para>
+<db:programlisting language="cpp">void MainWindow::insertCharacter(const QString &amp;amp;character)
+{
+    lineEdit-&amp;gt;insert(character);
+}
+</db:programlisting>
+<db:para>The character is inserted into the line edit at the current cursor position.</db:para>
+<db:para>The main window's &quot;To clipboard&quot; push button is connected to the updateClipboard() function so that, when it is clicked, the clipboard is updated to contain the contents of the line edit:</db:para>
+<db:programlisting language="cpp">#ifndef QT_NO_CLIPBOARD
+void MainWindow::updateClipboard()
+{
+    QGuiApplication::clipboard()-&amp;gt;setText(lineEdit-&amp;gt;text(), QClipboard::Clipboard);
+    QGuiApplication::clipboard()-&amp;gt;setText(lineEdit-&amp;gt;text(), QClipboard::Selection);
+}
+#endif
+
+class FontInfoDialog : public QDialog
+{
+public:
+    explicit FontInfoDialog(QWidget *parent = nullptr);
+
+private:
+    QString text() const;
+};
+
+FontInfoDialog::FontInfoDialog(QWidget *parent) : QDialog(parent)
+{
+    setWindowFlags(windowFlags() &amp;amp; ~Qt::WindowContextHelpButtonHint);
+    QVBoxLayout *mainLayout = new QVBoxLayout(this);
+    QPlainTextEdit *textEdit = new QPlainTextEdit(text(), this);
+    textEdit-&amp;gt;setReadOnly(true);
+    textEdit-&amp;gt;setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    mainLayout-&amp;gt;addWidget(textEdit);
+    QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
+    connect(buttonBox, &amp;amp;QDialogButtonBox::rejected, this, &amp;amp;QDialog::reject);
+    mainLayout-&amp;gt;addWidget(buttonBox);
+}
+
+QString FontInfoDialog::text() const
+{
+    QString text;
+    QTextStream str(&amp;amp;text);
+    const QFont defaultFont = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+    const QFont fixedFont = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+    const QFont titleFont = QFontDatabase::systemFont(QFontDatabase::TitleFont);
+    const QFont smallestReadableFont = QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont);
+
+    str &amp;lt;&amp;lt; &quot;Qt &quot; &amp;lt;&amp;lt; QT_VERSION_STR &amp;lt;&amp;lt; &quot; on &quot; &amp;lt;&amp;lt; QGuiApplication::platformName()
+        &amp;lt;&amp;lt; &quot;, &quot; &amp;lt;&amp;lt; logicalDpiX() &amp;lt;&amp;lt; &quot;DPI&quot;;
+    if (!qFuzzyCompare(devicePixelRatio(), qreal(1)))
+        str  &amp;lt;&amp;lt; &quot;, device pixel ratio: &quot; &amp;lt;&amp;lt; devicePixelRatio();
+    str &amp;lt;&amp;lt; &quot;\n\nDefault font : &quot; &amp;lt;&amp;lt; defaultFont.family() &amp;lt;&amp;lt; &quot;, &quot; &amp;lt;&amp;lt; defaultFont.pointSizeF() &amp;lt;&amp;lt; &quot;pt\n&quot;
+        &amp;lt;&amp;lt; &quot;Fixed font   : &quot; &amp;lt;&amp;lt; fixedFont.family() &amp;lt;&amp;lt; &quot;, &quot; &amp;lt;&amp;lt; fixedFont.pointSizeF() &amp;lt;&amp;lt; &quot;pt\n&quot;
+        &amp;lt;&amp;lt; &quot;Title font   : &quot; &amp;lt;&amp;lt; titleFont.family() &amp;lt;&amp;lt; &quot;, &quot; &amp;lt;&amp;lt; titleFont.pointSizeF() &amp;lt;&amp;lt; &quot;pt\n&quot;
+        &amp;lt;&amp;lt; &quot;Smallest font: &quot; &amp;lt;&amp;lt; smallestReadableFont.family() &amp;lt;&amp;lt; &quot;, &quot; &amp;lt;&amp;lt; smallestReadableFont.pointSizeF() &amp;lt;&amp;lt; &quot;pt\n&quot;;
+
+    return text;
+}
+
+void MainWindow::showInfo()
+{
+    const QRect screenGeometry = screen()-&amp;gt;geometry();
+    FontInfoDialog *dialog = new FontInfoDialog(this);
+    dialog-&amp;gt;setWindowTitle(tr(&quot;Fonts&quot;));
+    dialog-&amp;gt;setAttribute(Qt::WA_DeleteOnClose);
+    dialog-&amp;gt;resize(screenGeometry.width() / 4, screenGeometry.height() / 4);
+    dialog-&amp;gt;show();
+}
+</db:programlisting>
+<db:para>We copy all the text from the line edit to the clipboard, but we do not clear the line edit.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/widgets/charactermap?h=6.1">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
