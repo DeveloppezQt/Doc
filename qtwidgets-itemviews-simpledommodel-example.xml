@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple DOM Model Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Simple DOM Model example shows how an existing class can be adapted for use with the model/view framework.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/simpledommodel-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Qt provides two complementary sets of classes for reading XML files: The classes based around QXmlReader provide a SAX-style API for incremental reading of large files, and the classes based around QDomDocument enable developers to access the contents of XML files using a Document Object Model (DOM) API.</db:para>
+<db:para>In this example, we create a model that uses the DOM API to expose the structure and contents of XML documents to views via the standard QAbstractModel interface.</db:para>
+<db:section xml:id="design-and-concepts">
+<db:title>Design and Concepts</db:title>
+<db:para>Reading an XML document with Qt's DOM classes is a straightforward process. Typically, the contents of a file are supplied to QDomDocument, and nodes are accessed using the functions provided by QDomNode and its subclasses.</db:para>
+<db:para>The aim is to use the structure provided by QDomDocument by wrapping QDomNode objects in item objects similar to the <db:code>TreeItem</db:code> objects used in the <db:link xlink:href="qtwidgets-itemviews-simpletreemodel-example.xml">Simple Tree Model</db:link> example.</db:para>
+</db:section>
+<db:section xml:id="dommodel-class-definition">
+<db:title>DomModel Class Definition</db:title>
+<db:para>Let us begin by examining the <db:code>DomModel</db:code> class:</db:para>
+<db:programlisting language="cpp">class DomModel : public QAbstractItemModel
+{
+    Q_OBJECT
+
+public:
+    explicit DomModel(const QDomDocument &amp;amp;document, QObject *parent = nullptr);
+    ~DomModel();
+
+    QVariant data(const QModelIndex &amp;amp;index, int role) const override;
+    Qt::ItemFlags flags(const QModelIndex &amp;amp;index) const override;
+    QVariant headerData(int section, Qt::Orientation orientation,
+                        int role = Qt::DisplayRole) const override;
+    QModelIndex index(int row, int column,
+                      const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+    QModelIndex parent(const QModelIndex &amp;amp;child) const override;
+    int rowCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+    int columnCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+
+private:
+    QDomDocument domDocument;
+    DomItem *rootItem;
+};
+</db:programlisting>
+<db:para>The class definition contains all the basic functions that are needed for a read-only model. Only the constructor and <db:code>document()</db:code> function are specific to this model. The private <db:code>domDocument</db:code> variable is used to hold the document that is exposed by the model; the <db:code>rootItem</db:code> variable contains a pointer to the root item in the model.</db:para>
+</db:section>
+<db:section xml:id="domitem-class-definition">
+<db:title>DomItem Class Definition</db:title>
+<db:para>The <db:code>DomItem</db:code> class is used to hold information about a specific QDomNode in the document:</db:para>
+<db:programlisting language="cpp">class DomItem
+{
+public:
+    DomItem(const QDomNode &amp;amp;node, int row, DomItem *parent = nullptr);
+    ~DomItem();
+    DomItem *child(int i);
+    DomItem *parent();
+    QDomNode node() const;
+    int row() const;
+
+private:
+    QDomNode domNode;
+    QHash&amp;lt;int, DomItem *&amp;gt; childItems;
+    DomItem *parentItem;
+    int rowNumber;
+};
+</db:programlisting>
+<db:para>Each <db:code>DomItem</db:code> provides a wrapper for a QDomNode obtained from the underlying document which contains a reference to the node, it's location in the parent node's list of child nodes, and a pointer to a parent wrapper item.</db:para>
+<db:para>The <db:code>parent()</db:code>, <db:code>child()</db:code>, and <db:code>row()</db:code> functions are convenience functions for the <db:code>DomModel</db:code> to use that provide basic information about the item to be discovered quickly. The node() function provides access to the underlying QDomNode object.</db:para>
+<db:para>As well as the information supplied in the constructor, the class maintains a cache of information about any child items. This is used to provide a collection of persistent item objects that the model can identify consistently and improve the performance of the model when accessing child items.</db:para>
+</db:section>
+<db:section xml:id="domitem-class-implementation">
+<db:title>DomItem Class Implementation</db:title>
+<db:para>Since the <db:code>DomItem</db:code> class is only a thin wrapper around QDomNode objects, with a few additional features to help improve performance and memory usage, we can provide a brief outline of the class before discussing the model itself.</db:para>
+<db:para>The constructor simply records details of the QDomNode that needs to be wrapped:</db:para>
+<db:programlisting language="cpp">DomItem::DomItem(const QDomNode &amp;amp;node, int row, DomItem *parent)
+    : domNode(node),
+      parentItem(parent),
+      rowNumber(row)
+{}
+</db:programlisting>
+<db:para>As a result, functions to provide the parent wrapper, the row number occupied by the item in its parent's list of children, and the underlying QDomNode for each item are straightforward to write:</db:para>
+<db:programlisting language="cpp">DomItem *DomItem::parent()
+{
+    return parentItem;
+}
+
+int DomItem::row() const
+{
+    return rowNumber;
+}
+
+QDomNode DomItem::node() const
+{
+    return domNode;
+}
+</db:programlisting>
+<db:para>It is necessary to maintain a collection of items which can be consistently identified by the model. For that reason, we maintain a hash of child wrapper items that, to minimize memory usage, is initially empty. The model uses the item's <db:code>child()</db:code> function to help create model indexes, and this constructs wrappers for the children of the item's QDomNode, relating the row number of each child to the newly-constructed wrapper:</db:para>
+<db:programlisting language="cpp">DomItem *DomItem::child(int i)
+{
+    DomItem *childItem = childItems.value(i);
+    if (childItem)
+        return childItem;
+
+    // if child does not yet exist, create it
+    if (i &amp;gt;= 0 &amp;amp;&amp;amp; i &amp;lt; domNode.childNodes().count()) {
+        QDomNode childNode = domNode.childNodes().item(i);
+        childItem = new DomItem(childNode, i, this);
+        childItems[i] = childItem;
+    }
+    return childItem;
+}
+</db:programlisting>
+<db:para>If a QDomNode was previously wrapped, the cached wrapper is returned; otherwise, a new wrapper is constructed and stored for valid children, and zero is returned for invalid ones.</db:para>
+<db:para>The class's destructor deletes all the child items of the wrapper:</db:para>
+<db:programlisting language="cpp">DomItem::~DomItem()
+{
+    qDeleteAll(childItems);
+}
+</db:programlisting>
+<db:para>These, in turn, will delete their children and free any QDomNode objects in use.</db:para>
+</db:section>
+<db:section xml:id="dommodel-class-implementation">
+<db:title>DomModel Class Implementation</db:title>
+<db:para>The structure provided by the <db:code>DomItem</db:code> class makes the implementation of <db:code>DomModel</db:code> similar to the <db:code>TreeModel</db:code> shown in the <db:link xlink:href="qtwidgets-itemviews-simpletreemodel-example.xml">Simple Tree Model</db:link> example.</db:para>
+<db:para>The constructor accepts an existing document and a parent object for the model:</db:para>
+<db:programlisting language="cpp">DomModel::DomModel(const QDomDocument &amp;amp;document, QObject *parent)
+    : QAbstractItemModel(parent),
+      domDocument(document),
+      rootItem(new DomItem(domDocument, 0))
+{
+}
+</db:programlisting>
+<db:para>A shallow copy of the document is stored for future reference, and a root item is created to provide a wrapper around the document. We assign the root item a row number of zero only to be consistent since the root item will have no siblings.</db:para>
+<db:para>Since the model only contains information about the root item, the destructor only needs to delete this one item:</db:para>
+<db:programlisting language="cpp">DomModel::~DomModel()
+{
+    delete rootItem;
+}
+</db:programlisting>
+<db:para>All of the child items in the tree will be deleted by the <db:code>DomItem</db:code> destructor as their parent items are deleted.</db:para>
+<db:section xml:id="basic-properties-of-the-model">
+<db:title>Basic Properties of The Model</db:title>
+<db:para>Some aspects of the model do not depend on the structure of the underlying document, and these are simple to implement.</db:para>
+<db:para>The number of columns exposed by the model is returned by the <db:code>columnCount()</db:code> function:</db:para>
+<db:programlisting language="cpp">int DomModel::columnCount(const QModelIndex &amp;amp;parent) const
+{
+    Q_UNUSED(parent);
+    return 3;
+}
+</db:programlisting>
+<db:para>This value is fixed, and does not depend on the location or type of the underlying node in the document. We will use these three columns to display different kinds of data from the underlying document.</db:para>
+<db:para>Since we only implement a read-only model, the <db:code>flags()</db:code> function is straightforward to write:</db:para>
+<db:programlisting language="cpp">Qt::ItemFlags DomModel::flags(const QModelIndex &amp;amp;index) const
+{
+    if (!index.isValid())
+        return Qt::NoItemFlags;
+
+    return QAbstractItemModel::flags(index);
+}
+</db:programlisting>
+<db:para>Since the model is intended for use in a tree view, the <db:code>headerData()</db:code> function only provides a horizontal header:</db:para>
+<db:programlisting language="cpp">QVariant DomModel::headerData(int section, Qt::Orientation orientation,
+                              int role) const
+{
+    if (orientation == Qt::Horizontal &amp;amp;&amp;amp; role == Qt::DisplayRole) {
+        switch (section) {
+            case 0:
+                return tr(&quot;Name&quot;);
+            case 1:
+                return tr(&quot;Attributes&quot;);
+            case 2:
+                return tr(&quot;Value&quot;);
+            default:
+                break;
+        }
+    }
+    return QVariant();
+}
+</db:programlisting>
+<db:para>The model presents the names of nodes in the first column, element attributes in the second, and any node values in the third.</db:para>
+</db:section>
+<db:section xml:id="navigating-the-document">
+<db:title>Navigating The Document</db:title>
+<db:para>The index() function creates a model index for the item with the given row, column, and parent in the model:</db:para>
+<db:programlisting language="cpp">QModelIndex DomModel::index(int row, int column, const QModelIndex &amp;amp;parent) const
+{
+    if (!hasIndex(row, column, parent))
+        return QModelIndex();
+
+    DomItem *parentItem;
+
+    if (!parent.isValid())
+        parentItem = rootItem;
+    else
+        parentItem = static_cast&amp;lt;DomItem*&amp;gt;(parent.internalPointer());
+</db:programlisting>
+<db:para>The function first has to relate the parent index to an item that contains a node from the underlying document. If the parent index is invalid, it refers to the root node in the document, so we retrieve the root item that wraps it; otherwise, we obtain a pointer to the relevant item using the QModelIndex::internalPointer() function. We are able to extract a pointer in this way because any valid model index will have been created by this function, and we store pointers to item objects in any new indexes that we create with QAbstractItemModel::createIndex():</db:para>
+<db:programlisting language="cpp">    DomItem *childItem = parentItem-&amp;gt;child(row);
+    if (childItem)
+        return createIndex(row, column, childItem);
+    return QModelIndex();
+}
+</db:programlisting>
+<db:para>A child item for the given row is provided by the parent item's <db:code>child()</db:code> function. If a suitable child item was found then we call <db:link xlink:href="">createIndex()</db:link> to produce a model index for the requested row and column, passing a pointer to the child item for it to store internally. If no suitable child item is found, an invalid model index is returned.</db:para>
+<db:para>Note that the items themselves maintain ownership of their child items. This means that the model does not need to keep track of the child items that have been created, and can let the items themselves tidy up when they are deleted.</db:para>
+<db:para>The number of rows beneath a given item in the model is returned by the <db:code>rowCount()</db:code> function, and is the number of child nodes contained by the node that corresponds to the specified model index:</db:para>
+<db:programlisting language="cpp">int DomModel::rowCount(const QModelIndex &amp;amp;parent) const
+{
+    if (parent.column() &amp;gt; 0)
+        return 0;
+
+    DomItem *parentItem;
+
+    if (!parent.isValid())
+        parentItem = rootItem;
+    else
+        parentItem = static_cast&amp;lt;DomItem*&amp;gt;(parent.internalPointer());
+
+    return parentItem-&amp;gt;node().childNodes().count();
+}
+</db:programlisting>
+<db:para>To obtain the relevant node in the underlying document, we access the item via the internal pointer stored in the model index. If an invalid index is supplied, the root item is used instead. We use the item's <db:code>node()</db:code> function to access the node itself, and simply count the number of child nodes it contains.</db:para>
+<db:para>Since the model is used to represent a hierarchical data structure, it needs to provide an implementation for the <db:code>parent()</db:code> function. This returns a model index that corresponds to the parent of a child model index supplied as its argument:</db:para>
+<db:programlisting language="cpp">QModelIndex DomModel::parent(const QModelIndex &amp;amp;child) const
+{
+    if (!child.isValid())
+        return QModelIndex();
+
+    DomItem *childItem = static_cast&amp;lt;DomItem*&amp;gt;(child.internalPointer());
+    DomItem *parentItem = childItem-&amp;gt;parent();
+
+    if (!parentItem || parentItem == rootItem)
+        return QModelIndex();
+
+    return createIndex(parentItem-&amp;gt;row(), 0, parentItem);
+}
+</db:programlisting>
+<db:para>For valid indexes other than the index corresponding to the root item, we obtain a pointer to the relevant item using the method described in the <db:code>index()</db:code> function, and use the item's <db:code>parent()</db:code> function to obtain a pointer to the parent item.</db:para>
+<db:para>If no valid parent item exists, or if the parent item is the root item, we can simply follow convention and return an invalid model index. For all other parent items, we create a model index containing the appropriate row and column numbers, and a pointer to the parent item we just obtained.</db:para>
+<db:para>Data is provided by the <db:code>data()</db:code> function. For simplicity, we only provide data for the <db:link xlink:href="">display role</db:link>, returning an invalid variant for all other requests:</db:para>
+<db:programlisting language="cpp">QVariant DomModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid())
+        return QVariant();
+
+    if (role != Qt::DisplayRole)
+        return QVariant();
+
+    const DomItem *item = static_cast&amp;lt;DomItem*&amp;gt;(index.internalPointer());
+
+    const QDomNode node = item-&amp;gt;node();
+</db:programlisting>
+<db:para>As before, we obtain an item pointer for the index supplied, and use it to obtain the underlying document node. Depending on the column specified, the data we return is obtained in different ways:</db:para>
+<db:programlisting language="cpp">    switch (index.column()) {
+        case 0:
+            return node.nodeName();
+        case 1:
+        {
+            const QDomNamedNodeMap attributeMap = node.attributes();
+            QStringList attributes;
+            for (int i = 0; i &amp;lt; attributeMap.count(); ++i) {
+                QDomNode attribute = attributeMap.item(i);
+                attributes &amp;lt;&amp;lt; attribute.nodeName() + &quot;=\&quot;&quot;
+                              + attribute.nodeValue() + '&quot;';
+            }
+            return attributes.join(' ');
+        }
+        case 2:
+            return node.nodeValue().split('\n').join(' ');
+        default:
+            break;
+    }
+    return QVariant();
+}
+</db:programlisting>
+<db:para>For the first column, we return the node's name. For the second column, we read any attributes that the node may have, and return a string that contains a space-separated list of attribute-value assignments. For the third column, we return any value that the node may have; this allows the contents of text nodes to be displayed in a view.</db:para>
+<db:para>If data from any other column is requested, an invalid variant is returned.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="implementation-notes">
+<db:title>Implementation Notes</db:title>
+<db:para>Ideally, we would rely on the structure provided by QDomDocument to help us write the <db:link xlink:href="">parent()</db:link> and <db:link xlink:href="">index()</db:link> functions that are required when subclassing QAbstractItemModel. However, since Qt's DOM classes use their own system for dynamically allocating memory for DOM nodes, we cannot guarantee that the QDomNode objects returned for a given piece of information will be the same for subsequent accesses to the document.</db:para>
+<db:para>We use item wrappers for each QDomNode to provide consistent pointers that the model can use to navigate the document structure.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/itemviews/simpledommodel?h=5.14">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

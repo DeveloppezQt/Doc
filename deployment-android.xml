@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Deploying an Application on Android</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Qt Reference Documentation.</db:para></db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis role="bold">&lt;Unknown command&gt;<db:code>contentspage</db:code></db:emphasis>Deploying Qt Applications</db:para>
+<db:para>This article gives a technical description of the steps required to take any given Qt application and deploy it to an Android device (or market place).</db:para>
+<db:para>It is recommended that you use Qt Creator or the Makefile created by qmake to create the application bundle. The following information will give you a technical insight into the structure of the resulting Android application which is not normally required just to write an application.</db:para>
+<db:para>All the steps described here are handled automatically by the build script and the <db:link xlink:href="deployment-android.xml#androiddeployqt">androiddeployqt deployment tool</db:link>, which are run by Qt Creator for you.</db:para>
+<db:note>
+<db:para>If you prefer building Android packages from the command line, you may use the &quot;aab&quot; or &quot;apk&quot; build targets in the Makefile directly:</db:para>
+</db:note>
+<db:programlisting language="cpp">% make aab
+</db:programlisting>
+<db:para>or</db:para>
+<db:programlisting language="cpp">% make apk
+</db:programlisting>
+<db:section xml:id="the-application-bundle">
+<db:title>The Application Bundle</db:title>
+<db:para>Applications on Android can be packaged in two ways: Either as Application Package (APK) or Android App Bundle (AAB). Both are ZIP files which follow a predefined directory structure. The difference between the two is that APK files can be downloaded to and executed on a device. AAB, on the other hand, is intended to be interpreted by the Google Play store and is used to generate APK files.</db:para>
+<db:para>For testing the application locally, the APK format is the most appropriate, as this can be uploaded directly to the device and run. For distribution to the Google Play store, it is recommended that you use AAB instead, which has a similar layout. The added convenience of AAB is that you can include all target ABIs in the same bundle without increasing the size of the actual package downloaded by your users. When using AAB, the Google Play store generates optimized APK packages for the devices issuing the download request and automatically sign them with your publisher key.</db:para>
+<db:para>Read <db:link xlink:href="https://developer.android.com/guide/app-bundle">the Android documentation</db:link> if you want to know more about the AAB format.</db:para>
+<db:para>In either case, the files must be copied into a special directory structure first, before bundling them in a single ZIP file</db:para>
+<db:para>This contains one or more binary <db:code>.so</db:code> files with the code for your application, as well as any dependencies, such as Qt's libraries and plugins. In addition, it includes <db:code>.jar</db:code> files containing compiled Java code, assets, resources, and some <db:code>.xml</db:code> files that are used to describe the contents of the bundle.</db:para>
+</db:section>
+<db:section xml:id="package-template">
+<db:title>Package Template</db:title>
+<db:para>A template for the other sources of an APK package is contained in <db:code>$QTDIR/src/android/templates</db:code>. The first step of making a package manually is to copy these files into an empty directory. In this guide, we'll refer to this build directory as <db:code>$BUILD_TARGET</db:code>.</db:para>
+<db:para>We also need to make sure the application binary is copied into the package. This can be achieved by using the following command after running qmake on your application's project file:</db:para>
+<db:programlisting language="cpp">make install INSTALL_ROOT=$BUILD_TARGET
+</db:programlisting>
+<db:para>It will copy the application binary and any other installation requirements into the packaging directory.</db:para>
+<db:para>The packaging directory will now consist of the following parts:</db:para>
+<db:section xml:id="androidmanifest-xml">
+<db:title>AndroidManifest.xml</db:title>
+<db:para>The <db:code>AndroidManifest.xml</db:code> file gives detailed meta-information about your application. This information is used for several things. It is used by the target device to decide which features to enable, the default orientation of the application, and so on. In addition, it's used by the market place for information on the version code, device support, package name, and lots more.</db:para>
+<db:para>For more information about general capabilities of and requirements for the <db:code>AndroidManifest.xml</db:code> file, please refer to the <db:link xlink:href="http://developer.android.com/guide/topics/manifest/manifest-intro.html">Android documentation on this topic</db:link>.</db:para>
+<db:para>The default manifest contains some special parameters used by Qt to set up the application for running. When you are creating your own Android manifest, you must make sure that it contains these parameters. The <db:code>androiddeployqt</db:code> tool replaces content in the template with the correct values.</db:para>
+</db:section>
+<db:section xml:id="java-code">
+<db:title>Java Code</db:title>
+<db:para>Under <db:code>$BUILD_TARGET/src</db:code> are the files comprising the Java code of the Android application. The regular Android application launcher is a Java process, so Qt applications have a Java-based entry point. The code in here will load the required Qt libraries, based on the meta-information given in other files in the template.</db:para>
+<db:para>After loading the libraries, the Java code will call into the application's native <db:code>main()</db:code> function on a new thread and the application will launch. At this point, the Java code in the template is used to delegate events from Android into Qt.</db:para>
+<db:para>One thing to note about the files in this directory is that they can contain code specific to certain Android versions. Based on the minimum required Android API level of your application it might be necessary to remove some of this code. This is done automatically by <db:code>androiddeployqt</db:code> and Qt Creator during packaging.</db:para>
+<db:para>For example, lets say the code contains the following:</db:para>
+<db:programlisting language="cpp">//@ANDROID-21
+    @Override
+    public void onActivityReenter(int resultCode, Intent data)
+    {
+        // Do something
+        return super.onActivityReenter(resultCode, data);
+    }
+//@ANDROID-21
+    </db:programlisting>
+<db:para>If your minimum Android API level is 20 or lower, the code is removed before building, since it's not a supported API on Android API level 20. However, if your minimum API level is 21 or higher, it is left in.</db:para>
+</db:section>
+<db:section xml:id="resources">
+<db:title>Resources</db:title>
+<db:para>Under the <db:code>res/</db:code> folder in the <db:code>$BUILD_TARGET</db:code> are Android resources that can be accessed from the <db:code>AndroidManifest.xml</db:code> and Java code of your application. A typical example of resources which should be placed here are the icon files used by the application launcher to represent your application.</db:para>
+<db:para>In Qt, some translations used for the Ministro service and some files with meta-information are in the default resources of the application.</db:para>
+<db:section xml:id="res-values-libs-xml">
+<db:title>res/values/libs.xml</db:title>
+<db:para>One of the files containing meta information about the deployment of the application is <db:code>libs.xml</db:code>. It consists of the following values:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>qt_sources</db:code>: The URL of one or more Ministro repositories that contain the necessary Qt libraries. This is used when the Ministro deployment mechanism is active. Read the <db:link xlink:href="http://necessitas.kde.org/necessitas/ministro.php">Ministro documentation</db:link> for more information about such repositories.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>bundled_libs</db:code>: Libraries in the package's library folder which should be loaded on start-up. Library names should be specified without the <db:code>lib</db:code> prefix and <db:code>.so</db:code> suffix.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>qt_libs</db:code>: Qt libraries which should be loaded on start-up. When bundled deployment is used, these are expected to be found inside the <db:code>APK</db:code>'s library folder. When Ministro deployment is in use, they are requested from the Ministro service on the device. And when debugging deployment is in use, they are loaded from the <db:code>/data/local/tmp/qt</db:code> directory on the target device.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="res-values-strings-xml">
+<db:title>res/values/strings.xml</db:title>
+<db:para>The <db:code>strings.xml</db:code> file contains some strings used by the <db:code>AndroidManifest.xml</db:code> and by the deployment mechanisms, as well as some strings used when loading the Ministro service.</db:para>
+<db:para>In particular, the application name and the name of the application binary can be specified here. There are also strings that contain additional libraries that should be loaded and <db:code>JAR</db:code> files which should be included in the class path. The latter is only used for deployment with Ministro or debug deployment.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="libraries">
+<db:title>Libraries</db:title>
+<db:para>Under <db:code>libs</db:code> in the package directory, it's possible to place libraries that should be included in the application bundle. <db:code>JAR</db:code> libraries should be placed directly under <db:code>libs/</db:code>, while shared libraries should be put in a subdirectory suitably named after the target ABI of the libraries.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="building-the-android-application-package">
+<db:title>Building the Android Application Package</db:title>
+<db:para>The project can be built using the gradle tool. If an APK intended for release is built, then it should be signed and aligned using <db:code>jarsigner</db:code> and <db:code>zipalign</db:code>.</db:para>
+</db:section>
+<db:section xml:id="androiddeployqt">
+<db:title>androiddeployqt</db:title>
+<db:para>Building an application package is complex, so Qt comes with a tool which handles the work for you. The steps described in this document so far are handled automatically by the tool.</db:para>
+<db:para>In addition, there are Makefile build targets for building the package from the command line. There is also automated support in Qt Creator for generating both <db:code>APK</db:code> and <db:code>AAB</db:code> packages.</db:para>
+<db:section xml:id="required-steps-before-running-androiddeployqt">
+<db:title>Required Steps Before Running androiddeployqt</db:title>
+<db:para>Before running the tool manually, you need to run <db:code>qmake</db:code> and <db:code>make</db:code> on your project. Running <db:code>qmake</db:code> creates the <db:code>Makefile</db:code>, and it will also generate a <db:code>JSON</db:code> file containing important settings used by <db:code>androiddeployqt</db:code>.</db:para>
+<db:para>You should then install the application binary (and any other requirements) into the library folder of the <db:code>bundle</db:code>. If <db:code>$BUILD_TARGET</db:code> is your build directory (the first time you do this, the directory should be empty at this point), then you can install the binary with the following command:</db:para>
+<db:programlisting language="cpp">% make install INSTALL_ROOT=$BUILD_TARGET
+</db:programlisting>
+</db:section>
+<db:section xml:id="command-line-arguments">
+<db:title>Command Line Arguments</db:title>
+<db:para>The only required command line argument when running the tool is <db:code>--output</db:code>. This should be set to <db:code>$BUILD_TARGET</db:code>, that is: the build directory where you installed your application binary.</db:para>
+<db:para>Other command line arguments are optional but useful. Here's a quick overview. More information is available by passing the <db:code>--help</db:code> argument to androiddeployqt.</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>--aab</db:code>: Generate an Android Application Bundle, rather than an APK. Note that this invalidates some of the other arguments, such as –install.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--input &lt;file name&gt;</db:code>: This allows you to specify the <db:code>JSON</db:code> file generated by <db:code>qmake</db:code>. By default, <db:code>androiddeployqt</db:code> will try to guess the file name based on the current working directory.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--deployment &lt;mechanism&gt;</db:code>: Specify this to pick a different deployment mechanism than the default.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--install</db:code>: Specify this to install the finished package on the target device or emulator. Note that if a previous version of the package is already installed, it will be uninstalled first, removing any data it might have stored locally.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--device &lt;ID&gt;</db:code>: Specify the ID of the target device or emulator as reported by the <db:code>adb</db:code> tool. If an ID is specified, it will be passed to all calls to <db:code>adb</db:code>. If it is unspecified, no particular device or emulator will be requested by <db:code>adb</db:code>, causing it to pick a default instead.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--android-platform &lt;platform&gt;</db:code>: The SDK platform used for building the Java code of the application. By default, the latest available platform is used.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--release</db:code>: Specify this to create a release package instead of a debug package. With no other arguments, release packages are unsigned and cannot be installed to any device before they have been signed by a private key.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--sign &lt;url&gt; &lt;alias&gt;</db:code>: Sign the resulting package. Specifying this also implies <db:code>--release</db:code>. The URL of the keystore file and the alias of the key have to be specified. In addition, there are a number of options that can be specified which are passed through to the <db:code>jarsigner</db:code> tool. Pass <db:code>--help</db:code> to <db:code>androiddeployqt</db:code> for more information about these.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--jdk &lt;path&gt;</db:code>: Specify the path to the Java Development Kit. This is only required for signing packages, as it is only used for finding the <db:code>jarsigner</db:code> tool. If it is unspecified, then <db:code>androiddeployqt</db:code> will attempt to detect <db:code>jarsigner</db:code>, either using the <db:code>JAVA_HOME</db:code> environment variable, or on the <db:code>PATH</db:code>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>--verbose</db:code>: Specify this to output more information about what <db:code>androiddeployqt</db:code> is doing.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+<db:section xml:id="dependencies-detection">
+<db:title>Dependencies Detection</db:title>
+<db:para>Qt comes with a number of plugins which are loaded at run-time when they are needed. These can handle anything from connecting to SQL databases to loading specific image formats. Detecting plugin dependencies is impossible as the plugins are loaded at run-time, but androiddeployqt tries to guess such dependencies based on the Qt dependencies of your application. If the plugin has any Qt dependencies which are not also dependencies of your application, it will not be included by default. For instance, in order to ensure that the SVG image format plugin is included, you will need to add <db:code>QT += svg</db:code> to your <db:code>.pro</db:code> file so that the <db:link xlink:href="qtsvg-index.xml">Qt SVG</db:link> module becomes a dependency of your application.</db:para>
+<db:para>If you are wondering why a particular plugin is not included automatically, you can run androiddeployqt with the <db:code>--verbose</db:code> option to get the list of missing dependencies for each excluded plugin. You can achieve the same in Qt Creator by ticking the <db:emphasis role="bold">Verbose output</db:emphasis> check box in the <db:emphasis role="bold">Deployment configurations</db:emphasis>. This is located in the <db:emphasis role="bold">Run</db:emphasis> tab of your <db:emphasis role="bold">Projects</db:emphasis> settings.</db:para>
+<db:para>It's also possible to manually specify the dependencies of your application. See the documentation for the <db:code>ANDROID_DEPLOYMENT_DEPENDENCIES</db:code> qmake variable below.</db:para>
+</db:section>
+<db:section xml:id="android-specific-qmake-variables">
+<db:title>Android-specific qmake Variables</db:title>
+<db:para>Unless the project has special requirements such as third party libraries, it should be possible to run <db:code>androiddeployqt</db:code> on it with no modifications and get a working Qt for Android application as a result.</db:para>
+<db:para>However, there are a set of <db:code>qmake</db:code> variables that can be used to tailor your package. At some point during development, you will most likely want to look into these variables, as they will e.g. allow you to set the name of your application as it appears in the application menu on devices.</db:para>
+<db:para>Here is a list of some variables that are particularly interesting when making Android applications:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>ANDROID_DEPLOYMENT_DEPENDENCIES</db:code>: By default, <db:code>androiddeployqt</db:code> will detect the dependencies of your application. But since run-time usage of plugins cannot be detected, there could be false positives, as your application will depend on any plugins that are <db:emphasis>potential</db:emphasis> dependencies. If you want to minimize the size of your <db:code>APK</db:code>, it's possible to override the automatic detection using the <db:code>ANDROID_DEPLOYMENT_DEPENDENCIES</db:code> variable. This should contain a list of all Qt files which need to be included, with paths relative to the Qt install root. Note that only the Qt files specified here will be included. Failing to include the correct files can result in crashes. It's also important to make sure the files are listed in the correct loading order. This variable provides a way to override the automatic detection entirely, so if a library is listed before its dependencies, it will fail to load on some devices.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>ANDROID_PACKAGE_SOURCE_DIR</db:code>: This variable can be used to specify a directory where additions and modifications can be made to the default Android package template. The <db:code>androiddeployqt</db:code> tool will copy the application template from Qt into the build directory, and then it will copy the contents of the <db:code>ANDROID_PACKAGE_SOURCE_DIR</db:code> on top of this, overwriting any existing files. The update step where parts of the source files are modified automatically to reflect your other settings is then run on the resulting merged package. If you, for instance, want to make a custom <db:code>AndroidManifest.xml</db:code> for your application, then place this directly into the folder specified in this variable. You can also add custom Java files in <db:code>ANDROID_PACKAGE_SOURCE_DIR/src</db:code>.</db:para>
+<db:note>
+<db:para>When adding custom versions of the build files (like strings.xml, libs.xml, AndroidManifest.xml, etc.) to your project, make sure you copy them from the package template, which is located in <db:code>$QT/src/android/java</db:code>. You should never copy any files from the build directory, as these files have been altered to match the current build settings.</db:para>
+</db:note>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>ANDROID_EXTRA_LIBS</db:code>: A list of external libraries that will be copied into your application's library folder and loaded on start-up. This can be used, for instance, to enable OpenSSL in your application. Simply set the paths to the required <db:code>libssl.so</db:code> and <db:code>libcrypto.so</db:code> libraries here and OpenSSL should be enabled automatically.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>ANDROID_EXTRA_PLUGINS</db:code>: This variable can be used to specify different resources that your project has to bundle but cannot be delivered through the assets system, such as qml plugins. When using this variable, <db:code>androiddeployqt</db:code> will make sure everything is packaged and deployed properly.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="deployment-in-qt-creator">
+<db:title>Deployment in Qt Creator</db:title>
+<db:para>Qt Creator will run the <db:code>androiddeployqt</db:code> tool for you, and provides easy and intuitive user interfaces to specify many of the options. For more information, see <db:link xlink:href="http://doc.qt.io/qtcreator/creator-deploying-android.html">the Qt Creator documentation</db:link>.</db:para>
+</db:section>
+</db:article>

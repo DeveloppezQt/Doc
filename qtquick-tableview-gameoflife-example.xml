@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick TableView examples - Conway’s Game of Life</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:emphasis>Conway’s Game of Life</db:emphasis> example shows how the QML <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> type can be used to display a C++ model that the user can pan around.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/gameoflife.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="http://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:emphasis role="bold">Welcome</db:emphasis> mode and select the example from <db:emphasis role="bold">Examples</db:emphasis>. For more information, visit <db:link xlink:href="http://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="the-qml-user-interface">
+<db:title>The QML User Interface</db:title>
+<db:programlisting language="qml">TableView {
+    id: tableView
+    anchors.fill: parent
+
+    rowSpacing: 1
+    columnSpacing: 1
+
+    ScrollBar.horizontal: ScrollBar {}
+    ScrollBar.vertical: ScrollBar {}
+
+    delegate: Rectangle {
+        id: cell
+        implicitWidth: 15
+        implicitHeight: 15
+
+        color: model.value ? &quot;#f3f3f4&quot; : &quot;#b5b7bf&quot;
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: model.value = !model.value
+        }
+    }
+</db:programlisting>
+<db:para>The example uses the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component to display a grid of cells. Each of these cells is drawn on the screen by the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link>’s delegate, which is a Rectangle QML component. We read the cell’s value and we change it using <db:code>model.value</db:code> when the user clicks it.</db:para>
+<db:programlisting language="qml">contentX: (contentWidth - width) / 2;
+contentY: (contentHeight - height) / 2;
+</db:programlisting>
+<db:para>When the application starts, the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> is scrolled to its center by using its <db:code>contentX</db:code> and <db:code>contentY</db:code> properties to update the scroll position, and the <db:code>contentWidth</db:code> and <db:code>contentHeight</db:code> to compute where the view should be scrolled to.</db:para>
+<db:programlisting language="qml">model: GameOfLifeModel {
+    id: gameOfLifeModel
+}
+</db:programlisting>
+<db:para>The model that we use is a custom C++ class that we register in the QML system:</db:para>
+<db:programlisting language="cpp">qmlRegisterType&amp;lt;GameOfLifeModel&amp;gt;(&quot;GameOfLifeModel&quot;, 1, 0, &quot;GameOfLifeModel&quot;);
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-c-model">
+<db:title>The C++ Model</db:title>
+<db:programlisting language="cpp">class GameOfLifeModel : public QAbstractTableModel
+{
+    Q_OBJECT
+
+    Q_ENUMS(Roles)
+public:
+    enum Roles {
+        CellRole
+    };
+
+    QHash&amp;lt;int, QByteArray&amp;gt; roleNames() const override {
+        return {
+            { CellRole, &quot;value&quot; }
+        };
+    }
+
+    explicit GameOfLifeModel(QObject *parent = nullptr);
+
+    int rowCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+    int columnCount(const QModelIndex &amp;amp;parent = QModelIndex()) const override;
+
+    QVariant data(const QModelIndex &amp;amp;index, int role = Qt::DisplayRole) const override;
+    bool setData(const QModelIndex &amp;amp;index, const QVariant &amp;amp;value,
+                 int role = Qt::EditRole) override;
+
+    Qt::ItemFlags flags(const QModelIndex &amp;amp;index) const override;
+
+    Q_INVOKABLE void nextStep();
+    Q_INVOKABLE bool loadFile(const QString &amp;amp;fileName);
+    Q_INVOKABLE void loadPattern(const QString &amp;amp;plainText);
+    Q_INVOKABLE void clear();
+
+private:
+    static constexpr int width = 256;
+    static constexpr int height = 256;
+    static constexpr int size = width * height;
+
+    using StateContainer = std::array&amp;lt;bool, size&amp;gt;;
+    StateContainer m_currentState;
+
+    int cellNeighborsCount(const QPoint &amp;amp;cellCoordinates) const;
+    static bool areCellCoordinatesValid(const QPoint &amp;amp;coordinates);
+    static QPoint cellCoordinatesFromIndex(int cellIndex);
+    static std::size_t cellIndex(const QPoint &amp;amp;coordinates);
+};
+</db:programlisting>
+<db:para>The <db:code>GameOfLifeModel</db:code> class extends QAbstractTableModel so it can be used as the model of our <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component. Therefore, it needs to implement some functions so the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component can interact with the model. As you can see in the <db:code>private</db:code> part of the class, the model uses a fixed-size array to store the current state of all the cells.</db:para>
+<db:programlisting language="cpp">int GameOfLifeModel::rowCount(const QModelIndex &amp;amp;parent) const
+{
+    if (parent.isValid())
+        return 0;
+
+    return height;
+}
+
+int GameOfLifeModel::columnCount(const QModelIndex &amp;amp;parent) const
+{
+    if (parent.isValid())
+        return 0;
+
+    return width;
+}
+</db:programlisting>
+<db:para>Here, the <db:code>rowCount</db:code> and <db:code>columnCount</db:code> methods are implemented so the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component can know the size of the table. It simply returns the values of the <db:code>width</db:code> and <db:code>height</db:code> constants.</db:para>
+<db:programlisting language="cpp">QVariant GameOfLifeModel::data(const QModelIndex &amp;amp;index, int role) const
+{
+    if (!index.isValid() || role != CellRole)
+        return QVariant();
+
+    return QVariant(m_currentState[cellIndex({index.column(), index.row()})]);
+}
+</db:programlisting>
+<db:para>This method is called when the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component requests some data from the model. In our example, we only have one piece of data by cell: whether it is alive or not. This information is represented by the <db:code>CellRole</db:code> value of the <db:code>Roles</db:code> enum in our C++ code; this corresponds to the <db:code>value</db:code> property in the QML code (the link between these two is made by the <db:code>roleNames()</db:code> function of our C++ class).</db:para>
+<db:para>The <db:code>GameOfLifeModel</db:code> class can identify which cell was the data requested from with the <db:code>index</db:code> parameter, which is a QModelIndex that contains a row and a column.</db:para>
+</db:section>
+<db:section xml:id="updating-the-data">
+<db:title>Updating the Data</db:title>
+<db:programlisting language="cpp">bool GameOfLifeModel::setData(const QModelIndex &amp;amp;index, const QVariant &amp;amp;value, int role)
+{
+    if (role != CellRole || data(index, role) == value)
+        return false;
+
+    m_currentState[cellIndex({index.column(), index.row()})] = value.toBool();
+    emit dataChanged(index, index, {role});
+
+    return true;
+}
+</db:programlisting>
+<db:para>The <db:code>setData</db:code> method is called when a property’s value is set from the QML interface: in our example, it toggles a cell’s state when it is clicked. In the same way as the <db:code>data()</db:code> function does, this method receives an <db:code>index</db:code> and a <db:code>role</db:code> parameter. Additionally, the new value is passed as a QVariant, that we convert to a boolean using the <db:code>toBool</db:code> function.</db:para>
+<db:para>When we update the internal state of our model object, we need to emit a <db:code>dataChanged</db:code> signal to tell the <db:link xlink:href="qml-qtquick-tableview.xml">TableView</db:link> component that it needs to update the displayed data. In this case, only the cell that was clicked is affected, thus the range of the table that has to be updated begins and ends at the cell’s index.</db:para>
+<db:programlisting language="cpp">void GameOfLifeModel::nextStep()
+{
+    StateContainer newValues;
+
+    for (std::size_t i = 0; i &amp;lt; size; ++i) {
+        bool currentState = m_currentState[i];
+
+        int cellNeighborsCount = this-&amp;gt;cellNeighborsCount(cellCoordinatesFromIndex(static_cast&amp;lt;int&amp;gt;(i)));
+
+        newValues[i] = currentState == true
+                ? cellNeighborsCount == 2 || cellNeighborsCount == 3
+                : cellNeighborsCount == 3;
+    }
+
+    m_currentState = std::move(newValues);
+
+    emit dataChanged(index(0, 0), index(height - 1, width - 1), {CellRole});
+}
+</db:programlisting>
+<db:para>This function can be called directly from the QML code, because it contains the <db:link xlink:href="qobject-proxy.xml#Q_INVOKABLE">Q_INVOKABLE</db:link> macro in its definition. It plays an iteration of the game, either when the user clicks the <db:emphasis>Next</db:emphasis> button or when the Timer emits a <db:code>triggered()</db:code> signal.</db:para>
+<db:para>Following the <db:emphasis>Conway’s Game of Life</db:emphasis> rules, a new state is computed for each cell depending on the current state of its neighbors. When the new state has been computed for the whole grid, it replaces the current state and a <db:emphasis>dataChanged</db:emphasis> signal is emitted for the whole table.</db:para>
+<db:programlisting language="cpp">bool GameOfLifeModel::loadFile(const QString &amp;amp;fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    QTextStream in(&amp;amp;file);
+    loadPattern(in.readAll());
+
+    return true;
+}
+
+void GameOfLifeModel::loadPattern(const QString &amp;amp;plainText)
+{
+    clear();
+
+    QStringList rows = plainText.split(&quot;\n&quot;);
+    QSize patternSize(0, rows.count());
+    for (QString row : rows) {
+        if (row.size() &amp;gt; patternSize.width())
+            patternSize.setWidth(row.size());
+    }
+
+    QPoint patternLocation((width - patternSize.width()) / 2, (height - patternSize.height()) / 2);
+
+    for (int y = 0; y &amp;lt; patternSize.height(); ++y) {
+        const QString line = rows[y];
+
+        for (int x = 0; x &amp;lt; line.length(); ++x) {
+            QPoint cellPosition(x + patternLocation.x(), y + patternLocation.y());
+            m_currentState[cellIndex(cellPosition)] = line[x] == 'O';
+        }
+    }
+
+    emit dataChanged(index(0, 0), index(height - 1, width - 1), {CellRole});
+}
+</db:programlisting>
+<db:para>When the application opens, a pattern is loaded to demonstrate how <db:emphasis>Conway’s Game of Life</db:emphasis> works. These two functions load the file where the pattern is stored and parse it. As in the <db:code>nextStep</db:code> function, a <db:code>dataChanged</db:code> signal is emitted for the whole table once the pattern has been fully loaded.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/tableview/gameoflife?h=5.14">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

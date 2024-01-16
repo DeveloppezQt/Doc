@@ -1,0 +1,449 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Defining QML Types from C++</db:title>
+<db:productname>QtQml</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt QML Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Description of ways to define QML object types from C++ code.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>When extending QML with C++ code, a C++ class can be registered with the QML type system to enable the class to be used as a data type within QML code. While the properties, methods and signals of any QObject-derived class are accessible from QML, as discussed in <db:link xlink:href="qtqml-cppintegration-exposecppattributes.xml">Exposing Attributes of C++ Types to QML</db:link>, such a class cannot be used as a data type from QML until it is registered with the type system. Additionally registration can provide other features, such as allowing a class to be used as an instantiable <db:link xlink:href="qtqml-typesystem-objecttypes.xml">QML object type</db:link> from QML, or enabling a singleton instance of the class to be imported and used from QML.</db:para>
+<db:para>Additionally, the <db:link xlink:href="qtqml-index.xml">Qt QML</db:link> module provides mechanisms for implementing QML-specific features such as <db:emphasis>attached properties</db:emphasis> and <db:emphasis>default properties</db:emphasis> in C++.</db:para>
+<db:para>(Note that a number of the important concepts covered in this document are demonstrated in the <db:link xlink:href="qtqml-tutorials-extending-qml-example.xml">Writing QML Extensions with C++</db:link> tutorial.)</db:para>
+<db:section xml:id="registering-c-types-with-the-qml-type-system">
+<db:title>Registering C++ Types with the QML Type System</db:title>
+<db:para>A QObject-derived class can be registered with the QML type system to enable the type to be used as a data type from within QML code.</db:para>
+<db:para>The engine allows the registration of both instantiable and non-instantiable types. Registering an instantiable type enables a C++ class to be used as the definition of a QML object type, allowing it to be used in object declarations from QML code to create objects of this type. Registration also provides the engine with additional type metadata, enabling the type (and any enums declared by the class) to be used as a data type for property values, method parameters and return values, and signal parameters that are exchanged between QML and C++.</db:para>
+<db:para>Registering a non-instantiable type also registers the class as a data type in this manner, but the type cannot be used instantiated as a QML object type from QML. This is useful, for example, if a type has enums that should be exposed to QML but the type itself should not be instantiable.</db:para>
+<db:para>For a quick guide to choosing the correct approach to expose C++ types to QML, see <db:link xlink:href="qtqml-cppintegration-overview.xml#choosing-the-correct-integration-method-between-c-and-qml">Choosing the Correct Integration Method Between C++ and QML</db:link>.</db:para>
+<db:section xml:id="registering-an-instantiable-object-type">
+<db:title>Registering an Instantiable Object Type</db:title>
+<db:para><db:emphasis role="bold">Any QObject-derived C++ class can be registered as the definition of a <db:link xlink:href="qtqml-typesystem-objecttypes.xml">QML object type</db:link></db:emphasis>. Once a class is registered with the QML type system, the class can be declared and instantiated like any other object type from QML code. Once created, a class instance can be manipulated from QML; as <db:link xlink:href="qtqml-cppintegration-exposecppattributes.xml">Exposing Attributes of C++ Types to QML</db:link> explains, the properties, methods and signals of any QObject-derived class are accessible from QML code.</db:para>
+<db:para>To register a QObject-derived class as an instantiable QML object type, call <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterType">qmlRegisterType</db:link>() to register the class as QML type into a particular type namespace. Clients can then import that namespace in order to use the type.</db:para>
+<db:para>For example, suppose there is a <db:code>Message</db:code> class with <db:code>author</db:code> and <db:code>creationDate</db:code> properties:</db:para>
+<db:programlisting language="cpp">class Message : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString author READ author WRITE setAuthor NOTIFY authorChanged)
+    Q_PROPERTY(QDateTime creationDate READ creationDate WRITE setCreationDate NOTIFY creationDateChanged)
+public:
+    // ...
+};
+</db:programlisting>
+<db:para>This type can be registered by calling <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterType">qmlRegisterType</db:link>() with an appropriate type namespace and version number. For example, to make the type available in the <db:code>com.mycompany.messaging</db:code> namespace with version 1.0:</db:para>
+<db:programlisting language="cpp">qmlRegisterType&amp;lt;Message&amp;gt;(&quot;com.mycompany.messaging&quot;, 1, 0, &quot;Message&quot;);
+</db:programlisting>
+<db:para>The type can be used in an <db:link xlink:href="qtqml-syntax-basics.xml#object-declarations">object declaration</db:link> from QML, and its properties can be read and written to, as per the example below:</db:para>
+<db:programlisting language="qml">import com.mycompany.messaging 1.0
+
+Message {
+    author: &quot;Amelie&quot;
+    creationDate: new Date()
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="registering-non-instantiable-types">
+<db:title>Registering Non-Instantiable Types</db:title>
+<db:para>Sometimes a QObject-derived class may need to be registered with the QML type system but not as an instantiable type. For example, this is the case if a C++ class:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>is an interface type that should not be instantiable</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>is a base class type that does not need to be exposed to QML</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>declares some enum that should be accessible from QML, but otherwise should not be instantiable</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>is a type that should be provided to QML through a singleton instance, and should not be instantiable from QML</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The <db:link xlink:href="qtqml-index.xml">Qt QML</db:link> module provides several methods for registering non-instantiable types:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterType">qmlRegisterType</db:link>() (with no parameters) registers a C++ type that is not instantiable and cannot be referred to from QML. This enables the engine to coerce any inherited types that are instantiable from QML.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterInterface">qmlRegisterInterface</db:link>() registers an existing Qt interface type. The type is not instantiable from QML, and you cannot declare QML properties with it. Using C++ properties of this type from QML will do the expected interface casts, though.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterUncreatableType">qmlRegisterUncreatableType</db:link>() registers a named C++ type that is not instantiable but should be identifiable as a type to the QML type system. This is useful if a type's enums or attached properties should be accessible from QML but the type itself should not be instantiable.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterSingletonType-1">qmlRegisterSingletonType</db:link>() registers a singleton type that can be imported from QML, as discussed below.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Note that all C++ types registered with the QML type system must be QObject-derived, even if they are non-instantiable.</db:para>
+<db:section xml:id="registering-singleton-objects-with-a-singleton-type">
+<db:title>Registering Singleton Objects with a Singleton Type</db:title>
+<db:para>A singleton type enables properties, signals and methods to be exposed in a namespace without requiring the client to manually instantiate an object instance. QObject singleton types in particular are an efficient and convenient way to provide functionality or global property values.</db:para>
+<db:para>Note that singleton types do not have an associated QQmlContext as they are shared across all contexts in an engine. QObject singleton type instances are constructed and owned by the QQmlEngine, and will be destroyed when the engine is destroyed.</db:para>
+<db:para>A QObject singleton type can be interacted with in a manner similar to any other QObject or instantiated type, except that only one (engine constructed and owned) instance will exist, and it must be referenced by type name rather than id. Q_PROPERTYs of QObject singleton types may be bound to, and <db:link xlink:href="qobject-proxy.xml#Q_INVOKABLE">Q_INVOKABLE</db:link> functions of QObject module APIs may be used in signal handler expressions. This makes singleton types an ideal way to implement styling or theming, and they can also be used instead of &quot;.pragma library&quot; script imports to store global state or to provide global functionality.</db:para>
+<db:para>Once registered, a QObject singleton type may be imported and used like any other QObject instance exposed to QML. The following example assumes that a QObject singleton type was registered into the &quot;MyThemeModule&quot; namespace with version 1.0, where that QObject has a QColor &quot;color&quot; <db:link xlink:href="qobject-proxy.xml#Q_PROPERTY">Q_PROPERTY</db:link>:</db:para>
+<db:programlisting language="qml">import MyThemeModule 1.0 as Theme
+
+Rectangle {
+    color: Theme.color // binding.
+}
+</db:programlisting>
+<db:para>A QJSValue may also be exposed as a singleton type, however clients should be aware that properties of such a singleton type cannot be bound to.</db:para>
+<db:para>See <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterSingletonType-1">qmlRegisterSingletonType</db:link>() for more information on how implement and register a new singleton type, and how to use an existing singleton type.</db:para>
+<db:note>
+<db:para>Enum values for registered types in QML should start with a capital.</db:para>
+</db:note>
+</db:section>
+</db:section>
+<db:section xml:id="type-revisions-and-versions">
+<db:title>Type Revisions and Versions</db:title>
+<db:para>Many of the type registration functions require versions to be specified for the registered type. Type revisions and versions allow new properties or methods to exist in the new version while remaining compatible with previous versions.</db:para>
+<db:para>Consider these two QML files:</db:para>
+<db:programlisting language="cpp">// main.qml
+import QtQuick 1.0
+
+Item {
+    id: root
+    MyType {}
+}
+</db:programlisting>
+<db:programlisting language="cpp">// MyType.qml
+import MyTypes 1.0
+
+CppType {
+    value: root.x
+}
+</db:programlisting>
+<db:para>where <db:code>CppType</db:code> maps to the C++ class <db:code>CppType</db:code>.</db:para>
+<db:para>If the author of CppType adds a <db:code>root</db:code> property to CppType in a new version of their type definition, <db:code>root.x</db:code> now resolves to a different value because <db:code>root</db:code> is also the <db:code>id</db:code> of the top level component. The author could specify that the new <db:code>root</db:code> property is available from a specific minor version. This permits new properties and features to be added to existing types without breaking existing programs.</db:para>
+<db:para>The REVISION tag is used to mark the <db:code>root</db:code> property as added in revision 1 of the type. Methods such as <db:link xlink:href="qobject-proxy.xml#Q_INVOKABLE">Q_INVOKABLE</db:link>'s, signals and slots can also be tagged for a revision using the <db:code>Q_REVISION(x)</db:code> macro:</db:para>
+<db:programlisting language="cpp">class CppType : public BaseType
+{
+    Q_OBJECT
+    Q_PROPERTY(int root READ root WRITE setRoot NOTIFY rootChanged REVISION 1)
+
+signals:
+    Q_REVISION(1) void rootChanged();
+};
+</db:programlisting>
+<db:para>To register the new class revision to a particular version the following function is used:</db:para>
+<db:programlisting language="cpp">template&amp;lt;typename T, int metaObjectRevision&amp;gt;
+int qmlRegisterType(const char *uri, int versionMajor, int versionMinor, const char *qmlName)
+</db:programlisting>
+<db:para>To register <db:code>CppType</db:code> version 1 for <db:code>MyTypes 1.1</db:code>:</db:para>
+<db:programlisting language="cpp">qmlRegisterType&amp;lt;CppType,1&amp;gt;(&quot;MyTypes&quot;, 1, 1, &quot;CppType&quot;)
+</db:programlisting>
+<db:para><db:code>root</db:code> is only available when <db:code>MyTypes</db:code> version 1.1 is imported.</db:para>
+<db:para>For the same reason, new types introduced in later versions should use the minor version argument of <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterType">qmlRegisterType</db:link>.</db:para>
+<db:para>This feature of the language allows for behavioural changes to be made without breaking existing applications. Consequently QML module authors should always remember to document what changed between minor versions, and QML module users should check that their application still runs correctly before deploying an updated import statement.</db:para>
+<db:para>You may also register the revision of a base class that your type depends upon using the <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterRevision">qmlRegisterRevision</db:link>() function:</db:para>
+<db:programlisting language="cpp">template&amp;lt;typename T, int metaObjectRevision&amp;gt;
+int qmlRegisterRevision(const char *uri, int versionMajor, int versionMinor)
+
+template&amp;lt;typename T, int metaObjectRevision&amp;gt;
+int qmlRegisterUncreatableType(const char *uri, int versionMajor, int versionMinor, const char *qmlName, const QString&amp;amp; reason)
+
+template&amp;lt;typename T, typename E, int metaObjectRevision&amp;gt;
+int qmlRegisterExtendedUncreatableType(const char *uri, int versionMajor, int versionMinor, const char *qmlName, const QString&amp;amp; reason)
+</db:programlisting>
+<db:para>For example, if <db:code>BaseType</db:code> is changed and now has a revision 1, you can specify that your type uses the new revision:</db:para>
+<db:programlisting language="cpp">qmlRegisterRevision&amp;lt;BaseType,1&amp;gt;(&quot;MyTypes&quot;, 1, 1);
+</db:programlisting>
+<db:para>This is useful when deriving from base classes provided by other authors, e.g. when extending classes from the Qt Quick module.</db:para>
+<db:note>
+<db:para>The QML engine does not support revisions for properties or signals of grouped and attached property objects.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="registering-extension-objects">
+<db:title>Registering Extension Objects</db:title>
+<db:para>When integrating existing classes and technology into QML, APIs will often need tweaking to fit better into the declarative environment. Although the best results are usually obtained by modifying the original classes directly, if this is either not possible or is complicated by some other concerns, extension objects allow limited extension possibilities without direct modifications.</db:para>
+<db:para><db:emphasis>Extension objects</db:emphasis> add additional properties to an existing type. Extension objects can only add properties, not signals or methods. An extended type definition allows the programmer to supply an additional type, known as the <db:emphasis>extension type</db:emphasis>, when registering the class. The properties are transparently merged with the original target class when used from within QML. For example:</db:para>
+<db:programlisting language="qml">QLineEdit {
+    leftMargin: 20
+}
+</db:programlisting>
+<db:para>The <db:code>leftMargin</db:code> property is a new property added to an existing C++ type, QLineEdit, without modifying its source code.</db:para>
+<db:para>The <db:link xlink:href="qqmlengine-proxy.xml#qmlRegisterExtendedType">qmlRegisterExtendedType</db:link>() function is for registering extended types. Note that it has two forms.</db:para>
+<db:programlisting language="cpp">template&amp;lt;typename T, typename ExtendedT&amp;gt;
+int qmlRegisterExtendedType(const char *uri, int versionMajor, int versionMinor, const char *qmlName)
+
+template&amp;lt;typename T, typename ExtendedT&amp;gt;
+int qmlRegisterExtendedType()
+</db:programlisting>
+<db:para>This functions should be used instead of the regular <db:code>qmlRegisterType()</db:code> variations. The arguments are identical to the corresponding non-extension registration functions, except for the ExtendedT parameter which is the type of the extension object.</db:para>
+<db:para>An extension class is a regular QObject, with a constructor that takes a QObject pointer. However, the extension class creation is delayed until the first extended property is accessed. The extension class is created and the target object is passed in as the parent. When the property on the original is accessed, the corresponding property on the extension object is used instead.</db:para>
+<db:para>The <db:link xlink:href="qtqml-referenceexamples-extended-example.xml">Extension Objects Example</db:link> demonstrates a usage of extension objects.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="defining-qml-specific-types-and-attributes">
+<db:title>Defining QML-Specific Types and Attributes</db:title>
+<db:section xml:id="providing-attached-properties">
+<db:title>Providing Attached Properties</db:title>
+<db:para>In the QML language syntax, there is a notion of <db:link xlink:href="qtqml-syntax-objectattributes.xml#attached-properties-and-attached-signal-handlers"><db:emphasis>attached properties</db:emphasis> and <db:emphasis>attached signal handlers</db:emphasis></db:link>, which are additional attributes that are attached to an object. Essentially, such attributes are implemented and provided by an <db:emphasis>attaching type</db:emphasis>, and these attributes may be <db:emphasis>attached</db:emphasis> to an object of another type. This contrasts with ordinary object properties which are provided by the object type itself (or the object's inherited type).</db:para>
+<db:para>For example, the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> below uses attached properties and attached handlers:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Item {
+    width: 100; height: 100
+
+    focus: true
+    Keys.enabled: false
+    Keys.onReturnPressed: console.log(&quot;Return key was pressed&quot;)
+}
+</db:programlisting>
+<db:para>Here, the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> object is able to access and set the values of <db:code>Keys.enabled</db:code> and <db:code>Keys.onReturnPressed</db:code>. This allows the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> object to access these extra attributes as an extension to its own existing attributes.</db:para>
+<db:section xml:id="steps-for-implementing-attached-objects">
+<db:title>Steps for Implementing Attached Objects</db:title>
+<db:para>When considering the above example, there are several parties involved:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>There is an instance of an anonymous <db:emphasis>attached object type</db:emphasis>, with an <db:code>enabled</db:code> and a <db:code>returnPressed</db:code> signal, that has been attached to the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> object to enable it to access and set these attributes.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> object is the <db:emphasis>attachee</db:emphasis>, to which the instance of the <db:emphasis>attached object type</db:emphasis> has been attached.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="qml-qtquick-keys.xml">Keys</db:link> is the <db:emphasis>attaching type</db:emphasis>, which provides the <db:emphasis>attachee</db:emphasis> with a named qualifier, &quot;Keys&quot;, through which it may access the attributes of the <db:emphasis>attached object type</db:emphasis>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>When the QML engine processes this code, it creates a single instance of the <db:emphasis>attached object type</db:emphasis> and attaches this instance to the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> object, thereby providing it with access to the <db:code>enabled</db:code> and <db:code>returnPressed</db:code> attributes of the instance.</db:para>
+<db:para>The mechanisms for providing attached objects can be implemented from C++ by providing classes for the <db:emphasis>attached object type</db:emphasis> and <db:emphasis>attaching type</db:emphasis>. For the <db:emphasis>attached object type</db:emphasis>, provide a QObject-derived class that defines the attributes to be made accessible to <db:emphasis>attachee</db:emphasis> objects. For the <db:emphasis>attaching type</db:emphasis>, provide a QObject-derived class that:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>implements a static qmlAttachedProperties() with the following signature:</db:para>
+<db:programlisting language="cpp">static &amp;lt;AttachedPropertiesType&amp;gt; *qmlAttachedProperties(QObject *object);
+</db:programlisting>
+<db:para>This method should return an instance of the <db:emphasis>attached object type</db:emphasis>.</db:para>
+<db:para>The QML engine invokes this method in order to attach an instance of the attached object type to the <db:emphasis>attachee</db:emphasis> specified by the <db:code>object</db:code> parameter. It is customary, though not strictly required, for this method implementation to parent the returned instance to <db:code>object</db:code> in order to prevent memory leaks.</db:para>
+<db:para>This method is called at most once by the engine for each attachee object instance, as the engine caches the returned instance pointer for subsequent attached property accesses. Consequently the attachment object may not be deleted until the attachee <db:code>object</db:code> is destroyed.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>is declared as an attaching type, by calling the <db:link xlink:href="qqmlengine-proxy.xml#QML_DECLARE_TYPEINFO">QML_DECLARE_TYPEINFO</db:link>() macro with the QML_HAS_ATTACHED_PROPERTIES flag</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="implementing-attached-objects-an-example">
+<db:title>Implementing Attached Objects: An Example</db:title>
+<db:para>For example, take the <db:code>Message</db:code> type described in an <db:link xlink:href="qtqml-cppintegration-definetypes.xml#registering-an-instantiable-object-type">earlier example</db:link>:</db:para>
+<db:programlisting language="cpp">class Message : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString author READ author WRITE setAuthor NOTIFY authorChanged)
+    Q_PROPERTY(QDateTime creationDate READ creationDate WRITE setCreationDate NOTIFY creationDateChanged)
+public:
+    // ...
+};
+</db:programlisting>
+<db:para>Suppose it is necessary to trigger a signal on a <db:code>Message</db:code> when it is published to a message board, and also track when the message has expired on the message board. Since it doesn't make sense to add these attributes directly to a <db:code>Message</db:code>, as the attributes are more relevant to the message board context, they could be implemented as <db:emphasis>attached</db:emphasis> attributes on a <db:code>Message</db:code> object that are provided through a &quot;MessageBoard&quot; qualifier. In terms of the concepts described earlier, the parties involved here are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>An instance of an anonymous <db:emphasis>attached object type</db:emphasis>, which provides a <db:code>published</db:code> signal and an expired property. This type is implemented by <db:code>MessageBoardAttachedType</db:code> below</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:code>Message</db:code> object, which will be the <db:emphasis>attachee</db:emphasis></db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The <db:code>MessageBoard</db:code> type, which will be the <db:emphasis>attaching type</db:emphasis> that is used by <db:code>Message</db:code> objects to access the attached attributes</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Following is an example implementation. First, there needs to be an <db:emphasis>attached object type</db:emphasis> with the necessary properties and signals that will be accessible to the <db:emphasis>attachee</db:emphasis>:</db:para>
+<db:programlisting language="cpp">class MessageBoardAttachedType : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(bool expired READ expired WRITE setExpired NOTIFY expiredChanged)
+public:
+    MessageBoardAttachedType(QObject *parent);
+    bool expired() const;
+    void setExpired(bool expired);
+signals:
+    void published();
+    void expiredChanged();
+};
+</db:programlisting>
+<db:para>Then the <db:emphasis>attaching type</db:emphasis>, <db:code>MessageBoard</db:code>, must declare a <db:code>qmlAttachedProperties()</db:code> method that returns an instance of the <db:emphasis>attached object type</db:emphasis> as implemented by MessageBoardAttachedType. Additionally, <db:code>Message</db:code> board must be declared as an attached type through the <db:link xlink:href="qqmlengine-proxy.xml#QML_DECLARE_TYPEINFO">QML_DECLARE_TYPEINFO</db:link>() macro:</db:para>
+<db:programlisting language="cpp">class MessageBoard : public QObject
+{
+    Q_OBJECT
+public:
+    static MessageBoardAttachedType *qmlAttachedProperties(QObject *object)
+    {
+        return new MessageBoardAttachedType(object);
+    }
+};
+QML_DECLARE_TYPEINFO(MessageBoard, QML_HAS_ATTACHED_PROPERTIES)
+</db:programlisting>
+<db:para>Now, a <db:code>Message</db:code> type can access the properties and signals of the attached object type:</db:para>
+<db:programlisting language="qml">Message {
+    author: &quot;Amelie&quot;
+    creationDate: new Date()
+
+    MessageBoard.expired: creationDate &amp;lt; new Date(&quot;January 01, 2015 10:45:00&quot;)
+    MessageBoard.onPublished: console.log(&quot;Message by&quot;, author, &quot;has been
+published!&quot;)
+}
+</db:programlisting>
+<db:para>Additionally, the C++ implementation may access the attached object instance that has been attached to any object by calling the <db:link xlink:href="qqmlengine-proxy.xml#qmlAttachedPropertiesObject">qmlAttachedPropertiesObject</db:link>() function.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">Message *msg = someMessageInstance();
+MessageBoardAttachedType *attached =
+        qobject_cast&amp;lt;MessageBoardAttachedType*&amp;gt;(qmlAttachedPropertiesObject&amp;lt;MessageBoard&amp;gt;(msg));
+
+qDebug() &amp;lt;&amp;lt; &quot;Value of MessageBoard.expired:&quot; &amp;lt;&amp;lt; attached-&amp;gt;expired();
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="property-modifier-types">
+<db:title>Property Modifier Types</db:title>
+<db:para>A property modifier type is a special kind of QML object type. A property modifier type instance affects a property (of a QML object instance) which it is applied to. There are two different kinds of property modifier types:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>property value write interceptors</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>property value sources</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>A property value write interceptor can be used to filter or modify values as they are written to properties. Currently, the only supported property value write interceptor is the <db:link xlink:href="qml-qtquick-behavior.xml">Behavior</db:link> type provided by the <db:code>QtQuick</db:code> import.</db:para>
+<db:para>A property value source can be used to automatically update the value of a property over time. Clients can define their own property value source types. The various <db:link xlink:href="qtquick-statesanimations-animations.xml">property animation</db:link> types provided by the <db:code>QtQuick</db:code> import are examples of property value sources.</db:para>
+<db:para>Property modifier type instances can be created and applied to a property of a QML object through the &quot;&lt;ModifierType&gt; on &lt;propertyName&gt;&quot; syntax, as the following example shows:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Item {
+    width: 400
+    height: 50
+
+    Rectangle {
+        width: 50
+        height: 50
+        color: &quot;red&quot;
+
+        NumberAnimation on x {
+            from: 0
+            to: 350
+            loops: Animation.Infinite
+            duration: 2000
+        }
+    }
+}
+</db:programlisting>
+<db:para>Clients can register their own property value source types, but currently not property value write interceptors.</db:para>
+<db:section xml:id="property-value-sources">
+<db:title>Property Value Sources</db:title>
+<db:para><db:emphasis>Property value sources</db:emphasis> are QML types that can automatically update the value of a property over time, using the <db:code>&lt;PropertyValueSource&gt; on &lt;property&gt;</db:code> syntax. For example, the various <db:link xlink:href="qtquick-statesanimations-animations.xml">property animation</db:link> types provided by the <db:code>QtQuick</db:code> module are examples of property value sources.</db:para>
+<db:para>A property value source can be implemented in C++ by subclassing QQmlPropertyValueSource and providing an implementation that writes different values to a property over time. When the property value source is applied to a property using the <db:code>&lt;PropertyValueSource&gt; on &lt;property&gt;</db:code> syntax in QML, it is given a reference to this property by the engine so that the property value can be updated.</db:para>
+<db:para>For example, suppose there is a <db:code>RandomNumberGenerator</db:code> class to be made available as a property value source, so that when applied to a QML property, it will update the property value to a different random number every 500 milliseconds. Additionally, a maxValue can be provided to this random number generator. This class can be implemented as follows:</db:para>
+<db:programlisting language="cpp">class RandomNumberGenerator : public QObject, public QQmlPropertyValueSource
+{
+    Q_OBJECT
+    Q_INTERFACES(QQmlPropertyValueSource)
+    Q_PROPERTY(int maxValue READ maxValue WRITE setMaxValue NOTIFY maxValueChanged);
+public:
+    RandomNumberGenerator(QObject *parent)
+        : QObject(parent), m_maxValue(100)
+    {
+        QObject::connect(&amp;amp;m_timer, SIGNAL(timeout()), SLOT(updateProperty()));
+        m_timer.start(500);
+    }
+
+    int maxValue() const;
+    void setMaxValue(int maxValue);
+
+    virtual void setTarget(const QQmlProperty &amp;amp;prop) { m_targetProperty = prop; }
+
+signals:
+    void maxValueChanged();
+
+private slots:
+    void updateProperty() {
+        m_targetProperty.write(QRandomGenerator::global()-&amp;gt;bounded(m_maxValue));
+    }
+
+private:
+    QQmlProperty m_targetProperty;
+    QTimer m_timer;
+    int m_maxValue;
+};
+</db:programlisting>
+<db:para>When the QML engine encounters a use of <db:code>RandomNumberGenerator</db:code> as a property value source, it invokes <db:code>RandomNumberGenerator::setTarget()</db:code> to provide the type with the property to which the value source has been applied. When the internal timer in <db:code>RandomNumberGenerator</db:code> triggers every 500 milliseconds, it will write a new number value to that specified property.</db:para>
+<db:para>Once the <db:code>RandomNumberGenerator</db:code> class has been registered with the QML type system, it can be used from QML as a property value source. Below, it is used to change the width of a <db:link xlink:href="qml-qtquick-rectangle.xml">Rectangle</db:link> every 500 milliseconds:</db:para>
+<db:programlisting language="qml">import QtQuick 2.0
+
+Item {
+    width: 300; height: 300
+
+    Rectangle {
+        RandomNumberGenerator on width { maxValue: 300 }
+
+        height: 100
+        color: &quot;red&quot;
+    }
+}
+</db:programlisting>
+<db:para>In all other respects, property value sources are regular QML types that can have properties, signals methods and so on, but with the added capability that they can be used to change property values using the <db:code>&lt;PropertyValueSource&gt; on &lt;property&gt;</db:code> syntax.</db:para>
+<db:para>When a property value source object is assigned to a property, QML first tries to assign it normally, as though it were a regular QML type. Only if this assignment fails does the engine call the <db:link xlink:href="">setTarget()</db:link> method. This allows the type to also be used in contexts other than just as a value source.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="specifying-default-properties-for-qml-object-types">
+<db:title>Specifying Default Properties for QML Object Types</db:title>
+<db:para>Any QObject-derived type that is registered as an instantiable QML object type can optionally specify a <db:emphasis>default property</db:emphasis> for the type. A default property is the property to which an object's children are automatically assigned if they are not assigned to any specific property.</db:para>
+<db:para>The default property can be set by calling the <db:link xlink:href="qobject-proxy.xml#Q_CLASSINFO">Q_CLASSINFO</db:link>() macro for a class with a specific &quot;DefaultProperty&quot; value. For example, the <db:code>MessageBoard</db:code> class below specifies its <db:code>messages</db:code> property as the default property for the class:</db:para>
+<db:programlisting language="cpp">class MessageBoard : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QQmlListProperty&amp;lt;Message&amp;gt; messages READ messages)
+    Q_CLASSINFO(&quot;DefaultProperty&quot;, &quot;messages&quot;)
+public:
+    QQmlListProperty&amp;lt;Message&amp;gt; messages();
+
+private:
+    QList&amp;lt;Message *&amp;gt; m_messages;
+};
+</db:programlisting>
+<db:para>This enables children of a <db:code>MessageBoard</db:code> object to be automatically assigned to its <db:code>messages</db:code> property if they are not assigned to a specific property. For example:</db:para>
+<db:programlisting language="qml">MessageBoard {
+    Message { author: &quot;Naomi&quot; }
+    Message { author: &quot;Clancy&quot; }
+}
+</db:programlisting>
+<db:para>If <db:code>messages</db:code> was not set as the default property, then any <db:code>Message</db:code> objects would have to be explicitly assigned to the <db:code>messages</db:code> property instead, as follows:</db:para>
+<db:programlisting language="qml">MessageBoard {
+    messages: [
+        Message { author: &quot;Naomi&quot; },
+        Message { author: &quot;Clancy&quot; }
+    ]
+}
+</db:programlisting>
+<db:para>(Incidentally, the <db:link xlink:href="qml-qtquick-item.xml#data-prop">Item::data</db:link> property is its default property. Any <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> objects added to this <db:code>data</db:code> property are also added to the list of <db:link xlink:href="qml-qtquick-item.xml#children-prop">Item::children</db:link>, so the use of the default property enables visual children to be declared for an item without explicitly assigning them to the <db:link xlink:href="qml-qtquick-item.xml#children-prop">children</db:link> property.)</db:para>
+</db:section>
+<db:section xml:id="defining-visual-items-with-the-qt-quick-module">
+<db:title>Defining Visual Items with the Qt Quick Module</db:title>
+<db:para>When building user interfaces with the <db:link xlink:href="qtquick-index.xml">Qt Quick</db:link> module, all QML objects that are to be visually rendered must derive from the <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> type, as it is the base type for all visual objects in <db:link xlink:href="qtquick-index.xml">Qt Quick</db:link>. This <db:link xlink:href="qml-qtquick-item.xml">Item</db:link> type is implemented by the QQuickItem C++ class, which is provided by the <db:link xlink:href="qtquick-index.xml">Qt Quick</db:link> module. Therefore, this class should be subclassed when it is necessary to implement a visual type in C++ that can be integrated into a QML-based user interface.</db:para>
+<db:para>See the QQuickItem documentation for more information. Additionally, the <db:link xlink:href="qtqml-tutorials-extending-qml-example.xml">Writing QML Extensions with C++</db:link> tutorial demonstrates how a QQuickItem-based visual item can be implemented in C++ and integrated into a Qt Quick-based user interface.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="receiving-notifications-for-object-initialization">
+<db:title>Receiving Notifications for Object Initialization</db:title>
+<db:para>For some custom QML object types, it may be beneficial to delay the initialization of particular data until the object has been created and all of its properties have been set. For example, this may be the case if the initialization is costly, or if the initialization should not be performed until all property values have been initialized.</db:para>
+<db:para>The <db:link xlink:href="qtqml-index.xml">Qt QML</db:link> module provides the QQmlParserStatus to be subclassed for these purposes. It defines a number of virtual methods that are invoked at various stages during component instantiation. To receive these notifications, a C++ class should inherit QQmlParserStatus and also notify the Qt meta system using the <db:link xlink:href="qobject-proxy.xml#Q_INTERFACES">Q_INTERFACES</db:link>() macro.</db:para>
+<db:para>For example:</db:para>
+<db:programlisting language="cpp">class MyQmlType : public QObject, public QQmlParserStatus
+{
+    Q_OBJECT
+    Q_INTERFACES(QQmlParserStatus)
+public:
+    virtual void componentComplete()
+    {
+        // Perform some initialization here now that the object is fully created
+    }
+};
+</db:programlisting>
+</db:section>
+</db:article>

@@ -1,0 +1,330 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QThread Class</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 5.14.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The <db:link xlink:href="qthread.xml">QThread</db:link> class provides a platform-independent way to manage threads.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:variablelist>
+<db:varlistentry>
+<db:term>Header</db:term>
+<db:listitem>
+<db:para>QThread</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>qmake</db:term>
+<db:listitem>
+<db:para>QT += core</db:para>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Inherited By</db:term>
+<db:listitem>
+<db:para/>
+</db:listitem>
+</db:varlistentry>
+<db:varlistentry>
+<db:term>Group</db:term>
+<db:listitem>
+<db:para>QThread is part of <db:simplelist><db:member>thread</db:member></db:simplelist></db:para>
+</db:listitem>
+</db:varlistentry>
+</db:variablelist>
+<db:section xml:id="details">
+<db:title>Detailed Description</db:title>
+<db:para>A <db:link xlink:href="qthread.xml">QThread</db:link> object manages one thread of control within the program. QThreads begin executing in run(). By default, run() starts the event loop by calling exec() and runs a Qt event loop inside the thread.</db:para>
+<db:para>You can use worker objects by moving them to the thread using QObject::moveToThread().</db:para>
+<db:programlisting language="cpp">class Worker : public QObject
+{
+    Q_OBJECT
+
+public slots:
+    void doWork(const QString &amp;amp;parameter) {
+        QString result;
+        /* ... here is the expensive or blocking operation ... */
+        emit resultReady(result);
+    }
+
+signals:
+    void resultReady(const QString &amp;amp;result);
+};
+
+class Controller : public QObject
+{
+    Q_OBJECT
+    QThread workerThread;
+public:
+    Controller() {
+        Worker *worker = new Worker;
+        worker-&amp;gt;moveToThread(&amp;amp;workerThread);
+        connect(&amp;amp;workerThread, &amp;amp;QThread::finished, worker, &amp;amp;QObject::deleteLater);
+        connect(this, &amp;amp;Controller::operate, worker, &amp;amp;Worker::doWork);
+        connect(worker, &amp;amp;Worker::resultReady, this, &amp;amp;Controller::handleResults);
+        workerThread.start();
+    }
+    ~Controller() {
+        workerThread.quit();
+        workerThread.wait();
+    }
+public slots:
+    void handleResults(const QString &amp;amp;);
+signals:
+    void operate(const QString &amp;amp;);
+};
+</db:programlisting>
+<db:para>The code inside the Worker's slot would then execute in a separate thread. However, you are free to connect the Worker's slots to any signal, from any object, in any thread. It is safe to connect signals and slots across different threads, thanks to a mechanism called <db:link xlink:href="">queued connections</db:link>.</db:para>
+<db:para>Another way to make code run in a separate thread, is to subclass <db:link xlink:href="qthread.xml">QThread</db:link> and reimplement run(). For example:</db:para>
+<db:programlisting language="cpp">class WorkerThread : public QThread
+{
+    Q_OBJECT
+    void run() override {
+        QString result;
+        /* ... here is the expensive or blocking operation ... */
+        emit resultReady(result);
+    }
+signals:
+    void resultReady(const QString &amp;amp;s);
+};
+
+void MyObject::startWorkInAThread()
+{
+    WorkerThread *workerThread = new WorkerThread(this);
+    connect(workerThread, &amp;amp;WorkerThread::resultReady, this, &amp;amp;MyObject::handleResults);
+    connect(workerThread, &amp;amp;WorkerThread::finished, workerThread, &amp;amp;QObject::deleteLater);
+    workerThread-&amp;gt;start();
+}
+</db:programlisting>
+<db:para>In that example, the thread will exit after the run function has returned. There will not be any event loop running in the thread unless you call exec().</db:para>
+<db:para>It is important to remember that a <db:link xlink:href="qthread.xml">QThread</db:link> instance <db:link xlink:href="">lives in</db:link> the old thread that instantiated it, not in the new thread that calls run(). This means that all of <db:link xlink:href="qthread.xml">QThread</db:link>'s queued slots and <db:link xlink:href="qmetaobject.xml#invokeMethod">invoked methods</db:link> will execute in the old thread. Thus, a developer who wishes to invoke slots in the new thread must use the worker-object approach; new slots should not be implemented directly into a subclassed <db:link xlink:href="qthread.xml">QThread</db:link>.</db:para>
+<db:para>Unlike queued slots or invoked methods, methods called directly on the <db:link xlink:href="qthread.xml">QThread</db:link> object will execute in the thread that calls the method. When subclassing <db:link xlink:href="qthread.xml">QThread</db:link>, keep in mind that the constructor executes in the old thread while run() executes in the new thread. If a member variable is accessed from both functions, then the variable is accessed from two different threads. Check that it is safe to do so.</db:para>
+<db:note>
+<db:para>Care must be taken when interacting with objects across different threads. See <db:link xlink:href="threads-synchronizing.xml">Synchronizing Threads</db:link> for details.</db:para>
+</db:note>
+<db:section xml:id="managing-threads">
+<db:title>Managing Threads</db:title>
+<db:para><db:link xlink:href="qthread.xml">QThread</db:link> will notifiy you via a signal when the thread is started() and finished(), or you can use isFinished() and isRunning() to query the state of the thread.</db:para>
+<db:para>You can stop the thread by calling exit() or quit(). In extreme cases, you may want to forcibly <db:link xlink:href="qthread.xml#terminate">terminate</db:link>() an executing thread. However, doing so is dangerous and discouraged. Please read the documentation for <db:link xlink:href="qthread.xml#terminate">terminate</db:link>() and <db:link xlink:href="qthread.xml#setTerminationEnabled">setTerminationEnabled</db:link>() for detailed information.</db:para>
+<db:para>From Qt 4.8 onwards, it is possible to deallocate objects that live in a thread that has just ended, by connecting the finished() signal to QObject::deleteLater().</db:para>
+<db:para>Use <db:link xlink:href="qthread.xml#wait">wait</db:link>() to block the calling thread, until the other thread has finished execution (or until a specified time has passed).</db:para>
+<db:para><db:link xlink:href="qthread.xml">QThread</db:link> also provides static, platform independent sleep functions: <db:link xlink:href="qthread.xml#sleep">sleep</db:link>(), <db:link xlink:href="qthread.xml#msleep">msleep</db:link>(), and <db:link xlink:href="qthread.xml#usleep">usleep</db:link>() allow full second, millisecond, and microsecond resolution respectively. These functions were made public in Qt 5.0.</db:para>
+<db:note>
+<db:para><db:link xlink:href="qthread.xml#wait">wait</db:link>() and the <db:link xlink:href="qthread.xml#sleep">sleep</db:link>() functions should be unnecessary in general, since Qt is an event-driven framework. Instead of <db:link xlink:href="qthread.xml#wait">wait</db:link>(), consider listening for the finished() signal. Instead of the <db:link xlink:href="qthread.xml#sleep">sleep</db:link>() functions, consider using QTimer.</db:para>
+</db:note>
+<db:para>The static functions currentThreadId() and currentThread() return identifiers for the currently executing thread. The former returns a platform specific ID for the thread; the latter returns a <db:link xlink:href="qthread.xml">QThread</db:link> pointer.</db:para>
+<db:para>To choose the name that your thread will be given (as identified by the command ps -L on Linux, for example), you can call <db:link xlink:href="">setObjectName()</db:link> before starting the thread. If you don't call <db:link xlink:href="">setObjectName()</db:link>, the name given to your thread will be the class name of the runtime type of your thread object (for example, &quot;RenderThread&quot; in the case of the <db:link xlink:href="qtcore-threads-mandelbrot-example.xml">Mandelbrot Example</db:link>, as that is the name of the <db:link xlink:href="qthread.xml">QThread</db:link> subclass). Note that this is currently not available with release builds on Windows.</db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="threads.xml">Thread Support in Qt</db:link></db:member>
+<db:member><db:link xlink:href="qthreadstorage.xml">QThreadStorage</db:link></db:member>
+<db:member><db:link xlink:href="threads-synchronizing.xml">Synchronizing Threads</db:link></db:member>
+<db:member><db:link xlink:href="qtcore-threads-mandelbrot-example.xml">Mandelbrot Example</db:link></db:member>
+<db:member><db:link xlink:href="qtcore-threads-semaphores-example.xml">Semaphores Example</db:link></db:member>
+<db:member><db:link xlink:href="qtcore-threads-waitconditions-example.xml">Wait Conditions Example</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="member-function-documentation">
+<db:title>Member Function Documentation</db:title>
+<db:section xml:id="msleep">
+<db:title>[static] void QThread::msleep(unsigned long <db:emphasis>msecs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:modifier>static</db:modifier>
+<db:void/>
+<db:methodname>msleep</db:methodname>
+<db:methodparam>
+<db:type>unsigned long</db:type>
+<db:parameter>msecs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void msleep(unsigned long msecs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Forces the current thread to sleep for <db:code role="parameter">msecs</db:code> milliseconds.</db:para>
+<db:para>Avoid using this function if you need to wait for a given condition to change. Instead, connect a slot to the signal that indicates the change or use an event handler (see <db:link xlink:href="">QObject::event()</db:link>).</db:para>
+<db:note>
+<db:para>This function does not guarantee accuracy. The application may sleep longer than <db:code role="parameter">msecs</db:code> under heavy load conditions. Some OSes might round <db:code role="parameter">msecs</db:code> up to 10 ms or 15 ms.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#sleep">sleep</db:link>()</db:member>
+<db:member><db:link xlink:href="qthread.xml#usleep">usleep</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="setTerminationEnabled">
+<db:title>[static protected] void QThread::setTerminationEnabled(bool <db:emphasis>enabled</db:emphasis> = true)</db:title>
+<db:methodsynopsis>
+<db:modifier>static</db:modifier>
+<db:void/>
+<db:methodname>setTerminationEnabled</db:methodname>
+<db:methodparam>
+<db:type>bool</db:type>
+<db:parameter>enabled</db:parameter>
+<db:initializer>true</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void setTerminationEnabled(bool enabled)</db:synopsisinfo>
+<db:synopsisinfo role="access">protected</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Enables or disables termination of the current thread based on the <db:code role="parameter">enabled</db:code> parameter. The thread must have been started by <db:link xlink:href="qthread.xml">QThread</db:link>.</db:para>
+<db:para>When <db:code role="parameter">enabled</db:code> is false, termination is disabled. Future calls to <db:link xlink:href="qthread.xml#terminate">QThread::terminate</db:link>() will return immediately without effect. Instead, the termination is deferred until termination is enabled.</db:para>
+<db:para>When <db:code role="parameter">enabled</db:code> is true, termination is enabled. Future calls to <db:link xlink:href="qthread.xml#terminate">QThread::terminate</db:link>() will terminate the thread normally. If termination has been deferred (i.e. <db:link xlink:href="qthread.xml#terminate">QThread::terminate</db:link>() was called with termination disabled), this function will terminate the calling thread <db:emphasis>immediately</db:emphasis>. Note that this function will not return in this case.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#terminate">terminate</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="sleep">
+<db:title>[static] void QThread::sleep(unsigned long <db:emphasis>secs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:modifier>static</db:modifier>
+<db:void/>
+<db:methodname>sleep</db:methodname>
+<db:methodparam>
+<db:type>unsigned long</db:type>
+<db:parameter>secs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void sleep(unsigned long secs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Forces the current thread to sleep for <db:code role="parameter">secs</db:code> seconds.</db:para>
+<db:para>Avoid using this function if you need to wait for a given condition to change. Instead, connect a slot to the signal that indicates the change or use an event handler (see <db:link xlink:href="">QObject::event()</db:link>).</db:para>
+<db:note>
+<db:para>This function does not guarantee accuracy. The application may sleep longer than <db:code role="parameter">secs</db:code> under heavy load conditions.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#msleep">msleep</db:link>()</db:member>
+<db:member><db:link xlink:href="qthread.xml#usleep">usleep</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="terminate">
+<db:title>void QThread::terminate()</db:title>
+<db:methodsynopsis>
+<db:void/>
+<db:methodname>terminate</db:methodname>
+<db:void/>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void terminate()</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Terminates the execution of the thread. The thread may or may not be terminated immediately, depending on the operating system's scheduling policies. Use <db:link xlink:href="qthread.xml#wait">QThread::wait</db:link>() after terminate(), to be sure.</db:para>
+<db:para>When the thread is terminated, all threads waiting for the thread to finish will be woken up.</db:para>
+<db:warning>
+<db:para>This function is dangerous and its use is discouraged. The thread can be terminated at any point in its code path. Threads can be terminated while modifying data. There is no chance for the thread to clean up after itself, unlock any held mutexes, etc. In short, use this function only if absolutely necessary.</db:para>
+</db:warning>
+<db:para>Termination can be explicitly enabled or disabled by calling <db:link xlink:href="qthread.xml#setTerminationEnabled">QThread::setTerminationEnabled</db:link>(). Calling this function while termination is disabled results in the termination being deferred, until termination is re-enabled. See the documentation of <db:link xlink:href="qthread.xml#setTerminationEnabled">QThread::setTerminationEnabled</db:link>() for more information.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#setTerminationEnabled">setTerminationEnabled</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="usleep">
+<db:title>[static] void QThread::usleep(unsigned long <db:emphasis>usecs</db:emphasis>)</db:title>
+<db:methodsynopsis>
+<db:modifier>static</db:modifier>
+<db:void/>
+<db:methodname>usleep</db:methodname>
+<db:methodparam>
+<db:type>unsigned long</db:type>
+<db:parameter>usecs</db:parameter>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">void usleep(unsigned long usecs)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Forces the current thread to sleep for <db:code role="parameter">usecs</db:code> microseconds.</db:para>
+<db:para>Avoid using this function if you need to wait for a given condition to change. Instead, connect a slot to the signal that indicates the change or use an event handler (see <db:link xlink:href="">QObject::event()</db:link>).</db:para>
+<db:note>
+<db:para>This function does not guarantee accuracy. The application may sleep longer than <db:code role="parameter">usecs</db:code> under heavy load conditions. Some OSes might round <db:code role="parameter">usecs</db:code> up to 10 ms or 15 ms; on Windows, it will be rounded up to a multiple of 1 ms.</db:para>
+</db:note>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#sleep">sleep</db:link>()</db:member>
+<db:member><db:link xlink:href="qthread.xml#msleep">msleep</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="wait">
+<db:title>bool QThread::wait(unsigned long <db:emphasis>time</db:emphasis> = ULONG_MAX)</db:title>
+<db:methodsynopsis>
+<db:type>bool</db:type>
+<db:methodname>wait</db:methodname>
+<db:methodparam>
+<db:type>unsigned long</db:type>
+<db:parameter>time</db:parameter>
+<db:initializer>ULONG_MAX</db:initializer>
+</db:methodparam>
+<db:synopsisinfo role="meta">plain</db:synopsisinfo>
+<db:synopsisinfo role="signature">bool wait(unsigned long time)</db:synopsisinfo>
+<db:synopsisinfo role="access">public</db:synopsisinfo>
+<db:synopsisinfo role="status">active</db:synopsisinfo>
+<db:synopsisinfo role="threadsafeness">unspecified</db:synopsisinfo>
+</db:methodsynopsis>
+<db:para>Blocks the thread until either of these conditions is met:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The thread associated with this <db:link xlink:href="qthread.xml">QThread</db:link> object has finished execution (i.e. when it returns from run()). This function will return true if the thread has finished. It also returns true if the thread has not been started yet.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code role="parameter">time</db:code> milliseconds has elapsed. If <db:code role="parameter">time</db:code> is ULONG_MAX (the default), then the wait will never timeout (the thread must return from run()). This function will return false if the wait timed out.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>This provides similar functionality to the POSIX pthread_join() function.</db:para>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qthread.xml#sleep">sleep</db:link>()</db:member>
+<db:member><db:link xlink:href="qthread.xml#terminate">terminate</db:link>()</db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:section>
+</db:section>
+</db:article>
