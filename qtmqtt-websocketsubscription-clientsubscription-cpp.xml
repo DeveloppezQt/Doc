@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebSockets MQTT Subscription</db:title>
+<db:productname>QtMqtt</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt MQTT Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Combining an MQTT client with a web socket connection.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2017 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &quot;clientsubscription.h&quot;
+
+#include &amp;lt;QtCore/QCoreApplication&amp;gt;
+#include &amp;lt;QtCore/QLoggingCategory&amp;gt;
+
+Q_LOGGING_CATEGORY(lcWebSocketMqtt, &quot;qtdemo.websocket.mqtt&quot;)
+
+ClientSubscription::ClientSubscription(QObject *parent) : QObject(parent)
+{
+    connect(this, &amp;amp;ClientSubscription::errorOccured, qApp, &amp;amp;QCoreApplication::quit);
+}
+
+void ClientSubscription::setUrl(const QUrl &amp;amp;url)
+{
+    m_url = url;
+}
+
+void ClientSubscription::setTopic(const QString &amp;amp;topic)
+{
+    m_topic = topic;
+}
+
+void ClientSubscription::setVersion(int v)
+{
+    m_version = v;
+}
+
+void ClientSubscription::connectAndSubscribe()
+{
+    qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;Connecting to broker at &quot; &amp;lt;&amp;lt; m_url;
+
+    m_device.setUrl(m_url);
+    m_device.setProtocol(m_version == 3 ? &quot;mqttv3.1&quot; : &quot;mqtt&quot;);
+
+    connect(&amp;amp;m_device, &amp;amp;WebSocketIODevice::socketConnected, this, [this]() {
+        qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;WebSocket connected, initializing MQTT connection.&quot;;
+
+        m_client.setProtocolVersion(m_version == 3 ? QMqttClient::MQTT_3_1 : QMqttClient::MQTT_3_1_1);
+        m_client.setTransport(&amp;amp;m_device, QMqttClient::IODevice);
+
+        connect(&amp;amp;m_client, &amp;amp;QMqttClient::connected, this, [this]() {
+            qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;MQTT connection established&quot;;
+
+            m_subscription = m_client.subscribe(m_topic);
+            if (!m_subscription) {
+                qDebug() &amp;lt;&amp;lt; &quot;Failed to subscribe to &quot; &amp;lt;&amp;lt; m_topic;
+                emit errorOccured();
+            }
+
+            connect(m_subscription, &amp;amp;QMqttSubscription::stateChanged,
+                    [](QMqttSubscription::SubscriptionState s) {
+                qCDebug(lcWebSocketMqtt) &amp;lt;&amp;lt; &quot;Subscription state changed:&quot; &amp;lt;&amp;lt; s;
+            });
+
+            connect(m_subscription, &amp;amp;QMqttSubscription::messageReceived,
+                    [this](QMqttMessage msg) {
+                handleMessage(msg.payload());
+            });
+        });
+
+        m_client.connectToHost();
+    });
+    if (!m_device.open(QIODevice::ReadWrite))
+        qDebug() &amp;lt;&amp;lt; &quot;Could not open socket device&quot;;
+}
+
+void ClientSubscription::handleMessage(const QByteArray &amp;amp;msgContent)
+{
+    // Should happen when the internal device has ready read?
+    qInfo() &amp;lt;&amp;lt; &quot;New message:&quot; &amp;lt;&amp;lt; msgContent;
+}
+
+</db:programlisting>
+</db:article>

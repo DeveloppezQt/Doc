@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Modbus Custom Command</db:title>
+<db:productname>QtSerialBus</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Serial Bus Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to handle custom Modbus function codes.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The example acts as both Modbus client and server in a single application. The connection between them is established via Modbus TCP. It is used to send and receive custom Modbus requests and adjusts its internal states based on the request and response.</db:para>
+<db:para>The main purpose of the example is to provide some demo code on how to implement a Modbus client or Modbus server handling custom Modbus function codes.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/custom.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="user-defined-modbus-function-codes">
+<db:title>User-Defined Modbus Function Codes</db:title>
+<db:para>The Modbus protocol supports function codes in the range <db:code>1 - 127 (0x01 - 0x7F HEX)</db:code>. Most of the function codes are well defined and publicly documented. However, there are two ranges that can be used for user-defined functions. Those are <db:code>65 - 72 (0x41 - 48 HEX)</db:code> and <db:code>100 - 110 (0x64 - 0x6E HEX)</db:code>. The user can select function codes from these ranges and handle them in some custom way.</db:para>
+<db:para>This application uses function code <db:code>65 (0x41 HEX)</db:code> to implement <db:code>CustomRead</db:code> command and function code <db:code>66 (0x42 HEX)</db:code> to implement <db:code>CustomWrite</db:code> command. In this example the custom commands are used to simply read and write the <db:link xlink:href="qmodbusdataunit.xml#RegisterType-enum">Holding Registers</db:link>.</db:para>
+</db:section>
+<db:section xml:id="sending-custom-modbus-commands">
+<db:title>Sending Custom Modbus Commands</db:title>
+<db:para>The custom Modbus commands are sent using the <db:link xlink:href="qmodbusclient.xml#sendRawRequest">QModbusClient::sendRawRequest</db:link>() method. This method requires to generate a <db:link xlink:href="qmodbusrequest.xml">QModbusRequest</db:link> object with the desired function code and a list of arguments which will be encoded into a <db:link xlink:href="qbytearray.xml">QByteArray</db:link>:</db:para>
+<db:programlisting language="cpp">    QModbusDataUnit unit {
+        QModbusDataUnit::HoldingRegisters,
+        ui-&amp;gt;startAddress-&amp;gt;value(),
+        qMin(ui-&amp;gt;numberOfRegisters-&amp;gt;currentText().toUShort(),
+            quint16(10 - ui-&amp;gt;startAddress-&amp;gt;value())) // do not go beyond 10 entries
+    };
+
+    for (qsizetype i = 0, total = unit.valueCount(); i &amp;lt; total; ++i)
+        unit.setValue(i, m_model-&amp;gt;m_registers[i + unit.startAddress()]);
+
+    const quint8 byteCount = quint8(unit.valueCount() * 2);
+    QModbusRequest writeRequest {
+        QModbusPdu::FunctionCode(ModbusClient::CustomWrite),
+        quint16(unit.startAddress()),
+        quint16(unit.valueCount()), byteCount, unit.values()
+    };
+</db:programlisting>
+<db:para>The <db:link xlink:href="qmodbusclient.xml#sendRawRequest">QModbusClient::sendRawRequest</db:link>() method returns a <db:link xlink:href="qmodbusreply.xml">QModbusReply</db:link> object which can be used to check for errors as usual:</db:para>
+<db:programlisting language="cpp">    if (auto *reply = m_client.sendRawRequest(writeRequest, ui-&amp;gt;serverAddress-&amp;gt;value())) {
+        if (!reply-&amp;gt;isFinished()) {
+            connect(reply, &amp;amp;QModbusReply::finished, this, [this, reply]() {
+                if (reply-&amp;gt;error() == QModbusDevice::ProtocolError) {
+                    statusBar()-&amp;gt;showMessage(tr(&quot;Write response error: %1 (Modbus exception: 0x%2)&quot;)
+                        .arg(reply-&amp;gt;errorString()).arg(reply-&amp;gt;rawResult().exceptionCode(), -1, 16),
+                        5000);
+                } else if (reply-&amp;gt;error() != QModbusDevice::NoError) {
+                    statusBar()-&amp;gt;showMessage(tr(&quot;Write response error: %1 (code: 0x%2)&quot;).
+                        arg(reply-&amp;gt;errorString()).arg(reply-&amp;gt;error(), -1, 16), 5000);
+                }
+
+                reply-&amp;gt;deleteLater();
+                }
+            );
+        }
+    } else {
+        statusBar()-&amp;gt;showMessage(tr(&quot;Write error: &quot;) + m_client.errorString(), 5000);
+    }
+</db:programlisting>
+</db:section>
+<db:section xml:id="custom-modbus-server">
+<db:title>Custom Modbus Server</db:title>
+<db:para>The custom server is derived from the <db:link xlink:href="qmodbustcpserver.xml">QModbusTcpServer</db:link> class. It overrides the <db:link xlink:href="qmodbusserver.xml#processPrivateRequest">QModbusServer::processPrivateRequest</db:link>() method.</db:para>
+<db:programlisting language="cpp">class ModbusServer : public QModbusTcpServer
+{
+    Q_OBJECT
+    Q_DISABLE_COPY_MOVE(ModbusServer)
+
+public:
+    ModbusServer(QObject *parent = nullptr);
+
+private:
+    QModbusResponse processPrivateRequest(const QModbusPdu &amp;amp;request) override;
+};
+</db:programlisting>
+<db:para>The base server class calls the <db:link xlink:href="qmodbusserver.xml#processPrivateRequest">processPrivateRequest</db:link>() method when a command with a custom function code is received.</db:para>
+<db:para>The custom implementation handles the <db:code>CustomRead</db:code> command by generating a <db:link xlink:href="qmodbusresponse.xml">QModbusResponse</db:link> with the values of requested registers:</db:para>
+<db:programlisting language="cpp">    if (ModbusClient::CustomRead == request.functionCode()) {
+        quint16 startAddress, count;
+        request.decodeData(&amp;amp;startAddress, &amp;amp;count);
+
+        QModbusDataUnit unit(QModbusDataUnit::HoldingRegisters, startAddress, count);
+        if (!data(&amp;amp;unit)) {
+            return QModbusExceptionResponse(request.functionCode(),
+                QModbusExceptionResponse::IllegalDataAddress);
+        }
+        return QModbusResponse(request.functionCode(), startAddress, quint8(count * 2), unit.values());
+    }
+</db:programlisting>
+<db:para>Handling <db:code>CustomWrite</db:code> command includes extracting the new values from the received <db:link xlink:href="qmodbuspdu.xml">QModbusPdu</db:link>, doing the actual value update, and returning a <db:link xlink:href="qmodbusresponse.xml">QModbusResponse</db:link> with the registers that were actually updated:</db:para>
+<db:programlisting language="cpp">    if (ModbusClient::CustomWrite == request.functionCode()) {
+        quint8 byteCount;
+        quint16 startAddress, numberOfRegisters;
+        request.decodeData(&amp;amp;startAddress, &amp;amp;numberOfRegisters, &amp;amp;byteCount);
+
+        if (byteCount % 2 != 0) {
+            return QModbusExceptionResponse(request.functionCode(),
+                QModbusExceptionResponse::IllegalDataValue);
+        }
+
+        const QByteArray pduData = request.data().remove(0, WriteHeaderSize);
+        QDataStream stream(pduData);
+
+        QList&amp;lt;quint16&amp;gt; values;
+        for (int i = 0; i &amp;lt; numberOfRegisters; i++) {
+            quint16 tmp;
+            stream &amp;gt;&amp;gt; tmp;
+            values.append(tmp);
+        }
+
+        if (!writeData({QModbusDataUnit::HoldingRegisters, startAddress, values})) {
+            return QModbusExceptionResponse(request.functionCode(),
+                QModbusExceptionResponse::ServerDeviceFailure);
+        }
+
+        return QModbusResponse(request.functionCode(), startAddress, numberOfRegisters);
+    }
+</db:programlisting>
+</db:section>
+<db:section xml:id="custom-modbus-client">
+<db:title>Custom Modbus Client</db:title>
+<db:para>The custom client is derived from the <db:link xlink:href="qmodbustcpclient.xml">QModbusTcpClient</db:link> class. It overrides the <db:link xlink:href="qmodbusclient.xml#processPrivateResponse">QModbusClient::processPrivateResponse</db:link>() method.</db:para>
+<db:programlisting language="cpp">class ModbusClient : public QModbusTcpClient
+{
+    Q_OBJECT
+    Q_DISABLE_COPY_MOVE(ModbusClient)
+
+public:
+    ModbusClient(QObject *parent = nullptr);
+
+    static constexpr QModbusPdu::FunctionCode CustomRead {QModbusPdu::FunctionCode(0x41)};
+    static constexpr QModbusPdu::FunctionCode CustomWrite {QModbusPdu::FunctionCode(0x42)};
+
+private:
+    bool processPrivateResponse(const QModbusResponse &amp;amp;response, QModbusDataUnit *data) override;
+};
+</db:programlisting>
+<db:para>The base client class calls the <db:link xlink:href="qmodbusclient.xml#processPrivateResponse">processPrivateResponse</db:link>() method to process the server responses with custom function codes.</db:para>
+<db:para>The custom implementation handles the responses with <db:code>CustomRead</db:code> and <db:code>CustomWrite</db:code> function codes:</db:para>
+<db:programlisting language="cpp">bool ModbusClient::processPrivateResponse(const QModbusResponse &amp;amp;response, QModbusDataUnit *data)
+{
+    if (!response.isValid())
+        return QModbusClient::processPrivateResponse(response, data);
+
+    if (CustomRead == response.functionCode())
+        return collateBytes(response, data);
+
+    if (CustomWrite == response.functionCode())
+        return collateMultipleValues(response, data);
+    return QModbusClient::processPrivateResponse(response, data);
+}
+</db:programlisting>
+<db:para>The <db:code>CustomRead</db:code> response is handled by decoding the provided <db:link xlink:href="qmodbuspdu.xml">QModbusPdu</db:link> and extracting the values for requested registers:</db:para>
+<db:programlisting language="cpp">static bool collateBytes(const QModbusPdu &amp;amp;response, QModbusDataUnit *data)
+{
+    if (response.dataSize() &amp;lt; MinimumReadResponseSize)
+        return false;
+
+    quint16 address; quint8 byteCount;
+    response.decodeData(&amp;amp;address, &amp;amp;byteCount);
+
+    if (byteCount % 2 != 0)
+        return false;
+
+    if (data) {
+        QDataStream stream(response.data().remove(0, 3));
+
+        QList&amp;lt;quint16&amp;gt; values;
+        const quint8 itemCount = byteCount / 2;
+        for (int i = 0; i &amp;lt; itemCount; i++) {
+            quint16 tmp;
+            stream &amp;gt;&amp;gt; tmp;
+            values.append(tmp);
+        }
+        *data = {QModbusDataUnit::HoldingRegisters, address, values};
+    }
+    return true;
+}
+</db:programlisting>
+<db:para>The <db:code>CustomWrite</db:code> response is handled by simply validating the response parameters:</db:para>
+<db:programlisting language="cpp">static bool collateMultipleValues(const QModbusPdu &amp;amp;response, QModbusDataUnit *data)
+{
+    if (response.dataSize() != WriteResponseSize)
+        return false;
+
+    quint16 address, count;
+    response.decodeData(&amp;amp;address, &amp;amp;count);
+
+    if (count &amp;lt; 1 || count &amp;gt; 10)
+        return false;
+
+    if (data)
+        *data = {QModbusDataUnit::HoldingRegisters, address, count};
+    return true;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+<db:para>This example cannot be used in conjunction with other applications. Once the example is started, it can only exchange custom Modbus commands within the application itself. All interactions between the client and server use the Modbus TCP protocol.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtserialbus.git/tree/examples/serialbus/modbus/custom?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

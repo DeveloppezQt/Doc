@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Axis Handling</db:title>
+<db:productname>QtDataVis3D</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Implementing axis dragging with a custom input handler in QML, and creating a custom axis formatter.</db:para>
+<db:para>This documentation was introduced in QtDataVisualization 6.5.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para><db:emphasis>Axis Handling</db:emphasis> demonstrates two different custom features with axes. The features have their own tabs in the application.</db:para>
+<db:para>The following sections concentrate on those features only and skip explaining the basic functionality - for more detailed QML example documentation, see <db:link xlink:href="qtdatavis3d-qmlscatter-example.xml">Simple Scatter Graph</db:link>.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmlaxishandling-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="axis-dragging">
+<db:title>Axis Dragging</db:title>
+<db:para>In the <db:guilabel>Axis Dragging</db:guilabel> tab, implement a custom input handler in QML that enables you to drag axis labels to change axis ranges. Further, use orthographic projection and dynamically update the properties of a custom item.</db:para>
+<db:section xml:id="overriding-default-input-handling">
+<db:title>Overriding Default Input Handling</db:title>
+<db:para>To deactivate the default input handling mechanism, set the active input handler of <db:link xlink:href="qml-qtdatavisualization-scatter3d.xml">Scatter3D</db:link> graph to <db:code>null</db:code>:</db:para>
+<db:programlisting language="qml">Scatter3D {
+    id: scatterGraph
+    inputHandler: null
+    ...
+</db:programlisting>
+<db:para>Then, add a <db:link xlink:href="qml-qtquick-mousearea.xml">MouseArea</db:link> and set it to fill the parent, which is the same <db:code>Item</db:code> our <db:code>scatterGraph</db:code> is contained in. Also, set it to accept only left mouse button presses, as in this example the other buttons are not needed:</db:para>
+<db:programlisting language="qml">MouseArea {
+    anchors.fill: parent
+    hoverEnabled: true
+    acceptedButtons: Qt.LeftButton
+    ...
+</db:programlisting>
+<db:para>Then, listen to mouse presses, and when caught, send a selection query to the graph:</db:para>
+<db:programlisting language="qml">onPressed: (mouse)=&amp;gt; {
+               scatterGraph.scene.selectionQueryPosition = Qt.point(mouse.x, mouse.y);
+           }
+</db:programlisting>
+<db:para>The <db:code>onPositionChanged</db:code> signal handler catches the current mouse position that will be needed for move distance calculation:</db:para>
+<db:programlisting language="qml">onPositionChanged: (mouse)=&amp;gt; {
+                       currentMouseX = mouse.x;
+                       currentMouseY = mouse.y;
+    ...
+</db:programlisting>
+<db:para>At the end of <db:code>onPositionChanged</db:code>, save the previous mouse position for move distance calculation that will be introduced later:</db:para>
+<db:programlisting language="cpp">...
+previousMouseX = currentMouseX;
+previousMouseY = currentMouseY;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="translating-mouse-movement-to-axis-range-change">
+<db:title>Translating Mouse Movement to Axis Range Change</db:title>
+<db:para>In <db:code>scatterGraph</db:code>, listen to <db:code>onSelectedElementChanged</db:code>. The signal is emitted after the selection query has been made in the <db:code>onPressed</db:code> of the <db:code>inputArea</db:code>. Set the element type into a property you defined (<db:code>property int selectedAxisLabel: -1</db:code>) in the main component, since it is of a type you are interested in:</db:para>
+<db:programlisting language="qml">onSelectedElementChanged: {
+    if (selectedElement &amp;gt;= AbstractGraph3D.ElementAxisXLabel
+            &amp;amp;&amp;amp; selectedElement &amp;lt;= AbstractGraph3D.ElementAxisZLabel) {
+        selectedAxisLabel = selectedElement;
+    } else {
+        selectedAxisLabel = -1;
+    }
+}
+</db:programlisting>
+<db:para>Then, back in the <db:code>onPositionChanged</db:code> of <db:code>inputArea</db:code>, check if a mouse button is pressed and if you have a current axis label selection. If the conditions are met, call the function that does the conversion from mouse movement to axis range update:</db:para>
+<db:programlisting language="cpp">...
+if (pressed &amp;amp;&amp;amp; selectedAxisLabel != -1)
+    axisDragView.dragAxis();
+...
+</db:programlisting>
+<db:para>The conversion is easy in this case, as the camera rotation is fixed. You can use some precalculated values, calculate mouse move distance, and apply the values to the selected axis range:</db:para>
+<db:programlisting language="qml">function dragAxis() {
+    // Do nothing if previous mouse position is uninitialized
+    if (previousMouseX === -1)
+        return;
+
+    // Directional drag multipliers based on rotation. Camera is locked to 45 degrees, so we
+    // can use one precalculated value instead of calculating xx, xy, zx and zy individually
+    var cameraMultiplier = 0.70710678;
+
+    // Calculate the mouse move amount
+    var moveX = currentMouseX - previousMouseX;
+    var moveY = currentMouseY - previousMouseY;
+
+    // Adjust axes
+    switch (selectedAxisLabel) {
+    case AbstractGraph3D.ElementAxisXLabel:
+        var distance = ((moveX - moveY) * cameraMultiplier) / dragSpeedModifier;
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisX.min -= distance;
+            scatterGraph.axisX.max -= distance;
+        } else {
+            scatterGraph.axisX.max -= distance;
+            scatterGraph.axisX.min -= distance;
+        }
+        break;
+    case AbstractGraph3D.ElementAxisYLabel:
+        distance = moveY / dragSpeedModifier;
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisY.max += distance;
+            scatterGraph.axisY.min += distance;
+        } else {
+            scatterGraph.axisY.min += distance;
+            scatterGraph.axisY.max += distance;
+        }
+        break;
+    case AbstractGraph3D.ElementAxisZLabel:
+        distance = ((moveX + moveY) * cameraMultiplier) / dragSpeedModifier;
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisZ.max += distance;
+            scatterGraph.axisZ.min += distance;
+        } else {
+            scatterGraph.axisZ.min += distance;
+            scatterGraph.axisZ.max += distance;
+        }
+        break;
+    }
+}
+</db:programlisting>
+<db:para>For a more sophisticated conversion from mouse movement to axis range update, see <db:link xlink:href="qtdatavis3d-graphgallery-example.xml">Graph Gallery</db:link>.</db:para>
+</db:section>
+<db:section xml:id="other-features">
+<db:title>Other Features</db:title>
+<db:para>The example also demonstrates how to use orthographic projection and how to update properties of a custom item on the fly.</db:para>
+<db:para>Orthographic projection is very simple. You'll just need to change the <db:code>orthoProjection</db:code> property of <db:code>scatterGraph</db:code>. The example has a button for toggling it on and off:</db:para>
+<db:programlisting language="qml">Button {
+    id: orthoToggle
+    width: axisDragView.portraitMode ? parent.width : parent.width / 3
+    text: &quot;Display Orthographic&quot;
+    anchors.left: axisDragView.portraitMode ? parent.left : rangeToggle.right
+    anchors.top: axisDragView.portraitMode ? rangeToggle.bottom : parent.top
+    onClicked: {
+        if (scatterGraph.orthoProjection) {
+            text = &quot;Display Orthographic&quot;;
+            scatterGraph.orthoProjection = false;
+            // Orthographic projection disables shadows, so we need to switch them back on
+            scatterGraph.shadowQuality = AbstractGraph3D.ShadowQualityMedium
+        } else {
+            text = &quot;Display Perspective&quot;;
+            scatterGraph.orthoProjection = true;
+        }
+    }
+}
+</db:programlisting>
+<db:para>For custom items, add one to the <db:code>customItemList</db:code> of <db:code>scatterGraph</db:code>:</db:para>
+<db:programlisting language="qml">customItemList: [
+    Custom3DItem {
+        id: qtCube
+        meshFile: &quot;:/qml/qmlaxishandling/cube.obj&quot;
+        textureFile: &quot;:/qml/qmlaxishandling/cubetexture.png&quot;
+        position: Qt.vector3d(0.65, 0.35, 0.65)
+        scaling: Qt.vector3d(0.3, 0.3, 0.3)
+    }
+]
+</db:programlisting>
+<db:para>You implement a timer to add, remove, and rotate all the items in the graph, and use the same timer for rotating the custom item:</db:para>
+<db:programlisting language="qml">onTriggered: {
+    rotationAngle = rotationAngle + 1;
+    qtCube.setRotationAxisAndAngle(Qt.vector3d(1, 0, 1), rotationAngle);
+    ...
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="axis-formatters">
+<db:title>Axis Formatters</db:title>
+<db:para>In the <db:guilabel>Axis Formatter</db:guilabel> tab, create a custom axis formatter. It also illustrates how to use predefined axis formatters.</db:para>
+<db:section xml:id="custom-axis-formatter">
+<db:title>Custom Axis Formatter</db:title>
+<db:para>Customizing axis formatters requires subclassing the <db:link xlink:href="qvalue3daxisformatter.xml">QValue3DAxisFormatter</db:link>, which cannot be done in QML code alone. In this example, the axis interprets the float values as a timestamp and shows the date in the axis labels. To achieve this, introduce a new class called <db:code>CustomFormatter</db:code>, which subclasses the <db:link xlink:href="qvalue3daxisformatter.xml">QValue3DAxisFormatter</db:link>:</db:para>
+<db:programlisting language="cpp">class CustomFormatter : public QValue3DAxisFormatter
+{
+...
+</db:programlisting>
+<db:para>Since float values of a <db:link xlink:href="qscatter3dseries.xml">QScatter3DSeries</db:link> cannot be directly cast into <db:link xlink:href="qdatetime.xml">QDateTime</db:link> values due to difference in data width, some sort of mapping between the two is needed. To do the mapping, specify an origin date for the formatter and interpret the float values from the <db:link xlink:href="qscatter3dseries.xml">QScatter3DSeries</db:link> as date offsets to that origin value. The origin date is given as a property:</db:para>
+<db:programlisting language="cpp">Q_PROPERTY(QDate originDate READ originDate WRITE setOriginDate NOTIFY originDateChanged)
+</db:programlisting>
+<db:para>For the mapping from value to <db:link xlink:href="qdatetime.xml">QDateTime</db:link>, use the <db:code>valueToDateTime()</db:code> method:</db:para>
+<db:programlisting language="cpp">QDateTime CustomFormatter::valueToDateTime(qreal value) const
+{
+    return m_originDate.startOfDay().addMSecs(qint64(oneDayMs * value));
+}
+</db:programlisting>
+<db:para>To function as an axis formatter, <db:code>CustomFormatter</db:code> needs to reimplement some virtual methods:</db:para>
+<db:programlisting language="cpp">virtual QValue3DAxisFormatter *createNewInstance() const;
+virtual void populateCopy(QValue3DAxisFormatter &amp;amp;copy) const;
+virtual void recalculate();
+virtual QString stringForValue(qreal value, const QString &amp;amp;format) const;
+</db:programlisting>
+<db:para>The first two are simple, just create a new instance of <db:code>CustomFormatter</db:code> and copy the necessary data over to it. Use these two methods to create and update a cache of formatter for rendering purposes. Remember to call the superclass implementation of <db:code>populateCopy()</db:code>:</db:para>
+<db:programlisting language="cpp">QValue3DAxisFormatter *CustomFormatter::createNewInstance() const
+{
+    return new CustomFormatter();
+}
+
+void CustomFormatter::populateCopy(QValue3DAxisFormatter &amp;amp;copy) const
+{
+    QValue3DAxisFormatter::populateCopy(copy);
+
+    CustomFormatter *customFormatter = static_cast&amp;lt;CustomFormatter *&amp;gt;(&amp;amp;copy);
+    customFormatter-&amp;gt;m_originDate = m_originDate;
+    customFormatter-&amp;gt;m_selectionFormat = m_selectionFormat;
+}
+</db:programlisting>
+<db:para><db:code>CustomFormatter</db:code> does the bulk of its work in the <db:code>recalculate()</db:code> method, where our formatter calculates the grid, subgrid, and label positions, as well as formats the label strings. In the custom formatter, ignore the segment count of the axis and draw a grid line always at midnight. Subsegment count and label positioning is handled normally:</db:para>
+<db:programlisting language="cpp">void CustomFormatter::recalculate()
+{
+    // We want our axis to always have gridlines at date breaks
+
+    // Convert range into QDateTimes
+    QDateTime minTime = valueToDateTime(qreal(axis()-&amp;gt;min()));
+    QDateTime maxTime = valueToDateTime(qreal(axis()-&amp;gt;max()));
+
+    // Find out the grid counts
+    QTime midnight(0, 0);
+    QDateTime minFullDate(minTime.date(), midnight);
+    int gridCount = 0;
+    if (minFullDate != minTime)
+        minFullDate = minFullDate.addDays(1);
+    QDateTime maxFullDate(maxTime.date(), midnight);
+
+    gridCount += minFullDate.daysTo(maxFullDate) + 1;
+    int subGridCount = axis()-&amp;gt;subSegmentCount() - 1;
+
+    // Reserve space for position arrays and label strings
+    gridPositions().resize(gridCount);
+    subGridPositions().resize((gridCount + 1) * subGridCount);
+    labelPositions().resize(gridCount);
+    labelStrings().reserve(gridCount);
+
+    // Calculate positions and format labels
+    qint64 startMs = minTime.toMSecsSinceEpoch();
+    qint64 endMs = maxTime.toMSecsSinceEpoch();
+    qreal dateNormalizer = endMs - startMs;
+    qreal firstLineOffset = (minFullDate.toMSecsSinceEpoch() - startMs) / dateNormalizer;
+    qreal segmentStep = oneDayMs / dateNormalizer;
+    qreal subSegmentStep = 0;
+    if (subGridCount &amp;gt; 0)
+        subSegmentStep = segmentStep / qreal(subGridCount + 1);
+
+    for (int i = 0; i &amp;lt; gridCount; i++) {
+        qreal gridValue = firstLineOffset + (segmentStep * qreal(i));
+        gridPositions()[i] = float(gridValue);
+        labelPositions()[i] = float(gridValue);
+        labelStrings() &amp;lt;&amp;lt; minFullDate.addDays(i).toString(axis()-&amp;gt;labelFormat());
+    }
+
+    for (int i = 0; i &amp;lt;= gridCount; i++) {
+        if (subGridPositions().size()) {
+            for (int j = 0; j &amp;lt; subGridCount; j++) {
+                float position;
+                if (i)
+                    position =  gridPositions().at(i - 1) + subSegmentStep * (j + 1);
+                else
+                    position =  gridPositions().at(0) - segmentStep + subSegmentStep * (j + 1);
+                if (position &amp;gt; 1.0f || position &amp;lt; 0.0f)
+                    position = gridPositions().at(0);
+                subGridPositions()[i * subGridCount + j] = position;
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>The axis labels are formatted to show only the date. However, to increase the resolution of the timestamp of the selection label, specify another property for the custom formatter to allow the user to customize it:</db:para>
+<db:programlisting language="cpp">Q_PROPERTY(QString selectionFormat READ selectionFormat WRITE setSelectionFormat NOTIFY selectionFormatChanged)
+</db:programlisting>
+<db:para>This selection format property is used in the reimplemented <db:code>stringToValue</db:code> method, where the submitted format is ignored and the custom selection format substituted for it:</db:para>
+<db:programlisting language="cpp">QString CustomFormatter::stringForValue(qreal value, const QString &amp;amp;format) const
+{
+    Q_UNUSED(format);
+
+    return valueToDateTime(value).toString(m_selectionFormat);
+}
+</db:programlisting>
+<db:para>To expose our new custom formatter to the QML, declare it and make it a QML module. For information about how to do this, see <db:link xlink:href="qtdatavis3d-qmlsurfacegallery-example.xml">Surface Graph Gallery</db:link>.</db:para>
+</db:section>
+<db:section xml:id="qml">
+<db:title>QML</db:title>
+<db:para>In the QML code, define a different axis for each dimension:</db:para>
+<db:programlisting language="qml">axisZ: valueAxis
+axisY: logAxis
+axisX: dateAxis
+</db:programlisting>
+<db:para>The Z-axis is just a regular <db:link xlink:href="qml-qtdatavisualization-valueaxis3d.xml">ValueAxis3D</db:link>:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: valueAxis
+    segmentCount: 5
+    subSegmentCount: 2
+    labelFormat: &quot;%.2f&quot;
+    min: 0
+    max: 10
+}
+</db:programlisting>
+<db:para>For the Y-axis, define a logarithmic axis. To make <db:link xlink:href="qml-qtdatavisualization-valueaxis3d.xml">ValueAxis3D</db:link> show a logarithmic scale, specify <db:link xlink:href="qml-qtdatavisualization-logvalueaxis3dformatter.xml">LogValueAxis3DFormatter</db:link> for <db:code>formatter</db:code> property of the axis:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: logAxis
+    formatter: LogValueAxis3DFormatter {
+        id: logAxisFormatter
+        base: 10
+        autoSubGrid: true
+        showEdgeLabels: true
+    }
+    labelFormat: &quot;%.2f&quot;
+}
+</db:programlisting>
+<db:para>And finally, for the X-axis use the new <db:code>CustomFormatter</db:code>:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: dateAxis
+    formatter: CustomFormatter {
+        originDate: &quot;2023-01-01&quot;
+        selectionFormat: &quot;yyyy-MM-dd HH:mm:ss&quot;
+    }
+    subSegmentCount: 2
+    labelFormat: &quot;yyyy-MM-dd&quot;
+    min: 0
+    max: 14
+}
+</db:programlisting>
+<db:para>The rest of the application consists of fairly self-explanatory logic for modifying the axes and showing the graph.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="example-contents">
+<db:title>Example Contents</db:title>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdatavis3d.git/tree/examples/datavisualization/qmlaxishandling?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:section>
+</db:article>

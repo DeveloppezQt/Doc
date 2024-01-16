@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Custom Instanced Rendering</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates instancing with custom materials and a C++ instance table.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/custominstancing.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example shows how to create instance data programmatically in C++, and how to use custom materials with instanced rendering.</db:para>
+<db:section xml:id="custom-instancing-table">
+<db:title>Custom instancing table</db:title>
+<db:para>We define our table as a subclass of <db:link xlink:href="qquick3dinstancing.xml">QQuick3DInstancing</db:link> and add some properties so we can control it from QML:</db:para>
+<db:programlisting language="cpp">class CppInstanceTable : public QQuick3DInstancing
+{
+    Q_OBJECT
+    QML_ELEMENT
+
+    Q_PROPERTY(int gridSize READ gridSize WRITE setGridSize NOTIFY gridSizeChanged)
+    Q_PROPERTY(float gridSpacing READ gridSpacing WRITE setGridSpacing NOTIFY gridSpacingChanged)
+    Q_PROPERTY(int randomSeed READ randomSeed WRITE setRandomSeed NOTIFY randomSeedChanged)
+</db:programlisting>
+<db:para>The virtual function <db:link xlink:href="qquick3dinstancing.xml#getInstanceBuffer">getInstanceBuffer</db:link> is reimplemented to return the instancing data:</db:para>
+<db:programlisting language="cpp">QByteArray CppInstanceTable::getInstanceBuffer(int *instanceCount)
+{
+    if (m_dirty) {
+        BlockTable blocks(m_gridSize, m_randomSeed);
+        m_instanceData.resize(0);
+
+        auto idxToPos = [this](int i) -&amp;gt; float { return m_gridSpacing * (i - m_gridSize / 2); };
+
+        int instanceNumber = 0;
+        for (int i = 0; i &amp;lt; m_gridSize; ++i) {
+            float xPos = idxToPos(i);
+            for (int j = 0; j &amp;lt; m_gridSize; ++j) {
+                float zPos = idxToPos(j);
+                int lowest = blocks.lowestVisible(i, j);
+                int highest = blocks.highestBlock(i, j);
+                for (int k = lowest; k &amp;lt;= highest; ++k) {
+                    float yPos = idxToPos(k);
+                    QColor color = blocks.getBlockColor(i, j, k);
+                    float waterAnimation = blocks.isWaterSurface(i, j, k) ? 1.0 : 0.0;
+                    auto entry = calculateTableEntry({ xPos, yPos, zPos }, { 1.0, 1.0, 1.0 }, {}, color, { waterAnimation, 0, 0, 0 });
+                    m_instanceData.append(reinterpret_cast&amp;lt;const char *&amp;gt;(&amp;amp;entry), sizeof(entry));
+                    instanceNumber++;
+                }
+            }
+        }
+        m_instanceCount = instanceNumber;
+        m_dirty = false;
+    }
+    if (instanceCount)
+        *instanceCount = m_instanceCount;
+
+    return m_instanceData;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="custom-material">
+<db:title>Custom material</db:title>
+<db:para>We use a shaded custom material, meaning that Qt gives us the basic implementation, and we just specify additional logic.</db:para>
+<db:para>The only customization we need for the vertex shader is for passing information to the fragment shader. By default, Qt only provides the instance data to the vertex shader, so we pass it on as <db:code>vCustomData</db:code>. We also calculate the global position of the vertex and make it available as <db:code>vGlobalPosition</db:code>.</db:para>
+<db:programlisting language="cpp">// Copyright (C) 2023 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+VARYING vec4 vCustomData;
+VARYING vec3 vGlobalPosition;
+void MAIN()
+{
+    vCustomData = INSTANCE_DATA;
+
+    // MODEL_MATRIX does not exist when instancing
+    vec4 pos = INSTANCE_MODEL_MATRIX * vec4(VERTEX, 1.0);
+    vGlobalPosition = pos.xyz;
+}
+</db:programlisting>
+<db:para>The fragment shader performs a simple wave animation for water surfaces. Everything else gets a subtle radial gradient. The difference is determined by the first element of the custom data.</db:para>
+<db:programlisting language="cpp">VARYING vec4 vCustomData;
+VARYING vec3 vGlobalPosition;
+
+void MAIN()
+{
+    METALNESS = 0.0;
+    ROUGHNESS = 1.0;
+    FRESNEL_POWER = 5.0;
+
+    float c;
+
+    if (vCustomData.x &amp;gt; 0)
+        c = 1.0 - (1.0 + sin(sqrt(vGlobalPosition.x*vGlobalPosition.x + vGlobalPosition.z*vGlobalPosition.z) - uTime/200.0)) * 0.2;
+    else
+        c = 1.0 - 0.25 * (UV0.x*UV0.x + UV0.y*UV0.y);
+
+    BASE_COLOR = vec4(c, c, c, 1.0);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-the-custom-table-and-material-in-qml">
+<db:title>Using the custom table and material in QML</db:title>
+<db:para>We create a custom material using the shaders we made earlier, and add a new property <db:code>uTime</db:code>. This property is automatically mapped to the corresponding uniform in the fragment shader.</db:para>
+<db:programlisting language="qml">CustomMaterial {
+    id: cubeMaterial
+    property real uTime: frametimer.elapsedTime
+    FrameAnimation {
+        id: frametimer
+        running: true
+    }
+
+    vertexShader: &quot;cubeMaterial.vert&quot;
+    fragmentShader: &quot;cubeMaterial.frag&quot;
+}
+</db:programlisting>
+<db:para>Finally, we create our model and apply the custom material and instance table:</db:para>
+<db:programlisting language="qml">Model {
+    id: instancedCube
+    property real cubeSize: 15
+    scale: Qt.vector3d(cubeSize/100, cubeSize/100, cubeSize/100)
+    source: &quot;#Cube&quot;
+    instancing: CppInstanceTable {
+        gridSize: 65
+        gridSpacing: instancedCube.cubeSize
+        randomSeed: 1522562186
+    }
+    materials: [ cubeMaterial ]
+}
+</db:programlisting>
+<db:para>Note that we only create a single cube: All the heavy lifting is done by the GPU.</db:para>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/CMakeLists.txt">custominstancing/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/cppinstancetable.cpp">custominstancing/cppinstancetable.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/cppinstancetable.h">custominstancing/cppinstancetable.h</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/cubeMaterial.frag">custominstancing/cubeMaterial.frag</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/cubeMaterial.vert">custominstancing/cubeMaterial.vert</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/custominstancing.pro">custominstancing/custominstancing.pro</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/main.cpp">custominstancing/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/main.qml">custominstancing/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="custominstancing/qml.qrc">custominstancing/qml.qrc</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:article>

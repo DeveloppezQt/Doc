@@ -1,0 +1,211 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>How Qt for Android Works</db:title>
+<db:productname>QtDoc</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Reference Documentation</db:titleabbrev>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="android-getting-started.xml" xlink:type="arc" xlink:arcrole="prev" xlink:title="Getting Started with Qt for Android"/></db:extendedlink>
+<db:extendedlink xlink:type="extended"><db:link xlink:to="android-building.xml" xlink:type="arc" xlink:arcrole="next" xlink:title="Qt for Android - Building from Source"/></db:extendedlink>
+<db:abstract>
+<db:para>An overview of how a Qt for Android app works under the hood and its architecture.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>If you're a developer looking for a high-level overview of how Qt supports the Android platform, this page is for you.</db:para>
+<db:section xml:id="starting-the-qt-application">
+<db:title>Starting the Qt Application</db:title>
+<db:para>Similar to native Android apps, Qt main Activity's <db:link xlink:href="https://developer.android.com/reference/android/app/Activity#onCreate(android.os.Bundle)">onCreate()</db:link> is called early on when the app is started and the Activity is created. That's where most of the initialization of the Android <db:link xlink:href="qpa.xml">Qt Platform Abstraction</db:link> (QPA) takes place. The most important parts are:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Loading Qt and the main application's libraries.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Initializing the delegates which takes care of initializing the rendering surfaces and the top level layout, as well as registering various listeners like input, display, touch handlers, among others.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>When loading the Qt libraries, the JavaVM is cached while <db:link xlink:href="qtcore-module.xml">QtCore</db:link> is first loaded. This is done under the <db:link xlink:href="https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#JNJI_OnLoad">JNI_OnLoad()</db:link> function, which is called synchronously when a library is loaded using <db:link xlink:href="https://developer.android.com/reference/java/lang/System#load(java.lang.String)">System.load()</db:link> call. Every Qt module might have an implementation for this function to do some module-specific initialization, like registering native JNI methods.</db:para>
+<db:para>Once all Qt modules libraries are loaded, Qt loads the Android QPA plugin and the main application library. After the top level QtLayout layout has finished inflating its content, the Qt application's main() handle is located and invoked. That will start the C++ Qt application and usually start the main event loop.</db:para>
+</db:section>
+<db:section xml:id="the-android-qpa">
+<db:title>The Android QPA</db:title>
+<db:para>The <db:link xlink:href="qpa.xml">Android QPA</db:link> is responsible for gluing the Android (Java/Kotlin) side with the native Qt (C++) side. It handles the various event and signal propagation both to and from Qt to Android. That responsibility spans signal handling, touch events, UI elements, and rendering, etc. This layer is also responsible for app startup initialization and cleanup upon app exit or destruction.</db:para>
+<db:section xml:id="threads">
+<db:title>Threads</db:title>
+<db:para>With Qt for Android apps, Qt usually has two threads of interest. The first is the QtThread that Qt starts. The second one is the Android UI thread.</db:para>
+<db:section xml:id="qtthread">
+<db:title>QtThread</db:title>
+<db:para>This thread is implemented and started by the Qt app first before, for example, loading the libraries. This thread is called qtMainLoopThread. All the following operations are executed under this thread:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Qt library loading.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Operations done inside <db:link xlink:href="https://docs.oracle.com/javase/8/docs/technotes/guides/jni/spec/invocation.html#JNJI_OnLoad">JNI_OnLoad()</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Starting the native application.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The execution of main().</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="android-ui-thread">
+<db:title>Android UI Thread</db:title>
+<db:para>Similar to Android apps, operations that affect the UI are expected to run in the UI thread. Qt does that under the hood for any internal calls that are expected to run in the UI. Also, Qt offers an API <db:link xlink:href="">QAndroidApplication::runOnAndroidMainThread</db:link> to run operations under this thread from C++ code. Using this API, Qt manages when the calls are directly posted to the thread if the app is active, or queued if the app is paused or in the background.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="architecture">
+<db:title>Architecture</db:title>
+<db:mediaobject>
+<db:alt>&quot;An overview Qt for Android's Architecture&quot;</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/qt-android-architecture.drawio.svg"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+</db:section>
+<db:section xml:id="qt-classes">
+<db:title>Qt Classes</db:title>
+<db:para>These next sections go through the various Qt Android classes and their functionality and role in Qt applications.</db:para>
+<db:section xml:id="the-public-java-bindings">
+<db:title>The Public Java Bindings</db:title>
+<db:para>These classes are public classes that wrap the internal implementation details of the user-facing classes like <db:link xlink:href="https://developer.android.com/reference/android/app/Activity">Activity</db:link>, <db:link xlink:href="https://developer.android.com/reference/android/app/Service">Service</db:link> and <db:link xlink:href="https://developer.android.com/reference/android/app/Application">Application</db:link>. These classes are used by default for Qt Android apps and referred to in the Android manifest file. The build system and deployment tools take care of including them in the build.</db:para>
+<db:para>Users can use these classes to change or extend the default behavior. For example, to add custom user-defined logic under <db:link xlink:href="https://developer.android.com/reference/android/app/Activity#onCreate(android.os.Bundle)">onCreate()</db:link>, use the following:</db:para>
+<db:programlisting language="cpp">public class MyActivity extends QtActivity
+{
+    @Override
+    protected void onCreate(Bundle bundle)
+    {
+        // code before Qt is initialized
+        super.onCreate(bundle);
+        // code after Qt is initialized
+    }
+}
+</db:programlisting>
+<db:note>
+<db:para>You must edit the <db:link xlink:href="android-manifest-file-configuration.xml">AndroidManifest.xml</db:link> file to use your custom <db:link xlink:href="https://developer.android.com/reference/android/app/Activity">Activity</db:link> or binding class, otherwise, the default one will still be used.</db:para>
+</db:note>
+<db:section xml:id="setting-a-theme">
+<db:title>Setting a Theme</db:title>
+<db:para>When extending <db:link xlink:href="android-how-it-works.xml#the-public-java-bindings">QtActivity</db:link>, you can set a specific Android theme using <db:link xlink:href="https://developer.android.com/reference/android/view/ContextThemeWrapper#setTheme(android.content.res.Resources.Theme)">setTheme()</db:link>. However, that call must precede the call to the parent class's <db:link xlink:href="https://developer.android.com/reference/android/app/Activity#onCreate(android.os.Bundle)">onCreate()</db:link> for it to take effect since Qt sets the theme by default. For example, you can use:</db:para>
+<db:programlisting language="cpp">@Override
+protected void onCreate(Bundle bundle)
+{
+    setTheme(android.R.style.Theme_DeviceDefault_DayNight);
+    super.onCreate(bundle);
+}
+</db:programlisting>
+<db:para>By default, for Android 10 and later, Qt sets the theme <db:link xlink:href="https://developer.android.com/reference/android/R.style#Theme_DeviceDefault_DayNight">Theme_DeviceDefault_DayNight Style</db:link>, and <db:link xlink:href="https://developer.android.com/reference/android/R.style#Theme_Holo_Light">Theme_Holo_Light Style</db:link> for earlier versions.</db:para>
+</db:section>
+<db:section xml:id="append-an-application-parameter">
+<db:title>Append an Application Parameter</db:title>
+<db:para>To append an extra application parameter, that is an argument that's passed to the application's (main()) function from Java/Kotlin, you can do the following after extending <db:link xlink:href="android-how-it-works.xml#the-public-java-bindings">QtActivity</db:link>:</db:para>
+<db:programlisting language="cpp">@Override
+protected void onCreate(Bundle bundle)
+{
+    appendApplicationParameters(&quot;--flag value&quot;);
+    super.onCreate(bundle);
+}
+</db:programlisting>
+<db:para>This is similar to using the CMake variable <db:link xlink:href="cmake-variable-qt-android-application-arguments.xml">QT_ANDROID_APPLICATION_ARGUMENTS</db:link> directly. Parameters passed using either method accept spaces or tabs as separators, and the final list of parameters passed to the application are parsed using <db:link xlink:href="qprocess.xml#splitCommand">QProcess::splitCommand</db:link>.</db:para>
+</db:section>
+</db:section>
+<db:section xml:id="loading-qt-libraries-with-qtloader">
+<db:title>Loading Qt Libraries with QtLoader</db:title>
+<db:para>Every Qt Android app needs to ensure every native Qt or 3rd party library is first loaded before invoking any functionality from those modules. The build system keeps a list of various Qt library dependencies, the QPA plugin, the main app library, and any third-party library under the application's <db:link xlink:href="deployment-android.xml#java-kotlin-code">libs.xml</db:link> resource file. Once all the prerequisite steps mentioned in the sections below are done, the libraries are loaded using <db:link xlink:href="https://developer.android.com/reference/java/lang/System#load(java.lang.String)">System.load()</db:link>.</db:para>
+<db:section xml:id="the-class-loader">
+<db:title>The Class Loader</db:title>
+<db:para>The class loader object is set early on by the QtLoader before loading Qt libraries or initializing the delegates. This is because the class loader is used by <db:link xlink:href="qjniobject.xml">QJniObject</db:link> to find Java classes and is required to do any JNI call with <db:link xlink:href="qjniobject.xml">QJniObject</db:link>.</db:para>
+</db:section>
+<db:section xml:id="setting-environment-variables-and-application-parameters">
+<db:title>Setting Environment Variables and Application Parameters</db:title>
+<db:para>Before loading the libraries, Qt has to ensure environment variables are passed as metadata in the Android manifest to set. This step enables the initialization of some modules based on the configuration flags set as manifest meta-data. Some of this meta-data is also propagated to the application parameters list that is passed to the application when it's started.</db:para>
+</db:section>
+<db:section xml:id="setactivity-setcontext-and-setservice">
+<db:title>setActivity(), setContext() and setService()</db:title>
+<db:para>Various Qt modules might need to do some initialization work from the Java side that requires having the context of the <db:link xlink:href="https://developer.android.com/reference/android/app/Activity">Activity</db:link> or <db:link xlink:href="https://developer.android.com/reference/android/app/Service">Service</db:link>. Those modules then implement a static method that takes an <db:link xlink:href="https://developer.android.com/reference/android/app/Activity">Activity</db:link>, Service or Context as a parameter:</db:para>
+<db:programlisting language="cpp">void setActivity(Activity activity)
+{
+    m_activity = activity;
+    // Other logic
+}
+</db:programlisting>
+<db:para>Then, the QtLoader invokes these methods with the parent context of the loader just before loading the native shared libraries.</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="how-qt-for-android-handles-the-android-activity-life-cycle">
+<db:title>How Qt for Android Handles the Android Activity Life-cycle</db:title>
+<db:para>Qt for Android does not provide an API to directly handle the Android activity life-cycle callbacks such as onCreate(), onStart(), onResume(), onPause(), onStop(), and onDestroy(). Instead, it handles these under the hood for the user. The behavior is outlined in the following sections.</db:para>
+<db:note>
+<db:para>These life-cycle events are translated to the <db:link xlink:href="qguiapplication.xml#applicationStateChanged">QGuiApplication::applicationStateChanged</db:link> signal.</db:para>
+</db:note>
+<db:section xml:id="context-handling">
+<db:title>Context Handling</db:title>
+<db:para>QAndroidApplication can provide the Android <db:link xlink:href="https://developer.android.com/reference/android/content/Context">Context</db:link> as a QJniObject, essential for interacting with the Android system. This context can be an Activity or a Service. If there is an Activity, it will be the most recently started Activity, regardless of whether there are Services. If there is only Services, it will be the most recently started Service.</db:para>
+<db:note>
+<db:para>Qt for Android does not support multiple Activites.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="callbacks">
+<db:title>Callbacks</db:title>
+<db:para>The QtActivityBase class is designed to keep the implementation details of an Activity’s various functionalities private within the Qt for Android package. This class is a mediator between the Android life-cycle and the Qt framework, translating Android life-cycle callbacks into signals and operations to which the Qt application can respond.</db:para>
+<db:section xml:id="oncreate">
+<db:title>onCreate()</db:title>
+<db:para>When the Activity is created, QtActivityBase initializes the Qt environment. This includes loading the Qt libraries, setting up the class loader that <db:link xlink:href="qjniobject.xml">QJniObject</db:link> uses, parsing the app’s metadata, and preparing the Qt application for execution. It ensures that all necessary initialization specific to the Activity is handled.</db:para>
+</db:section>
+<db:section xml:id="onstart">
+<db:title>onStart()</db:title>
+<db:para>Calls Android's Activity.OnStart().</db:para>
+</db:section>
+<db:section xml:id="onresume">
+<db:title>onResume()</db:title>
+<db:para>When the Activity moves to the foreground, QtActivityBase resumes the Qt application. It ensures that paused processes or operations continue and the application is again ready for user interaction. It will re-register the display manager listener stopped by onPause().</db:para>
+</db:section>
+<db:section xml:id="onpause">
+<db:title>onPause()</db:title>
+<db:para>If another activity partially obscures the Activity, QtActivityBase pauses the Qt application. It will save the application state or release resources that are not needed while the application is not in the foreground.</db:para>
+</db:section>
+<db:section xml:id="onstop">
+<db:title>onStop()</db:title>
+<db:para>When the Activity is no longer visible, QtActivityBase stops the Qt application, which involves more extensive state saving and resource release, preparing the application for potential destruction.</db:para>
+<db:note>
+<db:para>The QtThread is suspended at this point.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="ondestroy">
+<db:title>onDestroy()</db:title>
+<db:para>If the Activity is finished or being destroyed by the system, QtActivityBase cleans up all resources associated with the Qt application. It ensures a proper shutdown and that all necessary cleanup operations are performed.</db:para>
+<db:para>This integration allows developers to focus on building their Qt application without worrying about the intricacies of the Android life-cycle, as QtActivityBase manages these complexities under the hood.</db:para>
+</db:section>
+</db:section>
+</db:section>
+<db:section xml:id="splash-screen-management">
+<db:title>Splash Screen Management</db:title>
+<db:para>QAndroidApplication can hide the splash screen with a fade effect, which can be timed with the application’s startup sequence, typically after onCreate().</db:para>
+</db:section>
+<db:section xml:id="more-about-qt-for-android">
+<db:title>More About Qt for Android</db:title>
+<db:para>The video from the 2021 Qt World Summit gives an overview of Qt for Android.</db:para>
+<db:mediaobject>
+<db:videoobject>
+<?db video="iframe"?>
+<db:videodata format="youtube" fileref="nmvurCcsWos">
+</db:videodata>
+</db:videoobject>
+<db:imageobject>
+<db:imagedata fileref="images/nmvurCcsWos.jpg">
+</db:imagedata>
+</db:imageobject>
+</db:mediaobject>
+<db:para>&quot;A picture of an agenda that links to a YouTube video&quot;</db:para>
+</db:section>
+</db:article>

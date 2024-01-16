@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Remote Objects - External QIODevices</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Describes how Qt Remote Objects supports custom <db:link xlink:href="qiodevice.xml">QIODevice</db:link> channels.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="external-qiodevices">
+<db:title>External QIODevices</db:title>
+<db:para>Qt Remote Objects supports several communications channels out-of-the-box, such as the <db:link xlink:href="qtcpserver.xml">QTcpServer</db:link> and <db:link xlink:href="qtcpsocket.xml">QTcpSocket</db:link> pair. Given the desired <db:link xlink:href="qurl.xml">QUrl</db:link> for tcp, or the desired name (for the <db:link xlink:href="qlocalserver.xml">QLocalServer</db:link> and <db:link xlink:href="qlocalsocket.xml">QLocalSocket</db:link> pair), the code needed to listen and connect are boilerplate and handled internally by Qt. Qt Remote Objects supports other types of <db:link xlink:href="qiodevice.xml">QIODevice</db:link> as well, and the <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> classes provide additional methods to support cases where custom code is needed.</db:para>
+<db:para>A contrived example with TCP/IP is shown below. A more realistic example would use an SSL connection, which would require configuration of certificates, etc.</db:para>
+<db:programlisting language="cpp">// Create the server and listen outside of QtRO
+QTcpServer tcpServer;
+tcpServer.listen(QHostAddress(QStringLiteral(&quot;127.0.0.1&quot;)), 65213);
+
+// Create the host node.  We don't need a hostUrl unless we want to take
+// advantage of external schemas (see next example).
+QRemoteObjectHost srcNode;
+
+// Make sure any connections are handed to QtRO
+QObject::connect(&amp;amp;tcpServer, &amp;amp;QTcpServer::newConnection, &amp;amp;srcNode,
+                 [&amp;amp;srcNode, &amp;amp;tcpServer]() {
+    srcNode.addHostSideConnection(tcpServer.nextPendingConnection());
+});
+</db:programlisting>
+<db:para>The Replica side code needs to manually connect to the Host</db:para>
+<db:programlisting language="cpp">QRemoteObjectNode repNode;
+QTcpSocket *socket = new QTcpSocket(&amp;amp;repNode);
+QObject::connect(socket, &amp;amp;QTcpSocket::connected, &amp;amp;repNode,
+        [socket, &amp;amp;repNode]() {
+    repNode.addClientSideConnection(socket);
+});
+socket-&amp;gt;connectToHost(QHostAddress(QStringLiteral(&quot;127.0.0.1&quot;)), 65213);
+</db:programlisting>
+</db:section>
+<db:section xml:id="external-schemas">
+<db:title>External Schemas</db:title>
+<db:para>It is possible to create each side of the <db:link xlink:href="qiodevice.xml">QIODevice</db:link> and call <db:link xlink:href="qremoteobjectnode.xml#addClientSideConnection">QRemoteObjectNode::addClientSideConnection</db:link>(QIODevice *ioDevice) and <db:link xlink:href="qremoteobjecthostbase.xml#addHostSideConnection">QRemoteObjectHostBase::addHostSideConnection</db:link>(QIODevice *ioDevice) as shown above. This is fully supported, but requires the client know how to establish the connection or have a way to discover that information. This is exactly the problem the registry was designed to solve.</db:para>
+<db:para>Qt Remote Objects also allows &quot;External Schemas&quot; to be used with the registry, which helps with connection setup. On the <db:link xlink:href="qremoteobjecthost.xml">QRemoteObjectHost</db:link> side, the user must set the hostUrl with the desired schema.</db:para>
+<db:programlisting language="cpp">// Use standard tcp url for the registry
+const QUrl registryUrl = QUrl(QStringLiteral(&quot;tcp://127.0.0.1:65212&quot;));
+// Use &quot;exttcp&quot; for the &quot;external&quot; interface
+const QUrl extUrl = QUrl(QStringLiteral(&quot;exttcp://127.0.0.1:65213&quot;));
+
+// Create the server and listen outside of QtRO
+QTcpServer tcpServer;
+tcpServer.listen(QHostAddress(extUrl.host()), extUrl.port());
+
+// We need a registry for everyone to connect to
+QRemoteObjectRegistryHost registry(registryUrl);
+
+// Finally, we create our host node and register &quot;exttcp&quot; as our schema.
+// We need the AllowExternalRegistration parameter to prevent the node from
+// setting a hostUrlInvalid error.
+QRemoteObjectHost srcNode(extUrl, registryUrl, QRemoteObjectHost::AllowExternalRegistration);
+// From now on, when we call enableRemoting() from this node, the registry
+// will be updated to show the Source object at extUrl.
+</db:programlisting>
+<db:para>On the <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> side, the <db:link xlink:href="qremoteobjectnode.xml">QRemoteObjectNode</db:link> needs to register a callback to be used when the external schema is detected. The callback must be a <db:link xlink:href="qremoteobjectnode.xml#RemoteObjectSchemaHandler-typedef">RemoteObjectSchemaHandler</db:link>.</db:para>
+<db:programlisting language="cpp">// Use standard tcp url for the registry
+const QUrl registryUrl = QUrl(QStringLiteral(&quot;tcp://127.0.0.1:65212&quot;));
+
+// This time create the node connected to the registry
+QRemoteObjectNode repNode(registryUrl);
+
+// Create the RemoteObjectSchemaHandler callback
+QRemoteObjectNode::RemoteObjectSchemaHandler setupTcp = [&amp;amp;repNode](QUrl url) {
+    QTcpSocket *socket = new QTcpSocket(&amp;amp;repNode);
+    connect(socket, &amp;amp;QTcpSocket::connected,
+            [socket, &amp;amp;repNode]() {
+        repNode.addClientSideConnection(socket);
+    });
+    connect(socket, &amp;amp;QSslSocket::errorOccurred,
+            [socket](QAbstractSocket::SocketError error) {
+        delete socket;
+    });
+    socket-&amp;gt;connectToHost(url.host(), url.port());
+};
+
+// Once we call registerExternalSchema, the above method will be called
+// whenever the registry sees an object we are interested in on &quot;exttcp&quot;
+repNode.registerExternalSchema(QStringLiteral(&quot;exttcp&quot;), setupTcp);
+</db:programlisting>
+</db:section>
+</db:article>

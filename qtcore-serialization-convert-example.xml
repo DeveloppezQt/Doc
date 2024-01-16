@@ -1,0 +1,323 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Serialization Converter</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>How to convert between different serialization formats.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>This example converts between JSON, CBOR, XML, <db:link xlink:href="qdatastream.xml">QDataStream</db:link> and some simple text formats. It can auto-detect the format being used, or be told which format to use. Not all formats support both input and output, and they have different sets of which content datatypes they support. <db:link xlink:href="qdatastream.xml">QDataStream</db:link> and XML are the richest, followed by CBOR, then JSON, and then the plain text formats. Conversion via the less capable formats is apt to lose structure from the data.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/convert.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="the-converter-class">
+<db:title>The Converter Class</db:title>
+<db:para>The Converter class is the abstract superclass for all the converters to and from all the formats. They all convert from or to the <db:link xlink:href="qvariant.xml">QVariant</db:link> class, which is used to represent all the datastructures internally.</db:para>
+<db:programlisting language="cpp">class Converter
+{
+    static QList&amp;lt;const Converter *&amp;gt; &amp;amp;converters();
+protected:
+    Converter();
+    static bool isNull(const Converter *converter); // in nullconverter.cpp
+
+public:
+    static const QList&amp;lt;const Converter *&amp;gt; &amp;amp;allConverters();
+
+    enum class Direction { In = 1, Out = 2, InOut = In | Out };
+    Q_DECLARE_FLAGS(Directions, Direction)
+
+    enum Option { SupportsArbitraryMapKeys = 0x01 };
+    Q_DECLARE_FLAGS(Options, Option)
+
+    virtual ~Converter() = 0;
+
+    virtual QString name() const = 0;
+    virtual Directions directions() const = 0;
+    virtual Options outputOptions() const;
+    virtual const char *optionsHelp() const;
+    virtual bool probeFile(QIODevice *f) const;
+    virtual QVariant loadFile(QIODevice *f, const Converter *&amp;amp;outputConverter) const;
+    virtual void saveFile(QIODevice *f, const QVariant &amp;amp;contents,
+                          const QStringList &amp;amp;options) const = 0;
+};
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(Converter::Directions)
+Q_DECLARE_OPERATORS_FOR_FLAGS(Converter::Options)
+</db:programlisting>
+<db:para>The Converter constructor and destructor manage a list of available converters used by the main program so that it knows what converters are available. Each converter type defines a static instance that ensures it is constructed and thus available to the main program via this list. The allConverters() method provides main()'s code with access to the list.</db:para>
+<db:programlisting language="cpp">Converter::Converter()
+{
+    converters().append(this);
+}
+
+Converter::~Converter()
+{
+    converters().removeAll(this);
+}
+
+QList&amp;lt;const Converter *&amp;gt; &amp;amp;Converter::converters()
+{
+    Q_CONSTINIT static QList&amp;lt;const Converter *&amp;gt; store;
+    return store;
+}
+
+const QList&amp;lt;const Converter *&amp;gt; &amp;amp;Converter::allConverters()
+{
+    return converters();
+}
+</db:programlisting>
+<db:para>The name() function returns the name of the converter. The directions() function is used to determine if a converter can be used for input, output, or both. These enable the main program to report what converters are available in its help text for the command-line options to select input and output formats.</db:para>
+<db:programlisting language="cpp">    QStringList inputFormats;
+    QStringList outputFormats;
+    for (const Converter *conv : Converter::allConverters()) {
+        auto direction = conv-&amp;gt;directions();
+        QString name = conv-&amp;gt;name();
+        if (direction.testFlag(Converter::Direction::In))
+            inputFormats &amp;lt;&amp;lt; name;
+        if (direction.testFlag(Converter::Direction::Out))
+            outputFormats &amp;lt;&amp;lt; name;
+    }
+</db:programlisting>
+<db:para>The optionsHelp() function is used to report the various command-line options supported by the available formats, when queried using its --format-options &lt;format&gt; command-line option.</db:para>
+<db:programlisting language="cpp">        for (const Converter *conv : Converter::allConverters()) {
+            if (conv-&amp;gt;name() == format) {
+                const char *help = conv-&amp;gt;optionsHelp();
+                if (help) {
+                    qInfo(&quot;The following options are available for format '%s':\n\n%s&quot;,
+                          qPrintable(format), help);
+                } else {
+                    qInfo(&quot;Format '%s' supports no options.&quot;, qPrintable(format));
+                }
+                return EXIT_SUCCESS;
+            }
+        }
+</db:programlisting>
+<db:para>The outputOptions() function reports the output capabilities of a converter. At present the only optional feature is support for arbitrary keys in mappings from keys to values. An input converter's loadFile() can use this information to tailor the form in which it presents the data it has read, to be as faithfully represented by the output converter as its capabilities permit.</db:para>
+<db:para>The probeFile() function is used to determine if a file matches the format of the converter. The main program uses this to determine what format to use when reading or writing a file, based on its name and potentially content, when the user has not specified the format to use on the command-line.</db:para>
+<db:para>The loadFile() function deserializes data. The caller tells loadFile() which serializer it intends to use, so that loadFile() can query its outputOptions() to determine the form in which to represent the loaded data. If the caller hasn't settled on a choice of output converter, loadFile() supplies it with a default output converter suitable to the data it is returning.</db:para>
+<db:para>The saveFile() function serializes data. It is passed options from the command-line, as described by loadHelp(), that can tune the details of how it represents the data when saving to file.</db:para>
+<db:para>Both loadFile() and saveFile() can be used with an arbitrary <db:link xlink:href="qiodevice.xml">QIODevice</db:link>. This means that a Converter could also be used with a network socket or other source of data, to read from or write to. In the present program, the main program always passes a <db:link xlink:href="qfile.xml">QFile</db:link>, accessing either a file on disk or one of the standard streams of the process.</db:para>
+<db:section xml:id="the-available-converters">
+<db:title>The Available Converters</db:title>
+<db:para>Several converters are supported, illustrating how the converter program could be adapted to other formats, should the need arise. See the source code for each for its details. The CBOR converters serve as a relatively full-featured illustration of the ways converters can work, that we'll look into in more detail below. This table summarizes the available converters:</db:para>
+<db:informaltable style="generic">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>Class</db:para>
+</db:th>
+<db:th>
+<db:para>mode</db:para>
+</db:th>
+<db:th>
+<db:para>format</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+<db:para>CborConverter</db:para>
+</db:td>
+<db:td>
+<db:para>In/Out</db:para>
+</db:td>
+<db:td>
+<db:para>CBOR</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>CborDiagnosticDumper</db:para>
+</db:td>
+<db:td>
+<db:para>Out</db:para>
+</db:td>
+<db:td>
+<db:para>CBOR diagnostic</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>DataStreamConverter</db:para>
+</db:td>
+<db:td>
+<db:para>In/Out</db:para>
+</db:td>
+<db:td>
+<db:para><db:link xlink:href="qdatastream.xml">QDataStream</db:link></db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>DebugTextDumper</db:para>
+</db:td>
+<db:td>
+<db:para>Out</db:para>
+</db:td>
+<db:td>
+<db:para>Lossless, non-standard, human-readable</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>JsonConverter</db:para>
+</db:td>
+<db:td>
+<db:para>In/Out</db:para>
+</db:td>
+<db:td>
+<db:para>JSON</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>NullConverter</db:para>
+</db:td>
+<db:td>
+<db:para>Out</db:para>
+</db:td>
+<db:td>
+<db:para>No output</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>TextConverter</db:para>
+</db:td>
+<db:td>
+<db:para>In/Out</db:para>
+</db:td>
+<db:td>
+<db:para>Structured plain text</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para>XmlConverter</db:para>
+</db:td>
+<db:td>
+<db:para>In/Out</db:para>
+</db:td>
+<db:td>
+<db:para>XML</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>Those that support input use themselves as loadFile()'s fallback converter, except for the CBOR and <db:link xlink:href="qdatastream.xml">QDataStream</db:link> converters, which use their respective output-only dumper companion classes. The null converter can be used as output converter when running the program for the sake of any validation or verification that an input converter may perform.</db:para>
+</db:section>
+<db:section xml:id="the-cborconverter-and-cbordiagnosticdumper-classes">
+<db:title>The CborConverter and CborDiagnosticDumper Classes</db:title>
+<db:para>The CborConverter class supports serializing to and from the CBOR format. It supports various options to configure the output of floating point values and a signature option to determine whether to start its output with a CBOR tag that serves as a file header, identifying the file as containing CBOR data.</db:para>
+<db:para>There is also a CborDiagnosticDumper class to output in CBOR diagnostic notation. It does not support loading data. The form of its output can be configured using two options. One selects whether to use the (more verbose) extended CBOR diagnostic format. The other control whether each CBOR value appears on a separate line.</db:para>
+<db:para>The plain diagnostic notation is similar to JSON, but not exactly, because it supports displaying the contents of a CBOR stream losslessly, while a conversion to JSON can be lossy. CborConverter's loadFile() uses CborDiagnosticDumper for the fallback output converter, if its caller hasn't determined the output format for itself.</db:para>
+<db:para>The convertCborValue(), convertCborMap() and convertCborArray() helper functions are used to convert a <db:link xlink:href="qcborvalue.xml">QCborValue</db:link> to a <db:link xlink:href="qvariant.xml">QVariant</db:link>, for the benefit of CborConverter::loadFile().</db:para>
+<db:programlisting language="cpp">static QVariant convertCborValue(const QCborValue &amp;amp;value);
+
+static QVariant convertCborMap(const QCborMap &amp;amp;map)
+{
+    VariantOrderedMap result;
+    result.reserve(map.size());
+    for (auto pair : map)
+        result.append({ convertCborValue(pair.first), convertCborValue(pair.second) });
+    return QVariant::fromValue(result);
+}
+
+static QVariant convertCborArray(const QCborArray &amp;amp;array)
+{
+    QVariantList result;
+    result.reserve(array.size());
+    for (auto value : array)
+        result.append(convertCborValue(value));
+    return result;
+}
+
+static QVariant convertCborValue(const QCborValue &amp;amp;value)
+{
+    if (value.isArray())
+        return convertCborArray(value.toArray());
+    if (value.isMap())
+        return convertCborMap(value.toMap());
+    return value.toVariant();
+}
+</db:programlisting>
+<db:para>The convertFromVariant() function is used to convert a <db:link xlink:href="qvariant.xml">QVariant</db:link> to a <db:link xlink:href="qcborvalue.xml">QCborValue</db:link> for output by the saveFile() of either class.</db:para>
+<db:programlisting language="cpp">enum TrimFloatingPoint { Double, Float, Float16 };
+static QCborValue convertFromVariant(const QVariant &amp;amp;v, TrimFloatingPoint fpTrimming)
+{
+    if (v.userType() == QMetaType::QVariantList) {
+        const QVariantList list = v.toList();
+        QCborArray array;
+        for (const QVariant &amp;amp;v : list)
+            array.append(convertFromVariant(v, fpTrimming));
+
+        return array;
+    }
+
+    if (v.userType() == qMetaTypeId&amp;lt;VariantOrderedMap&amp;gt;()) {
+        const auto m = qvariant_cast&amp;lt;VariantOrderedMap&amp;gt;(v);
+        QCborMap map;
+        for (const auto &amp;amp;pair : m)
+            map.insert(convertFromVariant(pair.first, fpTrimming),
+                       convertFromVariant(pair.second, fpTrimming));
+        return map;
+    }
+
+    if (v.userType() == QMetaType::Double &amp;amp;&amp;amp; fpTrimming != Double) {
+        float f = float(v.toDouble());
+        if (fpTrimming == Float16)
+            return float(qfloat16(f));
+        return f;
+    }
+
+    return QCborValue::fromVariant(v);
+}
+</db:programlisting>
+</db:section>
+</db:section>
+<db:section xml:id="the-convert-program">
+<db:title>The convert program</db:title>
+<db:para>The main() function sets up a <db:link xlink:href="qapplication.xml">QApplication</db:link> and a <db:link xlink:href="qcommandlineparser.xml">QCommandLineParser</db:link> to make sense of the options the user has specified and provide help if the user asks for it. It uses the values obtained for the various <db:link xlink:href="qcommandlineoption.xml">QCommandLineOption</db:link> instances describing the user's choices, plus the positional arguments for file names, to prepare the converters it will use.</db:para>
+<db:para>It then uses its input converter to load data (and possibly resolve its choice of output converter, if it hasn't selected one yet) and its output converter to serialize that data, taking account of any output options the user has supplied on the command-line.</db:para>
+<db:programlisting language="cpp">    QStringList files = parser.positionalArguments();
+    QFile input(files.value(0));
+    QFile output(files.value(1));
+    const Converter *inconv = prepareConverter(parser.value(inputFormatOption),
+                                               Converter::Direction::In, &amp;amp;input);
+    const Converter *outconv = prepareConverter(parser.value(outputFormatOption),
+                                                Converter::Direction::Out, &amp;amp;output);
+
+    // Now finally perform the conversion:
+    QVariant data = inconv-&amp;gt;loadFile(&amp;amp;input, outconv);
+    Q_ASSERT_X(outconv, &quot;Serialization Converter&quot;,
+               &quot;Internal error: converter format did not provide default&quot;);
+    outconv-&amp;gt;saveFile(&amp;amp;output, data, parser.values(optionOption));
+    return EXIT_SUCCESS;
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/serialization/convert?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="qtcore-serialization-cbordump-example.xml">Parsing and displaying CBOR data</db:link></db:member>
+<db:member><db:link xlink:href="qtcore-serialization-savegame-example.xml">Saving and Loading a Game</db:link></db:member>
+<db:member><db:link xlink:href="cbor.xml">CBOR Support in Qt</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

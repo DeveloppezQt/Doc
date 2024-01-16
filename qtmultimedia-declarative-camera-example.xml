@@ -1,0 +1,450 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>QML Camera Application</db:title>
+<db:productname>QtMultimedia</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Multimedia Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This Qt Quick based application shows how to use the API to capture a still image or video.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qml-camera.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example demonstrates how to access camera functions via QML. It shows how to change settings and capture images or video.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="application-structure">
+<db:title>Application structure</db:title>
+<db:para>Most of the QML code in this example supports the user interface. Custom types that support the requirements have been implemented using existing Qt Quick controls.</db:para>
+</db:section>
+<db:section xml:id="using-screen-orientation-to-select-layout">
+<db:title>Using screen orientation to select layout</db:title>
+<db:para>The orientation and control layout state logic is encapsulated in a separate Item, <db:code>controlLayout</db:code> like so:</db:para>
+<db:programlisting language="cpp">    Item {
+        id: controlLayout
+
+        readonly property bool isMobile: Qt.platform.os === &quot;android&quot; || Qt.platform.os === &quot;ios&quot;
+        readonly property bool isLandscape: Screen.desktopAvailableWidth &amp;gt;= Screen.desktopAvailableHeight
+        property int buttonsWidth: state === &quot;MobilePortrait&quot; ? Screen.desktopAvailableWidth / 3.4 : 114
+
+        states: [
+            State {
+                name: &quot;MobileLandscape&quot;
+                when: controlLayout.isMobile &amp;amp;&amp;amp; controlLayout.isLandscape
+            },
+            State {
+                name: &quot;MobilePortrait&quot;
+                when: controlLayout.isMobile &amp;amp;&amp;amp; !controlLayout.isLandscape
+            },
+            State {
+                name: &quot;Other&quot;
+                when: !controlLayout.isMobile
+            }
+        ]
+
+        onStateChanged: {
+            console.log(&quot;State: &quot; + controlLayout.state)
+        }
+    }
+
+    PhotoCaptureControls {
+        id: stillControls
+        state: controlLayout.state
+        anchors.fill: parent
+        buttonsWidth: controlLayout.buttonsWidth
+        buttonsPanelPortraitHeight: cameraUI.buttonsPanelPortraitHeight
+        buttonsPanelWidth: cameraUI.buttonsPanelLandscapeWidth
+        captureSession: captureSession
+        visible: (cameraUI.state === &quot;PhotoCapture&quot;)
+        onPreviewSelected: cameraUI.state = &quot;PhotoPreview&quot;
+        onVideoModeSelected: cameraUI.state = &quot;VideoCapture&quot;
+        previewAvailable: imageCapture.preview.length !== 0
+    }
+
+    VideoCaptureControls {
+        id: videoControls
+        state: controlLayout.state
+        anchors.fill: parent
+        buttonsWidth: controlLayout.buttonsWidth
+        buttonsPanelPortraitHeight: cameraUI.buttonsPanelPortraitHeight
+        buttonsPanelWidth: cameraUI.buttonsPanelLandscapeWidth
+        captureSession: captureSession
+        visible: (cameraUI.state === &quot;VideoCapture&quot;)
+        onPreviewSelected: cameraUI.state = &quot;VideoPreview&quot;
+        onPhotoModeSelected: cameraUI.state = &quot;PhotoCapture&quot;
+    }
+}
+</db:programlisting>
+<db:para>The <db:code>stillControls</db:code> and <db:code>videoControls</db:code> objects both bind to the <db:code>state</db:code> and <db:code>buttonsWidth</db:code> properties of this Item, as shown in <db:code>stillControls</db:code>:</db:para>
+<db:programlisting language="cpp"></db:programlisting>
+<db:para>To support debugging, a message about layout state change is logged.</db:para>
+<db:para>Here is the portrait layout:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qml-declarative-portrait.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>You can see the <db:code>state</db:code> property is initially set as <db:code>PhotoCapture</db:code>.</db:para>
+<db:para>Then the <db:code>states</db:code> themselves are defined like so:</db:para>
+<db:programlisting language="cpp">    states: [
+        State {
+            name: &quot;PhotoCapture&quot;
+            StateChangeScript {
+                script: {
+                    camera.start()
+                }
+            }
+        },
+        State {
+            name: &quot;PhotoPreview&quot;
+        },
+        State {
+            name: &quot;VideoCapture&quot;
+            StateChangeScript {
+                script: {
+                    camera.start()
+                }
+            }
+        },
+        State {
+            name: &quot;VideoPreview&quot;
+            StateChangeScript {
+                script: {
+                    camera.stop()
+                }
+            }
+        }
+    ]
+
+    CaptureSession {
+        id: captureSession
+        camera: Camera {
+            id: camera
+        }
+        imageCapture: ImageCapture {
+            id: imageCapture
+        }
+
+        recorder: MediaRecorder {
+            id: recorder
+//             resolution: &quot;640x480&quot;
+//             frameRate: 30
+        }
+        videoOutput: viewfinder
+    }
+
+    PhotoPreview {
+        id : photoPreview
+        anchors.fill : parent
+        onClosed: cameraUI.state = &quot;PhotoCapture&quot;
+        visible: (cameraUI.state === &quot;PhotoPreview&quot;)
+        focus: visible
+        source: imageCapture.preview
+    }
+
+    VideoPreview {
+        id : videoPreview
+        anchors.fill : parent
+        onClosed: cameraUI.state = &quot;VideoCapture&quot;
+        visible: (cameraUI.state === &quot;VideoPreview&quot;)
+        focus: visible
+
+        //don't load recorded video if preview is invisible
+        source: visible ? recorder.actualLocation : &quot;&quot;
+    }
+
+    VideoOutput {
+        id: viewfinder
+        visible: ((cameraUI.state === &quot;PhotoCapture&quot;) || (cameraUI.state === &quot;VideoCapture&quot;))
+        anchors.fill: parent
+        //        autoOrientation: true
+    }
+
+    Item {
+        id: controlLayout
+
+        readonly property bool isMobile: Qt.platform.os === &quot;android&quot; || Qt.platform.os === &quot;ios&quot;
+        readonly property bool isLandscape: Screen.desktopAvailableWidth &amp;gt;= Screen.desktopAvailableHeight
+        property int buttonsWidth: state === &quot;MobilePortrait&quot; ? Screen.desktopAvailableWidth / 3.4 : 114
+
+        states: [
+            State {
+                name: &quot;MobileLandscape&quot;
+                when: controlLayout.isMobile &amp;amp;&amp;amp; controlLayout.isLandscape
+            },
+            State {
+                name: &quot;MobilePortrait&quot;
+                when: controlLayout.isMobile &amp;amp;&amp;amp; !controlLayout.isLandscape
+            },
+            State {
+                name: &quot;Other&quot;
+                when: !controlLayout.isMobile
+            }
+        ]
+
+        onStateChanged: {
+            console.log(&quot;State: &quot; + controlLayout.state)
+        }
+    }
+
+    PhotoCaptureControls {
+        id: stillControls
+        state: controlLayout.state
+        anchors.fill: parent
+        buttonsWidth: controlLayout.buttonsWidth
+        buttonsPanelPortraitHeight: cameraUI.buttonsPanelPortraitHeight
+        buttonsPanelWidth: cameraUI.buttonsPanelLandscapeWidth
+        captureSession: captureSession
+        visible: (cameraUI.state === &quot;PhotoCapture&quot;)
+        onPreviewSelected: cameraUI.state = &quot;PhotoPreview&quot;
+        onVideoModeSelected: cameraUI.state = &quot;VideoCapture&quot;
+        previewAvailable: imageCapture.preview.length !== 0
+    }
+
+    VideoCaptureControls {
+        id: videoControls
+        state: controlLayout.state
+        anchors.fill: parent
+        buttonsWidth: controlLayout.buttonsWidth
+        buttonsPanelPortraitHeight: cameraUI.buttonsPanelPortraitHeight
+        buttonsPanelWidth: cameraUI.buttonsPanelLandscapeWidth
+        captureSession: captureSession
+        visible: (cameraUI.state === &quot;VideoCapture&quot;)
+        onPreviewSelected: cameraUI.state = &quot;VideoPreview&quot;
+        onPhotoModeSelected: cameraUI.state = &quot;PhotoCapture&quot;
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="controls-for-capturing">
+<db:title>Controls for capturing</db:title>
+<db:para>Controls for capturing are implemented in <db:code>PhotoCaptureControls.qml</db:code> and VideoCaptureControls.qml. They each are based on a <db:link xlink:href="qml-qtquick-focusscope.xml">FocusScope</db:link> that defines common buttons dimensions and margins that are used by the control buttons and then declares the buttons.</db:para>
+<db:para>This generates a column on the right hand side of the screen which includes, listed top to bottom, the following controls:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>A <db:code>Capture</db:code> or <db:code>Record</db:code> button, which initiates capturing.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:code>capture properties</db:code> button that displays the icon of the current white balance mode selected and when pressed uses a pop-up to displays the following option's icons:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Flash mode (if available)</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>White balance modes</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Exposure compensation</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:code>View</db:code> button, once something has been captured.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A button which displays the currently selected capture device and when pressed provides a list of available devices to switch to, using a pop-up.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:code>Switch To</db:code> button that displays the alternate capture mode (video or photo) depending on the current active selection and switches the mode when pressed.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>A <db:code>Quit</db:code> button, that exits the application.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/CaptureControls.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/VideoCaptureControls.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+</db:section>
+<db:section xml:id="image-capturing">
+<db:title>Image capturing</db:title>
+<db:para>The button that triggers this is defined in CameraButton.qml: but its interaction with the camera is in the controls types, lets look at PhotoCaptureControls:</db:para>
+<db:programlisting language="cpp">            CameraButton {
+                text: &quot;Capture&quot;
+                implicitWidth: captureControls.buttonsWidth
+                visible: captureControls.captureSession.imageCapture.readyForCapture
+                onClicked: captureControls.captureSession.imageCapture.captureToFile(&quot;&quot;)
+            }
+</db:programlisting>
+</db:section>
+<db:section xml:id="zoom-control">
+<db:title>Zoom control</db:title>
+<db:para>Implemented in <db:code>ZoomControl.qml</db:code> the ZoomControl type is based on an Item and creates a bar that represents the zoom level, which can also be dragged. It uses an exponential calculation method to determine the zoom factor given the position of the <db:code>grove</db:code>.</db:para>
+<db:para>The bar is only visible if the initialZoom is greater than 1. This means the currently active camera has a zoom function.</db:para>
+<db:para><db:inlinemediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/ZoomControl.png"/>
+</db:imageobject>
+</db:inlinemediaobject></db:para>
+<db:programlisting language="cpp">Item {
+    id : zoomControl
+    property real currentZoom : 1
+    property real maximumZoom : 1
+    signal zoomTo(real target)
+
+    visible: zoomControl.maximumZoom &amp;gt; 1
+
+    MouseArea {
+        id : mouseArea
+        anchors.fill: parent
+
+        property real initialZoom : 0
+        property real initialPos : 0
+
+        onPressed: {
+            initialPos = mouseY
+            initialZoom = zoomControl.currentZoom
+        }
+
+        onPositionChanged: {
+            if (pressed) {
+                var target = initialZoom * Math.pow(5, (initialPos-mouseY)/zoomControl.height);
+                target = Math.max(1, Math.min(target, zoomControl.maximumZoom))
+                zoomControl.zoomTo(target)
+            }
+        }
+    }
+
+    Item {
+        id : bar
+        x : 16
+        y : parent.height/4
+        width : 24
+        height : parent.height/2
+
+        Rectangle {
+            anchors.fill: parent
+
+            smooth: true
+            radius: 8
+            border.color: &quot;white&quot;
+            border.width: 2
+            color: &quot;black&quot;
+            opacity: 0.3
+        }
+
+        Rectangle {
+            id: groove
+            x : 0
+            y : parent.height * (1.0 - (zoomControl.currentZoom-1.0) / (zoomControl.maximumZoom-1.0))
+            width: parent.width
+            height: parent.height - y
+            smooth: true
+            radius: 8
+            color: &quot;white&quot;
+            opacity: 0.5
+        }
+
+        Text {
+            id: zoomText
+            anchors {
+                left: bar.right; leftMargin: 16
+            }
+            y: Math.min(parent.height - height, Math.max(0, groove.y - height / 2))
+            text: &quot;x&quot; + Math.round(zoomControl.currentZoom * 100) / 100
+            font.bold: true
+            color: &quot;white&quot;
+            style: Text.Raised; styleColor: &quot;black&quot;
+            opacity: 0.85
+            font.pixelSize: 18
+</db:programlisting>
+<db:para>In PhotoCaptureControls.qml and VideoCaptureControls.qml the signal <db:code>zoomTo</db:code> will set the selected camera's <db:link xlink:href="qml-qtmultimedia-camera.xml#zoomFactor-prop">zoomFactor</db:link> property to the calculated <db:code>target</db:code> value, as well as updating the ZoomControl bar.</db:para>
+<db:programlisting language="cpp">    ZoomControl {
+        x : 0
+        y : captureControls.state === &quot;MobilePortrait&quot; ? -buttonPaneShadow.height : 0
+        width : 100
+        height: parent.height
+
+        currentZoom: captureControls.captureSession.camera.zoomFactor
+        maximumZoom: captureControls.captureSession.camera.maximumZoomFactor
+        onZoomTo: (target) =&amp;gt; captureControls.captureSession.camera.zoomFactor = target
+    }
+</db:programlisting>
+</db:section>
+<db:section xml:id="flash-and-torch-control">
+<db:title>Flash and torch control</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/FlashControls.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Defined in <db:code>FlashControl.qml</db:code> this enables flash mode selection and torch functionality to be toggled via a Switch. As with the zoom control, the switches are only visible on top of the preview window if the active device supports these functions.</db:para>
+<db:para>Here we check if the functions are supported:</db:para>
+<db:programlisting language="cpp">    property Camera cameraDevice
+    property bool mIsFlashSupported: (cameraDevice &amp;amp;&amp;amp; cameraDevice.active) ? cameraDevice.isFlashModeSupported(Camera.FlashOn) : false
+    property bool mIsTorchSupported: (cameraDevice &amp;amp;&amp;amp; cameraDevice.active) ? cameraDevice.isTorchModeSupported(Camera.TorchOn) : false
+</db:programlisting>
+<db:para>Here we implement the <db:code>flashModeControl</db:code> switch, which also directly controls the Camera device.</db:para>
+<db:programlisting language="cpp">        Switch {
+            id: flashModeControl
+            visible: flashControl.mIsFlashSupported
+            opacity: checked ? 0.75 : 0.25
+            text: &quot;Flash&quot;
+            contentItem: Text {
+                text: flashModeControl.text
+                color: &quot;white&quot;
+                leftPadding: flashModeControl.indicator.width + flashModeControl.spacing
+            }
+
+            onPositionChanged: {
+                if (position) {
+                    if (torchModeControl.checked)
+                        torchModeControl.toggle();
+                    flashControl.cameraDevice.flashMode = Camera.FlashOn
+
+                } else {
+                    flashControl.cameraDevice.flashMode = Camera.FlashOff
+                }
+            }
+        }
+
+        Switch {
+            id: torchModeControl
+            visible: flashControl.mIsTorchSupported
+            opacity: checked ? 0.75 : 0.25
+            text: &quot;Torch&quot;
+            contentItem: Text {
+                text: torchModeControl.text
+                color: &quot;white&quot;
+                leftPadding: torchModeControl.indicator.width + torchModeControl.spacing
+            }
+
+            onPositionChanged: {
+                if (position) {
+                    if (flashModeControl.checked)
+                        flashModeControl.toggle();
+                    flashControl.cameraDevice.torchMode = Camera.TorchOn
+                } else {
+                    flashControl.cameraDevice.torchMode = Camera.TorchOff
+                }
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>Torch control is implemented in a similar way.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtmultimedia.git/tree/examples/multimedia/declarative-camera?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

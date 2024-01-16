@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Minimal CPP</db:title>
+<db:productname>QtWaylandCompositor</db:productname>
+<db:edition>Qt Wayland Compositor | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Wayland Compositor Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Minimal CPP is an example that demonstrates how to write a Wayland compositor in C++.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Minimal CPP is a minimalistic compositor example implementing a complete Qt Wayland Compositor using C++. The C++ API of <db:link xlink:href="qtwaylandcompositor-module.xml">QtWaylandCompositor</db:link> is low-level and intended for specialized applications, such as supporting hardware features, or if Qt Quick is not available. The QML API offers more convenience and functionality. For comparison, the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">Minimal QML example</db:link> implements more functionality with 30 lines of QML than this example does in 300+ lines.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/minimal-cpp.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example is split in two parts. The Wayland logic is contained in the <db:code>Compositor</db:code> class, and the user interface is in the <db:code>Window</db:code> class.</db:para>
+<db:section xml:id="window">
+<db:title>Window</db:title>
+<db:para>The <db:code>Window</db:code> class is fairly straight-forward. To display the Wayland surfaces, it iterates through the compositor's views and renders them on the screen using <db:link xlink:href="qopengltextureblitter.xml">QOpenGLTextureBlitter</db:link>:</db:para>
+<db:programlisting language="cpp">void Window::paintGL()
+{
+    m_compositor-&amp;gt;startRender();
+
+    QOpenGLFunctions *functions = context()-&amp;gt;functions();
+    functions-&amp;gt;glClearColor(.4f, .7f, .1f, 0.5f);
+    functions-&amp;gt;glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    GLenum currentTarget = GL_TEXTURE_2D;
+    m_textureBlitter.bind(currentTarget);
+    functions-&amp;gt;glEnable(GL_BLEND);
+    functions-&amp;gt;glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    const auto views = m_compositor-&amp;gt;views();
+    for (View *view : views) {
+        auto texture = view-&amp;gt;getTexture();
+        if (!texture)
+            continue;
+        if (texture-&amp;gt;target() != currentTarget) {
+            currentTarget = texture-&amp;gt;target();
+            m_textureBlitter.bind(currentTarget);
+        }
+        GLuint textureId = texture-&amp;gt;textureId();
+        QWaylandSurface *surface = view-&amp;gt;surface();
+        if (surface &amp;amp;&amp;amp; surface-&amp;gt;hasContent()) {
+            QSize s = surface-&amp;gt;destinationSize();
+            view-&amp;gt;initPosition(size(), s);
+            QPointF pos = view-&amp;gt;globalPosition();
+            QRectF surfaceGeometry(pos, s);
+            QOpenGLTextureBlitter::Origin surfaceOrigin =
+                    view-&amp;gt;currentBuffer().origin() == QWaylandSurface::OriginTopLeft
+                    ? QOpenGLTextureBlitter::OriginTopLeft
+                    : QOpenGLTextureBlitter::OriginBottomLeft;
+            QMatrix4x4 targetTransform = QOpenGLTextureBlitter::targetTransform(surfaceGeometry, QRect(QPoint(), size()));
+            m_textureBlitter.blit(textureId, targetTransform, surfaceOrigin);
+        }
+    }
+    m_textureBlitter.release();
+    m_compositor-&amp;gt;endRender();
+}
+</db:programlisting>
+<db:para>All keyboard and mouse events are delivered to the compositor. For example:</db:para>
+<db:programlisting language="cpp">void Window::mousePressEvent(QMouseEvent *event)
+{
+    m_compositor-&amp;gt;handleMousePress(event-&amp;gt;position().toPoint(), event-&amp;gt;button());
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="compositor">
+<db:title>Compositor</db:title>
+<db:para>The <db:code>Compositor</db:code> class is more complex, since it has to implement much of the logic that would be handled by <db:link xlink:href="qml-qtwayland-compositor-waylandcompositor.xml">WaylandCompositor</db:link> and <db:link xlink:href="qml-qtwayland-compositor-waylandquickitem.xml">WaylandQuickItem</db:link> in a QML-based compositor.</db:para>
+<db:para>The <db:code>create</db:code> function sets up the compositor, using the <db:link xlink:href="qml-qtwayland-compositor-iviapplication-iviapplication.xml">IviApplication</db:link>, which is the most basic shell extension. The function is called after the OpenGL context has been initialized:</db:para>
+<db:programlisting language="cpp">void Compositor::create()
+{
+    QWaylandOutput *output = new QWaylandOutput(this, m_window);
+    QWaylandOutputMode mode(m_window-&amp;gt;size(), 60000);
+    output-&amp;gt;addMode(mode, true);
+    QWaylandCompositor::create();
+    output-&amp;gt;setCurrentMode(mode);
+
+    m_iviApplication = new QWaylandIviApplication(this);
+    connect(m_iviApplication, &amp;amp;QWaylandIviApplication::iviSurfaceCreated, this, &amp;amp;Compositor::onIviSurfaceCreated);
+}
+</db:programlisting>
+<db:para>All the logic for mouse events and keyboard focus has to be implemented manually, including implicit mouse grabs (sending all mouse moves to the surface that received the initial mouse press). Note that mouse press events in the Wayland protocol do not contain the mouse position, so we always have to send a mouse move when we reveive a mouse press:</db:para>
+<db:programlisting language="cpp">void Compositor::handleMousePress(const QPoint &amp;amp;position, Qt::MouseButton button)
+{
+    if (!m_mouseView) {
+        if ((m_mouseView = viewAt(position)))
+            raise(m_mouseView);
+    }
+    auto *seat = defaultSeat();
+    seat-&amp;gt;sendMouseMoveEvent(m_mouseView, mapToView(m_mouseView, position));
+    seat-&amp;gt;sendMousePressEvent(button);
+}
+</db:programlisting>
+<db:para>For a mouse release, we end the implicit grab and notify the surface at the current mouse position:</db:para>
+<db:programlisting language="cpp">void Compositor::handleMousePress(const QPoint &amp;amp;position, Qt::MouseButton button)
+{
+    if (!m_mouseView) {
+        if ((m_mouseView = viewAt(position)))
+            raise(m_mouseView);
+    }
+    auto *seat = defaultSeat();
+    seat-&amp;gt;sendMouseMoveEvent(m_mouseView, mapToView(m_mouseView, position));
+    seat-&amp;gt;sendMousePressEvent(button);
+}
+</db:programlisting>
+<db:para>When we are notified of a new surface, we create a <db:code>View</db:code> to keep track of it, and connect signals so we can handle updates.</db:para>
+<db:programlisting language="cpp">void Compositor::onIviSurfaceCreated(QWaylandIviSurface *iviSurface)
+{
+    View *view = new View(iviSurface-&amp;gt;iviId());
+    view-&amp;gt;setSurface(iviSurface-&amp;gt;surface());
+    view-&amp;gt;setOutput(outputFor(m_window));
+
+    m_views &amp;lt;&amp;lt; view;
+    connect(view, &amp;amp;QWaylandView::surfaceDestroyed, this, &amp;amp;Compositor::viewSurfaceDestroyed);
+    connect(iviSurface-&amp;gt;surface(), &amp;amp;QWaylandSurface::redraw, this, &amp;amp;Compositor::triggerRender);
+}
+</db:programlisting>
+<db:para>The <db:code>View</db:code> class subclasses QWaylandView, which represents a specific view of a surface. The advance function updates the view's current buffer and returns true if there is new content. The <db:code>getTexture</db:code> function makes the buffer contents available as an OpenGL texture for the benefit of the <db:code>Window</db:code> class:</db:para>
+<db:programlisting language="cpp">QOpenGLTexture *View::getTexture() {
+    if (advance())
+        m_texture = currentBuffer().toOpenGLTexture();
+    return m_texture;
+}
+</db:programlisting>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwayland.git/tree/examples/wayland/minimal-cpp?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

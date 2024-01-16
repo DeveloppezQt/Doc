@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Widgets Client Certificate Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.7.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>A simple client certificate authentication scenario using Qt WebEngine and <db:link xlink:href="qsslserver.xml">QSslServer</db:link>.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/selection.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>In this example we are going to show a client certificate authentication workflow. The presented authentication scenario can be for example implemented for an embedded device, which provides a web interface to handle its functionality. The administrator uses the Qt WebEngine powered client to maintain the embedded device and has a custom SSL certificate to authenticate. The connection is encrypted with SSL sockets. The embedded device uses a <db:code>QSslSocket</db:code> to handle the authentication and the encryption. This way the administrator does not have to enter any credentials and just needs to select a proper certificate that is recognized by the device.</db:para>
+<db:para>In the example we focus on a very simple and minimalistic approach to demonstrate the workflow. Note that <db:link xlink:href="qsslsocket.xml">QSslSocket</db:link> is a low level solution as we do not have to run a full-blown HTTPS server on the resource limited embedded device.</db:para>
+<db:section xml:id="creating-certificates">
+<db:title>Creating Certificates</db:title>
+<db:para>The example comes with certificates already generated, but let's see how to generate new ones. We create certificates for the server and the client using <db:link xlink:href="https://www.openssl.org">OpenSSL tooling</db:link>.</db:para>
+<db:para>First, we create the certificate signing request <db:code>CSR</db:code> and sign it. We will use a CA private key to sign and issue both local certificates for the client and the server.</db:para>
+<db:programlisting language="cpp" role="bad">openssl req -out ca.pem -new -x509 -nodes -keyout ca.key
+</db:programlisting>
+<db:note>
+<db:para>Specify the <db:code>-days</db:code> option to override the default certificate validity of 30 days.</db:para>
+</db:note>
+<db:para>Now, let's create two private keys for our client and a server:</db:para>
+<db:programlisting language="cpp" role="bad">openssl genrsa -out client.key 2048
+</db:programlisting>
+<db:programlisting language="cpp" role="bad">openssl genrsa -out server.key 2048
+</db:programlisting>
+<db:para>Next we need two certificate signing requests:</db:para>
+<db:programlisting language="cpp" role="bad">openssl req -key client.key -new -out client.req
+</db:programlisting>
+<db:programlisting language="cpp" role="bad">openssl req -key server.key -new -out server.req
+</db:programlisting>
+<db:para>Let's issue now both certificates from CSRs:</db:para>
+<db:programlisting language="cpp" role="bad">openssl x509 -req -in client.req -out client.pem -CA ca.pem -CAkey ca.key
+</db:programlisting>
+<db:programlisting language="cpp" role="bad">openssl x509 -req -in server.req -out server.pem -CA ca.pem -CAkey ca.key
+</db:programlisting>
+<db:para>The client certificate subject and the serial number will be displayed for selection during authentication. The serial number can be printed with:</db:para>
+<db:programlisting language="cpp" role="bad">openssl x509 -serial -noout -in client.pem
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-the-client">
+<db:title>Implementing the Client</db:title>
+<db:para>Now we can implement our web browser client.</db:para>
+<db:para>We start by loading our certificate and its private key and creating <db:link xlink:href="qsslcertificate.xml">QSslCertificate</db:link> and <db:link xlink:href="qsslkey.xml">QSslKey</db:link> instances.</db:para>
+<db:programlisting language="cpp">    QFile certFile(&quot;:/resources/client.pem&quot;);
+    certFile.open(QIODevice::ReadOnly);
+    const QSslCertificate cert(certFile.readAll(), QSsl::Pem);
+
+    QFile keyFile(&quot;:/resources/client.key&quot;);
+    keyFile.open(QIODevice::ReadOnly);
+    const QSslKey sslKey(keyFile.readAll(), QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey, &quot;&quot;);
+</db:programlisting>
+<db:para>Now we add the certificate and its private key to <db:link xlink:href="qwebengineclientcertificatestore.xml">QWebEngineClientCertificateStore</db:link>.</db:para>
+<db:programlisting language="cpp">    QWebEngineProfile::defaultProfile()-&amp;gt;clientCertificateStore()-&amp;gt;add(cert, sslKey);
+</db:programlisting>
+<db:para>To handle certificates we need to create an instance of <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link> and connect to two singals <db:link xlink:href="qwebenginepage.xml#certificateError">QWebEnginePage::certificateError</db:link> and <db:link xlink:href="qwebenginepage.xml#selectClientCertificate">QWebEnginePage::selectClientCertificate</db:link>. The first one is only needed as our self-signed server certificate will trigger a certificate error, which has to be accepted to proceed with the authentication. In production environments self-signed certificates are not used, therefore in this example we handle <db:link xlink:href="qwebenginecertificateerror.xml">QWebEngineCertificateError</db:link> just to avoid providing proper certificates. Note the private key is a secret and should never be published.</db:para>
+<db:programlisting language="cpp">    QWebEnginePage page;
+    QObject::connect(&amp;amp;page, &amp;amp;QWebEnginePage::certificateError,
+                     [](QWebEngineCertificateError e) { e.acceptCertificate(); });
+</db:programlisting>
+<db:para>The handling for <db:link xlink:href="qwebenginepage.xml#selectClientCertificate">QWebEnginePage::selectClientCertificate</db:link> simply displays <db:link xlink:href="qdialog.xml">QDialog</db:link> with <db:link xlink:href="qlistwidget.xml">QListWidget</db:link> showing a list of client certificates to choose from. The user selected certificate is then passed to the <db:link xlink:href="qwebengineclientcertificateselection.xml#select">QWebEngineClientCertificateSelection::select</db:link> call.</db:para>
+<db:programlisting language="cpp">    QObject::connect(
+            &amp;amp;page, &amp;amp;QWebEnginePage::selectClientCertificate, &amp;amp;page,
+            [&amp;amp;cert](QWebEngineClientCertificateSelection selection) {
+                QDialog dialog;
+                QVBoxLayout *layout = new QVBoxLayout;
+                QLabel *label = new QLabel(QLatin1String(&quot;Select certificate&quot;));
+                QListWidget *listWidget = new QListWidget;
+                listWidget-&amp;gt;setSelectionMode(QAbstractItemView::SingleSelection);
+                QPushButton *button = new QPushButton(QLatin1String(&quot;Select&quot;));
+                layout-&amp;gt;addWidget(label);
+                layout-&amp;gt;addWidget(listWidget);
+                layout-&amp;gt;addWidget(button);
+                QObject::connect(button, &amp;amp;QPushButton::clicked, [&amp;amp;dialog]() { dialog.accept(); });
+                const QList&amp;lt;QSslCertificate&amp;gt; &amp;amp;list = selection.certificates();
+                for (const QSslCertificate &amp;amp;cert : list) {
+                    listWidget-&amp;gt;addItem(cert.subjectDisplayName() + &quot; : &quot; + cert.serialNumber());
+                }
+                dialog.setLayout(layout);
+                if (dialog.exec() == QDialog::Accepted)
+                    selection.select(list[listWidget-&amp;gt;currentRow()]);
+                else
+                    selection.selectNone();
+            });
+</db:programlisting>
+<db:para>Finally, we create a <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> for our <db:link xlink:href="qwebenginepage.xml">QWebEnginePage</db:link>, load the server URL, and show the page.</db:para>
+<db:programlisting language="cpp">    QWebEngineView view(&amp;amp;page);
+    view.setUrl(QUrl(&quot;https://localhost:5555&quot;));
+    view.resize(800, 600);
+    view.show();
+</db:programlisting>
+</db:section>
+<db:section xml:id="implementing-the-server">
+<db:title>Implementing the Server</db:title>
+<db:para>For our embedded device we will develop a minimalistic HTTPS server. We can use <db:link xlink:href="qsslserver.xml">QSslServer</db:link> to handle incoming connections and to provide an <db:link xlink:href="qsslsocket.xml">QSslSocket</db:link> instance. To do that, we create an instance of a <db:link xlink:href="qsslserver.xml">QSslServer</db:link> and, similarly to our client setup, we load a server certificate and its private key. Next, we create <db:link xlink:href="qsslcertificate.xml">QSslCertificate</db:link> and <db:link xlink:href="qsslkey.xml">QSslKey</db:link> objects accordingly. Additionally, we need a CA certificate so the server can validate the certificate presented by the client. The CA and local certificate are set to <db:link xlink:href="qsslconfiguration.xml">QSslConfiguration</db:link> and used later by the server.</db:para>
+<db:programlisting language="cpp">    QSslServer server;
+    QSslConfiguration configuration(QSslConfiguration::defaultConfiguration());
+    configuration.setPeerVerifyMode(QSslSocket::VerifyPeer);
+
+    QFile keyFile(&quot;:/resources/server.key&quot;);
+    keyFile.open(QIODevice::ReadOnly);
+
+    QSslKey key(keyFile.readAll(), QSsl::Rsa, QSsl::Pem, QSsl::PrivateKey);
+    configuration.setPrivateKey(key);
+
+    QList&amp;lt;QSslCertificate&amp;gt; localCerts = QSslCertificate::fromPath(&quot;:/resources/server.pem&quot;);
+    configuration.setLocalCertificateChain(localCerts);
+
+    QList&amp;lt;QSslCertificate&amp;gt; caCerts = QSslCertificate::fromPath(&quot;:resources/ca.pem&quot;);
+    configuration.addCaCertificates(caCerts);
+
+    server.setSslConfiguration(configuration);
+</db:programlisting>
+<db:para>Next, we set the server to listen for incoming connections on port <db:code>5555</db:code></db:para>
+<db:programlisting language="cpp">    if (!server.listen(QHostAddress::LocalHost, 5555))
+        qFatal(&quot;Could not start server on localhost:5555&quot;);
+    else
+        qInfo(&quot;Server started on localhost:5555&quot;);
+</db:programlisting>
+<db:para>We provide a lambda function for the <db:link xlink:href="qtcpserver.xml#pendingConnectionAvailable">QTcpServer::pendingConnectionAvailable</db:link> signal, where we implement handling for incoming connections. This signal is triggered after authentication has succeeded and <db:code>socket</db:code> TLS encryption has started.</db:para>
+<db:programlisting language="cpp">    QObject::connect(&amp;amp;server, &amp;amp;QTcpServer::pendingConnectionAvailable, [&amp;amp;server]() {
+        QTcpSocket *socket = server.nextPendingConnection();
+        Q_ASSERT(socket);
+
+        QPointer&amp;lt;Request&amp;gt; request(new Request);
+
+        QObject::connect(socket, &amp;amp;QAbstractSocket::disconnected, socket,
+                         [socket, request]() mutable {
+                             delete request;
+                             socket-&amp;gt;deleteLater();
+                         });
+</db:programlisting>
+<db:para>The <db:code>Request</db:code> object used above is a simple wrapper around <db:link xlink:href="qbytearray.xml">QByteArray</db:link> as we use <db:link xlink:href="qpointer.xml">QPointer</db:link> to help with memory management. This object gathers incoming HTTP data. It is deleted when the request has completed or a socket has been terminated.</db:para>
+<db:programlisting language="cpp">struct Request : public QObject
+{
+    QByteArray m_data;
+};
+</db:programlisting>
+<db:para>The reply for the request depends on the requested URL, and it is sent back through the socket in form of a HTML page. For the <db:code>GET</db:code> root request the administrator sees the <db:code>Access Granted</db:code> message and an <db:code>Exit</db:code> HTML button. If the administrator clicks it, the client sends another request. This time with the <db:code>/exit</db:code> relative URL, which it turn triggers the server termination.</db:para>
+<db:programlisting language="cpp">        QObject::connect(socket, &amp;amp;QTcpSocket::readyRead, socket, [socket, request]() mutable {
+            request-&amp;gt;m_data.append(socket-&amp;gt;readAll());
+
+            if (!request-&amp;gt;m_data.endsWith(&quot;\r\n\r\n&quot;))
+                return;
+
+            socket-&amp;gt;write(http_ok);
+            socket-&amp;gt;write(html_start);
+
+            if (request-&amp;gt;m_data.startsWith(&quot;GET / &quot;)) {
+                socket-&amp;gt;write(&quot;&amp;lt;p&amp;gt;ACCESS GRANTED !&amp;lt;/p&amp;gt;&quot;);
+                socket-&amp;gt;write(&quot;&amp;lt;p&amp;gt;You reached the place, where no one has gone before.&amp;lt;/p&amp;gt;&quot;);
+                socket-&amp;gt;write(&quot;&amp;lt;button onclick=\&quot;window.location.href='/exit'\&quot;&amp;gt;Exit&amp;lt;/button&amp;gt;&quot;);
+            } else if (request-&amp;gt;m_data.startsWith(&quot;GET /exit &quot;)) {
+                socket-&amp;gt;write(&quot;&amp;lt;p&amp;gt;BYE !&amp;lt;/p&amp;gt;&quot;);
+                socket-&amp;gt;write(&quot;&amp;lt;p&amp;gt;Have good day ...&amp;lt;/p&amp;gt;&quot;);
+                QTimer::singleShot(0, &amp;amp;QCoreApplication::quit);
+            } else {
+                socket-&amp;gt;write(&quot;&amp;lt;p&amp;gt;There is nothing to see here.&amp;lt;/p&amp;gt;&quot;);
+            }
+
+            socket-&amp;gt;write(html_end);
+            delete request;
+            socket-&amp;gt;disconnectFromHost();
+        });
+</db:programlisting>
+<db:para>To run the example, start the <db:code>server</db:code> and then the <db:code>client</db:code>. After you select the certificate, the <db:code>Access Granted</db:code> page is displayed.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/granted.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/clientcertificate?h=6.7">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>
