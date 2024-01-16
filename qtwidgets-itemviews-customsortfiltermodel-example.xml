@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Custom Sort/Filter Model Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Custom Sort/Filter Model example illustrates how to subclass <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> to perform advanced sorting and filtering.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:alt>Screenshot of the Custom Sort/Filter Model Example</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/customsortfiltermodel-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> class provides support for sorting and filtering data passed between another model and a view.</db:para>
+<db:para>The model transforms the structure of a source model by mapping the model indexes it supplies to new indexes, corresponding to different locations, for views to use. This approach allows a given source model to be restructured as far as views are concerned, without requiring any transformations on the underlying data and without duplicating the data in memory.</db:para>
+<db:para>The Custom Sort/Filter Model example consists of two classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>The MySortFilterProxyModel class provides a custom proxy model.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>The Window class provides the main application window, using the custom proxy model to sort and filter a standard item model.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>We will first take a look at the MySortFilterProxyModel class to see how the custom proxy model is implemented, then we will take a look at the Window class to see how the model is used. Finally we will take a quick look at the main() function.</db:para>
+<db:section xml:id="mysortfilterproxymodel-class-definition">
+<db:title>MySortFilterProxyModel Class Definition</db:title>
+<db:para>The MySortFilterProxyModel class inherits the <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> class.</db:para>
+<db:para>Since <db:link xlink:href="qabstractproxymodel.xml">QAbstractProxyModel</db:link> and its subclasses are derived from <db:link xlink:href="qabstractitemmodel.xml">QAbstractItemModel</db:link>, much of the same advice about subclassing normal models also applies to proxy models.</db:para>
+<db:para>On the other hand, it is worth noting that many of <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link>'s default implementations of functions are written so that they call the equivalent functions in the relevant source model. This simple proxying mechanism may need to be overridden for source models with more complex behavior. In this example we derive from the <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link> class to ensure that our filter can recognize a valid range of dates, and to control the sorting behavior.</db:para>
+<db:programlisting language="cpp">class MySortFilterProxyModel : public QSortFilterProxyModel
+{
+    Q_OBJECT
+
+public:
+    MySortFilterProxyModel(QObject *parent = nullptr);
+
+    QDate filterMinimumDate() const { return minDate; }
+    void setFilterMinimumDate(QDate date);
+
+    QDate filterMaximumDate() const { return maxDate; }
+    void setFilterMaximumDate(QDate date);
+
+protected:
+    bool filterAcceptsRow(int sourceRow, const QModelIndex &amp;amp;sourceParent) const override;
+    bool lessThan(const QModelIndex &amp;amp;left, const QModelIndex &amp;amp;right) const override;
+
+private:
+    bool dateInRange(QDate date) const;
+
+    QDate minDate;
+    QDate maxDate;
+};
+</db:programlisting>
+<db:para>We want to be able to filter our data by specifying a given period of time. For that reason, we implement the custom setFilterMinimumDate() and setFilterMaximumDate() functions as well as the corresponding filterMinimumDate() and filterMaximumDate() functions. We reimplement <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link>'s <db:link xlink:href="qsortfilterproxymodel.xml#filterAcceptsRow">filterAcceptsRow</db:link>() function to only accept rows with valid dates, and <db:link xlink:href="qsortfilterproxymodel.xml#lessThan">QSortFilterProxyModel::lessThan</db:link>() to be able to sort the senders by their email addresses. Finally, we implement a dateInRange() convenience function that we will use to determine if a date is valid.</db:para>
+</db:section>
+<db:section xml:id="mysortfilterproxymodel-class-implementation">
+<db:title>MySortFilterProxyModel Class Implementation</db:title>
+<db:para>The MySortFilterProxyModel constructor is trivial, passing the parent parameter on to the base class constructor:</db:para>
+<db:programlisting language="cpp">MySortFilterProxyModel::MySortFilterProxyModel(QObject *parent)
+    : QSortFilterProxyModel(parent)
+{
+}
+</db:programlisting>
+<db:para>The most interesting parts of the MySortFilterProxyModel implementation are the reimplementations of <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link>'s <db:link xlink:href="qsortfilterproxymodel.xml#filterAcceptsRow">filterAcceptsRow</db:link>() and <db:link xlink:href="qsortfilterproxymodel.xml#lessThan">lessThan</db:link>() functions. Let's first take a look at our customized lessThan() function.</db:para>
+<db:programlisting language="cpp">bool MySortFilterProxyModel::lessThan(const QModelIndex &amp;amp;left,
+                                      const QModelIndex &amp;amp;right) const
+{
+    QVariant leftData = sourceModel()-&amp;gt;data(left);
+    QVariant rightData = sourceModel()-&amp;gt;data(right);
+</db:programlisting>
+<db:para>We want to sort the senders by their email addresses. The <db:link xlink:href="qsortfilterproxymodel.xml#lessThan">lessThan</db:link>() function is used as the &lt; operator when sorting. The default implementation handles a collection of types including <db:link xlink:href="qdatetime.xml">QDateTime</db:link> and String, but in order to be able to sort the senders by their email addresses we must first identify the address within the given string:</db:para>
+<db:programlisting language="cpp">    if (leftData.userType() == QMetaType::QDateTime) {
+        return leftData.toDateTime() &amp;lt; rightData.toDateTime();
+    } else {
+        static const QRegularExpression emailPattern(&quot;[\\w\\.]*@[\\w\\.]*&quot;);
+
+        QString leftString = leftData.toString();
+        if (left.column() == 1) {
+            const QRegularExpressionMatch match = emailPattern.match(leftString);
+            if (match.hasMatch())
+                leftString = match.captured(0);
+        }
+        QString rightString = rightData.toString();
+        if (right.column() == 1) {
+            const QRegularExpressionMatch match = emailPattern.match(rightString);
+            if (match.hasMatch())
+                rightString = match.captured(0);
+        }
+
+        return QString::localeAwareCompare(leftString, rightString) &amp;lt; 0;
+    }
+}
+</db:programlisting>
+<db:para>We use <db:link xlink:href="qregularexpression.xml">QRegularExpression</db:link> to define a pattern for the addresses we are looking for. The <db:link xlink:href="qregularexpression.xml#match">match</db:link>() function returns a <db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link> object which contains the result of the matching. If there is a match, <db:link xlink:href="qregularexpressionmatch.xml#hasMatch">hasMatch</db:link>() returns true. The result of the match can be retrieved with <db:link xlink:href="qregularexpressionmatch.xml">QRegularExpressionMatch</db:link>'s <db:link xlink:href="qregularexpressionmatch.xml#captured">captured</db:link>() function. The entire match has index 0 and the parenthesized subexpressions have indexes starting from 1 (excluding non-capturing parentheses).</db:para>
+<db:programlisting language="cpp">bool MySortFilterProxyModel::filterAcceptsRow(int sourceRow,
+                                              const QModelIndex &amp;amp;sourceParent) const
+{
+    QModelIndex index0 = sourceModel()-&amp;gt;index(sourceRow, 0, sourceParent);
+    QModelIndex index1 = sourceModel()-&amp;gt;index(sourceRow, 1, sourceParent);
+    QModelIndex index2 = sourceModel()-&amp;gt;index(sourceRow, 2, sourceParent);
+
+    return (sourceModel()-&amp;gt;data(index0).toString().contains(filterRegularExpression())
+            || sourceModel()-&amp;gt;data(index1).toString().contains(filterRegularExpression()))
+            &amp;amp;&amp;amp; dateInRange(sourceModel()-&amp;gt;data(index2).toDate());
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qsortfilterproxymodel.xml#filterAcceptsRow">filterAcceptsRow</db:link>() function, on the other hand, is expected to return true if the given row should be included in the model. In our example, a row is accepted if either the subject or the sender contains the given regular expression, and the date is valid.</db:para>
+<db:programlisting language="cpp">bool MySortFilterProxyModel::dateInRange(QDate date) const
+{
+    return (!minDate.isValid() || date &amp;gt; minDate)
+            &amp;amp;&amp;amp; (!maxDate.isValid() || date &amp;lt; maxDate);
+}
+</db:programlisting>
+<db:para>We use our custom dateInRange() function to determine if a date is valid.</db:para>
+<db:para>To be able to filter our data by specifying a given period of time, we also implement functions for getting and setting the minimum and maximum dates:</db:para>
+<db:programlisting language="cpp">void MySortFilterProxyModel::setFilterMinimumDate(QDate date)
+{
+    minDate = date;
+    invalidateFilter();
+}
+
+void MySortFilterProxyModel::setFilterMaximumDate(QDate date)
+{
+    maxDate = date;
+    invalidateFilter();
+}
+</db:programlisting>
+<db:para>The get functions, filterMinimumDate() and filterMaximumDate(), are trivial and implemented as inline function in the header file.</db:para>
+<db:para>This completes our custom proxy model. Let's see how we can use it in an application.</db:para>
+</db:section>
+<db:section xml:id="window-class-definition">
+<db:title>Window Class Definition</db:title>
+<db:para>The CustomFilter class inherits <db:link xlink:href="qwidget.xml">QWidget</db:link>, and provides this example's main application window:</db:para>
+<db:programlisting language="cpp">class Window : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Window();
+
+    void setSourceModel(QAbstractItemModel *model);
+
+private slots:
+    void textFilterChanged();
+    void dateFilterChanged();
+
+private:
+    MySortFilterProxyModel *proxyModel;
+
+    QGroupBox *sourceGroupBox;
+    QGroupBox *proxyGroupBox;
+    QTreeView *sourceView;
+    QTreeView *proxyView;
+    QLabel *filterPatternLabel;
+    QLabel *fromLabel;
+    QLabel *toLabel;
+    FilterWidget *filterWidget;
+    QDateEdit *fromDateEdit;
+    QDateEdit *toDateEdit;
+};
+</db:programlisting>
+<db:para>We implement two private slots, textFilterChanged() and dateFilterChanged(), to respond to the user changing the filter pattern, case sensitivity, or any of the dates. In addition, we implement a public setSourceModel() convenience function to set up the model/ view relation.</db:para>
+</db:section>
+<db:section xml:id="window-class-implementation">
+<db:title>Window Class Implementation</db:title>
+<db:para>In this example, we have chosen to create and set the source model in the main () function (which we will come back to later). So when constructing the main application window, we assume that a source model already exists and start by creating an instance of our custom proxy model:</db:para>
+<db:programlisting language="cpp">Window::Window()
+{
+    proxyModel = new MySortFilterProxyModel(this);
+</db:programlisting>
+<db:para>We set the <db:link xlink:href="qsortfilterproxymodel.xml#dynamicSortFilter-prop">dynamicSortFilter</db:link> property that holds whether the proxy model is dynamically sorted and filtered. By setting this property to true, we ensure that the model is sorted and filtered whenever the contents of the source model change.</db:para>
+<db:para>The main application window shows views of both the source model and the proxy model. The source view is quite simple:</db:para>
+<db:programlisting language="cpp">sourceView = new QTreeView;
+sourceView-&amp;gt;setRootIsDecorated(false);
+sourceView-&amp;gt;setAlternatingRowColors(true);
+</db:programlisting>
+<db:para>The <db:link xlink:href="qtreeview.xml">QTreeView</db:link> class provides a default model/view implementation of a tree view. Our view implements a tree representation of items in the application's source model.</db:para>
+<db:programlisting language="cpp">sourceLayout-&amp;gt;addWidget(sourceView);
+sourceGroupBox = new QGroupBox(tr(&quot;Original Model&quot;));
+sourceGroupBox-&amp;gt;setLayout(sourceLayout);
+</db:programlisting>
+<db:para>The <db:link xlink:href="qtreeview.xml">QTreeView</db:link> class provides a default model/view implementation of a tree view; our view implements a tree representation of items in the application's source model. We add our view widget to a layout that we install on a corresponding group box.</db:para>
+<db:para>The proxy model view, on the other hand, contains several widgets controlling the various aspects of transforming the source model's data structure:</db:para>
+<db:programlisting language="cpp">filterWidget = new FilterWidget;
+filterWidget-&amp;gt;setText(tr(&quot;Grace|Sports&quot;));
+connect(filterWidget, &amp;amp;FilterWidget::filterChanged, this, &amp;amp;Window::textFilterChanged);
+
+filterPatternLabel = new QLabel(tr(&quot;&amp;amp;Filter pattern:&quot;));
+filterPatternLabel-&amp;gt;setBuddy(filterWidget);
+
+fromDateEdit = new QDateEdit;
+fromDateEdit-&amp;gt;setDate(QDate(1970, 01, 01));
+fromLabel = new QLabel(tr(&quot;F&amp;amp;rom:&quot;));
+fromLabel-&amp;gt;setBuddy(fromDateEdit);
+
+toDateEdit = new QDateEdit;
+toDateEdit-&amp;gt;setDate(QDate(2099, 12, 31));
+toLabel = new QLabel(tr(&quot;&amp;amp;To:&quot;));
+toLabel-&amp;gt;setBuddy(toDateEdit);
+
+connect(filterWidget, &amp;amp;QLineEdit::textChanged,
+        this, &amp;amp;Window::textFilterChanged);
+connect(fromDateEdit, &amp;amp;QDateTimeEdit::dateChanged,
+        this, &amp;amp;Window::dateFilterChanged);
+connect(toDateEdit, &amp;amp;QDateTimeEdit::dateChanged,
+this, &amp;amp;Window::dateFilterChanged);
+</db:programlisting>
+<db:para>Note that whenever the user changes one of the filtering options, we must explicitly reapply the filter. This is done by connecting the various editors to functions that update the proxy model.</db:para>
+<db:programlisting language="cpp">proxyView = new QTreeView;
+proxyView-&amp;gt;setRootIsDecorated(false);
+proxyView-&amp;gt;setAlternatingRowColors(true);
+proxyView-&amp;gt;setModel(proxyModel);
+proxyView-&amp;gt;setSortingEnabled(true);
+proxyView-&amp;gt;sortByColumn(1, Qt::AscendingOrder);
+
+QGridLayout *proxyLayout = new QGridLayout;
+proxyLayout-&amp;gt;addWidget(proxyView, 0, 0, 1, 3);
+proxyLayout-&amp;gt;addWidget(filterPatternLabel, 1, 0);
+proxyLayout-&amp;gt;addWidget(filterWidget, 1, 1);
+proxyLayout-&amp;gt;addWidget(fromLabel, 3, 0);
+proxyLayout-&amp;gt;addWidget(fromDateEdit, 3, 1, 1, 2);
+proxyLayout-&amp;gt;addWidget(toLabel, 4, 0);
+proxyLayout-&amp;gt;addWidget(toDateEdit, 4, 1, 1, 2);
+
+proxyGroupBox = new QGroupBox(tr(&quot;Sorted/Filtered Model&quot;));
+proxyGroupBox-&amp;gt;setLayout(proxyLayout);
+</db:programlisting>
+<db:para>The sorting will be handled by the view. All we have to do is to enable sorting for our proxy view by setting the <db:link xlink:href="qtreeview.xml#sortingEnabled-prop">QTreeView::sortingEnabled</db:link> property (which is false by default). Then we add all the filtering widgets and the proxy view to a layout that we install on a corresponding group box.</db:para>
+<db:programlisting language="cpp">QVBoxLayout *mainLayout = new QVBoxLayout;
+mainLayout-&amp;gt;addWidget(sourceGroupBox);
+mainLayout-&amp;gt;addWidget(proxyGroupBox);
+setLayout(mainLayout);
+
+setWindowTitle(tr(&quot;Custom Sort/Filter Model&quot;));
+resize(500, 450);
+}
+</db:programlisting>
+<db:para>Finally, after putting our two group boxes into another layout that we install on our main application widget, we customize the application window.</db:para>
+<db:para>As mentioned above, we create the source model in the main () function, calling the Window::setSourceModel() function to make the application use it:</db:para>
+<db:programlisting language="cpp">void Window::setSourceModel(QAbstractItemModel *model)
+{
+    proxyModel-&amp;gt;setSourceModel(model);
+    sourceView-&amp;gt;setModel(model);
+
+    for (int i = 0; i &amp;lt; proxyModel-&amp;gt;columnCount(); ++i)
+        proxyView-&amp;gt;resizeColumnToContents(i);
+    for (int i = 0; i &amp;lt; model-&amp;gt;columnCount(); ++i)
+        sourceView-&amp;gt;resizeColumnToContents(i);
+}
+</db:programlisting>
+<db:para>The <db:link xlink:href="qsortfilterproxymodel.xml#setSourceModel">QSortFilterProxyModel::setSourceModel</db:link>() function makes the proxy model process the data in the given model, in this case out mail model. The <db:link xlink:href="qabstractitemview.xml#setModel">setModel</db:link>() that the view widget inherits from the <db:link xlink:href="qabstractitemmodel.xml">QAbstractItemModel</db:link> class, sets the model for the view to present. Note that the latter function will also create and set a new selection model.</db:para>
+<db:programlisting language="cpp">void Window::textFilterChanged()
+{
+    FilterWidget::PatternSyntax s = filterWidget-&amp;gt;patternSyntax();
+    QString pattern = filterWidget-&amp;gt;text();
+    switch (s) {
+    case FilterWidget::Wildcard:
+        pattern = QRegularExpression::wildcardToRegularExpression(pattern);
+        break;
+    case FilterWidget::FixedString:
+        pattern = QRegularExpression::escape(pattern);
+        break;
+    default:
+        break;
+    }
+
+    QRegularExpression::PatternOptions options = QRegularExpression::NoPatternOption;
+    if (filterWidget-&amp;gt;caseSensitivity() == Qt::CaseInsensitive)
+        options |= QRegularExpression::CaseInsensitiveOption;
+    QRegularExpression regularExpression(pattern, options);
+    proxyModel-&amp;gt;setFilterRegularExpression(regularExpression);
+}
+</db:programlisting>
+<db:para>The textFilterChanged() function is called whenever the user changes the filter pattern or the case sensitivity.</db:para>
+<db:para>We first retrieve the preferred syntax (the FilterWidget::PatternSyntax enum is used to interpret the meaning of the given pattern), then we determine the preferred case sensitivity. Based on these preferences and the current filter pattern, we set the proxy model's <db:link xlink:href="qsortfilterproxymodel.xml#filterRegularExpression-prop">filterRegularExpression</db:link> property. The <db:link xlink:href="qsortfilterproxymodel.xml#filterRegularExpression-prop">filterRegularExpression</db:link> property holds the regular expression used to filter the contents of the source model. Note that calling <db:link xlink:href="qsortfilterproxymodel.xml">QSortFilterProxyModel</db:link>'s <db:link xlink:href="qsortfilterproxymodel.xml#setFilterRegularExpression">setFilterRegularExpression</db:link>() function also updates the model.</db:para>
+<db:programlisting language="cpp">void Window::dateFilterChanged()
+{
+    proxyModel-&amp;gt;setFilterMinimumDate(fromDateEdit-&amp;gt;date());
+    proxyModel-&amp;gt;setFilterMaximumDate(toDateEdit-&amp;gt;date());
+}
+</db:programlisting>
+<db:para>The dateFilterChanged() function is called whenever the user modifies the range of valid dates. We retrieve the new dates from the user interface, and call the corresponding functions (provided by our custom proxy model) to set the proxy model's minimum and maximum dates. As we explained above, calling these functions also updates the model.</db:para>
+</db:section>
+<db:section xml:id="the-main-function">
+<db:title>The Main() Function</db:title>
+<db:para>In this example, we have separated the application from the source model by creating the model in the main () function. First we create the application, then we create the source model:</db:para>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    Window window;
+    window.setSourceModel(createMailModel(&amp;amp;window));
+    window.show();
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The createMailModel() function is a convenience function provided to simplify the constructor. All it does is to create and return a model describing a collection of emails. The model is an instance of the <db:link xlink:href="qstandarditemmodel.xml">QStandardItemModel</db:link> class, i.e., a generic model for storing custom data typically used as a repository for standard Qt data types. Each mail description is added to the model using addMail(), another convenience function. See itemviews/customsortfiltermodel/main.cpp for details.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/itemviews/customsortfiltermodel?h=6.3">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

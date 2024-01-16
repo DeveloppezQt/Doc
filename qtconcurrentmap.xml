@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Concurrent Map and Map-Reduce</db:title>
+<db:productname>QtConcurrent</db:productname>
+<db:edition>Qt 6.3.2 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Concurrent Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Transforming values from a sequence and combining them, all in parallel.</db:para>
+</db:abstract>
+<db:pubdate>2024-12-27</db:pubdate>
+<db:date>2024-12-27</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The QtConcurrent::map(), QtConcurrent::mapped() and QtConcurrent::mappedReduced() functions run computations in parallel on the items in a sequence such as a QList. QtConcurrent::map() modifies a sequence in-place, QtConcurrent::mapped() returns a new sequence containing the modified content, and QtConcurrent::mappedReduced() returns a single result.</db:para>
+<db:para>These functions are part of the <db:link xlink:href="qtconcurrent-index.xml">Qt Concurrent</db:link> framework.</db:para>
+<db:para>Each of the above functions has a blocking variant that returns the final result instead of a QFuture. You use them in the same way as the asynchronous variants.</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; images = ...;
+
+// Each call blocks until the entire operation is finished.
+QList&amp;lt;QImage&amp;gt; future = QtConcurrent::blockingMapped(images, scaled);
+
+QtConcurrent::blockingMap(images, scale);
+
+QImage collage = QtConcurrent::blockingMappedReduced(images, scaled, addToCollage);
+</db:programlisting>
+<db:para>Note that the result types above are not QFuture objects, but real result types (in this case, QList&lt;QImage&gt; and QImage).</db:para>
+<db:section xml:id="concurrent-map">
+<db:title>Concurrent Map</db:title>
+<db:para>QtConcurrent::mapped() takes an input sequence and a map function. This map function is then called for each item in the sequence, and a new sequence containing the return values from the map function is returned.</db:para>
+<db:para>The map function must be of the form:</db:para>
+<db:programlisting language="cpp">U function(const T &amp;amp;t);
+</db:programlisting>
+<db:para>T and U can be any type (and they can even be the same type), but T must match the type stored in the sequence. The function returns the modified or <db:emphasis>mapped</db:emphasis> content.</db:para>
+<db:para>This example shows how to apply a scale function to all the items in a sequence:</db:para>
+<db:programlisting language="cpp">QImage scaled(const QImage &amp;amp;image)
+{
+    return image.scaled(100, 100);
+}
+
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;QImage&amp;gt; thumbnails = QtConcurrent::mapped(images, scaled);
+</db:programlisting>
+<db:para>The results of the map are made available through QFuture. See the QFuture and QFutureWatcher documentation for more information on how to use QFuture in your applications.</db:para>
+<db:para>If you want to modify a sequence in-place, use QtConcurrent::map(). The map function must then be of the form:</db:para>
+<db:programlisting language="cpp">U function(T &amp;amp;t);
+</db:programlisting>
+<db:para>Note that the return value and return type of the map function are not used.</db:para>
+<db:para>Using QtConcurrent::map() is similar to using QtConcurrent::mapped():</db:para>
+<db:programlisting language="cpp">void scale(QImage &amp;amp;image)
+{
+    image = image.scaled(100, 100);
+}
+
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::map(images, scale);
+</db:programlisting>
+<db:para>Since the sequence is modified in place, QtConcurrent::map() does not return any results via QFuture. However, you can still use QFuture and QFutureWatcher to monitor the status of the map.</db:para>
+</db:section>
+<db:section xml:id="concurrent-map-reduce">
+<db:title>Concurrent Map-Reduce</db:title>
+<db:para>QtConcurrent::mappedReduced() is similar to QtConcurrent::mapped(), but instead of returning a sequence with the new results, the results are combined into a single value using a reduce function.</db:para>
+<db:para>The reduce function must be of the form:</db:para>
+<db:programlisting language="cpp">V function(T &amp;amp;result, const U &amp;amp;intermediate)
+</db:programlisting>
+<db:para>T is the type of the final result, U is the return type of the map function. Note that the return value and return type of the reduce function are not used.</db:para>
+<db:para>Call QtConcurrent::mappedReduced() like this:</db:para>
+<db:programlisting language="cpp">void addToCollage(QImage &amp;amp;collage, const QImage &amp;amp;thumbnail)
+{
+    QPainter p(&amp;amp;collage);
+    static QPoint offset = QPoint(0, 0);
+    p.drawImage(offset, thumbnail);
+    offset += ...;
+}
+
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;QImage&amp;gt; collage = QtConcurrent::mappedReduced(images, scaled, addToCollage);
+</db:programlisting>
+<db:para>The reduce function will be called once for each result returned by the map function, and should merge the <db:emphasis>intermediate</db:emphasis> into the <db:emphasis>result</db:emphasis> variable. QtConcurrent::mappedReduced() guarantees that only one thread will call reduce at a time, so using a mutex to lock the result variable is not necessary. The <db:link xlink:href="qtconcurrent.xml#ReduceOption-enum">QtConcurrent::ReduceOptions</db:link> enum provides a way to control the order in which the reduction is done. If <db:link xlink:href="qtconcurrent.xml#ReduceOption-enum">QtConcurrent::UnorderedReduce</db:link> is used (the default), the order is undefined, while <db:link xlink:href="qtconcurrent.xml#ReduceOption-enum">QtConcurrent::OrderedReduce</db:link> ensures that the reduction is done in the order of the original sequence.</db:para>
+</db:section>
+<db:section xml:id="additional-api-features">
+<db:title>Additional API Features</db:title>
+<db:section xml:id="using-iterators-instead-of-sequence">
+<db:title>Using Iterators instead of Sequence</db:title>
+<db:para>Each of the above functions has a variant that takes an iterator range instead of a sequence. You use them in the same way as the sequence variants:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; images = ...;
+
+QFuture&amp;lt;QImage&amp;gt; thumbnails = QtConcurrent::mapped(images.constBegin(), images.constEnd(), scaled);
+
+// Map in-place only works on non-const iterators.
+QFuture&amp;lt;void&amp;gt; future = QtConcurrent::map(images.begin(), images.end(), scale);
+
+QFuture&amp;lt;QImage&amp;gt; collage = QtConcurrent::mappedReduced(images.constBegin(), images.constEnd(), scaled, addToCollage);
+</db:programlisting>
+</db:section>
+<db:section xml:id="blocking-variants">
+<db:title>Blocking Variants</db:title>
+<db:para>Each of the above functions has a blocking variant that returns the final result instead of a QFuture. You use them in the same way as the asynchronous variants.</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; images = ...;
+
+// Each call blocks until the entire operation is finished.
+QList&amp;lt;QImage&amp;gt; future = QtConcurrent::blockingMapped(images, scaled);
+
+QtConcurrent::blockingMap(images, scale);
+
+QImage collage = QtConcurrent::blockingMappedReduced(images, scaled, addToCollage);
+</db:programlisting>
+<db:para>Note that the result types above are not QFuture objects, but real result types (in this case, QList&lt;QImage&gt; and QImage).</db:para>
+</db:section>
+<db:section xml:id="using-member-functions">
+<db:title>Using Member Functions</db:title>
+<db:para>QtConcurrent::map(), QtConcurrent::mapped(), and QtConcurrent::mappedReduced() accept pointers to member functions. The member function class type must match the type stored in the sequence:</db:para>
+<db:programlisting language="cpp">// Squeeze all strings in a QStringList.
+QStringList strings = ...;
+QFuture&amp;lt;void&amp;gt; squeezedStrings = QtConcurrent::map(strings, &amp;amp;QString::squeeze);
+
+// Swap the rgb values of all pixels on a list of images.
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;QImage&amp;gt; bgrImages = QtConcurrent::mapped(images,
+    static_cast&amp;lt;QImage (QImage::*)() const &amp;amp;&amp;gt;(&amp;amp;QImage::rgbSwapped));
+
+// Create a set of the lengths of all strings in a list.
+QStringList strings = ...;
+QFuture&amp;lt;QSet&amp;lt;int&amp;gt;&amp;gt; wordLengths = QtConcurrent::mappedReduced(strings, &amp;amp;QString::length,
+                                                             qOverload&amp;lt;const int&amp;amp;&amp;gt;(&amp;amp;QSet&amp;lt;int&amp;gt;::insert));
+</db:programlisting>
+<db:para>Note the use of qOverload. It is needed to resolve the ambiguity for the methods, that have multiple overloads.</db:para>
+<db:para>Also note that when using QtConcurrent::mappedReduced(), you can mix the use of normal and member functions freely:</db:para>
+<db:programlisting language="cpp">// Can mix normal functions and member functions with QtConcurrent::mappedReduced().
+
+// Compute the average length of a list of strings.
+extern void computeAverage(int &amp;amp;average, int length);
+QStringList strings = ...;
+QFuture&amp;lt;int&amp;gt; averageWordLength = QtConcurrent::mappedReduced(strings, &amp;amp;QString::length, computeAverage);
+
+// Create a set of the color distribution of all images in a list.
+extern int colorDistribution(const QImage &amp;amp;string);
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;QSet&amp;lt;int&amp;gt;&amp;gt; totalColorDistribution = QtConcurrent::mappedReduced(images, colorDistribution,
+                                                                        qOverload&amp;lt;const int&amp;amp;&amp;gt;(&amp;amp;QSet&amp;lt;int&amp;gt;::insert));
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-function-objects">
+<db:title>Using Function Objects</db:title>
+<db:para>QtConcurrent::map(), QtConcurrent::mapped(), and QtConcurrent::mappedReduced() accept function objects for the map function. These function objects can be used to add state to a function call:</db:para>
+<db:programlisting language="cpp">struct Scaled
+{
+    Scaled(int size)
+    : m_size(size) { }
+
+    typedef QImage result_type;
+
+    QImage operator()(const QImage &amp;amp;image)
+    {
+        return image.scaled(m_size, m_size);
+    }
+
+    int m_size;
+};
+
+QList&amp;lt;QImage&amp;gt; images = ...;
+QFuture&amp;lt;QImage&amp;gt; thumbnails = QtConcurrent::mapped(images, Scaled(100));
+</db:programlisting>
+<db:para>Function objects are also supported for the reduce function:</db:para>
+<db:programlisting language="cpp">struct ImageTransform
+{
+    void operator()(QImage &amp;amp;result, const QImage &amp;amp;value);
+};
+
+QFuture&amp;lt;QImage&amp;gt; thumbNails =
+        QtConcurrent::mappedReduced(images, Scaled(100), ImageTransform(),
+                                    QtConcurrent::SequentialReduce);
+</db:programlisting>
+</db:section>
+<db:section xml:id="using-lambda-expressions">
+<db:title>Using Lambda Expressions</db:title>
+<db:para>QtConcurrent::map(), QtConcurrent::mapped(), and QtConcurrent::mappedReduced() accept lambda expressions for the map and reduce function:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;int&amp;gt; vector { 1, 2, 3, 4 };
+QtConcurrent::blockingMap(vector, [](int &amp;amp;x) { x *= 2; });
+
+int size = 100;
+QList&amp;lt;QImage&amp;gt; images = ...;
+
+QList&amp;lt;QImage&amp;gt; thumbnails = QtConcurrent::mapped(images,
+        [&amp;amp;size](const QImage &amp;amp;image) {
+            return image.scaled(size, size);
+        }
+    ).results();
+</db:programlisting>
+<db:para>When using QtConcurrent::mappedReduced() or QtConcurrent::blockingMappedReduced(), you can mix the use of normal functions, member functions and lambda expressions freely.</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; collage = QtConcurrent::mappedReduced(images,
+        [&amp;amp;size](const QImage &amp;amp;image) {
+            return image.scaled(size, size);
+        },
+        addToCollage
+   ).results();
+</db:programlisting>
+<db:para>You can also pass a lambda as a reduce object:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; collage = QtConcurrent::mappedReduced(images,
+        [&amp;amp;size](const QImage &amp;amp;image) {
+            return image.scaled(size, size);
+        },
+        [](QImage &amp;amp;result, const QImage &amp;amp;value) {
+            // do some transformation
+        }
+   ).results();
+</db:programlisting>
+</db:section>
+<db:section xml:id="wrapping-functions-that-take-multiple-arguments">
+<db:title>Wrapping Functions that Take Multiple Arguments</db:title>
+<db:para>If you want to use a map function that takes more than one argument you can use a lambda function or <db:code>std::bind()</db:code> to transform it onto a function that takes one argument.</db:para>
+<db:para>As an example, we'll use QImage::scaledToWidth():</db:para>
+<db:programlisting language="cpp">QImage QImage::scaledToWidth(int width, Qt::TransformationMode) const;
+</db:programlisting>
+<db:para>scaledToWidth takes three arguments (including the &quot;this&quot; pointer) and can't be used with QtConcurrent::mapped() directly, because QtConcurrent::mapped() expects a function that takes one argument. To use QImage::scaledToWidth() with QtConcurrent::mapped() we have to provide a value for the <db:emphasis>width</db:emphasis> and the <db:emphasis>transformation mode</db:emphasis>:</db:para>
+<db:programlisting language="cpp">QList&amp;lt;QImage&amp;gt; images = ...;
+std::function&amp;lt;QImage(const QImage &amp;amp;)&amp;gt; scale = [](const QImage &amp;amp;img) {
+    return img.scaledToWidth(100, Qt::SmoothTransformation);
+};
+QFuture&amp;lt;QImage&amp;gt; thumbnails = QtConcurrent::mapped(images, scale);
+</db:programlisting>
+</db:section>
+</db:section>
+</db:article>
