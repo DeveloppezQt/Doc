@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 2 Axis Dragging Example</db:title>
+<db:productname>QtDataVis3D</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Implementing axis dragging in QML.</db:para>
+<db:para>This documentation was introduced in QtDataVisualization 1.1.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Qt Quick 2 axis dragging example concentrates on showing how to implement axis range changing by dragging axis labels in QML. It also gives a quick peek to two other new features in Qt Data Visualization 1.1: orthographic projection and dynamic custom item handling.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmlaxisdrag-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="overriding-default-input-handling">
+<db:title>Overriding Default Input Handling</db:title>
+<db:para>First we deactivate the default input handling mechanism by setting the active input handler of <db:link xlink:href="qml-qtdatavisualization-scatter3d.xml">Scatter3D</db:link> graph to <db:code>null</db:code>:</db:para>
+<db:programlisting language="qml">Scatter3D {
+    id: scatterGraph
+    inputHandler: null
+    ...
+</db:programlisting>
+<db:para>Then we add a <db:link xlink:href="qml-qtquick-mousearea.xml">MouseArea</db:link> and set it to fill the parent, which is the same <db:code>Item</db:code> our <db:code>scatterGraph</db:code> is contained in. We also set it to accept only left mouse button presses, as in this example we are not interested in other buttons:</db:para>
+<db:programlisting language="qml">MouseArea {
+    anchors.fill: parent
+    hoverEnabled: true
+    acceptedButtons: Qt.LeftButton
+    ...
+</db:programlisting>
+<db:para>Then we need to listen to mouse presses, and when caught, send a selection query to the graph:</db:para>
+<db:programlisting language="qml">onPressed: (mouse)=&amp;gt; {
+    scatterGraph.scene.selectionQueryPosition = Qt.point(mouse.x, mouse.y);
+}
+</db:programlisting>
+<db:para>Current mouse position, that will be needed for move distance calculation, is caught in <db:code>onPositionChanged</db:code>:</db:para>
+<db:programlisting language="qml">onPositionChanged: (mouse)=&amp;gt; {
+    currentMouseX = mouse.x;
+    currentMouseY = mouse.y;
+    ...
+</db:programlisting>
+<db:para>At the end of <db:code>onPositionChanged</db:code>, we'll save the previous mouse position for move distance calculation that will be introduced later:</db:para>
+<db:programlisting language="cpp">...
+previousMouseX = currentMouseX;
+previousMouseY = currentMouseY;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="translating-mouse-movement-to-axis-range-change">
+<db:title>Translating Mouse Movement to Axis Range Change</db:title>
+<db:para>in <db:code>scatterGraph</db:code> we will need to listen to <db:code>onSelectedElementChanged</db:code> signal. The signal is emitted after the selection query has been made in the <db:code>onPressed</db:code> of <db:code>inputArea</db:code>. We set the element type into a property we defined (<db:code>property int selectedAxisLabel: -1</db:code>) in our main component, since it is of a type we are interested in:</db:para>
+<db:programlisting language="qml">onSelectedElementChanged: {
+    if (selectedElement &amp;gt;= AbstractGraph3D.ElementAxisXLabel
+            &amp;amp;&amp;amp; selectedElement &amp;lt;= AbstractGraph3D.ElementAxisZLabel)
+        selectedAxisLabel = selectedElement
+    else
+        selectedAxisLabel = -1
+}
+</db:programlisting>
+<db:para>Then, back in the <db:code>onPositionChanged</db:code> of <db:code>inputArea</db:code>, we check if a mouse button is pressed and if we have a current axis label selection. If the conditions are met, we'll call the function that does the conversion from mouse movement to axis range update:</db:para>
+<db:programlisting language="cpp">...
+if (pressed &amp;amp;&amp;amp; selectedAxisLabel != -1)
+    dragAxis();
+...
+</db:programlisting>
+<db:para>The conversion is easy in this case, as we have a fixed camera rotation. We can use some precalculated values, calculate mouse move distance, and apply the values to the selected axis range:</db:para>
+<db:programlisting language="qml">function dragAxis() {
+    // Do nothing if previous mouse position is uninitialized
+    if (previousMouseX === -1)
+        return
+
+    // Directional drag multipliers based on rotation. Camera is locked to 45 degrees, so we
+    // can use one precalculated value instead of calculating xx, xy, zx and zy individually
+    var cameraMultiplier = 0.70710678
+
+    // Calculate the mouse move amount
+    var moveX = currentMouseX - previousMouseX
+    var moveY = currentMouseY - previousMouseY
+
+    // Adjust axes
+    switch (selectedAxisLabel) {
+    case AbstractGraph3D.ElementAxisXLabel:
+        var distance = ((moveX - moveY) * cameraMultiplier) / dragSpeedModifier
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisX.min -= distance
+            scatterGraph.axisX.max -= distance
+        } else {
+            scatterGraph.axisX.max -= distance
+            scatterGraph.axisX.min -= distance
+        }
+        break
+    case AbstractGraph3D.ElementAxisYLabel:
+        distance = moveY / dragSpeedModifier
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisY.max += distance
+            scatterGraph.axisY.min += distance
+        } else {
+            scatterGraph.axisY.min += distance
+            scatterGraph.axisY.max += distance
+        }
+        break
+    case AbstractGraph3D.ElementAxisZLabel:
+        distance = ((moveX + moveY) * cameraMultiplier) / dragSpeedModifier
+        // Check if we need to change min or max first to avoid invalid ranges
+        if (distance &amp;gt; 0) {
+            scatterGraph.axisZ.max += distance
+            scatterGraph.axisZ.min += distance
+        } else {
+            scatterGraph.axisZ.min += distance
+            scatterGraph.axisZ.max += distance
+        }
+        break
+    }
+}
+</db:programlisting>
+<db:para>For a more sophisticated conversion from mouse movement to axis range update, see <db:link xlink:href="qtdatavis3d-draggableaxes-example.xml">this example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="other-features">
+<db:title>Other Features</db:title>
+<db:para>The example also demonstrates how to use orthographic projection and how to update properties of a custom item on the fly.</db:para>
+<db:para>Orthographic projection is very simple. You'll just need to change <db:code>orthoProjection</db:code> property of <db:code>scatterGraph</db:code>. In this example we have a button for toggling it on and off:</db:para>
+<db:programlisting language="qml">Button {
+    id: orthoToggle
+    width: portraitMode ? parent.width : parent.width / 3
+    text: &quot;Display Orthographic&quot;
+    anchors.left: portraitMode ? parent.left : rangeToggle.right
+    anchors.top: portraitMode ? rangeToggle.bottom : parent.top
+    onClicked: {
+        if (scatterGraph.orthoProjection) {
+            text = &quot;Display Orthographic&quot;;
+            scatterGraph.orthoProjection = false
+            // Orthographic projection disables shadows, so we need to switch them back on
+            scatterGraph.shadowQuality = AbstractGraph3D.ShadowQualityLow
+        } else {
+            text = &quot;Display Perspective&quot;;
+            scatterGraph.orthoProjection = true
+        }
+    }
+}
+</db:programlisting>
+<db:para>For custom items, first we'll add one in the <db:code>customItemList</db:code> of <db:code>scatterGraph</db:code>:</db:para>
+<db:programlisting language="qml">customItemList: [
+    Custom3DItem {
+        id: qtCube
+        meshFile: &quot;:/mesh/cube&quot;
+        textureFile: &quot;:/texture/texture&quot;
+        position: Qt.vector3d(0.65,0.35,0.65)
+        scaling: Qt.vector3d(0.3,0.3,0.3)
+    }
+]
+</db:programlisting>
+<db:para>We have implemented a timer to add, remove, and rotate all the items in the graph, and we'll use the same timer for rotating the custom item:</db:para>
+<db:programlisting language="qml">onTriggered: {
+    rotationAngle = rotationAngle + 1
+    qtCube.setRotationAxisAndAngle(Qt.vector3d(1,0,1), rotationAngle)
+    ...
+</db:programlisting>
+</db:section>
+<db:section xml:id="example-contents">
+<db:title>Example Contents</db:title>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdatavis3d.git/tree/examples/datavisualization/qmlaxisdrag?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:section>
+</db:article>

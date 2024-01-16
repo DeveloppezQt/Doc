@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Wayland Compositor Examples - Pure QML</db:title>
+<db:productname>QtWaylandCompositor</db:productname>
+<db:edition>Qt Wayland Compositor | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Wayland Compositor Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Pure QML is an example that demonstrates how to write a Wayland compositor in pure QML.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:section xml:id="introduction">
+<db:title>Introduction</db:title>
+<db:para>Pure QML is a small desktop-style Wayland compositor example that demonstrates the power and ease of the <db:link xlink:href="qtwaylandcompositor-index.xml">Qt Wayland Compositor</db:link> QML APIs.</db:para>
+<db:para>The Pure QML example is similar to the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">Minimal QML example</db:link>, in that it is a full-blown Wayland compositor, implemented only using QML code.</db:para>
+</db:section>
+<db:section xml:id="initializing-the-compositor">
+<db:title>Initializing the Compositor</db:title>
+<db:para>Like the <db:link xlink:href="qtwaylandcompositor-minimal-qml-example.xml">Minimal QML example</db:link>, Pure QML supports the main <db:link xlink:href="qtwaylandcompositor-shellextensions.xml">shell extensions</db:link> that are supported by Qt.</db:para>
+<db:programlisting language="qml">// Shell surface extension. Needed to provide a window concept for Wayland clients.
+// I.e. requests and events for maximization, minimization, resizing, closing etc.
+XdgShell {
+    onToplevelCreated: screen.handleShellSurface(xdgSurface)
+}
+
+// Minimalistic shell extension. Mainly used for embedded applications.
+IviApplication {
+    onIviSurfaceCreated: screen.handleShellSurface(iviSurface)
+}
+
+// Deprecated shell extension, still used by some clients
+WlShell {
+    onWlShellSurfaceCreated: screen.handleShellSurface(shellSurface)
+}
+</db:programlisting>
+<db:para>These are instantiated as children of the <db:link xlink:href="qml-qtwayland-compositor-waylandcompositor.xml">WaylandCompositor</db:link> which automatically adds them to the list of supported interfaces which is broadcasted to clients from the server.</db:para>
+<db:para>When a connected client creates a surface and binds it to one of the shell extensions, the corresponding signal is emitted. This then calls a method inside our custom <db:link xlink:href="qml-qtwayland-compositor-waylandoutput.xml">WaylandOutput</db:link> class, which appends the <db:link xlink:href="qml-qtwayland-compositor-shellsurface.xml">ShellSurface</db:link> to a <db:link xlink:href="qml-qtqml-models-listmodel.xml">ListModel</db:link>.</db:para>
+<db:programlisting language="qml">function handleShellSurface(shellSurface) {
+    shellSurfaces.append({shellSurface: shellSurface});
+}
+</db:programlisting>
+<db:para>This model is used as the source for a <db:link xlink:href="qml-qtquick-repeater.xml">Repeater</db:link> which creates <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItems</db:link> inside the compositor's <db:link xlink:href="qml-qtwayland-compositor-waylandoutput.xml">WaylandOutput</db:link>. This adds a view of the surface in the Qt Quick scene. Since it is a <db:link xlink:href="qml-qtwayland-compositor-shellsurfaceitem.xml">ShellSurfaceItem</db:link>, it also has certain interaction options for the user of the compositor, depending on which shell extension is in use.</db:para>
+<db:programlisting language="qml">Repeater {
+    model: output.shellSurfaces
+    // Chrome displays a shell surface on the screen (See Chrome.qml)
+    Chrome {
+        shellSurface: modelData
+        onDestroyAnimationFinished: output.shellSurfaces.remove(index)
+    }
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="keyboard">
+<db:title>Keyboard</db:title>
+<db:para>In addition to the basic windowing system functions, the Pure QML compositor also supports an optional on-screen keyboard running in-process. This uses the <db:link xlink:href="qtvirtualkeyboard-index.xml">Qt Virtual Keyboard</db:link> module, and will be enabled if the module is available.</db:para>
+<db:programlisting language="qml">import QtQuick
+import QtQuick.VirtualKeyboard
+
+InputPanel {
+    visible: active
+    y: active ? parent.height - height : parent.height
+    anchors.left: parent.left
+    anchors.right: parent.right
+}
+</db:programlisting>
+<db:para>The code is simple. We instantiate an <db:link xlink:href="qml-qtquick-virtualkeyboard-inputpanel.xml">InputPanel</db:link> in the bottom of the output, and make sure it is visible if and only if it is currently active.</db:para>
+<db:programlisting language="qml">Loader {
+    anchors.fill: parent
+    source: &quot;Keyboard.qml&quot;
+}
+</db:programlisting>
+<db:para>The keyboard is then added to the <db:link xlink:href="qml-qtwayland-compositor-waylandoutput.xml">WaylandOutput</db:link> using a <db:link xlink:href="qml-qtquick-loader.xml">Loader</db:link> element. The <db:link xlink:href="qml-qtquick-loader.xml">Loader</db:link> is used here to avoid having a hard dependency on the <db:link xlink:href="qtvirtualkeyboard-index.xml">Qt Virtual Keyboard</db:link> module. If loading fails, then the compositor will continue operating normally, but without support for an on-screen keyboard.</db:para>
+<db:para>Finally, we need a way for the compositor to communicate the text input to its clients. This is done via a <db:code>text-input</db:code> extension. The Pure QML example only supports the <db:code>qt_text_input_method_unstable_v1</db:code> protocol.</db:para>
+<db:programlisting language="qml">TextInputManager {}
+QtTextInputMethodManager {}
+</db:programlisting>
+<db:para>The extension is added to the compositor by instantiating the <db:link xlink:href="qml-qtwayland-compositor-qttextinputmethodmanager.xml">QtTextInputMethodManager</db:link> as a child of the <db:link xlink:href="qml-qtwayland-compositor-waylandcompositor.xml">WaylandCompositor</db:link>.</db:para>
+<db:para>In order for the on-screen keyboard to work, this protocol must also be supported by the client. Therefore, the <db:link xlink:href="qml-qtwayland-compositor-qttextinputmethodmanager.xml">QtTextInputMethodManager</db:link> is most useful if the clients are also Qt applications.</db:para>
+<db:note>
+<db:para>Qt also supports <db:link xlink:href="qml-qtwayland-compositor-textinputmanager.xml">TextInputManager</db:link>, which is an implementation of the <db:code>text_input_unstable_v2</db:code> protocol.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="transitions">
+<db:title>Transitions</db:title>
+<db:para>In addition to the basic functionality, the Pure QML example also demonstrates animated transitions between states.</db:para>
+<db:para>The first of these is the <db:emphasis>activation</db:emphasis> transition. This is only supported on the <db:link xlink:href="qml-qtwayland-compositor-xdgshell-xdgshell.xml">XdgShell</db:link>, since this is the only shell extension which has an <db:link xlink:href="qml-qtwayland-compositor-xdgshell-xdgtoplevel.xml#activated-prop">activated</db:link> state.</db:para>
+<db:programlisting language="qml">Connections {
+    target: shellSurface.toplevel !== undefined ? shellSurface.toplevel : null
+
+    // some signals are not available on wl_shell, so let's ignore them
+    ignoreUnknownSignals: true
+
+    function onActivatedChanged() { // xdg_shell only
+        if (shellSurface.toplevel.activated) {
+            receivedFocusAnimation.start();
+        }
+    }
+}
+
+SequentialAnimation {
+    id: receivedFocusAnimation
+
+    ParallelAnimation {
+        NumberAnimation { target: scaleTransform; property: &quot;yScale&quot;; to: 1.02; duration: 100; easing.type: Easing.OutQuad }
+        NumberAnimation { target: scaleTransform; property: &quot;xScale&quot;; to: 1.02; duration: 100; easing.type: Easing.OutQuad }
+    }
+    ParallelAnimation {
+        NumberAnimation { target: scaleTransform; property: &quot;yScale&quot;; to: 1; duration: 100; easing.type: Easing.InOutQuad }
+        NumberAnimation { target: scaleTransform; property: &quot;xScale&quot;; to: 1; duration: 100; easing.type: Easing.InOutQuad }
+    }
+}
+</db:programlisting>
+<db:para>When a client window becomes activated under the <db:link xlink:href="qml-qtwayland-compositor-xdgshell-xdgshell.xml">XdgShell</db:link> protocol, we trigger an animation which makes the window &quot;pop out&quot; for 200 ms.</db:para>
+<db:para>The Pure QML compositor also supports a <db:emphasis>destruction</db:emphasis> animation. This triggers whenever the window closes and surface is destroyed, whether this was because the client gracefully closed its window, or even if it crashes.</db:para>
+<db:programlisting language="qml">onSurfaceDestroyed: {
+    bufferLocked = true;
+    destroyAnimation.start();
+}
+
+SequentialAnimation {
+    id: destroyAnimation
+
+    ParallelAnimation {
+        NumberAnimation { target: scaleTransform; property: &quot;yScale&quot;; to: 2/height; duration: 150 }
+        NumberAnimation { target: scaleTransform; property: &quot;xScale&quot;; to: 0.4; duration: 150 }
+        NumberAnimation { target: chrome; property: &quot;opacity&quot;; to: chrome.isChild ? 0 : 1; duration: 150 }
+    }
+    NumberAnimation { target: scaleTransform; property: &quot;xScale&quot;; to: 0; duration: 150 }
+    ScriptAction { script: destroyAnimationFinished() }
+}
+</db:programlisting>
+<db:para>To ensure that the content exists for the duration of the animation, we start by locking the buffer. This means the final frame rendered by the client will remain in memory until we are done with it.</db:para>
+<db:para>Again, we trigger an animation on the scale of the item. The animation in question imitates turning off the power on a CRT screen, giving a visual clue to the user that the window is closing, and didn't just vanish into thin air.</db:para>
+<db:para>Any sort of animated effect may be used for state changes such as these, with the full range of Qt Quick at your disposal.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwayland.git/tree/examples/wayland/pure-qml?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,718 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Calculator Example</db:title>
+<db:productname>QtWidgets</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Widgets Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The example shows how to use signals and slots to implement the functionality of a calculator widget, and how to use <db:link xlink:href="qgridlayout.xml">QGridLayout</db:link> to place child widgets in a grid.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:figure>
+<db:title>Screenshot of the Calculator example</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/calculator-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:figure>
+<db:para>The example consists of two classes:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>Calculator is the calculator widget, with all the calculator functionality.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Button is the widget used for each of the calculator button. It derives from <db:link xlink:href="qtoolbutton.xml">QToolButton</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>We will start by reviewing Calculator, then we will take a look at Button.</db:para>
+<db:section xml:id="calculator-class-definition">
+<db:title>Calculator Class Definition</db:title>
+<db:programlisting language="cpp">class Calculator : public QWidget
+{
+    Q_OBJECT
+
+public:
+    Calculator(QWidget *parent = nullptr);
+
+private slots:
+    void digitClicked();
+    void unaryOperatorClicked();
+    void additiveOperatorClicked();
+    void multiplicativeOperatorClicked();
+    void equalClicked();
+    void pointClicked();
+    void changeSignClicked();
+    void backspaceClicked();
+    void clear();
+    void clearAll();
+    void clearMemory();
+    void readMemory();
+    void setMemory();
+    void addToMemory();
+</db:programlisting>
+<db:para>The Calculator class provides a simple calculator widget. It inherits from <db:link xlink:href="qdialog.xml">QDialog</db:link> and has several private slots associated with the calculator's buttons. <db:link xlink:href="qobject.xml#eventFilter">QObject::eventFilter</db:link>() is reimplemented to handle mouse events on the calculator's display.</db:para>
+<db:para>Buttons are grouped in categories according to their behavior. For example, all the digit buttons (labeled <db:guilabel>0</db:guilabel> to <db:guilabel>9</db:guilabel>) append a digit to the current operand. For these, we connect multiple buttons to the same slot (e.g., digitClicked()). The categories are digits, unary operators (<db:guilabel>Sqrt</db:guilabel>, <db:guilabel>x²</db:guilabel>, <db:guilabel>1/x</db:guilabel>), additive operators (<db:guilabel>+</db:guilabel>, <db:guilabel>-</db:guilabel>), and multiplicative operators (<db:guilabel>×</db:guilabel>, <db:guilabel>÷</db:guilabel>). The other buttons have their own slots.</db:para>
+<db:programlisting language="cpp">private:
+    Button *createButton(const QString &amp;amp;text, const char *member);
+    void abortOperation();
+    bool calculate(double rightOperand, const QString &amp;amp;pendingOperator);
+</db:programlisting>
+<db:para>The private createButton() function is used as part of the widget construction. abortOperation() is called whenever a division by zero occurs or when a square root operation is applied to a negative number. calculate() applies a binary operator (<db:guilabel>+</db:guilabel>, <db:guilabel>-</db:guilabel>, <db:guilabel>×</db:guilabel>, or <db:guilabel>÷</db:guilabel>).</db:para>
+<db:programlisting language="cpp">    double sumInMemory;
+    double sumSoFar;
+    double factorSoFar;
+    QString pendingAdditiveOperator;
+    QString pendingMultiplicativeOperator;
+    bool waitingForOperand;
+</db:programlisting>
+<db:para>These variables, together with the contents of the calculator display (a <db:link xlink:href="qlineedit.xml">QLineEdit</db:link>), encode the state of the calculator:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>sumInMemory contains the value stored in the calculator's memory (using <db:guilabel>MS</db:guilabel>, <db:guilabel>M+</db:guilabel>, or <db:guilabel>MC</db:guilabel>).</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>sumSoFar stores the value accumulated so far. When the user clicks <db:guilabel>=</db:guilabel>, sumSoFar is recomputed and shown on the display. <db:guilabel>Clear All</db:guilabel> resets sumSoFar to zero.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>factorSoFar stores a temporary value when doing multiplications and divisions.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>pendingAdditiveOperator stores the last additive operator clicked by the user.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>pendingMultiplicativeOperator stores the last multiplicative operator clicked by the user.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>waitingForOperand is true when the calculator is expecting the user to start typing an operand.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>Additive and multiplicative operators are treated differently because they have different precedences. For example, <db:guilabel>1 + 2 ÷ 3</db:guilabel> is interpreted as <db:guilabel>1 + (2 ÷ 3)</db:guilabel> because <db:guilabel>÷</db:guilabel> has higher precedence than <db:guilabel>+</db:guilabel>.</db:para>
+<db:para>The table below shows the evolution of the calculator state as the user enters a mathematical expression.</db:para>
+<db:informaltable style="generic">
+<db:thead>
+<db:tr>
+<db:th>
+<db:para>User Input</db:para>
+</db:th>
+<db:th>
+<db:para>Display</db:para>
+</db:th>
+<db:th>
+<db:para>Sum so Far</db:para>
+</db:th>
+<db:th>
+<db:para>Add. Op.</db:para>
+</db:th>
+<db:th>
+<db:para>Factor so Far</db:para>
+</db:th>
+<db:th>
+<db:para>Mult. Op.</db:para>
+</db:th>
+<db:th>
+<db:para>Waiting for Operand?</db:para>
+</db:th>
+</db:tr>
+</db:thead>
+<db:tr valign="top">
+<db:td>
+</db:td>
+<db:td>
+<db:para>0</db:para>
+</db:td>
+<db:td>
+<db:para>0</db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>true</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para>0</db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>false</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 +</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>+</db:guilabel></db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>true</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>2</db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>+</db:guilabel></db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>false</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2 ÷</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>2</db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>+</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>2</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>÷</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>true</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2 ÷ 3</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>3</db:para>
+</db:td>
+<db:td>
+<db:para>1</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>+</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>2</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>÷</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>false</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2 ÷ 3 -</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>1.66667</db:para>
+</db:td>
+<db:td>
+<db:para>1.66667</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>-</db:guilabel></db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>true</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2 ÷ 3 - 4</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>4</db:para>
+</db:td>
+<db:td>
+<db:para>1.66667</db:para>
+</db:td>
+<db:td>
+<db:para><db:guilabel>-</db:guilabel></db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>false</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:guilabel>1 + 2 ÷ 3 - 4 =</db:guilabel></db:para>
+</db:td>
+<db:td>
+<db:para>-2.33333</db:para>
+</db:td>
+<db:td>
+<db:para>0</db:para>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+</db:td>
+<db:td>
+<db:para>true</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+<db:para>Unary operators, such as <db:guilabel>Sqrt</db:guilabel>, require no special handling; they can be applied immediately since the operand is already known when the operator button is clicked.</db:para>
+<db:programlisting language="cpp">    QLineEdit *display;
+
+    enum { NumDigitButtons = 10 };
+    Button *digitButtons[NumDigitButtons];
+};
+</db:programlisting>
+<db:para>Finally, we declare the variables associated with the display and the buttons used to display numerals.</db:para>
+</db:section>
+<db:section xml:id="calculator-class-implementation">
+<db:title>Calculator Class Implementation</db:title>
+<db:programlisting language="cpp">Calculator::Calculator(QWidget *parent)
+    : QWidget(parent), sumInMemory(0.0), sumSoFar(0.0)
+    , factorSoFar(0.0), waitingForOperand(true)
+{
+</db:programlisting>
+<db:para>In the constructor, we initialize the calculator's state. The pendingAdditiveOperator and pendingMultiplicativeOperator variables don't need to be initialized explicitly, because the <db:link xlink:href="qstring.xml">QString</db:link> constructor initializes them to empty strings. It is also possible to initialize those variable directly in the header. This is called member-initializaton and avoids a long initialization list.</db:para>
+<db:programlisting language="cpp">    display = new QLineEdit(&quot;0&quot;);
+    display-&amp;gt;setReadOnly(true);
+    display-&amp;gt;setAlignment(Qt::AlignRight);
+    display-&amp;gt;setMaxLength(15);
+
+    QFont font = display-&amp;gt;font();
+    font.setPointSize(font.pointSize() + 8);
+    display-&amp;gt;setFont(font);
+</db:programlisting>
+<db:para>We create the <db:link xlink:href="qlineedit.xml">QLineEdit</db:link> representing the calculator's display and set up some of its properties. In particular, we set it to be read-only.</db:para>
+<db:para>We also enlarge display's font by 8 points.</db:para>
+<db:programlisting language="cpp">    for (int i = 0; i &amp;lt; NumDigitButtons; ++i)
+        digitButtons[i] = createButton(QString::number(i), SLOT(digitClicked()));
+
+    Button *pointButton = createButton(tr(&quot;.&quot;), SLOT(pointClicked()));
+    Button *changeSignButton = createButton(tr(&quot;\302\261&quot;), SLOT(changeSignClicked()));
+
+    Button *backspaceButton = createButton(tr(&quot;Backspace&quot;), SLOT(backspaceClicked()));
+    Button *clearButton = createButton(tr(&quot;Clear&quot;), SLOT(clear()));
+    Button *clearAllButton = createButton(tr(&quot;Clear All&quot;), SLOT(clearAll()));
+
+    Button *clearMemoryButton = createButton(tr(&quot;MC&quot;), SLOT(clearMemory()));
+    Button *readMemoryButton = createButton(tr(&quot;MR&quot;), SLOT(readMemory()));
+    Button *setMemoryButton = createButton(tr(&quot;MS&quot;), SLOT(setMemory()));
+    Button *addToMemoryButton = createButton(tr(&quot;M+&quot;), SLOT(addToMemory()));
+
+    Button *divisionButton = createButton(tr(&quot;\303\267&quot;), SLOT(multiplicativeOperatorClicked()));
+    Button *timesButton = createButton(tr(&quot;\303\227&quot;), SLOT(multiplicativeOperatorClicked()));
+    Button *minusButton = createButton(tr(&quot;-&quot;), SLOT(additiveOperatorClicked()));
+    Button *plusButton = createButton(tr(&quot;+&quot;), SLOT(additiveOperatorClicked()));
+
+    Button *squareRootButton = createButton(tr(&quot;Sqrt&quot;), SLOT(unaryOperatorClicked()));
+    Button *powerButton = createButton(tr(&quot;x\302\262&quot;), SLOT(unaryOperatorClicked()));
+    Button *reciprocalButton = createButton(tr(&quot;1/x&quot;), SLOT(unaryOperatorClicked()));
+    Button *equalButton = createButton(tr(&quot;=&quot;), SLOT(equalClicked()));
+</db:programlisting>
+<db:para>For each button, we call the private createButton() function with the proper text label and a slot to connect to the button.</db:para>
+<db:programlisting language="cpp">    QGridLayout *mainLayout = new QGridLayout;
+    mainLayout-&amp;gt;setSizeConstraint(QLayout::SetFixedSize);
+    mainLayout-&amp;gt;addWidget(display, 0, 0, 1, 6);
+    mainLayout-&amp;gt;addWidget(backspaceButton, 1, 0, 1, 2);
+    mainLayout-&amp;gt;addWidget(clearButton, 1, 2, 1, 2);
+    mainLayout-&amp;gt;addWidget(clearAllButton, 1, 4, 1, 2);
+
+    mainLayout-&amp;gt;addWidget(clearMemoryButton, 2, 0);
+    mainLayout-&amp;gt;addWidget(readMemoryButton, 3, 0);
+    mainLayout-&amp;gt;addWidget(setMemoryButton, 4, 0);
+    mainLayout-&amp;gt;addWidget(addToMemoryButton, 5, 0);
+
+    for (int i = 1; i &amp;lt; NumDigitButtons; ++i) {
+        int row = ((9 - i) / 3) + 2;
+        int column = ((i - 1) % 3) + 1;
+        mainLayout-&amp;gt;addWidget(digitButtons[i], row, column);
+    }
+
+    mainLayout-&amp;gt;addWidget(digitButtons[0], 5, 1);
+    mainLayout-&amp;gt;addWidget(pointButton, 5, 2);
+    mainLayout-&amp;gt;addWidget(changeSignButton, 5, 3);
+
+    mainLayout-&amp;gt;addWidget(divisionButton, 2, 4);
+    mainLayout-&amp;gt;addWidget(timesButton, 3, 4);
+    mainLayout-&amp;gt;addWidget(minusButton, 4, 4);
+    mainLayout-&amp;gt;addWidget(plusButton, 5, 4);
+
+    mainLayout-&amp;gt;addWidget(squareRootButton, 2, 5);
+    mainLayout-&amp;gt;addWidget(powerButton, 3, 5);
+    mainLayout-&amp;gt;addWidget(reciprocalButton, 4, 5);
+    mainLayout-&amp;gt;addWidget(equalButton, 5, 5);
+    setLayout(mainLayout);
+
+    setWindowTitle(tr(&quot;Calculator&quot;));
+}
+</db:programlisting>
+<db:para>The layout is handled by a single <db:link xlink:href="qgridlayout.xml">QGridLayout</db:link>. The <db:link xlink:href="qlayout.xml#sizeConstraint-prop">QLayout::setSizeConstraint</db:link>() call ensures that the Calculator widget is always shown as its optimal size (its <db:link xlink:href="qwidget.xml#sizeHint-prop">size hint</db:link>), preventing the user from resizing the calculator. The size hint is determined by the size and <db:link xlink:href="qwidget.xml#sizePolicy-prop">size policy</db:link> of the child widgets.</db:para>
+<db:para>Most child widgets occupy only one cell in the grid layout. For these, we only need to pass a row and a column to <db:link xlink:href="qgridlayout.xml#addWidget-1">QGridLayout::addWidget</db:link>(). The display, backspaceButton, clearButton, and clearAllButton widgets occupy more than one column; for these we must also pass a row span and a column span.</db:para>
+<db:programlisting language="cpp">void Calculator::digitClicked()
+{
+    Button *clickedButton = qobject_cast&amp;lt;Button *&amp;gt;(sender());
+    int digitValue = clickedButton-&amp;gt;text().toInt();
+    if (display-&amp;gt;text() == &quot;0&quot; &amp;amp;&amp;amp; digitValue == 0.0)
+        return;
+
+    if (waitingForOperand) {
+        display-&amp;gt;clear();
+        waitingForOperand = false;
+    }
+    display-&amp;gt;setText(display-&amp;gt;text() + QString::number(digitValue));
+}
+</db:programlisting>
+<db:para>Pressing one of the calculator's digit buttons will emit the button's <db:link xlink:href="qabstractbutton.xml#clicked">clicked</db:link>() signal, which will trigger the digitClicked() slot.</db:para>
+<db:para>First, we find out which button sent the signal using <db:link xlink:href="qobject.xml#sender">QObject::sender</db:link>(). This function returns the sender as a <db:link xlink:href="qobject.xml">QObject</db:link> pointer. Since we know that the sender is a Button object, we can safely cast the <db:link xlink:href="qobject.xml">QObject</db:link>. We could have used a C-style cast or a C++ static_cast&lt;&gt;(), but as a defensive programming technique we use a <db:link xlink:href="qobject.xml#qobject_cast-1">qobject_cast</db:link>(). The advantage is that if the object has the wrong type, a null pointer is returned. Crashes due to null pointers are much easier to diagnose than crashes due to unsafe casts. Once we have the button, we extract the operator using <db:link xlink:href="qabstractbutton.xml#text-prop">QToolButton::text</db:link>().</db:para>
+<db:para>The slot needs to consider two situations in particular. If display contains &quot;0&quot; and the user clicks the <db:guilabel>0</db:guilabel> button, it would be silly to show &quot;00&quot;. And if the calculator is in a state where it is waiting for a new operand, the new digit is the first digit of that new operand; in that case, any result of a previous calculation must be cleared first.</db:para>
+<db:para>At the end, we append the new digit to the value in the display.</db:para>
+<db:programlisting language="cpp">void Calculator::unaryOperatorClicked()
+{
+    Button *clickedButton = qobject_cast&amp;lt;Button *&amp;gt;(sender());
+    QString clickedOperator = clickedButton-&amp;gt;text();
+    double operand = display-&amp;gt;text().toDouble();
+    double result = 0.0;
+
+    if (clickedOperator == tr(&quot;Sqrt&quot;)) {
+        if (operand &amp;lt; 0.0) {
+            abortOperation();
+            return;
+        }
+        result = std::sqrt(operand);
+    } else if (clickedOperator == tr(&quot;x\302\262&quot;)) {
+        result = std::pow(operand, 2.0);
+    } else if (clickedOperator == tr(&quot;1/x&quot;)) {
+        if (operand == 0.0) {
+            abortOperation();
+            return;
+        }
+        result = 1.0 / operand;
+    }
+    display-&amp;gt;setText(QString::number(result));
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>The unaryOperatorClicked() slot is called whenever one of the unary operator buttons is clicked. Again a pointer to the clicked button is retrieved using <db:link xlink:href="qobject.xml#sender">QObject::sender</db:link>(). The operator is extracted from the button's text and stored in clickedOperator. The operand is obtained from display.</db:para>
+<db:para>Then we perform the operation. If <db:guilabel>Sqrt</db:guilabel> is applied to a negative number or <db:guilabel>1/x</db:guilabel> to zero, we call abortOperation(). If everything goes well, we display the result of the operation in the line edit and we set waitingForOperand to true. This ensures that if the user types a new digit, the digit will be considered as a new operand, instead of being appended to the current value.</db:para>
+<db:programlisting language="cpp">void Calculator::additiveOperatorClicked()
+{
+    Button *clickedButton = qobject_cast&amp;lt;Button *&amp;gt;(sender());
+    if (!clickedButton)
+      return;
+    QString clickedOperator = clickedButton-&amp;gt;text();
+    double operand = display-&amp;gt;text().toDouble();
+</db:programlisting>
+<db:para>The additiveOperatorClicked() slot is called when the user clicks the <db:guilabel>+</db:guilabel> or <db:guilabel>-</db:guilabel> button.</db:para>
+<db:para>Before we can actually do something about the clicked operator, we must handle any pending operations. We start with the multiplicative operators, since these have higher precedence than additive operators:</db:para>
+<db:programlisting language="cpp">    if (!pendingMultiplicativeOperator.isEmpty()) {
+        if (!calculate(operand, pendingMultiplicativeOperator)) {
+            abortOperation();
+            return;
+        }
+        display-&amp;gt;setText(QString::number(factorSoFar));
+        operand = factorSoFar;
+        factorSoFar = 0.0;
+        pendingMultiplicativeOperator.clear();
+    }
+</db:programlisting>
+<db:para>If <db:guilabel>×</db:guilabel> or <db:guilabel>÷</db:guilabel> has been clicked earlier, without clicking <db:guilabel>=</db:guilabel> afterward, the current value in the display is the right operand of the <db:guilabel>×</db:guilabel> or <db:guilabel>÷</db:guilabel> operator and we can finally perform the operation and update the display.</db:para>
+<db:programlisting language="cpp">    if (!pendingAdditiveOperator.isEmpty()) {
+        if (!calculate(operand, pendingAdditiveOperator)) {
+            abortOperation();
+            return;
+        }
+        display-&amp;gt;setText(QString::number(sumSoFar));
+    } else {
+        sumSoFar = operand;
+    }
+</db:programlisting>
+<db:para>If <db:guilabel>+</db:guilabel> or <db:guilabel>-</db:guilabel> has been clicked earlier, sumSoFar is the left operand and the current value in the display is the right operand of the operator. If there is no pending additive operator, sumSoFar is simply set to be the text in the display.</db:para>
+<db:programlisting language="cpp">    pendingAdditiveOperator = clickedOperator;
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>Finally, we can take care of the operator that was just clicked. Since we don't have the right-hand operand yet, we store the clicked operator in the pendingAdditiveOperator variable. We will apply the operation later, when we have a right operand, with sumSoFar as the left operand.</db:para>
+<db:programlisting language="cpp">void Calculator::multiplicativeOperatorClicked()
+{
+    Button *clickedButton = qobject_cast&amp;lt;Button *&amp;gt;(sender());
+    if (!clickedButton)
+      return;
+    QString clickedOperator = clickedButton-&amp;gt;text();
+    double operand = display-&amp;gt;text().toDouble();
+
+    if (!pendingMultiplicativeOperator.isEmpty()) {
+        if (!calculate(operand, pendingMultiplicativeOperator)) {
+            abortOperation();
+            return;
+        }
+        display-&amp;gt;setText(QString::number(factorSoFar));
+    } else {
+        factorSoFar = operand;
+    }
+
+    pendingMultiplicativeOperator = clickedOperator;
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>The multiplicativeOperatorClicked() slot is similar to additiveOperatorClicked(). We don't need to worry about pending additive operators here, because multiplicative operators have precedence over additive operators.</db:para>
+<db:programlisting language="cpp">void Calculator::equalClicked()
+{
+    double operand = display-&amp;gt;text().toDouble();
+
+    if (!pendingMultiplicativeOperator.isEmpty()) {
+        if (!calculate(operand, pendingMultiplicativeOperator)) {
+            abortOperation();
+            return;
+        }
+        operand = factorSoFar;
+        factorSoFar = 0.0;
+        pendingMultiplicativeOperator.clear();
+    }
+    if (!pendingAdditiveOperator.isEmpty()) {
+        if (!calculate(operand, pendingAdditiveOperator)) {
+            abortOperation();
+            return;
+        }
+        pendingAdditiveOperator.clear();
+    } else {
+        sumSoFar = operand;
+    }
+
+    display-&amp;gt;setText(QString::number(sumSoFar));
+    sumSoFar = 0.0;
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>Like in additiveOperatorClicked(), we start by handling any pending multiplicative and additive operators. Then we display sumSoFar and reset the variable to zero. Resetting the variable to zero is necessary to avoid counting the value twice.</db:para>
+<db:programlisting language="cpp">void Calculator::pointClicked()
+{
+    if (waitingForOperand)
+        display-&amp;gt;setText(&quot;0&quot;);
+    if (!display-&amp;gt;text().contains('.'))
+        display-&amp;gt;setText(display-&amp;gt;text() + tr(&quot;.&quot;));
+    waitingForOperand = false;
+}
+</db:programlisting>
+<db:para>The pointClicked() slot adds a decimal point to the content in display.</db:para>
+<db:programlisting language="cpp">void Calculator::changeSignClicked()
+{
+    QString text = display-&amp;gt;text();
+    double value = text.toDouble();
+
+    if (value &amp;gt; 0.0) {
+        text.prepend(tr(&quot;-&quot;));
+    } else if (value &amp;lt; 0.0) {
+        text.remove(0, 1);
+    }
+    display-&amp;gt;setText(text);
+}
+</db:programlisting>
+<db:para>The changeSignClicked() slot changes the sign of the value in display. If the current value is positive, we prepend a minus sign; if the current value is negative, we remove the first character from the value (the minus sign).</db:para>
+<db:programlisting language="cpp">void Calculator::backspaceClicked()
+{
+    if (waitingForOperand)
+        return;
+
+    QString text = display-&amp;gt;text();
+    text.chop(1);
+    if (text.isEmpty()) {
+        text = &quot;0&quot;;
+        waitingForOperand = true;
+    }
+    display-&amp;gt;setText(text);
+}
+</db:programlisting>
+<db:para>The backspaceClicked() removes the rightmost character in the display. If we get an empty string, we show &quot;0&quot; and set waitingForOperand to true.</db:para>
+<db:programlisting language="cpp">void Calculator::clear()
+{
+    if (waitingForOperand)
+        return;
+
+    display-&amp;gt;setText(&quot;0&quot;);
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>The clear() slot resets the current operand to zero. It is equivalent to clicking <db:guilabel>Backspace</db:guilabel> enough times to erase the entire operand.</db:para>
+<db:programlisting language="cpp">void Calculator::clearAll()
+{
+    sumSoFar = 0.0;
+    factorSoFar = 0.0;
+    pendingAdditiveOperator.clear();
+    pendingMultiplicativeOperator.clear();
+    display-&amp;gt;setText(&quot;0&quot;);
+    waitingForOperand = true;
+}
+</db:programlisting>
+<db:para>The clearAll() slot resets the calculator to its initial state.</db:para>
+<db:programlisting language="cpp">void Calculator::clearMemory()
+{
+    sumInMemory = 0.0;
+}
+
+void Calculator::readMemory()
+{
+    display-&amp;gt;setText(QString::number(sumInMemory));
+    waitingForOperand = true;
+}
+
+void Calculator::setMemory()
+{
+    equalClicked();
+    sumInMemory = display-&amp;gt;text().toDouble();
+}
+
+void Calculator::addToMemory()
+{
+    equalClicked();
+    sumInMemory += display-&amp;gt;text().toDouble();
+}
+</db:programlisting>
+<db:para>The clearMemory() slot erases the sum kept in memory, readMemory() displays the sum as an operand, setMemory() replace the sum in memory with the current sum, and addToMemory() adds the current value to the value in memory. For setMemory() and addToMemory(), we start by calling equalClicked() to update sumSoFar and the value in the display.</db:para>
+<db:programlisting language="cpp">Button *Calculator::createButton(const QString &amp;amp;text, const char *member)
+{
+    Button *button = new Button(text);
+    connect(button, SIGNAL(clicked()), this, member);
+    return button;
+}
+</db:programlisting>
+<db:para>The private createButton() function is called from the constructor to create calculator buttons.</db:para>
+<db:programlisting language="cpp">void Calculator::abortOperation()
+{
+    clearAll();
+    display-&amp;gt;setText(tr(&quot;####&quot;));
+}
+</db:programlisting>
+<db:para>The private abortOperation() function is called whenever a calculation fails. It resets the calculator state and displays &quot;####&quot;.</db:para>
+<db:programlisting language="cpp">bool Calculator::calculate(double rightOperand, const QString &amp;amp;pendingOperator)
+{
+    if (pendingOperator == tr(&quot;+&quot;)) {
+        sumSoFar += rightOperand;
+    } else if (pendingOperator == tr(&quot;-&quot;)) {
+        sumSoFar -= rightOperand;
+    } else if (pendingOperator == tr(&quot;\303\227&quot;)) {
+        factorSoFar *= rightOperand;
+    } else if (pendingOperator == tr(&quot;\303\267&quot;)) {
+        if (rightOperand == 0.0)
+            return false;
+        factorSoFar /= rightOperand;
+    }
+    return true;
+}
+</db:programlisting>
+<db:para>The private calculate() function performs a binary operation. The right operand is given by rightOperand. For additive operators, the left operand is sumSoFar; for multiplicative operators, the left operand is factorSoFar. The function return false if a division by zero occurs.</db:para>
+</db:section>
+<db:section xml:id="button-class-definition">
+<db:title>Button Class Definition</db:title>
+<db:para>Let's now take a look at the Button class:</db:para>
+<db:programlisting language="cpp">class Button : public QToolButton
+{
+    Q_OBJECT
+
+public:
+    explicit Button(const QString &amp;amp;text, QWidget *parent = nullptr);
+
+    QSize sizeHint() const override;
+};
+</db:programlisting>
+<db:para>The Button class has a convenience constructor that takes a text label and a parent widget, and it reimplements <db:link xlink:href="qwidget.xml#sizeHint-prop">QWidget::sizeHint</db:link>() to provide more space around the text than the amount <db:link xlink:href="qtoolbutton.xml">QToolButton</db:link> normally provides.</db:para>
+</db:section>
+<db:section xml:id="button-class-implementation">
+<db:title>Button Class Implementation</db:title>
+<db:programlisting language="cpp">Button::Button(const QString &amp;amp;text, QWidget *parent)
+    : QToolButton(parent)
+{
+    setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
+    setText(text);
+}
+</db:programlisting>
+<db:para>The buttons' appearance is determined by the layout of the calculator widget through the size and <db:link xlink:href="qwidget.xml#sizePolicy-prop">size policy</db:link> of the layout's child widgets. The call to the <db:link xlink:href="qwidget.xml#sizePolicy-prop">setSizePolicy</db:link>() function in the constructor ensures that the button will expand horizontally to fill all the available space; by default, <db:link xlink:href="qtoolbutton.xml">QToolButton</db:link>s don't expand to fill available space. Without this call, the different buttons in a same column would have different widths.</db:para>
+<db:programlisting language="cpp">QSize Button::sizeHint() const
+{
+    QSize size = QToolButton::sizeHint();
+    size.rheight() += 20;
+    size.rwidth() = qMax(size.width(), size.height());
+    return size;
+}
+</db:programlisting>
+<db:para>In <db:link xlink:href="qwidget.xml#sizeHint-prop">sizeHint</db:link>(), we try to return a size that looks good for most buttons. We reuse the size hint of the base class (<db:link xlink:href="qtoolbutton.xml">QToolButton</db:link>) but modify it in the following ways:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para>We add 20 to the <db:link xlink:href="qsize.xml#height">height</db:link> component of the size hint.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>We make the <db:link xlink:href="qsize.xml#width">width</db:link> component of the size hint at least as much as the <db:link xlink:href="qsize.xml#width">height</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>This ensures that with most fonts, the digit and operator buttons will be square, without truncating the text on the <db:guilabel>Backspace</db:guilabel>, <db:guilabel>Clear</db:guilabel>, and <db:guilabel>Clear All</db:guilabel> buttons.</db:para>
+<db:para>The screenshot below shows how the Calculator widget would look like if we <db:emphasis>didn't</db:emphasis> set the horizontal size policy to <db:link xlink:href="qsizepolicy.xml#Policy-enum">QSizePolicy::Expanding</db:link> in the constructor and if we didn't reimplement <db:link xlink:href="qwidget.xml#sizeHint-prop">QWidget::sizeHint</db:link>().</db:para>
+<db:figure>
+<db:title>The Calculator example with default size policies and size hints</db:title>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/calculator-ugly.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:figure>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/widgets/widgets/calculator?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,224 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>WebEngine Markdown Editor Example</db:title>
+<db:productname>QtWebEngine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt WebEngine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to integrate a web engine in a hybrid desktop application.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/markdowneditor-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para><db:emphasis>Markdown Editor</db:emphasis> demonstrates how to use <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link> and JavaScript libraries to provide a rich text preview tool for a custom markup language.</db:para>
+<db:para><db:link xlink:href="http://daringfireball.net/projects/markdown/">Markdown</db:link> is a lightweight markup language with a plain text formatting syntax. Some services, such as <db:link xlink:href="http://github.com">github</db:link>, acknowledge the format, and render the content as rich text when viewed in a browser.</db:para>
+<db:para>The Markdown Editor main window is split into an editor and a preview area. The editor supports the Markdown syntax and is implemented by using <db:link xlink:href="qplaintextedit.xml">QPlainTextEdit</db:link>. The document is rendered as rich text in the preview area, which is implemented by using <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link>. To render the text, the Markdown text is converted to HTML format with the help of a JavaScript library inside the web engine. The preview is updated from the editor through <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link>.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="exposing-document-text">
+<db:title>Exposing Document Text</db:title>
+<db:para>Because we expose the current Markdown text to be rendered to the web engine through <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link>, we need to somehow make the current text available through the Qt metatype system. This is done by using a dedicated <db:code>Document</db:code> class that exposes the document text as a <db:code>Q_PROPERTY</db:code>:</db:para>
+<db:programlisting language="cpp">class Document : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QString text MEMBER m_text NOTIFY textChanged FINAL)
+public:
+    explicit Document(QObject *parent = nullptr) : QObject(parent) {}
+
+    void setText(const QString &amp;amp;text);
+
+signals:
+    void textChanged(const QString &amp;amp;text);
+
+private:
+    QString m_text;
+};
+</db:programlisting>
+<db:para>The <db:code>Document</db:code> class wraps a <db:link xlink:href="qstring.xml">QString</db:link> to be set on the C++ side with the <db:code>setText()</db:code> method and exposes it at runtime as a <db:code>text</db:code> property with a <db:code>textChanged</db:code> signal.</db:para>
+<db:para>We define the <db:code>setText</db:code> method as follows:</db:para>
+<db:programlisting language="cpp">void Document::setText(const QString &amp;amp;text)
+{
+    if (text == m_text)
+        return;
+    m_text = text;
+    emit textChanged(m_text);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="previewing-text">
+<db:title>Previewing Text</db:title>
+<db:para>We implement our own <db:code>PreviewPage</db:code> class that publicly inherits from <db:code>QWebEnginePage</db:code>:</db:para>
+<db:programlisting language="cpp">class PreviewPage : public QWebEnginePage
+{
+    Q_OBJECT
+public:
+    using QWebEnginePage::QWebEnginePage;
+
+protected:
+    bool acceptNavigationRequest(const QUrl &amp;amp;url, NavigationType type, bool isMainFrame) override;
+};
+</db:programlisting>
+<db:para>We reimplement the virtual <db:code>acceptNavigationRequest</db:code> method to stop the page from navigating away from the current document. Instead, we redirect external links to the system browser:</db:para>
+<db:programlisting language="cpp">bool PreviewPage::acceptNavigationRequest(const QUrl &amp;amp;url,
+                                          QWebEnginePage::NavigationType /*type*/,
+                                          bool /*isMainFrame*/)
+{
+    // Only allow qrc:/index.html.
+    if (url.scheme() == QString(&quot;qrc&quot;))
+        return true;
+    QDesktopServices::openUrl(url);
+    return false;
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="creating-the-main-window">
+<db:title>Creating the Main Window</db:title>
+<db:para>The <db:code>MainWindow</db:code> class inherits the <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> class:</db:para>
+<db:programlisting language="cpp">class MainWindow : public QMainWindow
+{
+    Q_OBJECT
+
+public:
+    explicit MainWindow(QWidget *parent = nullptr);
+    ~MainWindow();
+
+    void openFile(const QString &amp;amp;path);
+
+protected:
+    void closeEvent(QCloseEvent *e) override;
+
+private slots:
+    void onFileNew();
+    void onFileOpen();
+    void onFileSave();
+    void onFileSaveAs();
+
+private:
+    bool isModified() const;
+
+    Ui::MainWindow *ui;
+    QString m_filePath;
+    Document m_content;
+};
+</db:programlisting>
+<db:para>The class declares private slots that match the actions in the menu, as well as the <db:code>isModified()</db:code> helper method.</db:para>
+<db:para>The actual layout of the main window is specified in a <db:code>.ui</db:code> file. The widgets and actions are available at runtime in the <db:code>ui</db:code> member variable.</db:para>
+<db:para><db:code>m_filePath</db:code> holds the file path to the currently loaded document. <db:code>m_content</db:code> is an instance of the <db:code>Document</db:code> class.</db:para>
+<db:para>The actual setup of the different objects is done in the <db:code>MainWindow</db:code> constructor:</db:para>
+<db:programlisting language="cpp">MainWindow::MainWindow(QWidget *parent) :
+    QMainWindow(parent),
+    ui(new Ui::MainWindow)
+{
+    ui-&amp;gt;setupUi(this);
+    ui-&amp;gt;editor-&amp;gt;setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    ui-&amp;gt;preview-&amp;gt;setContextMenuPolicy(Qt::NoContextMenu);
+</db:programlisting>
+<db:para>The constructor first calls <db:code>setupUi</db:code> to construct the widgets and menu actions according to the UI file. The text editor font is set to one with a fixed character width, and the <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> widget is told not to show a context menu.</db:para>
+<db:programlisting language="cpp">    PreviewPage *page = new PreviewPage(this);
+    ui-&amp;gt;preview-&amp;gt;setPage(page);
+</db:programlisting>
+<db:para>Here the constructor makes sure our custom <db:code>PreviewPage</db:code> is used by the <db:link xlink:href="qwebengineview.xml">QWebEngineView</db:link> instance in <db:code>ui-&gt;preview</db:code>.</db:para>
+<db:programlisting language="cpp">    connect(ui-&amp;gt;editor, &amp;amp;QPlainTextEdit::textChanged,
+            [this]() { m_content.setText(ui-&amp;gt;editor-&amp;gt;toPlainText()); });
+
+    QWebChannel *channel = new QWebChannel(this);
+    channel-&amp;gt;registerObject(QStringLiteral(&quot;content&quot;), &amp;amp;m_content);
+    page-&amp;gt;setWebChannel(channel);
+</db:programlisting>
+<db:para>Here the <db:code>textChanged</db:code> signal of the editor is connected to a lambda that updates the text in <db:code>m_content</db:code>. This object is then exposed to the JS side by <db:code>QWebChannel</db:code> under the name <db:code>content</db:code>.</db:para>
+<db:programlisting language="cpp">    ui-&amp;gt;preview-&amp;gt;setUrl(QUrl(&quot;qrc:/index.html&quot;));
+</db:programlisting>
+<db:para>Now we can actually load the <db:emphasis>index.html</db:emphasis> file from the resources. For more information about the file, see <db:link xlink:href="qtwebengine-webenginewidgets-markdowneditor-example.xml#creating-an-index-file">Creating an Index File</db:link>.</db:para>
+<db:programlisting language="cpp">    connect(ui-&amp;gt;actionNew, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::onFileNew);
+    connect(ui-&amp;gt;actionOpen, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::onFileOpen);
+    connect(ui-&amp;gt;actionSave, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::onFileSave);
+    connect(ui-&amp;gt;actionSaveAs, &amp;amp;QAction::triggered, this, &amp;amp;MainWindow::onFileSaveAs);
+    connect(ui-&amp;gt;actionExit, &amp;amp;QAction::triggered, this, &amp;amp;QWidget::close);
+
+    connect(ui-&amp;gt;editor-&amp;gt;document(), &amp;amp;QTextDocument::modificationChanged,
+            ui-&amp;gt;actionSave, &amp;amp;QAction::setEnabled);
+</db:programlisting>
+<db:para>The menu items are connected to the corresponding member slots. The <db:guilabel>Save</db:guilabel> item is activated or deactivated depending on whether the user has edited the content.</db:para>
+<db:programlisting language="cpp">    QFile defaultTextFile(&quot;:/default.md&quot;);
+    defaultTextFile.open(QIODevice::ReadOnly);
+    ui-&amp;gt;editor-&amp;gt;setPlainText(defaultTextFile.readAll());
+}
+</db:programlisting>
+<db:para>Finally, we load a default document <db:emphasis>default.md</db:emphasis> from the resources.</db:para>
+</db:section>
+<db:section xml:id="creating-an-index-file">
+<db:title>Creating an Index File</db:title>
+<db:programlisting language="cpp">&amp;lt;!doctype html&amp;gt;
+&amp;lt;html lang=&quot;en&quot;&amp;gt;
+&amp;lt;meta charset=&quot;utf-8&quot;&amp;gt;
+&amp;lt;head&amp;gt;
+  &amp;lt;link rel=&quot;stylesheet&quot; type=&quot;text/css&quot; href=&quot;3rdparty/markdown.css&quot;&amp;gt;
+  &amp;lt;script src=&quot;3rdparty/marked.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+  &amp;lt;script src=&quot;qrc:/qtwebchannel/qwebchannel.js&quot;&amp;gt;&amp;lt;/script&amp;gt;
+&amp;lt;/head&amp;gt;
+&amp;lt;body&amp;gt;
+  &amp;lt;div id=&quot;placeholder&quot;&amp;gt;&amp;lt;/div&amp;gt;
+  &amp;lt;script&amp;gt;
+  'use strict';
+
+  var placeholder = document.getElementById('placeholder');
+
+  var updateText = function(text) {
+      placeholder.innerHTML = marked(text);
+  }
+
+  new QWebChannel(qt.webChannelTransport,
+    function(channel) {
+      var content = channel.objects.content;
+      updateText(content.text);
+      content.textChanged.connect(updateText);
+    }
+  );
+  &amp;lt;/script&amp;gt;
+&amp;lt;/body&amp;gt;
+&amp;lt;/html&amp;gt;
+</db:programlisting>
+<db:para>In the <db:emphasis>index.html</db:emphasis>, we load a custom stylesheet and two JavaScript libraries. <db:link xlink:href="https://bitbucket.org/kevinburke/markdowncss/src/master/">markdown.css</db:link> is a markdown-friendly stylesheet created by Kevin Burke. <db:link xlink:href="https://github.com/chjj/marked">marked.js</db:link> is a markdown parser and compiler designed for speed written by Christopher Jeffrey and <db:emphasis>qwebchannel.js</db:emphasis> is part of the <db:link xlink:href="qwebchannel.xml">QWebChannel</db:link> module.</db:para>
+<db:para>In the <db:code>&lt;body&gt;</db:code> element we first define a <db:code>placeholder</db:code> element, and make it available as a JavaScript variable. We then define the <db:code>updateText</db:code> helper method that updates the content of <db:code>placeholder</db:code> with the HTML that the JavaScript method <db:code>marked()</db:code> returns.</db:para>
+<db:para>Finally, we set up the web channel to access the <db:code>content</db:code> proxy object and make sure that <db:code>updateText()</db:code> is called whenever <db:code>content.text</db:code> changes.</db:para>
+</db:section>
+<db:section xml:id="files-and-attributions">
+<db:title>Files and Attributions</db:title>
+<db:para>The example bundles the following code with third-party licenses:</db:para>
+<db:informaltable style="generic">
+<db:tr valign="top">
+<db:td>
+<db:para>Marked</db:para>
+</db:td>
+<db:td>
+<db:para>MIT License</db:para>
+</db:td>
+</db:tr>
+<db:tr valign="top">
+<db:td>
+<db:para><db:link xlink:href="">Markdown.css</db:link></db:para>
+</db:td>
+<db:td>
+<db:para>Apache License 2.0</db:para>
+</db:td>
+</db:tr>
+</db:informaltable>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtwebengine.git/tree/examples/webenginewidgets/markdowneditor?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

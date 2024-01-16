@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Spatial Audio Panning Example</db:title>
+<db:productname>QtSpatialAudio</db:productname>
+<db:edition>Technology Preview</db:edition>
+<db:titleabbrev>Qt Spatial Audio Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows some of the capabilities of the spatial audio engine in Qt.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &amp;lt;QtSpatialAudio/QtSpatialAudio&amp;gt;
+
+#include &amp;lt;QtWidgets/QApplication&amp;gt;
+#include &amp;lt;QtWidgets/QCheckBox&amp;gt;
+#include &amp;lt;QtWidgets/QComboBox&amp;gt;
+#include &amp;lt;QtWidgets/QFileDialog&amp;gt;
+#include &amp;lt;QtWidgets/QFormLayout&amp;gt;
+#include &amp;lt;QtWidgets/QHBoxLayout&amp;gt;
+#include &amp;lt;QtWidgets/QLineEdit&amp;gt;
+#include &amp;lt;QtWidgets/QPushButton&amp;gt;
+#include &amp;lt;QtWidgets/QSlider&amp;gt;
+
+#include &amp;lt;QtCore/QPropertyAnimation&amp;gt;
+
+class AudioWidget : public QWidget
+{
+public:
+    AudioWidget();
+    void setFile(const QString &amp;amp;file);
+
+private slots:
+    void updatePosition();
+    void newOcclusion();
+    void modeChanged();
+    void fileChanged(const QString &amp;amp;file);
+    void openFileDialog();
+    void updateRoom();
+    void animateChanged();
+
+private:
+    QLineEdit *fileEdit = nullptr;
+    QPushButton *fileDialogButton = nullptr;
+    QSlider *azimuth = nullptr;
+    QSlider *elevation = nullptr;
+    QSlider *distance = nullptr;
+    QSlider *occlusion = nullptr;
+    QSlider *roomDimension = nullptr;
+    QSlider *reverbGain = nullptr;
+    QSlider *reflectionGain = nullptr;
+    QComboBox *mode = nullptr;
+    QCheckBox *animateButton = nullptr;
+    QPropertyAnimation *animation = nullptr;
+
+    QAudioEngine engine;
+    QAudioListener *listener = nullptr;
+    QSpatialSound *sound = nullptr;
+    QAudioRoom *room = nullptr;
+    QFileDialog *fileDialog = nullptr;
+};
+
+AudioWidget::AudioWidget()
+    : QWidget()
+{
+    setMinimumSize(400, 300);
+    auto *form = new QFormLayout(this);
+
+    auto *fileLayout = new QHBoxLayout;
+    fileEdit = new QLineEdit;
+    fileEdit-&amp;gt;setPlaceholderText(tr(&quot;Audio File&quot;));
+    fileLayout-&amp;gt;addWidget(fileEdit);
+    fileDialogButton = new QPushButton(tr(&quot;Choose...&quot;));
+    fileLayout-&amp;gt;addWidget(fileDialogButton);
+    form-&amp;gt;addRow(fileLayout);
+
+    azimuth = new QSlider(Qt::Horizontal);
+    azimuth-&amp;gt;setRange(-180, 180);
+    form-&amp;gt;addRow(tr(&quot;Azimuth (-180 - 180 degree):&quot;), azimuth);
+
+    elevation = new QSlider(Qt::Horizontal);
+    elevation-&amp;gt;setRange(-90, 90);
+    form-&amp;gt;addRow(tr(&quot;Elevation (-90 - 90 degree)&quot;), elevation);
+
+    distance = new QSlider(Qt::Horizontal);
+    distance-&amp;gt;setRange(0, 1000);
+    distance-&amp;gt;setValue(100);
+    form-&amp;gt;addRow(tr(&quot;Distance (0 - 10 meter):&quot;), distance);
+
+    occlusion = new QSlider(Qt::Horizontal);
+    occlusion-&amp;gt;setRange(0, 400);
+    form-&amp;gt;addRow(tr(&quot;Occlusion (0 - 4):&quot;), occlusion);
+
+    roomDimension = new QSlider(Qt::Horizontal);
+    roomDimension-&amp;gt;setRange(0, 10000);
+    roomDimension-&amp;gt;setValue(1000);
+    form-&amp;gt;addRow(tr(&quot;Room dimension (0 - 100 meter):&quot;), roomDimension);
+
+    reverbGain = new QSlider(Qt::Horizontal);
+    reverbGain-&amp;gt;setRange(0, 500);
+    reverbGain-&amp;gt;setValue(0);
+    form-&amp;gt;addRow(tr(&quot;Reverb gain (0-5):&quot;), reverbGain);
+
+    reflectionGain = new QSlider(Qt::Horizontal);
+    reflectionGain-&amp;gt;setRange(0, 500);
+    reflectionGain-&amp;gt;setValue(0);
+    form-&amp;gt;addRow(tr(&quot;Reflection gain (0-5):&quot;), reflectionGain);
+
+    mode = new QComboBox;
+    mode-&amp;gt;addItem(tr(&quot;Surround&quot;), QVariant::fromValue(QAudioEngine::Surround));
+    mode-&amp;gt;addItem(tr(&quot;Stereo&quot;), QVariant::fromValue(QAudioEngine::Stereo));
+    mode-&amp;gt;addItem(tr(&quot;Headphone&quot;), QVariant::fromValue(QAudioEngine::Headphone));
+
+    form-&amp;gt;addRow(tr(&quot;Output mode:&quot;), mode);
+
+    animateButton = new QCheckBox(tr(&quot;Animate sound position&quot;));
+    form-&amp;gt;addRow(animateButton);
+
+    connect(fileEdit, &amp;amp;QLineEdit::textChanged, this, &amp;amp;AudioWidget::fileChanged);
+    connect(fileDialogButton, &amp;amp;QPushButton::clicked, this, &amp;amp;AudioWidget::openFileDialog);
+
+    connect(azimuth, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updatePosition);
+    connect(elevation, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updatePosition);
+    connect(distance, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updatePosition);
+    connect(occlusion, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::newOcclusion);
+
+    connect(roomDimension, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updateRoom);
+    connect(reverbGain, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updateRoom);
+    connect(reflectionGain, &amp;amp;QSlider::valueChanged, this, &amp;amp;AudioWidget::updateRoom);
+
+    connect(mode, &amp;amp;QComboBox::currentIndexChanged, this, &amp;amp;AudioWidget::modeChanged);
+
+    room = new QAudioRoom(&amp;amp;engine);
+    room-&amp;gt;setWallMaterial(QAudioRoom::BackWall, QAudioRoom::BrickBare);
+    room-&amp;gt;setWallMaterial(QAudioRoom::FrontWall, QAudioRoom::BrickBare);
+    room-&amp;gt;setWallMaterial(QAudioRoom::LeftWall, QAudioRoom::BrickBare);
+    room-&amp;gt;setWallMaterial(QAudioRoom::RightWall, QAudioRoom::BrickBare);
+    room-&amp;gt;setWallMaterial(QAudioRoom::Floor, QAudioRoom::Marble);
+    room-&amp;gt;setWallMaterial(QAudioRoom::Ceiling, QAudioRoom::WoodCeiling);
+    updateRoom();
+
+    listener = new QAudioListener(&amp;amp;engine);
+    listener-&amp;gt;setPosition({});
+    listener-&amp;gt;setRotation({});
+    engine.start();
+
+    sound = new QSpatialSound(&amp;amp;engine);
+    updatePosition();
+
+    animation = new QPropertyAnimation(azimuth, &quot;value&quot;);
+    animation-&amp;gt;setDuration(10000);
+    animation-&amp;gt;setStartValue(-180);
+    animation-&amp;gt;setEndValue(180);
+    animation-&amp;gt;setLoopCount(-1);
+    connect(animateButton, &amp;amp;QCheckBox::toggled, this, &amp;amp;AudioWidget::animateChanged);
+}
+
+void AudioWidget::setFile(const QString &amp;amp;file)
+{
+    fileEdit-&amp;gt;setText(file);
+}
+
+void AudioWidget::updatePosition()
+{
+    const float az = azimuth-&amp;gt;value() / 180. * M_PI;
+    const float el = elevation-&amp;gt;value() / 180. * M_PI;
+    const float d = distance-&amp;gt;value();
+
+    const float x = d * sin(az) * cos(el);
+    const float y = d * sin(el);
+    const float z = -d * cos(az) * cos(el);
+    sound-&amp;gt;setPosition({x, y, z});
+}
+
+void AudioWidget::newOcclusion()
+{
+    sound-&amp;gt;setOcclusionIntensity(occlusion-&amp;gt;value() / 100.);
+}
+
+void AudioWidget::modeChanged()
+{
+    engine.setOutputMode(mode-&amp;gt;currentData().value&amp;lt;QAudioEngine::OutputMode&amp;gt;());
+}
+
+void AudioWidget::fileChanged(const QString &amp;amp;file)
+{
+    sound-&amp;gt;setSource(QUrl::fromLocalFile(file));
+    sound-&amp;gt;setSize(5);
+    sound-&amp;gt;setLoops(QSpatialSound::Infinite);
+}
+
+void AudioWidget::openFileDialog()
+{
+    if (fileDialog == nullptr) {
+        const QString dir = QStandardPaths::writableLocation(QStandardPaths::MusicLocation);
+        fileDialog = new QFileDialog(this, tr(&quot;Open Audio File&quot;), dir);
+        fileDialog-&amp;gt;setAcceptMode(QFileDialog::AcceptOpen);
+        const QStringList mimeTypes{&quot;audio/mpeg&quot;, &quot;audio/aac&quot;, &quot;audio/x-ms-wma&quot;,
+                                    &quot;audio/x-flac+ogg&quot;, &quot;audio/x-wav&quot;};
+        fileDialog-&amp;gt;setMimeTypeFilters(mimeTypes);
+        fileDialog-&amp;gt;selectMimeTypeFilter(mimeTypes.constFirst());
+    }
+
+    if (fileDialog-&amp;gt;exec() == QDialog::Accepted)
+        fileEdit-&amp;gt;setText(fileDialog-&amp;gt;selectedFiles().constFirst());
+}
+
+void AudioWidget::updateRoom()
+{
+    const float d = roomDimension-&amp;gt;value();
+    room-&amp;gt;setDimensions(QVector3D(d, d, 400));
+    room-&amp;gt;setReflectionGain(float(reflectionGain-&amp;gt;value()) / 100);
+    room-&amp;gt;setReverbGain(float(reverbGain-&amp;gt;value()) / 100);
+}
+
+void AudioWidget::animateChanged()
+{
+    if (animateButton-&amp;gt;isChecked())
+        animation-&amp;gt;start();
+    else
+        animation-&amp;gt;stop();
+}
+
+int main(int argc, char **argv)
+{
+    QApplication app(argc, argv);
+
+    QCoreApplication::setApplicationVersion(qVersion());
+    QGuiApplication::setApplicationDisplayName(AudioWidget::tr(&quot;Spatial Audio test application&quot;));
+
+    QCommandLineParser commandLineParser;
+    commandLineParser.addVersionOption();
+    commandLineParser.addHelpOption();
+    commandLineParser.addPositionalArgument(&quot;Audio File&quot;,
+                                            &quot;Audio File to play&quot;);
+
+    commandLineParser.process(app);
+
+    AudioWidget w;
+    w.show();
+
+    if (!commandLineParser.positionalArguments().isEmpty())
+        w.setFile(commandLineParser.positionalArguments().constFirst());
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>

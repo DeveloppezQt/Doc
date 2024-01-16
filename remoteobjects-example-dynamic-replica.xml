@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Example 2: Direct Connection with a Dynamic Replica</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Describes how the Qt Remote Objects establishes a direct connection with a dynamic replica. <db:anchor xml:id="qtro-example2"/>
+ Initially, a dynamic replica is created as a &quot;bare&quot; <db:link xlink:href="qobject.xml">QObject</db:link> - without properties, signals or slots. Then, during initialization, QtRO returns the API for the object, after the connection to the source is made. Thus, the API is added to the object at runtime.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>There are no changes to be made on the source side, as a dynamic <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> only impacts how the requestor node acquires the replica. So, we use the source-side code shown in <db:link xlink:href="remoteobjects-example-static-source.xml#qtro-example1">Example 1</db:link>.</db:para>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para>Add replica generation to the project.</db:para>
+<db:para>Because the replica is dynamically acquired, no <db:code>.rep</db:code> file is required unlike in <db:link xlink:href="remoteobjects-example-static-source.xml#qtro-example1">Example 1</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para>Create the remote node and connect it to the source host node.</db:para>
+<db:para>The code for this step is unchanged from <db:link xlink:href="remoteobjects-example-static-source.xml#qtro-example1">Example 1</db:link>.</db:para>
+<db:programlisting language="cpp">QRemoteObjectNode repNode; // create remote object node
+repNode.connectToNode(QUrl(QStringLiteral(&quot;local:switch&quot;))); // connect with remote host node
+</db:programlisting>
+</db:listitem>
+<db:listitem>
+<db:para>Acquire a replica of the remote source object.</db:para>
+<db:para>In <db:code>main.cpp</db:code>, we use a <db:link xlink:href="qsharedpointer.xml">QSharedPointer</db:link> to hold a replica of the remote object, and then instantiate a replica requestor object:</db:para>
+<db:programlisting language="cpp">#include &amp;lt;QCoreApplication&amp;gt;
+
+#include &quot;dynamicclient.h&quot;
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication a(argc, argv);
+
+    QSharedPointer&amp;lt;QRemoteObjectDynamicReplica&amp;gt; ptr; // shared pointer to hold replica
+
+    QRemoteObjectNode repNode;
+    repNode.connectToNode(QUrl(QStringLiteral(&quot;local:switch&quot;)));
+
+    ptr.reset(repNode.acquireDynamic(&quot;SimpleSwitch&quot;)); // acquire replica of source from host node
+
+    DynamicClient rswitch(ptr); // create client switch object and pass replica reference to it
+}
+</db:programlisting>
+</db:listitem>
+</db:orderedlist>
+<db:para>The complete declaration and definition of the requestor class, <db:code>DynamicClient</db:code>, is as follows:</db:para>
+<db:para><db:code>dynamicclient.h</db:code></db:para>
+<db:programlisting language="cpp">#ifndef _DYNAMICCLIENT_H
+#define _DYNAMICCLIENT_H
+
+#include &amp;lt;QObject&amp;gt;
+#include &amp;lt;QSharedPointer&amp;gt;
+
+#include &amp;lt;QRemoteObjectNode&amp;gt;
+#include &amp;lt;qremoteobjectdynamicreplica.h&amp;gt;
+
+class DynamicClient : public QObject
+{
+    Q_OBJECT
+public:
+    DynamicClient(QSharedPointer&amp;lt;QRemoteObjectDynamicReplica&amp;gt; ptr);
+    ~DynamicClient();
+
+Q_SIGNALS:
+    void echoSwitchState(bool switchState);// this signal is connected with server_slot(..) slot of source object and echoes back switch state received from source
+
+public Q_SLOTS:
+    void recSwitchState_slot(); // Slot to receive source state
+    void initConnection_slot(); //Slot to connect signals/slot on replica initialization
+
+private:
+    bool clientSwitchState; // holds received server switch state
+    QSharedPointer&amp;lt;QRemoteObjectDynamicReplica&amp;gt; reptr;// holds reference to replica
+ };
+
+#endif
+</db:programlisting>
+<db:para><db:code>dynamicclient.cpp</db:code></db:para>
+<db:programlisting language="cpp">#include &quot;dynamicclient.h&quot;
+
+// constructor
+DynamicClient::DynamicClient(QSharedPointer&amp;lt;QRemoteObjectDynamicReplica&amp;gt; ptr) :
+    QObject(nullptr), reptr(ptr)
+{
+
+    //connect signal for replica valid changed with signal slot initialization
+    QObject::connect(reptr.data(), &amp;amp;QRemoteObjectDynamicReplica::initialized, this,
+                     &amp;amp;DynamicClient::initConnection_slot);
+}
+
+//destructor
+DynamicClient::~DynamicClient()
+{
+}
+
+// Function to initialize connections between slots and signals
+void DynamicClient::initConnection_slot()
+{
+
+    // connect source replica signal currStateChanged() with client's recSwitchState() slot to receive source's current state
+   QObject::connect(reptr.data(), SIGNAL(currStateChanged()), this, SLOT(recSwitchState_slot()));
+   // connect client's echoSwitchState(..) signal with replica's server_slot(..) to echo back received state
+   QObject::connect(this, SIGNAL(echoSwitchState(bool)),reptr.data(), SLOT(server_slot(bool)));
+}
+
+void DynamicClient::recSwitchState_slot()
+{
+   clientSwitchState = reptr-&amp;gt;property(&quot;currState&quot;).toBool(); // use replica property to get currState from source
+   qDebug() &amp;lt;&amp;lt; &quot;Received source state &quot; &amp;lt;&amp;lt; clientSwitchState;
+   Q_EMIT echoSwitchState(clientSwitchState); // Emit signal to echo received state back to server
+}
+</db:programlisting>
+<db:para>When run together with the source-side example, the output is identical to <db:link xlink:href="remoteobjects-example-static-source.xml#qtro-example1">Example 1</db:link>.</db:para>
+</db:article>

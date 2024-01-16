@@ -1,0 +1,299 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Example 1: Direct Connection using a Static Source</db:title>
+<db:productname>QtRemoteObjects</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Remote Objects Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Describes how the Qt Remote Objects establishes a direct connection using a static source. <db:anchor xml:id="qtro-example1"/>
+ In this example, the source object is a simple binary switch that toggles its state based on a timer. When the state changes, a signal is emitted by the source which QtRO propagates to all replicas. Since the replicas have the same properties, signals, and slots as were exposed from the source, any slots connected to the replica's signal will be called when the replica receives that signal. The client process then echoes back the received switch state to the source by emitting its own signal which is connected to a slot on the replica.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para><db:emphasis role="bold">Create a source object</db:emphasis></db:para>
+<db:para>To create this <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> object, first we create the definition file, <db:code>simpleswitch.rep</db:code>. This file describes the properties and methods for the object and is input to the Qt Remote Objects Compiler <db:link xlink:href="qtremoteobjects-repc.xml">repc</db:link>. This file only defines interfaces that are necessary to expose to the <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replicas</db:link>.</db:para>
+<db:para><db:code>simpleswitch.rep</db:code></db:para>
+<db:programlisting language="cpp">class SimpleSwitch
+{
+    PROP(bool currState=false);
+    SLOT(server_slot(bool clientState));
+};
+</db:programlisting>
+<db:para>In <db:code>simpleswitch.rep</db:code>,</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>currState</db:code> holds the current state of the switch.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>server_slot()</db:code> allows us to interact with the source - it will be connected to the <db:code>echoSwitchState(bool newstate)</db:code> signal.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>For repc to process this file, add the following line to your <db:code>cmake</db:code> file:</db:para>
+<db:programlisting language="cpp">qt6_add_repc_sources(directconnectserver
+    simpleswitch.rep
+)
+</db:programlisting>
+<db:para>If you're using <db:code>qmake</db:code>:</db:para>
+<db:programlisting language="cpp">REPC_SOURCE = simpleswitch.rep
+</db:programlisting>
+<db:para>These instructions are only relevant for the Qt Remote Object module, so you need to add it to your project as well. If you're using CMake, add:</db:para>
+<db:programlisting language="cpp">find_package(Qt6 REQUIRED COMPONENTS RemoteObjects)
+target_link_libraries(directconnectserver PRIVATE Qt6::RemoteObjects)
+</db:programlisting>
+<db:para>If you're using <db:code>qmake</db:code>:</db:para>
+<db:programlisting language="cpp">QT       += remoteobjects
+</db:programlisting>
+<db:para>repc creates the <db:code>rep_SimpleSwitch_source.h</db:code> header in the build directory that you specify. For more information, see <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link>.</db:para>
+<db:para>repc creates three helper classes for use with QtRO. For this example, we use the basic: <db:code>SimpleSwitchSimpleSource</db:code>. It's an abstract class, defined in <db:code>rep_SimpleSwitch_source.h</db:code>. We derive from it to define our SimpleSwitch implementation class as shown below:</db:para>
+<db:para><db:code>simpleswitch.h</db:code></db:para>
+<db:programlisting language="cpp">#ifndef SIMPLESWITCH_H
+#define SIMPLESWITCH_H
+
+#include &quot;rep_simpleswitch_source.h&quot;
+
+class SimpleSwitch : public SimpleSwitchSimpleSource
+{
+    Q_OBJECT
+public:
+    SimpleSwitch(QObject *parent = nullptr);
+    ~SimpleSwitch();
+    virtual void server_slot(bool clientState);
+public Q_SLOTS:
+    void timeout_slot();
+private:
+    QTimer *stateChangeTimer;
+};
+
+#endif
+</db:programlisting>
+<db:para>In <db:code>simpleswitch.h</db:code>,</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>stateChangeTimer</db:code> is a <db:link xlink:href="qtimer.xml">QTimer</db:link> that is used to toggle the state of our SimpleSwitch.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>timeout_slot()</db:code> is connected to <db:code>stateChangeTimer</db:code>'s timeout() signal.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>server_slot()</db:code> – which is called automatically on the source whenever any replica calls their version of the slot – outputs the received value.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>currStateChanged(bool)</db:code>, defined in the <db:link xlink:href="qtremoteobjects-repc.xml">repc</db:link>-generated <db:code>rep_SimpleSwitch_source.h</db:code>, is emitted whenever <db:code>currState</db:code> toggles. In this example, we ignore the signal on the source side, and handle it later on the replica side.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The definition of our <db:code>SwitchState</db:code> class is shown below:</db:para>
+<db:para><db:code>simpleswitch.cpp</db:code></db:para>
+<db:programlisting language="cpp">#include &quot;simpleswitch.h&quot;
+
+// constructor
+SimpleSwitch::SimpleSwitch(QObject *parent) : SimpleSwitchSimpleSource(parent)
+{
+    stateChangeTimer = new QTimer(this); // Initialize timer
+    QObject::connect(stateChangeTimer, &amp;amp;SimpleSwitch::timeout, this, &amp;amp;SimpleSwitch::timeout_slot); // connect timeout() signal from stateChangeTimer to timeout_slot() of simpleSwitch
+    stateChangeTimer-&amp;gt;start(2000); // Start timer and set timout to 2 seconds
+    qDebug() &amp;lt;&amp;lt; &quot;Source Node Started&quot;;
+}
+
+//destructor
+SimpleSwitch::~SimpleSwitch()
+{
+    stateChangeTimer-&amp;gt;stop();
+}
+
+void SimpleSwitch::server_slot(bool clientState)
+{
+    qDebug() &amp;lt;&amp;lt; &quot;Replica state is &quot; &amp;lt;&amp;lt; clientState; // print switch state echoed back by client
+}
+
+void SimpleSwitch::timeout_slot()
+{
+    // slot called on timer timeout
+    if (currState()) // check if current state is true, currState() is defined in repc generated rep_simpleswitch_source.h
+        setCurrState(false); // set state to false
+    else
+        setCurrState(true); // set state to true
+    qDebug() &amp;lt;&amp;lt; &quot;Source State is &quot;&amp;lt;&amp;lt;currState();
+
+}
+</db:programlisting>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis role="bold">Create a registry</db:emphasis></db:para>
+<db:para>Because this example uses a direct connection between nodes, we can omit this step.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis role="bold">Create a host node</db:emphasis></db:para>
+<db:para>The host node is created as shown below:</db:para>
+<db:programlisting language="cpp">QRemoteObjectHost srcNode(QUrl(QStringLiteral(&quot;local:switch&quot;)));
+</db:programlisting>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis role="bold">Host source object and remoting</db:emphasis></db:para>
+<db:para>The following statements instantiate the <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> object and pass it on to the host to enable &quot;remoting&quot;, which is the process of making an object visible to the QtRO network:</db:para>
+<db:programlisting language="cpp">SimpleSwitch srcSwitch; // create simple switch
+srcNode.enableRemoting(&amp;amp;srcSwitch); // enable remoting
+</db:programlisting>
+<db:para>The contents of <db:code>main.cpp</db:code> file that implements the steps described above are as follows:</db:para>
+<db:para><db:code>main.cpp</db:code></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QCoreApplication&amp;gt;
+#include &quot;simpleswitch.h&quot;
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication a(argc, argv);
+
+    SimpleSwitch srcSwitch; // create simple switch
+
+    QRemoteObjectHost srcNode(QUrl(QStringLiteral(&quot;local:switch&quot;))); // create host node without Registry
+    srcNode.enableRemoting(&amp;amp;srcSwitch); // enable remoting/sharing
+
+    return a.exec();
+}
+</db:programlisting>
+<db:para>Compile and run this source-side project. The output, without any replicas created, should look as shown below with the switch state toggling between <db:code>true</db:code> and <db:code>false</db:code> every two seconds.</db:para>
+<db:mediaobject>
+<db:alt>&quot;Example 1: Server Output&quot;</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/DirectConnectServerOutput.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:listitem>
+</db:orderedlist>
+<db:para>The subsequent steps are for creating the replica side of the network, which in this example gets the state of switch from the <db:link xlink:href="qtremoteobjects-source.xml#source">Source</db:link> and echoes it back.</db:para>
+<db:section xml:id="replica-code">
+<db:title>Replica Code</db:title>
+<db:orderedlist numeration="arabic">
+<db:listitem>
+<db:para><db:emphasis role="bold">Use repc to add a replica to your project</db:emphasis></db:para>
+<db:para>We use the same API definition file as we did on the source side, <db:code>SimpleSwitch.rep</db:code>, to create a <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link> header file using the <db:link xlink:href="qtremoteobjects-repc.xml">repc</db:link>. If you're using <db:code>cmake</db:code>, include the following line in your client side <db:code>cmake</db:code> file, specifying a <db:code>.rep</db:code> file input:</db:para>
+<db:programlisting language="cpp">qt6_add_repc_replicas(directconnectclient
+    simpleswitch.rep
+)
+</db:programlisting>
+<db:para>If you're using <db:code>qmake</db:code>, add the following line to your client side <db:code>.pro</db:code> file:</db:para>
+<db:programlisting language="cpp">REPC_REPLICA = simpleswitch.rep
+</db:programlisting>
+<db:para>The <db:link xlink:href="qtremoteobjects-repc.xml">repc</db:link> tool generates a <db:code>rep_SimpleSwitch_replica.h</db:code> file in the build directory. For more information, see <db:link xlink:href="qtremoteobjects-replica.xml#replica">Replica</db:link>.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis role="bold">Create a node to connect with the source's host node</db:emphasis></db:para>
+<db:para>The following code instantiates the second node on the network and connects it with the source host node:</db:para>
+<db:programlisting language="cpp">QRemoteObjectNode repNode; // create remote object node
+repNode.connectToNode(QUrl(QStringLiteral(&quot;local:switch&quot;))); // connect with remote host node
+</db:programlisting>
+</db:listitem>
+<db:listitem>
+<db:para><db:emphasis role="bold">Call the node's <db:link xlink:href="qremoteobjectnode.xml#acquire">acquire</db:link>() to create a pointer to a replica</db:emphasis></db:para>
+<db:para>First, we instantiate a replica:</db:para>
+<db:programlisting language="cpp">QSharedPointer&amp;lt;SimpleSwitchReplica&amp;gt; ptr;
+ptr.reset(repNode.acquire&amp;lt;SimpleSwitchReplica&amp;gt;()); // acquire replica of source from host node
+</db:programlisting>
+<db:note>
+<db:para><db:link xlink:href="qremoteobjectnode.xml#acquire">acquire</db:link>() returns a pointer to the replica, but doesn't manage its lifetime. This example shows the recommended process of wrapping the returned pointer in a <db:link xlink:href="qsharedpointer.xml">QSharedPointer</db:link> or <db:link xlink:href="qscopedpointer.xml">QScopedPointer</db:link> to ensure that the pointer is always deleted properly.</db:para>
+</db:note>
+<db:para><db:code>main.cpp</db:code> implements the steps described above and instantiates our object:</db:para>
+<db:para><db:code>main.cpp</db:code></db:para>
+<db:programlisting language="cpp">#include &amp;lt;QCoreApplication&amp;gt;
+#include &quot;client.h&quot;
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication a(argc, argv);
+
+    QSharedPointer&amp;lt;SimpleSwitchReplica&amp;gt; ptr; // shared pointer to hold source replica
+
+    QRemoteObjectNode repNode; // create remote object node
+    repNode.connectToNode(QUrl(QStringLiteral(&quot;local:switch&quot;))); // connect with remote host node
+
+    ptr.reset(repNode.acquire&amp;lt;SimpleSwitchReplica&amp;gt;()); // acquire replica of source from host node
+
+    Client rswitch(ptr); // create client switch object and pass reference of replica to it
+
+    return a.exec();
+}
+</db:programlisting>
+<db:para>The complete declaration and definition for the <db:code>Client</db:code> class is as follows:</db:para>
+<db:para><db:code>client.h</db:code></db:para>
+<db:programlisting language="cpp">#ifndef _CLIENT_H
+#define _CLIENT_H
+
+#include &amp;lt;QObject&amp;gt;
+#include &amp;lt;QSharedPointer&amp;gt;
+
+#include &quot;rep_simpleswitch_replica.h&quot;
+
+class Client : public QObject
+{
+    Q_OBJECT
+public:
+    Client(QSharedPointer&amp;lt;SimpleSwitchReplica&amp;gt; ptr);
+    ~Client();
+    void initConnections();// Function to connect signals and slots of source and client
+
+Q_SIGNALS:
+    void echoSwitchState(bool switchState);// this signal is connected with server_slot(..) on the source object and echoes back switch state received from source
+
+public Q_SLOTS:
+    void recSwitchState_slot(); // slot to receive source state
+private:
+    bool clientSwitchState; // holds received server switch state
+    QSharedPointer&amp;lt;SimpleSwitchReplica&amp;gt; reptr;// holds reference to replica
+
+ };
+
+#endif
+</db:programlisting>
+<db:para><db:code>client.cpp</db:code></db:para>
+<db:programlisting language="cpp">#include &quot;client.h&quot;
+
+// constructor
+Client::Client(QSharedPointer&amp;lt;SimpleSwitchReplica&amp;gt; ptr) :
+    QObject(nullptr),reptr(ptr)
+{
+    initConnections();
+    //We can connect to SimpleSwitchReplica Signals/Slots
+    //directly because our Replica was generated by repc.
+}
+
+//destructor
+Client::~Client()
+{
+}
+
+void Client::initConnections()
+{
+    // initialize connections between signals and slots
+
+    // connect source replica signal currStateChanged() with client's recSwitchState() slot to receive source's current state
+    QObject::connect(reptr.data(), &amp;amp;SimpleSwitchReplica::currStateChanged, this, &amp;amp;Client::recSwitchState_slot);
+    // connect client's echoSwitchState(..) signal with replica's server_slot(..) to echo back received state
+    QObject::connect(this, &amp;amp;Client::echoSwitchState, reptr.data(), &amp;amp;SimpleSwitchReplica::server_slot);
+}
+
+void Client::recSwitchState_slot(bool value)
+{
+    qDebug() &amp;lt;&amp;lt; &quot;Received source state &quot;&amp;lt;&amp;lt; value &amp;lt;&amp;lt; reptr.data()-&amp;gt;currState();
+    clientSwitchState = reptr.data()-&amp;gt;currState();
+    Q_EMIT echoSwitchState(clientSwitchState); // Emit signal to echo received state back to server
+}
+</db:programlisting>
+<db:para>Compiling and running this example together with the source-side example generates the following output:</db:para>
+<db:mediaobject>
+<db:alt>&quot;Direct Connect Server Client Communication output&quot;</db:alt>
+<db:imageobject>
+<db:imagedata fileref="images/DirectConnectClientServerOutput.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:listitem>
+</db:orderedlist>
+</db:section>
+</db:article>

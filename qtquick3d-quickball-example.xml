@@ -1,0 +1,526 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Quick Ball Example</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates how to create a simple game using Quick3D.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/quickball-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>This example demonstrates how to combine Qt Quick and Qt Quick 3D to create a simple 3D game. The goal of the game is to hit target boxes by throwing a ball. Points are given based on how fast and with how few balls all targets are down. Aim well but be quick!</db:para>
+<db:para>The source code is in a single QML file to emphasize how compact this example is, considering it being a fully playable game. Let's start by looking at the main properties. These are quite self-explanatory, and you can easily adjust them to see how they affect the game.</db:para>
+<db:programlisting language="qml">// Scaling helpper
+readonly property real px: 0.2 + Math.min(width, height) / 800
+// This is false until the first game has started
+property bool playingStarted: false
+// This is true whenever game is on
+property bool gameOn: false
+// Sizes of our 3D models
+readonly property real ballSize: 40
+readonly property real targetSize: 120
+// Playing time in seconds
+readonly property real gameTime: 60
+property real currentTime: 0
+// Amount of balls per game
+readonly property int gameBalls: 20
+property int currentBalls: 0
+// Scores
+property int score: 0
+property int timeBonus: 0
+property int ballsBonus: 0
+</db:programlisting>
+<db:para>The game logic is implemented with JavaScript. <db:link xlink:href="qml-qtquick3d-view3d.xml">View3D</db:link> contains a function to start the game, which (re)initializes all required variables and creates the level targets. It also contains a function to calculate the final points when the game ends.</db:para>
+<db:programlisting language="qml">function createLevel1() {
+    // Simple level of target items
+    var level1 = [{ &quot;x&quot;: 0, &quot;y&quot;: 100, &quot;z&quot;: -100, &quot;points&quot;: 10 },
+                  { &quot;x&quot;: -300, &quot;y&quot;: 100, &quot;z&quot;: -400, &quot;points&quot;: 10 },
+                  { &quot;x&quot;: 300, &quot;y&quot;: 100, &quot;z&quot;: -400, &quot;points&quot;: 10 },
+                  { &quot;x&quot;: -200, &quot;y&quot;: 400, &quot;z&quot;: -600, &quot;points&quot;: 20 },
+                  { &quot;x&quot;: 0, &quot;y&quot;: 400, &quot;z&quot;: -600, &quot;points&quot;: 20 },
+                  { &quot;x&quot;: 200, &quot;y&quot;: 400, &quot;z&quot;: -600, &quot;points&quot;: 20 },
+                  { &quot;x&quot;: 0, &quot;y&quot;: 700, &quot;z&quot;: -600, &quot;points&quot;: 30 }];
+    targetsNode.addTargets(level1);
+}
+
+function startGame() {
+    ballModel.resetBall();
+    targetsNode.resetTargets();
+    createLevel1();
+    score = timeBonus = ballsBonus = 0;
+    currentBalls = gameBalls;
+    gameOn = true;
+    playingStarted = true;
+}
+
+function endGame() {
+    if (targetsNode.currentTargets == 0) {
+        // If we managed to get all targets down -&amp;gt; bonus points!
+        timeBonus = currentTime;
+        ballsBonus = currentBalls * 10;
+    }
+    gameOn = false;
+}
+</db:programlisting>
+<db:para>The view also contains a <db:link xlink:href="qml-qtquick3d-pointlight.xml">PointLight</db:link> node to light up the scene. It is positioned above the objects and set to cast shadows. Note how brightness is used to darken the playing area when then game has ended. The <db:link xlink:href="qml-qtquick3d-light.xml#ambientColor-prop">ambientColor</db:link> property is used to soften the light contrast, as without it the bottom parts of the objects would be very dark.</db:para>
+<db:programlisting language="qml">PointLight {
+    x: 400
+    y: 1200
+    castsShadow: true
+    shadowMapQuality: Light.ShadowMapQualityHigh
+    shadowFactor: 50
+    quadraticFade: 2
+    ambientColor: &quot;#202020&quot;
+    brightness: gameOn ? 200 : 40
+    Behavior on brightness {
+        NumberAnimation {
+            duration: 1000
+            easing.type: Easing.InOutQuad
+        }
+    }
+}
+</db:programlisting>
+<db:para>Throwing the ball uses Qt Quick <db:link xlink:href="qml-qtquick-mousearea.xml">MouseArea</db:link> item, which is only enabled when game is on, and the ball isn't already moving.</db:para>
+<db:programlisting language="qml">MouseArea {
+    anchors.fill: parent
+    enabled: gameOn &amp;amp;&amp;amp; !ballModel.ballMoving
+    onPressed: {
+        ballModel.moveBall(mouseX, mouseY);
+    }
+    onPositionChanged: {
+        ballModel.moveBall(mouseX, mouseY);
+    }
+    onReleased: {
+        ballModel.throwBall();
+    }
+}
+</db:programlisting>
+<db:para>Then we get into actual 3D models. Ball model is the biggest one, as it contains the logic how the ball behaves, its animations, and hit detection. Let's look into the ball properties first. Ball uses a built-in sphere model, scaled based on <db:code>ballSize</db:code>. We use <db:link xlink:href="qml-qtquick3d-defaultmaterial.xml">DefaultMaterial</db:link> with a <db:link xlink:href="qml-qtquick3d-defaultmaterial.xml#diffuseMap-prop">diffuseMap</db:link> and a <db:link xlink:href="qml-qtquick3d-defaultmaterial.xml#normalMap-prop">normalMap</db:link> to create tennis ball appearance.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/quickball-ball.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:programlisting language="qml">Model {
+    id: ballModel
+    property real directionX: 0
+    property real directionY: 0
+    // How many ms the ball flies
+    readonly property real speed: 2000
+    readonly property real ballScale: ballSize / 100
+    property var moves: []
+    readonly property int maxMoves: 5
+    readonly property bool ballMoving: ballAnimation.running
+
+    source: &quot;#Sphere&quot;
+    scale: Qt.vector3d(ballScale, ballScale, ballScale)
+
+    materials: DefaultMaterial {
+        diffuseMap: Texture {
+            source: &quot;images/ball.jpg&quot;
+        }
+        normalMap: Texture {
+            source: &quot;images/ball_n.jpg&quot;
+        }
+        bumpAmount: 1.0
+    }
+</db:programlisting>
+<db:para>When mouse is moved or touch-screen is swiped, last <db:code>maxMoves</db:code> positions before releasing the ball are stored into <db:code>moves</db:code> array. When user releases the ball, <db:code>throwBall()</db:code> gets called, which calculates the ball direction from these latest positions, and starts animating it.</db:para>
+<db:programlisting language="qml">function resetBall() {
+    moves = [];
+    x = 0;
+    y = ballSize/2;
+    z = 400;
+}
+
+function moveBall(posX, posY) {
+    var pos = view3D.mapTo3DScene(Qt.vector3d(posX, posY, ballModel.z + ballSize));
+    pos.y = Math.max(ballSize / 2, pos.y);
+    var point = {&quot;x&quot;: pos.x, &quot;y&quot;: pos.y };
+    moves.push(point);
+    if (moves.length &amp;gt; maxMoves) moves.shift();
+    // Apply position into ball model
+    ballModel.x = pos.x;
+    ballModel.y = pos.y;
+}
+
+function throwBall() {
+    currentBalls--;
+    var moveX = 0;
+    var moveY = 0;
+    if (moves.length &amp;gt;= 2) {
+        var first = moves.shift();
+        var last = moves.pop();
+        moveX = last.x - first.x;
+        moveY = last.y - first.y;
+        if (moveY &amp;lt; 0) moveY = 0;
+    }
+    directionX = moveX * 20;
+    directionY = moveY * 4;
+    ballAnimation.start();
+}
+</db:programlisting>
+<db:para>The ball position is animated separately among different axis. These animations use previously assigned <db:code>directionX</db:code> and <db:code>directionY</db:code> to define where the ball moves to, as well as <db:code>speed</db:code> for the ball flying time. Vertical position has two sequential animations, so we can use easing for ball bounce. When position animations finish, we'll check if there are still balls left or should the game end. Finally we animate also rotation of the ball, so user can throw curve balls.</db:para>
+<db:programlisting language="qml">ParallelAnimation {
+    id: ballAnimation
+    running: false
+    // Move forward
+    NumberAnimation {
+        target: ballModel
+        property: &quot;z&quot;
+        duration: ballModel.speed
+        to: -ballModel.directionY * 5
+        easing.type: Easing.OutQuad
+    }
+    // Move up &amp;amp; down with a bounce
+    SequentialAnimation {
+        NumberAnimation {
+            target: ballModel
+            property: &quot;y&quot;
+            duration: ballModel.speed * (1 / 3)
+            to: ballModel.y + ballModel.directionY
+            easing.type: Easing.OutQuad
+        }
+        NumberAnimation {
+            target: ballModel
+            property: &quot;y&quot;
+            duration: ballModel.speed * (2 / 3)
+            to: ballSize / 4
+            easing.type: Easing.OutBounce
+        }
+    }
+    // Move sideways
+    NumberAnimation {
+        target: ballModel
+        property: &quot;x&quot;
+        duration: ballModel.speed
+        to: ballModel.x + ballModel.directionX
+    }
+
+    onFinished: {
+        if (currentBalls &amp;lt;= 0)
+            view3D.endGame();
+        ballModel.resetBall();
+    }
+}
+
+NumberAnimation on eulerRotation.z {
+    running: ballModel.ballMoving
+    loops: Animation.Infinite
+    from: ballModel.directionX &amp;lt; 0 ? 0 : 720
+    to: 360
+    duration: 10000 / (2 + Math.abs(ballModel.directionX * 0.05))
+}
+</db:programlisting>
+<db:para>Important part of the game playing is detecting when the ball hits the targets. Whenever ball z position changes, we loop through <db:code>targets</db:code> array and detect if ball is touching any of them using <db:code>fuzzyEquals()</db:code>. Whenever we detect a hit, we'll call target <db:code>hit()</db:code> function and check if all targets are down.</db:para>
+<db:programlisting language="qml">onZChanged: {
+    // Loop through target items and detect collisions
+    var hitMargin = ballSize / 2 + targetSize / 2;
+    for (var i = 0; i &amp;lt; targetsNode.targets.length; ++i) {
+        var target = targetsNode.targets[i];
+        var targetPos = target.scenePosition;
+        var hit = ballModel.scenePosition.fuzzyEquals(targetPos, hitMargin);
+        if (hit) {
+            target.hit();
+            if (targetsNode.currentTargets &amp;lt;= 0)
+                view3D.endGame();
+        }
+    }
+}
+</db:programlisting>
+<db:para>Then we can switch to targets. Those are dynamically generated into a grouping node which contains helper functions and allows e.g. animating all targets as a group. Note that <db:code>currentTargets</db:code> property is needed because in QML arrays changes are not triggering bindings, so we will update the amount of targets manually.</db:para>
+<db:programlisting language="qml">Node {
+    id: targetsNode
+
+    property var targets: []
+    property int currentTargets: 0
+
+    function addTargets(items) {
+        items.forEach(function (item) {
+            let instance = targetComponent.createObject(
+                    targetsNode, { &quot;x&quot;: item.x, &quot;startPosY&quot;: item.y, &quot;z&quot;: item.z, &quot;points&quot;: item.points});
+            targets.push(instance);
+        });
+        currentTargets = targets.length;
+    }
+
+    function removeTarget(item) {
+        var index = targets.indexOf(item);
+        targets.splice(index, 1);
+        currentTargets = targets.length;
+    }
+
+    function resetTargets() {
+        while (targets.length &amp;gt; 0)
+            targets.pop().destroy();
+        currentTargets = targets.length;
+    }
+}
+</db:programlisting>
+<db:para>Targets are nodes with a cube model and a text element for showing points. Similarly to the ball model, we use <db:link xlink:href="qml-qtquick3d-defaultmaterial.xml#diffuseMap-prop">diffuseMap</db:link> and <db:link xlink:href="qml-qtquick3d-defaultmaterial.xml#normalMap-prop">normalMap</db:link> textures to create cubes with a Qt logo. When the hit is detected, we sequentially animate the cube away and show the points gained from this target. Once the animation is finished, we will dynamically remove the target node.</db:para>
+<db:programlisting language="qml">Component {
+    id: targetComponent
+    Node {
+        id: targetNode
+
+        property int points: 0
+        property real hide: 0
+        property real startPosY: 0
+        property real posY: 0
+        property real pointsOpacity: 0
+
+        function hit() {
+            targetsNode.removeTarget(this);
+            score += points;
+            hitAnimation.start();
+            var burstPos = targetNode.mapPositionToScene(Qt.vector3d(0, 0, 0));
+            hitParticleEmitter.burst(100, 200, burstPos);
+        }
+
+        y: startPosY + posY
+        SequentialAnimation on posY {
+            running: gameOn &amp;amp;&amp;amp; !hitAnimation.running
+            loops: Animation.Infinite
+            NumberAnimation {
+                from: 0
+                to: 150
+                duration: 3000
+                easing.type: Easing.InOutQuad
+            }
+            NumberAnimation {
+                to: 0
+                duration: 1500
+                easing.type: Easing.InOutQuad
+            }
+        }
+
+        SequentialAnimation {
+            id: hitAnimation
+            NumberAnimation {
+                target: targetNode
+                property: &quot;hide&quot;
+                to: 1
+                duration: 800
+                easing.type: Easing.InOutQuad
+            }
+            NumberAnimation {
+                target: targetNode
+                property: &quot;pointsOpacity&quot;
+                to: 1
+                duration: 1000
+                easing.type: Easing.InOutQuad
+            }
+            NumberAnimation {
+                target: targetNode
+                property: &quot;pointsOpacity&quot;
+                to: 0
+                duration: 200
+                easing.type: Easing.InOutQuad
+            }
+            ScriptAction {
+                script: targetNode.destroy();
+            }
+        }
+
+        Model {
+            id: targetModel
+
+            readonly property real targetScale: (1 + hide) * (targetSize / 100)
+
+            source: &quot;#Cube&quot;
+            scale: Qt.vector3d(targetScale, targetScale, targetScale)
+            opacity: 0.99 - hide * 2
+            materials: DefaultMaterial {
+                diffuseMap: Texture {
+                    source: &quot;images/qt_logo.jpg&quot;
+                }
+                normalMap: Texture {
+                    source: &quot;images/qt_logo_n.jpg&quot;
+                }
+                bumpAmount: 1.0
+            }
+            Vector3dAnimation on eulerRotation {
+                loops: Animation.Infinite
+                duration: 5000
+                from: Qt.vector3d(0, 0, 0)
+                to: Qt.vector3d(360, 360, 360)
+            }
+        }
+        Text {
+            anchors.centerIn: parent
+            scale: 1 + pointsOpacity
+            opacity: pointsOpacity
+            text: targetNode.points
+            font.pixelSize: 60 * px
+            color: &quot;#808000&quot;
+            style: Text.Outline
+            styleColor: &quot;#f0f000&quot;
+        }
+    }
+}
+</db:programlisting>
+<db:para>We also need some models for the playing area. Ground model is a rectangle with grass textures scaled to fill a larger area.</db:para>
+<db:programlisting language="qml">Model {
+    source: &quot;#Rectangle&quot;
+    scale: Qt.vector3d(50, 50, 1)
+    eulerRotation.x: -90
+    materials: DefaultMaterial {
+        diffuseMap: Texture {
+            source: &quot;images/grass.jpg&quot;
+            tilingModeHorizontal: Texture.Repeat
+            tilingModeVertical: Texture.Repeat
+            scaleU: 25.0
+            scaleV: 25.0
+        }
+        normalMap: Texture {
+            source: &quot;images/grass_n.jpg&quot;
+        }
+        bumpAmount: 0.6
+    }
+}
+</db:programlisting>
+<db:para>Sky model is further back, and we don't want shadows cast into the sky, so we set <db:link xlink:href="qml-qtquick3d-model.xml#receivesShadows-prop">receivesShadows</db:link> to false. For the sky we also add some stars using <db:link xlink:href="qtquick-particles-qmlmodule.xml">Qt Quick Particles</db:link> module. Similarly to other 2D Qt Quick elements, also particles can be directly added inside 3D nodes.</db:para>
+<db:programlisting language="qml">Model {
+    id: sky
+    property real scaleX: 100
+    property real scaleY: 20
+    source: &quot;#Rectangle&quot;
+    scale: Qt.vector3d(sky.scaleX, sky.scaleY, 1)
+    position: Qt.vector3d(0, 960, -2000)
+    // We don't want shadows casted into sky
+    receivesShadows: false
+    materials: DefaultMaterial {
+        diffuseMap: Texture {
+            source: &quot;images/sky.jpg&quot;
+        }
+    }
+    // Star particles
+    Node {
+        z: 500
+        y: 30
+        // Stars are far away, scale up to half the resolution
+        scale: Qt.vector3d(2 / sky.scaleX, 2 / sky.scaleY, 1)
+        ParticleSystem {
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.top: parent.top
+            width: 3000
+            height: 400
+            ImageParticle {
+                source: &quot;qrc:///particleresources/star.png&quot;
+                rotationVariation: 360
+                color: &quot;#ffffa0&quot;
+                colorVariation: 0.1
+            }
+            Emitter {
+                anchors.fill: parent
+                emitRate: 4
+                lifeSpan: 6000
+                lifeSpanVariation: 4000
+                size: 30
+                sizeVariation: 20
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>When we combine the above ground and sky models we get a 3D world like this:</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/quickball-world.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>Finally we add some sparkles for the targets, this time using the <db:link xlink:href="qtquick3d-particles3d-qmlmodule.xml">QtQuick3D.Particles3D</db:link> module. <db:link xlink:href="qml-qtquick3d-particles3d-particlesystem3d.xml">ParticleSystem3D</db:link> contains a <db:link xlink:href="qml-qtquick3d-particles3d-spriteparticle3d.xml">SpriteParticle3D</db:link> and we allocate <db:code>200</db:code> or them, which is enough for two simultaneous <db:code>100</db:code> particle bursts. <db:link xlink:href="qml-qtquick3d-particles3d-particleemitter3d.xml">ParticleEmitter3D</db:link> defines the emitting properties for the particles like scale, rotation, velocity and lifeSpan. We also add <db:link xlink:href="qml-qtquick3d-particles3d-gravity3d.xml">Gravity3D</db:link> affector to drag the particles down with a suitable magnitude.</db:para>
+<db:programlisting language="qml">ParticleSystem3D {
+    id: psystem
+    SpriteParticle3D {
+        id: sprite
+        sprite: Texture {
+            source: &quot;images/particle.png&quot;
+        }
+        color: Qt.rgba(1.0, 1.0, 0.0, 1.0)
+        colorVariation: Qt.vector4d(0.4, 0.6, 0.0, 0.0)
+        unifiedColorVariation: true
+        maxAmount: 200
+    }
+    ParticleEmitter3D {
+        id: hitParticleEmitter
+        particle: sprite
+        particleScale: 4.0
+        particleScaleVariation: 2.0
+        particleRotationVariation: Qt.vector3d(0, 0, 180)
+        particleRotationVelocityVariation: Qt.vector3d(0, 0, 250)
+        velocity: VectorDirection3D {
+            direction: Qt.vector3d(0, 300, 0)
+            directionVariation: Qt.vector3d(200, 150, 100)
+        }
+        lifeSpan: 800
+        lifeSpanVariation: 200
+        depthBias: 100
+    }
+    Gravity3D {
+        magnitude: 600
+    }
+}
+</db:programlisting>
+<db:para>This ends the 3D parts of our game. There are still some 2D Qt Quick elements to show the time, scores, start button etc. which are important for the game, but not relevant for this Quick 3D documentation.</db:para>
+<db:para>Now the ball is on your side (pun intended). Feel free to extend the game in different ways and generate new wacky levels!</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Files:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/CMakeLists.txt">quickball/CMakeLists.txt</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/main.cpp">quickball/main.cpp</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/main.qml">quickball/main.qml</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/qml.qrc">quickball/qml.qrc</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/quickball.pro">quickball/quickball.pro</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section>
+<db:title>List of Files</db:title>
+<db:para>Images:</db:para>
+<db:section>
+<db:title>List of Files</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/ball.jpg">quickball/images/ball.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/ball_icon.png">quickball/images/ball_icon.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/ball_n.jpg">quickball/images/ball_n.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/grass.jpg">quickball/images/grass.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/grass_n.jpg">quickball/images/grass_n.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/particle.png">quickball/images/particle.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/qt_logo.jpg">quickball/images/qt_logo.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/qt_logo_n.jpg">quickball/images/qt_logo_n.jpg</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/quickball.png">quickball/images/quickball.png</db:link></db:para></db:listitem>
+<db:listitem>
+<db:para><db:link xlink:href="quickball/images/sky.jpg">quickball/images/sky.jpg</db:link></db:para></db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section></db:section></db:article>

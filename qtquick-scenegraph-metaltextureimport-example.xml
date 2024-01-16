@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Scene Graph - Metal Texture Import</db:title>
+<db:productname>QtQuick</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Quick Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Shows how to use a texture created directly with Metal.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/metaltextureimport-example.jpg"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The Metal Texture Import example shows how an application can import and use a <db:link xlink:href="https://developer.apple.com/documentation/metal/mtltexture">MTLTexture</db:link> in the Qt Quick scene. This provides an alternative to the <db:link xlink:href="qtquick-scenegraph-metalunderqml-example.xml">underlay</db:link> or overlay approaches when it comes to integrating native Metal rendering. In many cases going through a texture, and therefore &quot;flattening&quot; the 3D contents first, is the best option to integrate and mix custom 3D contents with the 2D UI elements provided by Qt Quick.</db:para>
+<db:programlisting language="qml">import MetalTextureImport
+CustomTextureItem {
+    id: renderer
+    anchors.fill: parent
+    anchors.margins: 10
+
+    SequentialAnimation on t {
+        NumberAnimation { to: 1; duration: 2500; easing.type: Easing.InQuad }
+        NumberAnimation { to: 0; duration: 2500; easing.type: Easing.OutQuad }
+        loops: Animation.Infinite
+        running: true
+    }
+</db:programlisting>
+<db:para>The application exposes a custom <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> subclass under ther name of CustomTextureItem. This is instantiated in QML. The value of the <db:code>t</db:code> property is animated as well.</db:para>
+<db:programlisting language="cpp">class CustomTextureItem : public QQuickItem
+{
+    Q_OBJECT
+    Q_PROPERTY(qreal t READ t WRITE setT NOTIFY tChanged)
+    QML_ELEMENT
+
+public:
+    CustomTextureItem();
+
+    qreal t() const { return m_t; }
+    void setT(qreal t);
+
+signals:
+    void tChanged();
+
+protected:
+    QSGNode *updatePaintNode(QSGNode *, UpdatePaintNodeData *) override;
+    void geometryChange(const QRectF &amp;amp;newGeometry, const QRectF &amp;amp;oldGeometry) override;
+
+private slots:
+    void invalidateSceneGraph();
+
+private:
+    void releaseResources() override;
+
+    CustomTextureNode *m_node = nullptr;
+    qreal m_t = 0;
+};
+</db:programlisting>
+<db:para>The implementation of our custom item involves overriding <db:link xlink:href="qquickitem.xml#updatePaintNode">QQuickItem::updatePaintNode</db:link>(), as well as functions and slots related to geometry changes and cleanup.</db:para>
+<db:programlisting language="cpp">class CustomTextureNode : public QSGTextureProvider, public QSGSimpleTextureNode
+{
+    Q_OBJECT
+
+public:
+    CustomTextureNode(QQuickItem *item);
+    ~CustomTextureNode();
+
+    QSGTexture *texture() const override;
+
+    void sync();
+</db:programlisting>
+<db:para>We also need a scenegraph node. Instead of deriving directly from <db:link xlink:href="qsgnode.xml">QSGNode</db:link>, we can use <db:link xlink:href="qsgsimpletexturenode.xml">QSGSimpleTextureNode</db:link> which gives us some of the functionality pre-implemented as a convenience.</db:para>
+<db:programlisting language="cpp">QSGNode *CustomTextureItem::updatePaintNode(QSGNode *node, UpdatePaintNodeData *)
+{
+    CustomTextureNode *n = static_cast&amp;lt;CustomTextureNode *&amp;gt;(node);
+
+    if (!n &amp;amp;&amp;amp; (width() &amp;lt;= 0 || height() &amp;lt;= 0))
+        return nullptr;
+
+    if (!n) {
+        m_node = new CustomTextureNode(this);
+        n = m_node;
+    }
+
+    m_node-&amp;gt;sync();
+
+    n-&amp;gt;setTextureCoordinatesTransform(QSGSimpleTextureNode::NoTransform);
+    n-&amp;gt;setFiltering(QSGTexture::Linear);
+    n-&amp;gt;setRect(0, 0, width(), height());
+
+    window()-&amp;gt;update(); // ensure getting to beforeRendering() at some point
+
+    return n;
+}
+</db:programlisting>
+<db:para>The updatePaintNode() function of the item is called on the render thread (if there is one), with the main (GUI) thread blocked. Here we create a new node if there has not yet been one, and update it. Accessing Qt objects living on the main thread is safe here, so sync() will calculate and copy the values it needs from <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> or <db:link xlink:href="qquickwindow.xml">QQuickWindow</db:link>.</db:para>
+<db:programlisting language="cpp">CustomTextureNode::CustomTextureNode(QQuickItem *item)
+    : m_item(item)
+{
+    m_window = m_item-&amp;gt;window();
+    connect(m_window, &amp;amp;QQuickWindow::beforeRendering, this, &amp;amp;CustomTextureNode::render);
+    connect(m_window, &amp;amp;QQuickWindow::screenChanged, this, [this]() {
+        if (m_window-&amp;gt;effectiveDevicePixelRatio() != m_dpr)
+            m_item-&amp;gt;update();
+    });
+</db:programlisting>
+<db:para>The node does not merely rely on the typical <db:link xlink:href="qquickitem.xml">QQuickItem</db:link> - <db:link xlink:href="qsgnode.xml">QSGNode</db:link> update sequence, it connects to <db:link xlink:href="qquickwindow.xml#beforeRendering">QQuickWindow::beforeRendering</db:link>() as well. That is where the contents of the Metal texture will be updated by encoding a full render pass, targeting the texture, on the Qt Quicks scenegraph's command buffer. beforeRendering() is the right place for this, because the signal is emitted before Qt Quick starts to encode its own rendering commands. Choosing <db:link xlink:href="qquickwindow.xml#beforeRenderPassRecording">QQuickWindow::beforeRenderPassRecording</db:link>() instead would be an error in this exanple.</db:para>
+<db:programlisting language="cpp">void CustomTextureNode::sync()
+{
+    m_dpr = m_window-&amp;gt;effectiveDevicePixelRatio();
+    const QSize newSize = m_window-&amp;gt;size() * m_dpr;
+    bool needsNew = false;
+
+    if (!texture())
+        needsNew = true;
+
+    if (newSize != m_size) {
+        needsNew = true;
+        m_size = newSize;
+    }
+
+    if (needsNew) {
+        delete texture();
+        [m_texture release];
+
+        QSGRendererInterface *rif = m_window-&amp;gt;rendererInterface();
+        m_device = (id&amp;lt;MTLDevice&amp;gt;) rif-&amp;gt;getResource(m_window, QSGRendererInterface::DeviceResource);
+        Q_ASSERT(m_device);
+
+        MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+        desc.textureType = MTLTextureType2D;
+        desc.pixelFormat = MTLPixelFormatRGBA8Unorm;
+        desc.width = m_size.width();
+        desc.height = m_size.height();
+        desc.mipmapLevelCount = 1;
+        desc.resourceOptions = MTLResourceStorageModePrivate;
+        desc.storageMode = MTLStorageModePrivate;
+        desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageRenderTarget;
+        m_texture = [m_device newTextureWithDescriptor: desc];
+        [desc release];
+
+        QSGTexture *wrapper = QNativeInterface::QSGMetalTexture::fromNative(m_texture, m_window, m_size);
+
+        qDebug() &amp;lt;&amp;lt; &quot;Got QSGTexture wrapper&quot; &amp;lt;&amp;lt; wrapper &amp;lt;&amp;lt; &quot;for an MTLTexture of size&quot; &amp;lt;&amp;lt; m_size;
+
+        setTexture(wrapper);
+    }
+    m_t = float(static_cast&amp;lt;CustomTextureItem *&amp;gt;(m_item)-&amp;gt;t());
+</db:programlisting>
+<db:para>After copying the values we need, sync() also performs some graphics resource initialization. The MTLDevice is queried from the scenegraph. Once a MTLTexture is available, a <db:link xlink:href="qsgtexture.xml">QSGTexture</db:link> wrapping (not owning) it is created via QQuickWindow::createTextureFromNativeObject(). This function is a modern equivalent to QQuickWindow::createTextureFromId() that is not tied to OpenGL. Finally, the <db:link xlink:href="qsgtexture.xml">QSGTexture</db:link> is associated with the underlying materials by calling the base class' setTexture() function.</db:para>
+<db:programlisting language="cpp">void CustomTextureNode::render()
+{
+    if (!m_initialized)
+        return;
+
+    // Render to m_texture.
+    MTLRenderPassDescriptor *renderpassdesc = [MTLRenderPassDescriptor renderPassDescriptor];
+    MTLClearColor c = MTLClearColorMake(0, 0, 0, 1);
+    renderpassdesc.colorAttachments[0].loadAction = MTLLoadActionClear;
+    renderpassdesc.colorAttachments[0].storeAction = MTLStoreActionStore;
+    renderpassdesc.colorAttachments[0].clearColor = c;
+    renderpassdesc.colorAttachments[0].texture = m_texture;
+
+    QSGRendererInterface *rif = m_window-&amp;gt;rendererInterface();
+    id&amp;lt;MTLCommandBuffer&amp;gt; cb = (id&amp;lt;MTLCommandBuffer&amp;gt;) rif-&amp;gt;getResource(m_window, QSGRendererInterface::CommandListResource);
+    Q_ASSERT(cb);
+    id&amp;lt;MTLRenderCommandEncoder&amp;gt; encoder = [cb renderCommandEncoderWithDescriptor: renderpassdesc];
+
+    const QQuickWindow::GraphicsStateInfo &amp;amp;stateInfo(m_window-&amp;gt;graphicsStateInfo());
+    void *p = [m_ubuf[stateInfo.currentFrameSlot] contents];
+    memcpy(p, &amp;amp;m_t, 4);
+
+    MTLViewport vp;
+    vp.originX = 0;
+    vp.originY = 0;
+    vp.width = m_size.width();
+    vp.height = m_size.height();
+    vp.znear = 0;
+    vp.zfar = 1;
+    [encoder setViewport: vp];
+
+    [encoder setFragmentBuffer: m_ubuf[stateInfo.currentFrameSlot] offset: 0 atIndex: 0];
+    [encoder setVertexBuffer: m_vbuf offset: 0 atIndex: 1];
+    [encoder setRenderPipelineState: m_pipeline];
+    [encoder drawPrimitives: MTLPrimitiveTypeTriangleStrip vertexStart: 0 vertexCount: 4 instanceCount: 1 baseInstance: 0];
+
+    [encoder endEncoding];
+}
+</db:programlisting>
+<db:para>render(), the slot connected to beforeRendering(), encodes the rendering commands using the buffers and pipeline state objects created in sync().</db:para>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdeclarative.git/tree/examples/quick/scenegraph/metaltextureimport?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,366 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 3D - Principled Material Example</db:title>
+<db:productname>QtQuick3D</db:productname>
+<db:edition>Qt Quick 3D | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Quick 3D Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Demonstrates the use of Principled Material.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:programlisting language="qml">// Copyright (C) 2022 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+import QtQuick3D
+import QtQuick.Dialogs
+
+import Example
+
+RowLayout {
+    id: root
+    property Texture targetTexture: null
+    property bool stampMode: false
+    required property url defaultTexture
+    property url stampSource: &quot;&quot;
+    property alias defaultClearColor: drawer.clearColor
+    property bool envMapMode: false
+
+    GroupBox {
+        title: &quot;Image Source Mode&quot;
+        ColumnLayout {
+            RadioButton {
+                id: noTextureChoice
+                text: &quot;None&quot;
+                checked: true
+                onCheckedChanged: {
+                    targetTexture = null
+                }
+            }
+            RadioButton {
+                id: selectTextureChoice
+                text: &quot;Texture&quot;
+                checked: false
+                onCheckedChanged: targetTexture = selectedTexture
+            }
+            RadioButton {
+                id: loadImageChoice
+                text: &quot;Load Image&quot;
+                onCheckedChanged: targetTexture = loadTextureTexture
+            }
+            RadioButton {
+                id: drawerChoice
+                text: &quot;Draw Texture&quot;
+                onCheckedChanged: targetTexture = drawerTexture
+            }
+        }
+    }
+    Item {
+        visible: selectTextureChoice.checked
+        width: 256
+        height: 256
+        Image {
+            id: previewImage
+            anchors.fill: parent
+            sourceSize.width: width
+            sourceSize.height: height
+            fillMode: Image.PreserveAspectFit
+            source: root.defaultTexture
+            Texture {
+                id: selectedTexture
+                source: root.defaultTexture
+                mappingMode: envMapMode ? Texture.Environment : Texture.UV
+            }
+        }
+    }
+
+    Rectangle {
+        id: loadTextureFrame
+        width: 256
+        height: 256
+        color: &quot;transparent&quot;
+        border.color: &quot;black&quot;
+        visible: loadImageChoice.checked
+        property url textureSource: &quot;&quot;
+        Text {
+            anchors.centerIn: parent
+            text: &quot;[Load Image]&quot;
+        }
+        Image {
+            anchors.fill: parent
+            sourceSize.width: width
+            sourceSize.height: height
+            fillMode: Image.PreserveAspectFit
+            visible: loadTextureFrame.textureSource !== null
+            source: loadTextureFrame.textureSource
+        }
+
+        MouseArea {
+            anchors.fill: parent
+            onClicked: {
+                textureSourceDialog.open()
+            }
+        }
+
+        Texture {
+            id: loadTextureTexture
+            source: loadTextureFrame.textureSource
+            mappingMode: envMapMode ? Texture.Environment : Texture.UV
+        }
+
+        ImageHelper {
+            id: imageHelper
+        }
+
+        FileDialog {
+            id: textureSourceDialog
+            title: &quot;Open an Image File&quot;
+            nameFilters: [ imageHelper.getSupportedImageFormatsFilter()]
+            onAccepted: {
+                if (textureSourceDialog.selectedFile !== null) {
+                    loadTextureFrame.textureSource = textureSourceDialog.selectedFile
+                }
+            }
+        }
+
+    }
+    ColumnLayout {
+        visible: drawerChoice.checked
+        Rectangle {
+            width: 260
+            height: 260
+            color: &quot;transparent&quot;
+            border.color: &quot;black&quot;
+            Canvas {
+                id: drawer
+                width: 256
+                height: 256
+                x: 2
+                y: 2
+
+                property color penColor: &quot;blue&quot;
+                property real penWidth: penWidthSlider.value
+                property bool needsClear: true
+                property color clearColor: &quot;white&quot;
+                property var commands: []
+                property var stampCommands: []
+                property bool stampMode: root.stampMode
+                //property point prevPoint : Qt.point(0, 0)
+
+                onPaint: {
+                    let ctx = getContext('2d');
+                    if (needsClear) {
+                        ctx.fillStyle = Qt.rgba(clearColor.r, clearColor.g, clearColor.b, clearColor.a);
+                        ctx.fillRect(0, 0, width, height)
+                        needsClear = false;
+                    }
+                    if (!stampMode) {
+                        ctx.strokeStyle = Qt.rgba(penColor.r, penColor.g, penColor.b, penColor.a)
+                        ctx.lineCap = &quot;round&quot;
+                        ctx.lineWidth = penWidth;
+
+                        for (let i = 0; i &amp;lt; commands.length; ++i) {
+                            let command = commands[i];
+                            ctx.beginPath()
+                            ctx.moveTo(command.start.x, command.start.y);
+                            ctx.lineTo(command.end.x, command.end.y);
+                            ctx.stroke();
+                        }
+                        commands = [];
+                    } else {
+                        for (let i = 0; i &amp;lt; stampCommands.length; ++i) {
+                            let stampCommand = stampCommands[i]
+                            // get offset
+                            let dX = stampCommand.x - stampcursor.width * 0.5
+                            let dY = stampCommand.y - stampcursor.height * 0.5
+                            ctx.drawImage(stampcursor, dX, dY)
+                        }
+                        stampCommands = [];
+                    }
+                }
+            }
+
+            MouseArea {
+                id: mouseArea
+                anchors.fill: drawer
+                enabled: drawerChoice.checked
+                hoverEnabled: true
+                //acceptedButtons: Qt.LeftButton
+                property bool isDrawing: false
+                property var lastPosition: Qt.point(0, 0)
+                preventStealing: true
+                clip: true
+
+                Item {
+                    id: cursor
+                    Rectangle {
+                        anchors.centerIn: parent
+                        visible: !root.stampMode
+                        width: drawer.penWidth
+                        height: drawer.penWidth
+                        radius: width * 0.5
+                        color: drawer.penColor
+                    }
+
+                    Image {
+                       id: stampcursor
+                       anchors.centerIn: parent
+                       visible: root.stampMode
+                       source: root.stampSource
+                    }
+                }
+
+                onEntered: cursor.visible = true
+                onExited: cursor.visible = false
+
+                onPressed: (mouse)=&amp;gt; {
+                               if (mouse.button === Qt.LeftButton &amp;amp;&amp;amp; !root.stampMode) {
+                                   lastPosition = Qt.point(mouse.x, mouse.y)
+                                   isDrawing = true
+                               }
+                           }
+                onPositionChanged: (mouse)=&amp;gt; {
+                                       if (isDrawing) {
+                                           let pos = Qt.point(mouse.x, mouse.y);
+                                           let command = {&quot;start&quot;: lastPosition, &quot;end&quot;: pos}
+                                           drawer.commands.push(command)
+                                           lastPosition = pos;
+                                           drawer.requestPaint();
+                                       }
+                                       cursor.x = mouse.x
+                                       cursor.y = mouse.y
+                                   }
+                onReleased: (mouse)=&amp;gt; {
+                                if (mouse.button === Qt.LeftButton &amp;amp;&amp;amp; isDrawing) {
+                                    let pos = Qt.point(mouse.x, mouse.y);
+                                    let command = {&quot;start&quot;: lastPosition, &quot;end&quot;: pos}
+                                    drawer.commands.push(command)
+                                    isDrawing = false;
+                                    drawer.requestPaint();
+                                } else if (stampMode) {
+                                    drawer.stampCommands.push(Qt.point(mouse.x, mouse.y));
+                                    drawer.requestPaint();
+                                }
+                            }
+            }
+
+        }
+        RowLayout {
+            visible: !root.stampMode
+            spacing: 0
+            Rectangle {
+                id: whiteBrush
+                width: 25
+                height: 25
+                color: &quot;white&quot;
+                border.color: &quot;black&quot;
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        drawer.penColor = parent.color;
+                    }
+                }
+            }
+            Rectangle {
+                id: blackBrush
+                width: 25
+                height: 25
+                color: &quot;black&quot;
+                border.color: &quot;black&quot;
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        drawer.penColor = parent.color;
+                    }
+                }
+            }
+            Rectangle {
+                id: redBrush
+                width: 25
+                height: 25
+                color: &quot;red&quot;
+                border.color: &quot;black&quot;
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        drawer.penColor = parent.color;
+                    }
+                }
+            }
+            Rectangle {
+                id: greenBrush
+                width: 25
+                height: 25
+                color: &quot;green&quot;
+                border.color: &quot;black&quot;
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        drawer.penColor = parent.color;
+                    }
+                }
+            }
+            Rectangle {
+                id: blueBrush
+                width: 25
+                height: 25
+                color: &quot;blue&quot;
+                border.color: &quot;black&quot;
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: {
+                        drawer.penColor = parent.color;
+                    }
+                }
+            }
+            Label {
+                text: &quot; &quot;
+
+            }
+
+            Button {
+                text: &quot;Clear&quot;
+                onClicked: {
+
+                    drawer.needsClear = true
+                    drawer.requestPaint()
+                }
+            }
+
+        }
+        RowLayout {
+            visible: !root.stampMode
+            Slider {
+                id: penWidthSlider
+                from: 1
+                to: 50
+                value: 5
+            }
+            Label {
+                Layout.fillWidth: true
+                text: &quot;Pen Width&quot;
+            }
+        }
+
+    }
+
+    Texture {
+        id: drawerTexture
+        sourceItem: drawerChoice.checked ? drawer : null
+        mappingMode: envMapMode ? Texture.Environment : Texture.UV
+    }
+
+}
+
+</db:programlisting>
+</db:article>

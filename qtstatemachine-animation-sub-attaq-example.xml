@@ -1,0 +1,260 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Sub-Attaq</db:title>
+<db:productname>QtStateMachine</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt State Machine Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>This example shows Qt's ability to combine <db:link xlink:href="animation-overview.xml">the animation framework</db:link> and <db:link xlink:href="qtstatemachine-overview.xml">the state machine framework</db:link> to create a game.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/sub-attaq-demo.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The purpose of the game is to destroy all submarines to win the current level. The boat can be controlled using left and right keys. To fire a bomb you can press the up and down keys.</db:para>
+<db:section xml:id="the-main-function">
+<db:title>The <db:code>main()</db:code> Function</db:title>
+<db:programlisting language="cpp">int main(int argc, char *argv[])
+{
+    QApplication app(argc, argv);
+    Q_INIT_RESOURCE(subattaq);
+
+    MainWindow w;
+    w.show();
+
+    return app.exec();
+}
+</db:programlisting>
+<db:para>The MainWindow instance is created and shown.</db:para>
+</db:section>
+<db:section xml:id="the-mainwindow-class">
+<db:title>The <db:code>MainWindow</db:code> Class</db:title>
+<db:programlisting language="cpp">    QMenu *file = menuBar()-&amp;gt;addMenu(tr(&quot;&amp;amp;File&quot;));
+
+    QAction *newAction = file-&amp;gt;addAction(tr(&quot;New Game&quot;));
+    newAction-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_N));
+    QAction *quitAction = file-&amp;gt;addAction(tr(&quot;Quit&quot;));
+    quitAction-&amp;gt;setShortcut(QKeySequence(Qt::CTRL | Qt::Key_Q));
+
+    if (QApplication::arguments().contains(&quot;-fullscreen&quot;)) {
+        scene = new GraphicsScene(0, 0, 750, 400, GraphicsScene::Small, this);
+        setWindowState(Qt::WindowFullScreen);
+    } else {
+        scene = new GraphicsScene(0, 0, 880, 630, GraphicsScene::Big, this);
+        layout()-&amp;gt;setSizeConstraint(QLayout::SetFixedSize);
+    }
+
+    view = new QGraphicsView(scene, this);
+    view-&amp;gt;setAlignment(Qt::AlignLeft | Qt::AlignTop);
+    scene-&amp;gt;setupScene(newAction, quitAction);
+    setCentralWidget(view);
+</db:programlisting>
+<db:para>MainWindow extends <db:link xlink:href="qmainwindow.xml">QMainWindow</db:link> and contains the GraphicsScene instance. It creates and sets up the menu bar as well.</db:para>
+</db:section>
+<db:section xml:id="the-graphicsscene-class">
+<db:title>The <db:code>GraphicsScene</db:code> Class</db:title>
+<db:para>There are several state machines in the application. The <db:code>GraphicsScene</db:code> state machine handles states related to events outside the actual game scene like the letter animation in the beginning.</db:para>
+<db:section xml:id="the-graphicsscene-constructor">
+<db:title>The <db:code>GraphicsScene</db:code> Constructor</db:title>
+<db:programlisting language="cpp">    PixmapItem *backgroundItem = new PixmapItem(QStringLiteral(&quot;background&quot;), mode);
+    backgroundItem-&amp;gt;setZValue(1);
+    backgroundItem-&amp;gt;setPos(0,0);
+    addItem(backgroundItem);
+
+    PixmapItem *surfaceItem = new PixmapItem(QStringLiteral(&quot;surface&quot;), mode);
+    surfaceItem-&amp;gt;setZValue(3);
+    surfaceItem-&amp;gt;setPos(0, sealLevel() - surfaceItem-&amp;gt;boundingRect().height() / 2);
+    addItem(surfaceItem);
+
+    //The item that displays score and level
+    progressItem = new ProgressItem(backgroundItem);
+
+    textInformationItem = new TextInformationItem(backgroundItem);
+
+    textInformationItem-&amp;gt;setMessage(QString(&quot;Select new game from the menu or press Ctrl+N to start!&amp;lt;br/&amp;gt;Press left or right to move the ship and up to drop bombs.&quot;), false);
+    textInformationItem-&amp;gt;setPos(backgroundItem-&amp;gt;boundingRect().center().x() - textInformationItem-&amp;gt;boundingRect().size().width() / 2,
+                                backgroundItem-&amp;gt;boundingRect().height() * 3 / 4);
+
+    //We create the boat
+    addItem(boat);
+    boat-&amp;gt;setPos(this-&amp;gt;width()/2, sealLevel() - boat-&amp;gt;size().height());
+    boat-&amp;gt;hide();
+</db:programlisting>
+<db:para>The <db:code>GraphicsScene</db:code> class contains the background images and the score and level information texts.</db:para>
+</db:section>
+<db:section xml:id="the-setupscene-method">
+<db:title><db:code>The</db:code> setupScene Method</db:title>
+<db:programlisting language="cpp">    QStateMachine *machine = new QStateMachine(this);
+
+    //This state is when the player is playing
+    PlayState *gameState = new PlayState(this, machine);
+
+    //Final state
+    QFinalState *finalState = new QFinalState(machine);
+
+    //Animation when the player enters the game
+    QAnimationState *lettersMovingState = new QAnimationState(machine);
+    lettersMovingState-&amp;gt;setAnimation(lettersGroupMoving);
+
+    //Animation when the welcome screen disappears
+    QAnimationState *lettersFadingState = new QAnimationState(machine);
+    lettersFadingState-&amp;gt;setAnimation(lettersGroupFading);
+
+    //if it is a new game then we fade out the welcome screen and start playing
+    lettersMovingState-&amp;gt;addTransition(newAction, &amp;amp;QAction::triggered, lettersFadingState);
+    lettersFadingState-&amp;gt;addTransition(lettersFadingState, &amp;amp;QAnimationState::animationFinished, gameState);
+
+    //New Game is triggered then player starts playing
+    gameState-&amp;gt;addTransition(newAction, &amp;amp;QAction::triggered, gameState);
+
+    //Wanna quit, then connect to CTRL+Q
+    gameState-&amp;gt;addTransition(quitAction, &amp;amp;QAction::triggered, finalState);
+    lettersMovingState-&amp;gt;addTransition(quitAction, &amp;amp;QAction::triggered, finalState);
+
+    //Welcome screen is the initial state
+    machine-&amp;gt;setInitialState(lettersMovingState);
+
+    machine-&amp;gt;start();
+
+    //We reach the final state, then we quit
+    connect(machine, &amp;amp;QStateMachine::finished, qApp, &amp;amp;QApplication::quit);
+</db:programlisting>
+<db:para>The four state machine states are created with sequential transitions from one to the next. The <db:code>gameState</db:code> also has a transition that is triggered by <db:code>newAction</db:code>, the new game menu item, or its shortcut key at any point in the application. The <db:code>gameState</db:code> state is an instance of the <db:code>PlayState</db:code> class.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/sub-attaq-graphicsscene-chart.png"/>
+</db:imageobject>
+</db:mediaobject>
+</db:section>
+</db:section>
+<db:section xml:id="the-playstate-class">
+<db:title>The <db:code>PlayState</db:code> Class</db:title>
+<db:para>The <db:code>PlayState</db:code> class is a <db:link xlink:href="qstate.xml">QState</db:link> derived class that handles the state when the game is in progress.</db:para>
+<db:programlisting language="cpp">    machine = new QStateMachine;
+
+    //This state is active when the player is playing
+    LevelState *levelState = new LevelState(scene, this, machine);
+
+    //This state is active when the player is actually playing but the game is not paused
+    QState *playingState = new QState(levelState);
+    levelState-&amp;gt;setInitialState(playingState);
+
+    //This state is active when the game is paused
+    PauseState *pauseState = new PauseState(scene, levelState);
+
+    //We have one view, it receives the key press events
+    QKeyEventTransition *pressPplay = new QKeyEventTransition(scene-&amp;gt;views().at(0), QEvent::KeyPress, Qt::Key_P);
+    pressPplay-&amp;gt;setTargetState(pauseState);
+    QKeyEventTransition *pressPpause = new QKeyEventTransition(scene-&amp;gt;views().at(0), QEvent::KeyPress, Qt::Key_P);
+    pressPpause-&amp;gt;setTargetState(playingState);
+
+    //Pause &quot;P&quot; is triggered, when the player pauses the game
+    playingState-&amp;gt;addTransition(pressPplay);
+
+    //To get back to playing when the game has been paused
+    pauseState-&amp;gt;addTransition(pressPpause);
+
+    //This state is active when player has lost
+    LostState *lostState = new LostState(scene, this, machine);
+
+    //This state is active when player has won
+    WinState *winState = new WinState(scene, this, machine);
+
+    //If boat has been destroyed then the game is finished
+    levelState-&amp;gt;addTransition(scene-&amp;gt;boat, &amp;amp;Boat::boatExecutionFinished,lostState);
+
+    //This transition checks if we have won or not
+    WinTransition *winTransition = new WinTransition(scene, this, winState);
+
+    //If boat has been destroyed then the game is finished
+    levelState-&amp;gt;addTransition(winTransition);
+
+    //This state is for an animation when the score changes
+    UpdateScoreState *scoreState = new UpdateScoreState(levelState);
+
+    //This transition updates the score when a submarine is destroyed
+    UpdateScoreTransition *scoreTransition = new UpdateScoreTransition(scene, this, levelState);
+    scoreTransition-&amp;gt;setTargetState(scoreState);
+
+    //If the boat has been destroyed then the game is finished
+    playingState-&amp;gt;addTransition(scoreTransition);
+
+    //We go back to play state
+    scoreState-&amp;gt;addTransition(playingState);
+
+    //We start playing!!!
+    machine-&amp;gt;setInitialState(levelState);
+
+    //Final state
+    QFinalState *finalState = new QFinalState(machine);
+
+    //This transition is triggered when the player presses space after completing a level
+    CustomSpaceTransition *spaceTransition = new CustomSpaceTransition(scene-&amp;gt;views().at(0), this, QEvent::KeyPress, Qt::Key_Space);
+    spaceTransition-&amp;gt;setTargetState(levelState);
+    winState-&amp;gt;addTransition(spaceTransition);
+
+    //We lost so we should reach the final state
+    lostState-&amp;gt;addTransition(lostState, &amp;amp;QState::finished, finalState);
+
+    scene-&amp;gt;textInformationItem-&amp;gt;hide();
+    machine-&amp;gt;start();
+</db:programlisting>
+<db:para>The <db:code>PlayState</db:code> state machine handles higher level game logic like pausing the game and updating the score.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/sub-attaq-playstate-chart.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The <db:code>playingState</db:code> state is a <db:link xlink:href="qstate.xml">QState</db:link> instance that is active while the user is actively playing the game. The <db:code>pauseState</db:code> is set up with transitions to and from <db:code>playingState</db:code>, which are triggered by pressing the p key. The <db:code>lostState</db:code> is created with a transition to it, which is triggered when the boat is destroyed. The <db:code>winState</db:code> is also created here with a transition to and from the <db:code>levelState</db:code>.</db:para>
+</db:section>
+<db:section xml:id="the-levelstate-class">
+<db:title>The <db:code>LevelState</db:code> Class</db:title>
+<db:programlisting language="cpp">void LevelState::initializeLevel()
+{
+    //we re-init the boat
+    scene-&amp;gt;boat-&amp;gt;setPos(scene-&amp;gt;width()/2, scene-&amp;gt;sealLevel() - scene-&amp;gt;boat-&amp;gt;size().height());
+    scene-&amp;gt;boat-&amp;gt;setCurrentSpeed(0);
+    scene-&amp;gt;boat-&amp;gt;setCurrentDirection(Boat::None);
+    scene-&amp;gt;boat-&amp;gt;setBombsLaunched(0);
+    scene-&amp;gt;boat-&amp;gt;show();
+    scene-&amp;gt;setFocusItem(scene-&amp;gt;boat, Qt::OtherFocusReason);
+    scene-&amp;gt;boat-&amp;gt;run();
+
+    scene-&amp;gt;progressItem-&amp;gt;setScore(game-&amp;gt;score);
+    scene-&amp;gt;progressItem-&amp;gt;setLevel(game-&amp;gt;currentLevel + 1);
+
+    const GraphicsScene::LevelDescription currentLevelDescription = scene-&amp;gt;levelsData.value(game-&amp;gt;currentLevel);
+    for (const QPair&amp;lt;int,int&amp;gt; &amp;amp;subContent : currentLevelDescription.submarines) {
+
+        GraphicsScene::SubmarineDescription submarineDesc = scene-&amp;gt;submarinesData.at(subContent.first);
+
+        for (int j = 0; j &amp;lt; subContent.second; ++j ) {
+            SubMarine *sub = new SubMarine(submarineDesc.type, submarineDesc.name, submarineDesc.points);
+            scene-&amp;gt;addItem(sub);
+            int random = QRandomGenerator::global()-&amp;gt;bounded(15) + 1;
+            qreal x = random == 13 || random == 5 ? 0 : scene-&amp;gt;width() - sub-&amp;gt;size().width();
+            qreal y = scene-&amp;gt;height() -(QRandomGenerator::global()-&amp;gt;bounded(150) + 1) - sub-&amp;gt;size().height();
+            sub-&amp;gt;setPos(x,y);
+            sub-&amp;gt;setCurrentDirection(x == 0 ? SubMarine::Right : SubMarine::Left);
+            sub-&amp;gt;setCurrentSpeed(QRandomGenerator::global()-&amp;gt;bounded(3) + 1);
+        }
+    }
+}
+</db:programlisting>
+<db:para>The components of the scene are initialized based on what level the player has reached.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtscxml.git/tree/examples/statemachine/animation/sub-attaq?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

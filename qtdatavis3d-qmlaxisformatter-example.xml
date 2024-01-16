@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Quick 2 Axis Formatter Example</db:title>
+<db:productname>QtDataVis3D</db:productname>
+<db:edition>Qt Data Visualization | Commercial or GPLv3</db:edition>
+<db:titleabbrev>Qt Data Visualization Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Example of a hybrid C++ and QML application demonstrating different axis formatters.</db:para>
+<db:para>This documentation was introduced in QtDataVisualization 1.1.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Qt Quick axis formatter example shows how to use predefined axis formatters and how to create a custom one.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/qmlaxisformatter-example.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:para>The interesting thing about this example is axis formatters, so we'll concentrate on that and skip explaining the basic functionality - for more detailed QML example documentation, see <db:link xlink:href="qtdatavis3d-qmlscatter-example.xml">Qt Quick 2 Scatter Example</db:link>.</db:para>
+<db:section xml:id="running-the-example">
+<db:title>Running the Example</db:title>
+<db:para>To run the example from <db:link xlink:href="https://doc.qt.io/qtcreator/index.html">Qt Creator</db:link>, open the <db:guilabel>Welcome</db:guilabel> mode and select the example from <db:guilabel>Examples</db:guilabel>. For more information, visit <db:link xlink:href="https://doc.qt.io/qtcreator/creator-build-example-application.html">Building and Running an Example</db:link>.</db:para>
+</db:section>
+<db:section xml:id="custom-axis-formatter">
+<db:title>Custom Axis Formatter</db:title>
+<db:para>Customizing axis formatters requires subclassing the <db:link xlink:href="qvalue3daxisformatter.xml">QValue3DAxisFormatter</db:link>, which cannot be done in QML code alone. In this example we want an axis that interprets the float values as a timestamp and shows the date in the axis labels. To achieve this, we introduce a new class called <db:code>CustomFormatter</db:code>, which subclasses the <db:link xlink:href="qvalue3daxisformatter.xml">QValue3DAxisFormatter</db:link>:</db:para>
+<db:programlisting language="cpp">class CustomFormatter : public QValue3DAxisFormatter
+{
+...
+</db:programlisting>
+<db:para>Since float values of a <db:link xlink:href="qscatter3dseries.xml">QScatter3DSeries</db:link> cannot be directly cast into <db:link xlink:href="qdatetime.xml">QDateTime</db:link> values due to difference in data width, we need some sort of mapping between the two. We chose to do the mapping by specifying an origin date for the formatter and interpreting the float values from the <db:link xlink:href="qscatter3dseries.xml">QScatter3DSeries</db:link> as date offsets to that origin value. The origin date is given as a property:</db:para>
+<db:programlisting language="cpp">Q_PROPERTY(QDate originDate READ originDate WRITE setOriginDate NOTIFY originDateChanged)
+</db:programlisting>
+<db:para>The mapping from value to <db:link xlink:href="qdatetime.xml">QDateTime</db:link> is done using <db:code>valueToDateTime()</db:code> method:</db:para>
+<db:programlisting language="cpp">QDateTime CustomFormatter::valueToDateTime(qreal value) const
+{
+    return m_originDate.startOfDay().addMSecs(qint64(oneDayMs * value));
+}
+</db:programlisting>
+<db:para>To function as an axis formatter, our <db:code>CustomFormatter</db:code> needs to reimplement some virtual methods:</db:para>
+<db:programlisting language="cpp">virtual QValue3DAxisFormatter *createNewInstance() const;
+virtual void populateCopy(QValue3DAxisFormatter &amp;amp;copy) const;
+virtual void recalculate();
+virtual QString stringForValue(qreal value, const QString &amp;amp;format) const;
+</db:programlisting>
+<db:para>The first two are simple, we just create a new instance of <db:code>CustomFormatter</db:code> and copy the necessary data over to it. These two methods are used to create and update a cache of formatter for rendering purposes. It is important to remember to call the superclass implementation of <db:code>populateCopy()</db:code>:</db:para>
+<db:programlisting language="cpp">QValue3DAxisFormatter *CustomFormatter::createNewInstance() const
+{
+    return new CustomFormatter();
+}
+
+void CustomFormatter::populateCopy(QValue3DAxisFormatter &amp;amp;copy) const
+{
+    QValue3DAxisFormatter::populateCopy(copy);
+
+    CustomFormatter *customFormatter = static_cast&amp;lt;CustomFormatter *&amp;gt;(&amp;amp;copy);
+    customFormatter-&amp;gt;m_originDate = m_originDate;
+    customFormatter-&amp;gt;m_selectionFormat = m_selectionFormat;
+}
+</db:programlisting>
+<db:para>Bulk of the work done by <db:code>CustomFormatter</db:code> is done in the <db:code>recalculate()</db:code> method, where our formatter calculates the grid, subgrid, and label positions, as well as formats the label strings. In our custom formatter we ignore the segment count of the axis and draw a grid line always at midnight. Subsegment count and label positioning is handled normally:</db:para>
+<db:programlisting language="cpp">void CustomFormatter::recalculate()
+{
+    // We want our axis to always have gridlines at date breaks
+
+    // Convert range into QDateTimes
+    QDateTime minTime = valueToDateTime(qreal(axis()-&amp;gt;min()));
+    QDateTime maxTime = valueToDateTime(qreal(axis()-&amp;gt;max()));
+
+    // Find out the grid counts
+    QTime midnight(0, 0);
+    QDateTime minFullDate(minTime.date(), midnight);
+    int gridCount = 0;
+    if (minFullDate != minTime)
+        minFullDate = minFullDate.addDays(1);
+    QDateTime maxFullDate(maxTime.date(), midnight);
+
+    gridCount += minFullDate.daysTo(maxFullDate) + 1;
+    int subGridCount = axis()-&amp;gt;subSegmentCount() - 1;
+
+    // Reserve space for position arrays and label strings
+    gridPositions().resize(gridCount);
+    subGridPositions().resize((gridCount + 1) * subGridCount);
+    labelPositions().resize(gridCount);
+    labelStrings().reserve(gridCount);
+
+    // Calculate positions and format labels
+    qint64 startMs = minTime.toMSecsSinceEpoch();
+    qint64 endMs = maxTime.toMSecsSinceEpoch();
+    qreal dateNormalizer = endMs - startMs;
+    qreal firstLineOffset = (minFullDate.toMSecsSinceEpoch() - startMs) / dateNormalizer;
+    qreal segmentStep = oneDayMs / dateNormalizer;
+    qreal subSegmentStep = 0;
+    if (subGridCount &amp;gt; 0)
+        subSegmentStep = segmentStep / qreal(subGridCount + 1);
+
+    for (int i = 0; i &amp;lt; gridCount; i++) {
+        qreal gridValue = firstLineOffset + (segmentStep * qreal(i));
+        gridPositions()[i] = float(gridValue);
+        labelPositions()[i] = float(gridValue);
+        labelStrings() &amp;lt;&amp;lt; minFullDate.addDays(i).toString(axis()-&amp;gt;labelFormat());
+    }
+
+    for (int i = 0; i &amp;lt;= gridCount; i++) {
+        if (subGridPositions().size()) {
+            for (int j = 0; j &amp;lt; subGridCount; j++) {
+                float position;
+                if (i)
+                    position =  gridPositions().at(i - 1) + subSegmentStep * (j + 1);
+                else
+                    position =  gridPositions().at(0) - segmentStep + subSegmentStep * (j + 1);
+                if (position &amp;gt; 1.0f || position &amp;lt; 0.0f)
+                    position = gridPositions().at(0);
+                subGridPositions()[i * subGridCount + j] = position;
+            }
+        }
+    }
+}
+</db:programlisting>
+<db:para>The axis labels are formatted to show only the date, but for selection label we want little more resolution for the timestamp, so we specify another property for our custom formatter to allow user to customize it:</db:para>
+<db:programlisting language="cpp">Q_PROPERTY(QString selectionFormat READ selectionFormat WRITE setSelectionFormat NOTIFY selectionFormatChanged)
+</db:programlisting>
+<db:para>This selection format property is used in the reimplemented <db:code>stringToValue</db:code> method, where we ignore the submitted format and substitute the custom selection format for it:</db:para>
+<db:programlisting language="cpp">QString CustomFormatter::stringForValue(qreal value, const QString &amp;amp;format) const
+{
+    Q_UNUSED(format);
+
+    return valueToDateTime(value).toString(m_selectionFormat);
+}
+</db:programlisting>
+<db:para>To expose our new custom formatter to the QML, we must declare and register it:</db:para>
+<db:programlisting language="cpp">Q_DECLARE_METATYPE(CustomFormatter *)
+...
+qmlRegisterType&amp;lt;CustomFormatter&amp;gt;(&quot;CustomFormatter&quot;, 1, 0, &quot;CustomFormatter&quot;);
+</db:programlisting>
+</db:section>
+<db:section xml:id="qml">
+<db:title>QML</db:title>
+<db:para>In the QML codes, we define a different axis for each dimension:</db:para>
+<db:programlisting language="qml">axisZ: valueAxis
+axisY: logAxis
+axisX: dateAxis
+</db:programlisting>
+<db:para>Z-axis is just a regular <db:link xlink:href="qml-qtdatavisualization-valueaxis3d.xml">ValueAxis3D</db:link>:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: valueAxis
+    segmentCount: 5
+    subSegmentCount: 2
+    labelFormat: &quot;%.2f&quot;
+    min: 0
+    max: 10
+}
+</db:programlisting>
+<db:para>For the Y-axis we define a logarithmic axis. <db:link xlink:href="qml-qtdatavisualization-valueaxis3d.xml">ValueAxis3D</db:link> can be made to show logarithmic scale by specifying <db:link xlink:href="qml-qtdatavisualization-logvalueaxis3dformatter.xml">LogValueAxis3DFormatter</db:link> for <db:code>formatter</db:code> property of the axis:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: logAxis
+    formatter: LogValueAxis3DFormatter {
+        id: logAxisFormatter
+        base: 10
+        autoSubGrid: true
+        showEdgeLabels: true
+    }
+    labelFormat: &quot;%.2f&quot;
+}
+</db:programlisting>
+<db:para>And finally, for the X-axis we use our new <db:code>CustomFormatter</db:code>:</db:para>
+<db:programlisting language="qml">ValueAxis3D {
+    id: dateAxis
+    formatter: CustomFormatter {
+        originDate:  &quot;2014-01-01&quot;
+        selectionFormat: &quot;yyyy-MM-dd HH:mm:ss&quot;
+    }
+    subSegmentCount: 2
+    labelFormat: &quot;yyyy-MM-dd&quot;
+    min: 0
+    max: 14
+}
+</db:programlisting>
+<db:para>Rest of the application consists of fairly self-explanatory logic for modifying the axes and showing the graph.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtdatavis3d.git/tree/examples/datavisualization/qmlaxisformatter?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+</db:article>

@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Convert Example</db:title>
+<db:productname>QtCore</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Core Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>The Convert example demonstrates how to convert between different serialization formats.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>The Convert example converts between the serialization formats JSON, CBOR, XML, <db:link xlink:href="qdatastream.xml">QDataStream</db:link> and text. It can also auto detect the format being used. Not all formats support both input and output, and they have different sets of which types they support. <db:link xlink:href="qdatastream.xml">QDataStream</db:link> and XML are the richest, followed by CBOR, then JSON, and then the plain text one.</db:para>
+<db:mediaobject>
+<db:imageobject>
+<db:imagedata fileref="images/convert.png"/>
+</db:imageobject>
+</db:mediaobject>
+<db:section xml:id="the-converter-class">
+<db:title>The Converter Class</db:title>
+<db:para>The Converter class is the abstract superclass for all the converters to and from all the formats. They all convert to and from the <db:link xlink:href="qvariant.xml">QVariant</db:link> class, which is used to represent all the datastructures internally. The name() function returns the name of the converter. The directions() function is used to determine if a converter can be used for input, output, or both. The outputOptions() and optionsHelp() functions are used to get and query which options are used by the different converters. The probeFile() function is used to determine if a file has the same file format as the converter. The loadFile() function deserializes the given file, while the saveFile() serializes to the given file.</db:para>
+</db:section>
+<db:section xml:id="the-cborconverter-class">
+<db:title>The CborConverter Class</db:title>
+<db:para>The CborConverter class shows how to serialize to and from the CBOR-format. There is also a CborDiagnosticDumper class to output in CBOR diagnostic notation. That is similar to JSON, but not exactly, because it allows displaying the contents of a CBOR stream losslessly, while a conversion to JSON is lossy.</db:para>
+<db:para>The convertCborValue() function is used to convert a <db:link xlink:href="qcborvalue.xml">QCborValue</db:link> to a <db:link xlink:href="qvariant.xml">QVariant</db:link>. It uses the helper functions convertCborMap() and convertCborArray().</db:para>
+<db:programlisting language="cpp">static QVariant convertCborMap(const QCborMap &amp;amp;map)
+{
+    VariantOrderedMap result;
+    result.reserve(map.size());
+    for (auto pair : map)
+        result.append({ convertCborValue(pair.first), convertCborValue(pair.second) });
+    return QVariant::fromValue(result);
+}
+
+static QVariant convertCborArray(const QCborArray &amp;amp;array)
+{
+    QVariantList result;
+    result.reserve(array.size());
+    for (auto value : array)
+        result.append(convertCborValue(value));
+    return result;
+}
+
+static QVariant convertCborValue(const QCborValue &amp;amp;value)
+{
+    if (value.isArray())
+        return convertCborArray(value.toArray());
+    if (value.isMap())
+        return convertCborMap(value.toMap());
+    return value.toVariant();
+}
+</db:programlisting>
+<db:para>A CBOR-file is read using loadFile() function.</db:para>
+<db:programlisting language="cpp">QVariant CborConverter::loadFile(QIODevice *f, Converter *&amp;amp;outputConverter)
+{
+    const char *ptr = nullptr;
+    if (auto file = qobject_cast&amp;lt;QFile *&amp;gt;(f))
+        ptr = reinterpret_cast&amp;lt;char *&amp;gt;(file-&amp;gt;map(0, file-&amp;gt;size()));
+
+    QByteArray mapped = QByteArray::fromRawData(ptr, ptr ? f-&amp;gt;size() : 0);
+    QCborStreamReader reader(mapped);
+    if (!ptr)
+        reader.setDevice(f);
+
+    if (reader.isTag() &amp;amp;&amp;amp; reader.toTag() == QCborKnownTags::Signature)
+        reader.next();
+
+    QCborValue contents = QCborValue::fromCbor(reader);
+    qint64 offset = reader.currentOffset();
+    if (reader.lastError()) {
+        fprintf(stderr, &quot;Error loading CBOR contents (byte %lld): %s\n&quot;, offset,
+                qPrintable(reader.lastError().toString()));
+        fprintf(stderr, &quot; bytes: %s\n&quot;,
+                (ptr ? mapped.mid(offset, 9) : f-&amp;gt;read(9)).toHex(' ').constData());
+        exit(EXIT_FAILURE);
+    } else if (offset &amp;lt; mapped.size() || (!ptr &amp;amp;&amp;amp; f-&amp;gt;bytesAvailable())) {
+        fprintf(stderr, &quot;Warning: bytes remaining at the end of the CBOR stream\n&quot;);
+    }
+
+    if (outputConverter == nullptr)
+        outputConverter = &amp;amp;cborDiagnosticDumper;
+    else if (outputConverter == null)
+        return QVariant();
+    else if (!outputConverter-&amp;gt;outputOptions().testFlag(SupportsArbitraryMapKeys))
+        return contents.toVariant();
+    return convertCborValue(contents);
+}
+</db:programlisting>
+<db:para>The convertFromVariant() function is used to convert a <db:link xlink:href="qvariant.xml">QVariant</db:link> to a <db:link xlink:href="qcborvalue.xml">QCborValue</db:link>.</db:para>
+<db:programlisting language="cpp">static QCborValue convertFromVariant(const QVariant &amp;amp;v, TrimFloatingPoint fpTrimming)
+{
+    if (v.userType() == QMetaType::QVariantList) {
+        const QVariantList list = v.toList();
+        QCborArray array;
+        for (const QVariant &amp;amp;v : list)
+            array.append(convertFromVariant(v, fpTrimming));
+
+        return array;
+    }
+
+    if (v.userType() == qMetaTypeId&amp;lt;VariantOrderedMap&amp;gt;()) {
+        const auto m = qvariant_cast&amp;lt;VariantOrderedMap&amp;gt;(v);
+        QCborMap map;
+        for (const auto &amp;amp;pair : m)
+            map.insert(convertFromVariant(pair.first, fpTrimming),
+                       convertFromVariant(pair.second, fpTrimming));
+        return map;
+    }
+
+    if (v.userType() == QMetaType::Double &amp;amp;&amp;amp; fpTrimming != Double) {
+        float f = float(v.toDouble());
+        if (fpTrimming == Float16)
+            return float(qfloat16(f));
+        return f;
+    }
+
+    return QCborValue::fromVariant(v);
+}
+</db:programlisting>
+<db:para>A CBOR-file is written using the saveFile() function.</db:para>
+<db:programlisting language="cpp">void CborConverter::saveFile(QIODevice *f, const QVariant &amp;amp;contents, const QStringList &amp;amp;options)
+{
+QCborValue v = convertFromVariant(contents,
+                                  useFloat16 == Always ? Float16 : useFloat == Always ? Float : Double);
+QCborStreamWriter writer(f);
+if (useSignature)
+    writer.append(QCborKnownTags::Signature);
+
+QCborValue::EncodingOptions opts;
+if (useIntegers)
+    opts |= QCborValue::UseIntegers;
+if (useFloat != No)
+    opts |= QCborValue::UseFloat;
+if (useFloat16 != No)
+    opts |= QCborValue::UseFloat16;
+v.toCbor(writer, opts);
+}
+</db:programlisting>
+</db:section>
+<db:section xml:id="the-datastreamconverter-class">
+<db:title>The DataStreamConverter Class</db:title>
+<db:para>The DataStreamConverter class is used to serialize to and from the <db:link xlink:href="qdatastream.xml">QDataStream</db:link> format. There is also the DataStreamDumper class for outputting the data lossless in a non-standardized human readable format.</db:para>
+</db:section>
+<db:section xml:id="the-jsonconverter-class">
+<db:title>The JsonConverter Class</db:title>
+<db:para>The JsonConverter class is used to serialize to and from the JSON-format.</db:para>
+</db:section>
+<db:section xml:id="the-xmlconverter-class">
+<db:title>The XmlConverter Class</db:title>
+<db:para>The XmlConverter class is used to serialize to and from the XML-format.</db:para>
+</db:section>
+<db:section xml:id="the-textconverter-class">
+<db:title>The TextConverter Class</db:title>
+<db:para>The TextConverter class is used to serialize to and from a text format.</db:para>
+</db:section>
+<db:section xml:id="the-nullconverter-class">
+<db:title>The NullConverter Class</db:title>
+<db:para>The NullConverter class is an output serializer that does nothing.</db:para>
+</db:section>
+<db:section>
+<db:title>Example project</db:title>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtbase.git/tree/examples/corelib/serialization/convert?h=6.4">Example project @ code.qt.io</db:link></db:para>
+</db:section>
+<db:section>
+<db:title>See Also</db:title>
+<db:para><db:emphasis>See also </db:emphasis>
+<db:simplelist type="vert" role="see-also">
+<db:member><db:link xlink:href="cbor.xml">CBOR Support in Qt</db:link></db:member>
+<db:member><db:link xlink:href="json.xml">JSON Support in Qt</db:link></db:member>
+</db:simplelist>
+</db:para>
+</db:section>
+</db:article>

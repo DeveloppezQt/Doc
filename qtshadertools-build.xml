@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Qt Shader Tools Build System Integration</db:title>
+<db:productname>QtShaderTools</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Shader Tools Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Compiles shaders and adds them to a Qt resource.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+<db:authorgroup>
+<db:author>
+<db:orgname class="corporation">The Qt Company Ltd.</db:orgname>
+</db:author>
+</db:authorgroup>
+</db:info>
+<db:para>Compiles shaders and adds them to a Qt resource</db:para>
+<db:section xml:id="introduction">
+<db:title>Introduction</db:title>
+<db:para>The <db:link xlink:href="qtshadertools-index.xml">Qt Shader Tools</db:link> module provides a CMake macro file that provides useful functions applications can take into use in their <db:code>CMakeLists.txt</db:code>.</db:para>
+<db:para>When using the <db:code>qt6_add_shaders</db:code> function, the <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link> tool will get invoked automatically by the build system, and the resulting <db:code>.qsb</db:code> files get added to the resource system implicitly.</db:para>
+</db:section>
+<db:section xml:id="first-example">
+<db:title>First Example</db:title>
+<db:para>Let's look at a simple example. Assume that we have a Qt Quick application that wants to provides its own wobble effect via <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link>. The fragment shader is implemented in <db:code>wobble.frag</db:code>. The <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link> item's fragmentShader property refers to <db:code>wobble.frag.qsb</db:code>. How do we ensure this .qsb file gets generated at build time?</db:para>
+<db:programlisting language="cpp" role="bad">...
+project(exampleapp LANGUAGES CXX)
+...
+find_package(Qt6 COMPONENTS ShaderTools)
+...
+qt6_add_executable(exampleapp
+    main.cpp
+)
+...
+qt6_add_resources(exampleapp &quot;exampleapp&quot;
+    PREFIX
+        &quot;/&quot;
+    FILES
+        &quot;main.qml&quot;
+)
+
+qt6_add_shaders(exampleapp &quot;exampleapp_shaders&quot;
+    PREFIX
+        &quot;/&quot;
+    FILES
+        &quot;wobble.frag&quot;
+)
+</db:programlisting>
+<db:para>The above is sufficient to enable the application to access <db:code>:/wobble.frag.qsb</db:code> at run time. The original Vulkan-style GLSL source code (wobble.frag) is not included in the application's executable and does not need to be shipped. If there are errors in the shader code, the <db:code>glslang</db:code> compiler messages are printed at build time and the build fails. When changing the shader source file, the changes are picked up automatically in the next build, like they would for C++ and other source files.</db:para>
+<db:para>The key is the <db:code>qt6_add_shaders</db:code> function, which shares similarity with <db:code>qt6_add_resources</db:code>. Without specifying further parameters, the function will lead to running qsb with a reasonable set of default arguments that are suitable for fragment shaders when targeting Vulkan, Metal, Direct 3D, and OpenGL or OpenGL ES.</db:para>
+<db:note>
+<db:para>Watch out for the <db:code>find_package</db:code> line. It is important to include the <db:code>find_package</db:code> for <db:code>ShaderTools</db:code>, otherwise <db:code>qt6_add_shaders</db:code> will not be available.</db:para>
+</db:note>
+<db:note>
+<db:para>Multiple <db:code>qt6_add_shaders</db:code> calls are supported. In complex applications it is not unlikely that different sets of shaders need different settings. The name after the project (<db:code>&quot;exampleapp_shaders&quot;</db:code> in the above example) has to be unique for each call.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="configuration">
+<db:title>Configuration</db:title>
+<db:para>By default <db:code>qt6_add_shaders</db:code> invokes <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link> as follows:</db:para>
+<db:programlisting language="cpp" role="bad">qsb --glsl &quot;100 es,120,150&quot; --hlsl 50 --msl 12 -o &amp;lt;output&amp;gt;.qsb &amp;lt;input&amp;gt;
+</db:programlisting>
+<db:para>This means that the resulting package will contain SPIR-V (for Vulkan 1.0), GLSL ES 100 (for OpenGL ES 2.0 and newer), GLSL 120 (for non-core profile OpenGL contexts), GLSL 150 (for core profile OpenGL contexts), HLSL source for Shader Model 5.0 (for Direct3D 11.1), and Metal Shading Language 1.2 source (for Metal).</db:para>
+<db:para>This is a good set of defaults for Qt Quick, and creates applications that are highly portable to a wide variety of systems. These defaults are not always suitable however. If the shader uses functions or constructs that do not have an equivalent in these targets, the process, and so the build, will fail. If that is the case, the targets will need to be adjusted, and this also means that the application's minimum system requirements get adjusted implicitly. As an example, take the <db:code>textureLod</db:code> GLSL function that is only available with OpenGL ES 3.0 and up (meaning GLSL ES 300 or higher). When requesting GLSL <db:code>300 es</db:code> instead of <db:code>100 es</db:code>, the build will succeed, but the resulting application will now require OpenGL ES 3.0 or higher and will not be compatible with OpenGL ES 2.0 based systems.</db:para>
+<db:section xml:id="shader-type">
+<db:title>Shader type</db:title>
+<db:para>The type of shader is deduced from the file extension. Thus, the extension must be one of the following:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>.vert</db:code> - for vertex shaders</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>.frag</db:code> - for fragment (pixel) shaders</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>.comp</db:code> - for compute shaders</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="targets">
+<db:title>Targets</db:title>
+<db:para>The following keywords are available:</db:para>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>GLSL</db:code> - Requests generating source code for the given list of GLSL versions. Watch out that the list follows the comma-separated <db:code>qsb</db:code> syntax. For example, a compute shader will want to specify <db:code>&quot;310 es,430&quot;</db:code> here as the defaults are not suitable for it.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>NOGLSL</db:code> - This argument-less keyword disables generating GLSL source. Suitable for applications that do not wish to function with OpenGL at all.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>HLSL</db:code> - Requests generating source code for the given list of HLSL (shader model) versions. The <db:code>qsb</db:code> tool follows GLSL-style version numbers and therefore <db:code>50</db:code> corresponds to Shader Model 5.0, <db:code>51</db:code> is 5.1.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>NOHLSL</db:code> - This argument-less keyword disables generating HLSL source. Suitable for applications that do not wish to function with Direct 3D at all.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>MSL</db:code> - Requests generating source code for the given version of the Metal Shading Language. <db:code>12</db:code> corresponds to 1.2, <db:code>20</db:code> to 2.0.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>NOMSL</db:code> - This argument-less keyword disables generating MSL source. Suitable for applications that do not wish to function with Metal at all.</db:para>
+</db:listitem>
+</db:itemizedlist>
+<db:para>The most commonly overridden setting is <db:code>GLSL</db:code>. For example, if the application's shaders use OpenGL 3.x features, it will likely want to specify something higher than <db:code>100 es</db:code> or <db:code>120</db:code>:</db:para>
+<db:programlisting language="cpp" role="bad">qt_add_shaders(exampleapp &quot;res_gl3shaders&quot;
+    GLSL &quot;300es,330&quot;
+    PREFIX
+        &quot;/shaders&quot;
+    FILES
+       shaders/ssao.vert
+       shaders/ssao.frag
+       shaders/skybox.vert
+       shaders/skybox.frag
+)
+</db:programlisting>
+<db:note>
+<db:para>The space before the <db:code>es</db:code> suffix is optional.</db:para>
+</db:note>
+</db:section>
+<db:section xml:id="qt-quick-specifics">
+<db:title>Qt Quick specifics</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>BATCHABLE</db:code> - Specifying this single, argument-less keyword is essential for vertex shaders that are used with Qt Quick, either in a <db:link xlink:href="qml-qtquick-shadereffect.xml">ShaderEffect</db:link> or in a <db:link xlink:href="qsgmaterialshader.xml">QSGMaterialShader</db:link>. It has no effect for fragment or compute shaders, and different types can safely be included in the same list since the keyword is taken into account only for the <db:code>.vert</db:code> files. Equivalent to the <db:code>-b</db:code> argument of <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="invoking-external-tools">
+<db:title>Invoking external tools</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>PRECOMPILE</db:code> - Equivalent to the <db:code>-c</db:code> or <db:code>-t</db:code> options of <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link>, depending on the platform. When building on Windows, this leads to invoking <db:code>fxc</db:code> from the Windows SDK to do the first phase of compilation (HLSL source to DXBC bytecode) at build time instead of at run time. The resulting <db:code>.qsb</db:code> file will only include the compilation results (the intermediate shader format), not the original shader source code.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>OPTIMIZED</db:code> - Invokes <db:code>spirv-opt</db:code> (which must be available from the Vulkan SDK or elsewhere) to perform optimizations on the SPIR-V bytecode. Equivalent to the <db:code>-O</db:code> argument of <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link>.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+<db:section xml:id="other-settings">
+<db:title>Other settings</db:title>
+<db:itemizedlist>
+<db:listitem>
+<db:para><db:code>DEFINES</db:code> - Defines macros that are active during shader compilation. Equivalent to the <db:code>-D</db:code> argument of <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link>. The list has the form of <db:code>&quot;name1=value1;name2=value2&quot;</db:code>. Alternatively, just like <db:code>FILES</db:code>, the list can be separated by newlines.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>OUTPUTS</db:code> - When the name of the generated .qsb file needs to be different from the source, for example because one shader file serves as the source for multiple .qsb files due to differentiating via <db:code>DEFINES</db:code>, this list can contain an entry for each item in <db:code>FILES</db:code>, specifying a file name typically ending in <db:code>.qsb</db:code>. The specified name is then passed in the <db:code>-o</db:code> argument to qsb instead of just appending <db:code>.qsb</db:code> to the source file name.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>DEBUGINFO</db:code> - Enables generating full debug information for SPIR-V, thus enabling tools like <db:link xlink:href="https://renderdoc.org/">RenderDoc</db:link> to display the full source when inspecting a pipeline or when performing vertex or fragment debugging. Equivalent to the <db:code>-g</db:code> argument of <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link>. Also has an effect for Direct 3D in case the <db:code>PRECOMPILE</db:code> keyword has been specified, as <db:code>fxc</db:code> is then instructed to include debug information in the generated intermediate bytecode.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>QUIET</db:code> - Suppresses debug and warning output from qsb. Only fatal errors are printed.</db:para>
+</db:listitem>
+<db:listitem>
+<db:para><db:code>OUTPUT_TARGETS</db:code> - When using qt_add_shaders with static libraries, one or more special targets will be generated. Should you wish to perform additional processing on these targets pass a value to the OUTPUT_TARGETS parameter.</db:para>
+</db:listitem>
+</db:itemizedlist>
+</db:section>
+</db:section>
+<db:section xml:id="substituting-hand-crafted-shaders">
+<db:title>Substituting Hand-Crafted Shaders</db:title>
+<db:para>The CMake integration also supports specifying replacements for given versions of the shader in the resulting .qsb file. This in effect is equivalent to running <db:link xlink:href="qtshadertools-qsb.xml">qsb</db:link> with the <db:code>-r</db:code> command-line option.</db:para>
+<db:para>This is enabled by the following special syntax in the FILES list:</db:para>
+<db:programlisting language="cpp" role="bad">FILES
+    &quot;shaders/externalsampler.frag@glsl,100es,shaders/externalsampler_gles.frag&quot;
+</db:programlisting>
+<db:para>The filename can be followed by any number of @-separated replacement specifications. Each of these specifies the shading language, the version, and the file from which the data is to be read separated by commas. See the <db:link xlink:href="qtshadertools-qsb.xml">QSB Manual</db:link> for details.</db:para>
+</db:section>
+</db:article>
