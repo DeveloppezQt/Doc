@@ -3,11 +3,13 @@
 <db:info>
 <db:title>Bluetooth Low Energy Overview</db:title>
 <db:productname>QtBluetooth</db:productname>
-<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
 <db:titleabbrev>Qt Bluetooth Reference Documentation</db:titleabbrev>
 <db:abstract>
 <db:para>The Qt Bluetooth Low Energy API enables communication between Bluetooth Low Energy devices.</db:para>
 </db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
 </db:info>
 <db:para>The Qt Bluetooth Low Energy API supports the peripheral/server and central/client roles. It is supported on all major Qt platforms. The only exception is the missing peripheral role support on Windows.</db:para>
 <db:section xml:id="what-is-bluetooth-low-energy">
@@ -188,34 +190,20 @@
 <db:programlisting language="cpp">m_deviceDiscoveryAgent = new QBluetoothDeviceDiscoveryAgent(this);
 m_deviceDiscoveryAgent-&amp;gt;setLowEnergyDiscoveryTimeout(15000);
 
-connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::deviceDiscovered,
-        this, &amp;amp;DeviceFinder::addDevice);
-connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::errorOccurred,
-        this, &amp;amp;DeviceFinder::scanError);
+connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::deviceDiscovered, this, &amp;amp;DeviceFinder::addDevice);
+connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::errorOccurred, this,
+        &amp;amp;DeviceFinder::scanError);
 
-connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::finished,
-        this, &amp;amp;DeviceFinder::scanFinished);
-connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::canceled,
-        this, &amp;amp;DeviceFinder::scanFinished);
+connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::finished, this, &amp;amp;DeviceFinder::scanFinished);
+connect(m_deviceDiscoveryAgent, &amp;amp;QBluetoothDeviceDiscoveryAgent::canceled, this, &amp;amp;DeviceFinder::scanFinished);
 m_deviceDiscoveryAgent-&amp;gt;start(QBluetoothDeviceDiscoveryAgent::LowEnergyMethod);
 </db:programlisting>
-<db:para>Since we are only interested in Low Energy devices we filter the device type within the receiving slot. The device type can be ascertained using the <db:link xlink:href="qbluetoothdeviceinfo.xml#coreConfigurations">QBluetoothDeviceInfo::coreConfigurations</db:link>() flag. The <db:link xlink:href="qbluetoothdevicediscoveryagent.xml#deviceDiscovered">deviceDiscovered</db:link>() signal may be emitted multiple times for the same device as more details are discovered. Here we match these device discoveries so that the user only sees the individual devices:</db:para>
+<db:para>Since we are only interested in Low Energy devices we filter the device type within the receiving slot. The device type can be ascertained using the <db:link xlink:href="qbluetoothdeviceinfo.xml#coreConfigurations">QBluetoothDeviceInfo::coreConfigurations</db:link>() flag:</db:para>
 <db:programlisting language="cpp">void DeviceFinder::addDevice(const QBluetoothDeviceInfo &amp;amp;device)
 {
     // If device is LowEnergy-device, add it to the list
     if (device.coreConfigurations() &amp;amp; QBluetoothDeviceInfo::LowEnergyCoreConfiguration) {
-        auto devInfo = new DeviceInfo(device);
-        auto it = std::find_if(m_devices.begin(), m_devices.end(),
-                               [devInfo](DeviceInfo *dev) {
-                                   return devInfo-&amp;gt;getAddress() == dev-&amp;gt;getAddress();
-                               });
-        if (it == m_devices.end()) {
-            m_devices.append(devInfo);
-        } else {
-            auto oldDev = *it;
-            *it = devInfo;
-            delete oldDev;
-        }
+        m_devices.append(new DeviceInfo(device));
         setInfo(tr(&amp;quot;Low Energy device found. Scanning more...&amp;quot;));
     }
     //...
@@ -282,8 +270,7 @@ m_control-&amp;gt;connectToDevice();
     {
         setInfo(tr(&amp;quot;Service discovered.&amp;quot;));
 
-        const QLowEnergyCharacteristic hrChar =
-                m_service-&amp;gt;characteristic(QBluetoothUuid(QBluetoothUuid::CharacteristicType::HeartRateMeasurement));
+        const QLowEnergyCharacteristic hrChar = m_service-&amp;gt;characteristic(QBluetoothUuid(QBluetoothUuid::CharacteristicType::HeartRateMeasurement));
         if (!hrChar.isValid()) {
             setError(&amp;quot;HR Data not found.&amp;quot;);
             break;
@@ -338,8 +325,9 @@ advertisingData.setIncludePowerLevel(true);
 advertisingData.setLocalName(&amp;quot;HeartRateServer&amp;quot;);
 advertisingData.setServices(QList&amp;lt;QBluetoothUuid&amp;gt;() &amp;lt;&amp;lt; QBluetoothUuid::ServiceClassUuid::HeartRate);
 bool errorOccurred = false;
-const std::unique_ptr&amp;lt;QLowEnergyController&amp;gt; leController(QLowEnergyController::createPeripheral());
-auto errorHandler = [&amp;amp;leController, &amp;amp;errorOccurred](QLowEnergyController::Error errorCode) {
+const QScopedPointer&amp;lt;QLowEnergyController&amp;gt; leController(QLowEnergyController::createPeripheral());
+auto errorHandler = [&amp;amp;leController,&amp;amp;errorOccurred](QLowEnergyController::Error errorCode)
+{
         qWarning().noquote().nospace() &amp;lt;&amp;lt; errorCode &amp;lt;&amp;lt; &amp;quot; occurred: &amp;quot;
             &amp;lt;&amp;lt; leController-&amp;gt;errorString();
         if (errorCode != QLowEnergyController::RemoteHostClosedError) {
@@ -348,9 +336,9 @@ auto errorHandler = [&amp;amp;leController, &amp;amp;errorOccurred](QLowEnergyCo
             QCoreApplication::quit();
         }
 };
-QObject::connect(leController.get(), &amp;amp;QLowEnergyController::errorOccurred, errorHandler);
+QObject::connect(leController.data(), &amp;amp;QLowEnergyController::errorOccurred, errorHandler);
 
-std::unique_ptr&amp;lt;QLowEnergyService&amp;gt; service(leController-&amp;gt;addService(serviceData));
+QScopedPointer&amp;lt;QLowEnergyService&amp;gt; service(leController-&amp;gt;addService(serviceData));
 leController-&amp;gt;startAdvertising(QLowEnergyAdvertisingParameters(), advertisingData,
                                advertisingData);
 if (errorOccurred)

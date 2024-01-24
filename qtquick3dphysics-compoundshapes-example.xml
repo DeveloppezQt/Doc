@@ -8,21 +8,22 @@
 <db:abstract>
 <db:para>Demonstrates using complex collision shapes.</db:para>
 </db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
 </db:info>
 <db:mediaobject>
 <db:imageobject>
 <db:imagedata fileref="images/compoundshapes-example.jpg"/>
 </db:imageobject>
 </db:mediaobject>
-<db:para>This example demonstrates how to use more than one collision shape to create complex objects for collision detection. The scene consists of a green static plane and a series of links connected to each other. At the beginning, the simulation is disabled. After some time or when the user press the space key, the simulation will start. An animation will start that causes the leftmost and rightmost links to move horizontally back and forth.</db:para>
+<db:para>This example demonstrates how to use more than one collision shape to create complex objects for collision detection. The scene consists of a green static plane and a series of links connected to each other. At the beginning, the simulation is disabled. After some time or when the user press the space key, the simulation will start. An animation will start that causes the leftmost link to move horizontally. Since the leftmost link is purely controlled by animation, the <db:link xlink:href="qml-qtquick3dphysics-dynamicrigidbody.xml#isKinematic-prop">isKinematic</db:link> property is set to true.</db:para>
 <db:section xml:id="setup">
 <db:title>Setup</db:title>
-<db:para>As usual we need to add our <db:link xlink:href="qml-qtquick3d-physics-physicsworld.xml">PhysicsWorld</db:link>:</db:para>
-<db:programlisting language="qml">PhysicsWorld {
+<db:para>As usual we need to add our <db:link xlink:href="qml-qtquick3dphysics-dynamicsworld.xml">DynamicsWorld</db:link>:</db:para>
+<db:programlisting language="qml">DynamicsWorld {
     id: physicsWorld
+    running: false
     enableCCD: true
-    maximumTimestep: 20
-    scene: viewport.scene
 }
 </db:programlisting>
 <db:para>We do the usual setup where we have an environment, camera and lights:</db:para>
@@ -36,7 +37,7 @@ focus: true
 
 PerspectiveCamera {
     id: camera
-    position: Qt.vector3d(0, 900, 1500)
+    position: Qt.vector3d(-200, 900, 1300)
     eulerRotation: Qt.vector3d(-10, 0, 0)
     clipFar: 15500
     clipNear: 1
@@ -64,7 +65,7 @@ DirectionalLight {
     collisionShapes: PlaneShape {}
     Model {
         source: &amp;quot;#Rectangle&amp;quot;
-        scale: Qt.vector3d(500, 500, 1)
+        scale: Qt.vector3d(500, 500, 0)
         materials: DefaultMaterial {
             diffuseColor: &amp;quot;green&amp;quot;
         }
@@ -75,17 +76,39 @@ DirectionalLight {
 </db:programlisting>
 <db:para>Then we make instances of our links.</db:para>
 <db:programlisting language="qml">MeshLink {
-    id: leftLink
     isKinematic: true
-    property vector3d startPos: Qt.vector3d(-6 * viewport.ringDistance,
-                                            viewport.ringY,
-                                            0)
-    property vector3d startRot: Qt.vector3d(90, 0, 0)
-    kinematicPosition: startPos
-    position: startPos
-    kinematicEulerRotation: startRot
-    eulerRotation: startRot
+    position: Qt.vector3d(-6 * viewport.ringDistance, viewport.ringY, 0)
+    eulerRotation: Qt.vector3d(90, 0, 0)
     color: &amp;quot;red&amp;quot;
+
+    SequentialAnimation on x {
+        running: physicsWorld.running
+        PauseAnimation {
+            duration: 7000
+        }
+        NumberAnimation {
+            from: -6 * viewport.ringDistance
+            to: -9 * viewport.ringDistance
+            duration: 3000
+            easing.type: Easing.InOutQuad
+        }
+
+        SequentialAnimation {
+            NumberAnimation {
+                from: -9 * viewport.ringDistance
+                to: 3 * viewport.ringDistance
+                easing.type: Easing.InOutCubic
+                duration: 8000
+            }
+            NumberAnimation {
+                to: -9 * viewport.ringDistance
+                from: 3 * viewport.ringDistance
+                easing.type: Easing.InOutCubic
+                duration: 8000
+            }
+            loops: Animation.Infinite
+        }
+    }
 }
 
 CapsuleLink {
@@ -143,73 +166,13 @@ CapsuleLink {
 }
 
 MeshLink {
-    id: rightLink
     isKinematic: true
-    property vector3d startPos: Qt.vector3d(6 * viewport.ringDistance,
-                                            viewport.ringY,
-                                            0)
-    property vector3d startRot: Qt.vector3d(90, 0, 0)
-    kinematicPosition: startPos
-    position: startPos
-    kinematicEulerRotation: startRot
-    eulerRotation: startRot
+    position: Qt.vector3d(6 * viewport.ringDistance, viewport.ringY, 0)
+    eulerRotation: Qt.vector3d(90, 0, 0)
     color: &amp;quot;red&amp;quot;
 }
 </db:programlisting>
-<db:para>The first link which is on the left has its <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml#isKinematic-prop">isKinematic</db:link> property set to <db:code>true</db:code> so that we can control it via animation. Since it is a kinematic object we need to set the <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml#kinematicPosition-prop">kinematicPosition</db:link> and <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml#kinematicRotation-prop">kinematicRotation</db:link> properties. We animate it by animating the <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml#kinematicPosition-prop">kinematicPosition</db:link> property. The other links are instanced with some spacing between them.</db:para>
-<db:para>To get a smooth animation that follows the physical simulation exactly we use an <db:link xlink:href="../qtquick/qml-qtquick-animationcontroller.xml">AnimationController</db:link> which we connect to the <db:code>onFrameDone</db:code> signal on the <db:link xlink:href="qml-qtquick3d-physics-physicsworld.xml">PhysicsWorld</db:link>. This way, if there were to be any frame drops slowing down the simulation the animation will slow down accordingly. We use a <db:link xlink:href="../qtquick/qml-qtquick-sequentialanimation.xml">SequentialAnimation</db:link> with four <db:link xlink:href="../qtquick/qml-qtquick-numberanimation.xml">NumberAnimation</db:link> to move the leftmost and rightmost rings back and forth. This is the QML code for the animation:</db:para>
-<db:programlisting language="qml">Connections {
-    target: physicsWorld
-    property real totalAnimationTime: 12000
-    function onFrameDone(timeStep) {
-        let progressStep = timeStep / totalAnimationTime
-        animationController.progress += progressStep
-        if (animationController.progress &amp;gt;= 1) {
-            animationController.completeToEnd()
-            animationController.reload()
-            animationController.progress = 0
-        }
-    }
-}
-
-AnimationController {
-    id: animationController
-    animation: SequentialAnimation {
-        NumberAnimation {
-            target: leftLink
-            property: &amp;quot;kinematicPosition.x&amp;quot;
-            to: 3 * viewport.ringDistance
-            from: -6 * viewport.ringDistance
-            easing.type: Easing.InOutCubic
-            duration: 1000
-        }
-        NumberAnimation {
-            target: leftLink
-            property: &amp;quot;kinematicPosition.x&amp;quot;
-            from: 3 * viewport.ringDistance
-            to: -6 * viewport.ringDistance
-            easing.type: Easing.InOutCubic
-            duration: 1000
-        }
-        NumberAnimation {
-            target: rightLink
-            property: &amp;quot;kinematicPosition.x&amp;quot;
-            to: -3 * viewport.ringDistance
-            from: 6 * viewport.ringDistance
-            easing.type: Easing.InOutCubic
-            duration: 1000
-        }
-        NumberAnimation {
-            target: rightLink
-            property: &amp;quot;kinematicPosition.x&amp;quot;
-            from: -3 * viewport.ringDistance
-            to: 6 * viewport.ringDistance
-            easing.type: Easing.InOutCubic
-            duration: 1000
-        }
-    }
-}
-</db:programlisting>
+<db:para>The first link which is on the left has its <db:link xlink:href="qml-qtquick3dphysics-dynamicrigidbody.xml#isKinematic-prop">isKinematic</db:link> property set to true so that we can control it via animation. The other links are instanced with some spacing between them.</db:para>
 <db:para>The interesting part is what is happening inside the Mesh and Capsule Links files. Let's take a look at each one of them.</db:para>
 </db:section>
 <db:section xml:id="mesh-link">
@@ -226,45 +189,47 @@ AnimationController {
 
     Model {
         source: &amp;quot;meshes/ring.mesh&amp;quot;
-        materials: [_material]
+        materials: [
+            _material
+        ]
     }
 
     collisionShapes: [
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_001.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_001.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_002.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_002.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_003.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_003.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_004.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_004.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_005.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_005.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_006.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_006.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_007.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_007.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_008.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_008.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_009.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_009.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_010.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_010.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_011.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_011.mesh&amp;quot;
         },
         ConvexMeshShape {
-            source: &amp;quot;meshes/segmentedRing_012.mesh&amp;quot;
+            meshSource: &amp;quot;meshes/segmentedRing_012.mesh&amp;quot;
         }
     ]
 }
@@ -293,77 +258,77 @@ AnimationController {
         Model {
             materials: material3
             source: &amp;quot;#Cylinder&amp;quot;
-            scale: Qt.vector3d(w / 100, len / 100, w / 100)
+            scale: Qt.vector3d(w/100, len/100, w/100)
             eulerRotation.z: 90
-            y: -len / 2
+            y: -len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Cylinder&amp;quot;
-            scale: Qt.vector3d(w / 100, len / 100, w / 100)
+            scale: Qt.vector3d(w/100, len/100, w/100)
             eulerRotation.z: 90
-            y: len / 2
+            y: len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Cylinder&amp;quot;
-            scale: Qt.vector3d(w / 100, len / 100, w / 100)
-            x: len / 2
+            scale: Qt.vector3d(w/100, len/100, w/100)
+            x: len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Cylinder&amp;quot;
-            scale: Qt.vector3d(w / 100, len / 100, w / 100)
-            x: -len / 2
+            scale: Qt.vector3d(w/100, len/100, w/100)
+            x: -len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Sphere&amp;quot;
-            scale: Qt.vector3d(w / 100, w / 100, w / 100)
-            x: -len / 2
-            y: -len / 2
+            scale: Qt.vector3d(w/100, w/100, w/100)
+            x: -len/2
+            y: -len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Sphere&amp;quot;
-            scale: Qt.vector3d(w / 100, w / 100, w / 100)
-            x: -len / 2
-            y: len / 2
+            scale: Qt.vector3d(w/100, w/100, w/100)
+            x: -len/2
+            y: len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Sphere&amp;quot;
-            scale: Qt.vector3d(w / 100, w / 100, w / 100)
-            x: len / 2
-            y: -len / 2
+            scale: Qt.vector3d(w/100, w/100, w/100)
+            x: len/2
+            y: -len/2
         }
         Model {
             materials: material3
             source: &amp;quot;#Sphere&amp;quot;
-            scale: Qt.vector3d(w / 100, w / 100, w / 100)
-            x: len / 2
-            y: len / 2
+            scale: Qt.vector3d(w/100, w/100, w/100)
+            x: len/2
+            y: len/2
         }
     }
     collisionShapes: [
         CapsuleShape {
-            y: -len / 2
+            y: -len/2
             height: len
             diameter: w
         },
         CapsuleShape {
-            y: len / 2
+            y: len/2
             height: len
             diameter: w
         },
         CapsuleShape {
-            x: -len / 2
+            x: -len/2
             eulerRotation.z: 90
             height: len
             diameter: w
         },
         CapsuleShape {
-            x: len / 2
+            x: len/2
             eulerRotation.z: 90
             height: len
             diameter: w

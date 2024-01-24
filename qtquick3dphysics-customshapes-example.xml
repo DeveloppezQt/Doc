@@ -8,16 +8,259 @@
 <db:abstract>
 <db:para>Demonstrates using different shapes.</db:para>
 </db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
 </db:info>
 <db:mediaobject>
 <db:imageobject>
 <db:imagedata fileref="images/customshapes-example.jpg"/>
 </db:imageobject>
 </db:mediaobject>
-<db:para>This example demonstrates loading and spawning several rigid body meshes as well as animating them. The scene consists of a dice tower, a tablecloth, a cup and a handful of dice. The cup is animated to collect spawning dice and put them in the dice tower. The dice will then roll down and out on the tablecloth.</db:para>
-<db:section xml:id="environment">
-<db:title>Environment</db:title>
-<db:para>As usual we have a <db:link xlink:href="qml-qtquick3d-physics-physicsworld.xml">PhysicsWorld</db:link> and a <db:link xlink:href="../qtquick3d/qml-qtquick3d-view3d.xml">View3D</db:link>. In the <db:link xlink:href="../qtquick3d/qml-qtquick3d-view3d.xml">View3D</db:link> we have our environment which sets up a lightprobe:</db:para>
+<db:para>This example demonstrates loading and spawning several rigid body meshes as well as animating them. The scene consists of a dice tower, a weave, a cup and a handful of dices. The cup is animated to collect spawning dices and put them in the dice tower. The dices will then roll down and out on the weave.</db:para>
+<db:section xml:id="qml">
+<db:title>QML</db:title>
+<db:para>This is the full qml code for the example:</db:para>
+<db:programlisting language="qml">Window {
+    width: 1280
+    height: 720
+    visible: true
+    title: qsTr(&amp;quot;QtQuick3DPhysics Custom Shapes&amp;quot;)
+
+    DynamicsWorld {
+        id: physicsWorld
+        running: true
+        typicalLength: 2
+        enableCCD: true
+    }
+
+    View3D {
+        id: viewport
+        anchors.fill: parent
+
+        environment: SceneEnvironment {
+            clearColor: &amp;quot;white&amp;quot;
+            backgroundMode: SceneEnvironment.SkyBox
+            antialiasingMode: SceneEnvironment.MSAA
+            antialiasingQuality: SceneEnvironment.High
+            lightProbe: proceduralSky
+        }
+
+        Texture {
+            id: proceduralSky
+            textureData: ProceduralSkyTextureData {
+                sunLongitude: -115
+            }
+        }
+
+        Texture {
+            id: weaveNormal
+            source: &amp;quot;maps/weave.png&amp;quot;
+            scaleU: 200
+            scaleV: 200
+            generateMipmaps: true
+            mipFilter: Texture.Linear
+        }
+
+        Texture {
+            id: numberNormal
+            source: &amp;quot;maps/numbers-normal.png&amp;quot;
+        }
+
+        Texture {
+            id: numberFill
+            source: &amp;quot;maps/numbers.png&amp;quot;
+            generateMipmaps: true
+            mipFilter: Texture.Linear
+        }
+
+        Node {
+            id: scene
+            scale: Qt.vector3d(2, 2, 2)
+            PerspectiveCamera {
+                id: camera
+                position: Qt.vector3d(-45, 20, 60)
+                eulerRotation: Qt.vector3d(-6, -13, 0)
+                clipFar: 1000
+                clipNear: 0.1
+            }
+
+            DirectionalLight {
+                eulerRotation: Qt.vector3d(-45, 25, 0)
+                castsShadow: true
+                brightness: 1
+                shadowMapQuality: Light.ShadowMapQualityVeryHigh
+            }
+
+            StaticRigidBody {
+                position: Qt.vector3d(-15, -8, 0)
+                id: tablecloth
+
+                Model {
+                    geometry: HeightFieldGeometry {
+                        id: tableclothGeometry
+                        extents: Qt.vector3d(150, 20, 150)
+                        heightMap: &amp;quot;maps/cloth-heightmap.png&amp;quot;
+                        smoothShading: false
+                    }
+                    materials: PrincipledMaterial {
+                        baseColor: &amp;quot;#447722&amp;quot;
+                        roughness: 0.8
+                        normalMap: weaveNormal
+                        normalStrength: 0.7
+                    }
+                }
+
+                collisionShapes: HeightFieldShape {
+                    id: hfShape
+                    extents: tableclothGeometry.extents
+                    heightMap: &amp;quot;maps/cloth-heightmap.png&amp;quot;
+                }
+            }
+
+            DynamicRigidBody {
+                id: diceCup
+                isKinematic: true
+                mass: 0
+                property vector3d restPos: Qt.vector3d(11, 6, 0)
+                position: restPos
+                pivot: Qt.vector3d(0, 6, 0)
+                collisionShapes: TriangleMeshShape {
+                    id: cupShape
+                    meshSource: &amp;quot;meshes/simpleCup.mesh&amp;quot;
+                }
+                Model {
+                    source: &amp;quot;meshes/cup.mesh&amp;quot;
+                    materials: PrincipledMaterial {
+                        baseColor: &amp;quot;#cc9988&amp;quot;
+                        roughness: 0.3
+                        metalness: 1
+                    }
+                }
+                Behavior on eulerRotation.z {
+                    NumberAnimation { duration: 1500 }
+                }
+                Behavior on position {
+                    PropertyAnimation { duration: 1500 }
+                }
+            }
+
+            StaticRigidBody {
+                id: diceTower
+                x: -4
+                Model {
+                    id: testModel
+                    source: &amp;quot;meshes/tower.mesh&amp;quot;
+                    materials: [
+                        PrincipledMaterial {
+                            baseColor: &amp;quot;#ccccce&amp;quot;
+                            roughness: 0.3
+                        },
+                        PrincipledMaterial {
+                            id: glassMaterial
+                            baseColor: &amp;quot;#aaaacc&amp;quot;
+                            transmissionFactor: 0.95
+                            thicknessFactor: 1
+                            roughness: 0.05
+                        }
+                    ]
+                }
+                collisionShapes: TriangleMeshShape {
+                    id: triShape
+                    meshSource: &amp;quot;meshes/tower.mesh&amp;quot;
+                }
+            }
+
+            Component {
+                id: diceComponent
+
+                DynamicRigidBody {
+                    id: thisBody
+                    function randomInRange(min, max) {
+                        return Math.random() * (max - min) + min;
+                    }
+
+                    function restore() {
+                        reset(initialPosition, eulerRotation)
+                    }
+
+                    scale: Qt.vector3d(scaleFactor, scaleFactor, scaleFactor)
+                    eulerRotation: Qt.vector3d(randomInRange(0, 360),
+                                               randomInRange(0, 360),
+                                               randomInRange(0, 360))
+
+                    property vector3d initialPosition: Qt.vector3d(11 + 1.5*Math.cos(index/(Math.PI/4)),
+                                                                   5 + index * 1.5,
+                                                                   0)
+                    position: initialPosition
+
+                    property real scaleFactor: randomInRange(0.8, 1.4)
+                    property color baseCol: Qt.hsla(randomInRange(0, 1),
+                                                    randomInRange(0.6, 1.0),
+                                                    randomInRange(0.4, 0.7),
+                                                    1.0)
+
+                    collisionShapes: ConvexMeshShape {
+                        id: diceShape
+                        meshSource: Math.random() &amp;lt; 0.25 ? &amp;quot;meshes/icosahedron.mesh&amp;quot;
+                                  : Math.random() &amp;lt; 0.5 ? &amp;quot;meshes/dodecahedron.mesh&amp;quot;
+                                  : Math.random() &amp;lt; 0.75 ? &amp;quot;meshes/octahedron.mesh&amp;quot;
+                                                         : &amp;quot;meshes/tetrahedron.mesh&amp;quot;
+                    }
+
+                    Model {
+                        id: thisModel
+                        source: diceShape.meshSource
+                        materials: PrincipledMaterial {
+                            metalness: 1.0
+                            roughness: randomInRange(0.2, 0.6)
+                            baseColor: baseCol
+                            emissiveMap: numberFill
+                            emissiveFactor: Qt.vector3d(1, 1, 1)
+                            normalMap: numberNormal
+                            normalStrength: 0.75
+                        }
+                    }
+                }
+            }
+
+            Repeater3D {
+                id: dicePool
+                model: 25
+                delegate: diceComponent
+                function restore() {
+                    for (let i = 0; i &amp;lt; count; i++) {
+                        objectAt(i).restore()
+                    }
+                }
+            }
+
+            SequentialAnimation {
+                running: physicsWorld.running
+                PauseAnimation { duration: 1500 }
+                ScriptAction { script: diceCup.position = Qt.vector3d(4, 45, 0) }
+                PauseAnimation { duration: 1500 }
+                ScriptAction { script: { diceCup.eulerRotation.z = 130; diceCup.position = Qt.vector3d(0, 45, 0) } }
+                PauseAnimation { duration: 3000 }
+                ScriptAction { script: { diceCup.eulerRotation.z = 0; diceCup.position = Qt.vector3d(4, 45, 0) } }
+                PauseAnimation { duration: 1500 }
+                ScriptAction { script: diceCup.position = diceCup.restPos }
+                PauseAnimation { duration: 2000 }
+                ScriptAction { script: dicePool.restore() }
+                loops: Animation.Infinite
+            }
+        } // scene
+    } // View3D
+
+    WasdController {
+        keysEnabled: true
+        controlledObject: camera
+        speed: 0.2
+    }
+}
+</db:programlisting>
+<db:section xml:id="enivronment">
+<db:title>Enivronment</db:title>
+<db:para>As usual it contains a <db:link xlink:href="qml-qtquick3dphysics-dynamicsworld.xml">DynamicsWorld</db:link> and a <db:link xlink:href="../qtquick3d/qml-qtquick3d-view3d.xml">View3D</db:link>. In the <db:link xlink:href="../qtquick3d/qml-qtquick3d-view3d.xml">View3D</db:link> we have our environment which sets up a lightprobe:</db:para>
 <db:programlisting language="qml">environment: SceneEnvironment {
     clearColor: &amp;quot;white&amp;quot;
     backgroundMode: SceneEnvironment.SkyBox
@@ -29,7 +272,7 @@
 </db:section>
 <db:section xml:id="textures">
 <db:title>Textures</db:title>
-<db:para>We define four textures which will be used for the skybox, the tablecloth and the numbers on the dice:</db:para>
+<db:para>We define four textures which will be used for the skybox, the weave and the numbers on the dice:</db:para>
 <db:programlisting language="qml">Texture {
     id: proceduralSky
     textureData: ProceduralSkyTextureData {
@@ -66,8 +309,8 @@ Texture {
 scale: Qt.vector3d(2, 2, 2)
 PerspectiveCamera {
     id: camera
-    position: Qt.vector3d(-45, 25, 60)
-    eulerRotation: Qt.vector3d(-6, -33, 0)
+    position: Qt.vector3d(-45, 20, 60)
+    eulerRotation: Qt.vector3d(-6, -13, 0)
     clipFar: 1000
     clipNear: 0.1
 }
@@ -80,9 +323,9 @@ DirectionalLight {
 }
 </db:programlisting>
 </db:section>
-<db:section xml:id="tablecloth">
-<db:title>Tablecloth</db:title>
-<db:para>We add the tablecloth which is a <db:link xlink:href="qml-qtquick3d-physics-staticrigidbody.xml">StaticRigidBody</db:link> consisting of a model with a weave texture and a <db:link xlink:href="qml-qtquick3d-physics-heightfieldshape.xml">HeightFieldShape</db:link> for collision.</db:para>
+<db:section xml:id="weave">
+<db:title>Weave</db:title>
+<db:para>We add the weave which is a <db:link xlink:href="qml-qtquick3dphysics-staticrigidbody.xml">StaticRigidBody</db:link> consisting of a model with a weave texture and a <db:link xlink:href="qml-qtquick3dphysics-heightfieldshape.xml">HeightFieldShape</db:link> for collision.</db:para>
 <db:programlisting language="qml">StaticRigidBody {
     position: Qt.vector3d(-15, -8, 0)
     id: tablecloth
@@ -91,7 +334,7 @@ DirectionalLight {
         geometry: HeightFieldGeometry {
             id: tableclothGeometry
             extents: Qt.vector3d(150, 20, 150)
-            source: &amp;quot;maps/cloth-heightmap.png&amp;quot;
+            heightMap: &amp;quot;maps/cloth-heightmap.png&amp;quot;
             smoothShading: false
         }
         materials: PrincipledMaterial {
@@ -105,27 +348,24 @@ DirectionalLight {
     collisionShapes: HeightFieldShape {
         id: hfShape
         extents: tableclothGeometry.extents
-        source: &amp;quot;maps/cloth-heightmap.png&amp;quot;
+        heightMap: &amp;quot;maps/cloth-heightmap.png&amp;quot;
     }
 }
 </db:programlisting>
 </db:section>
 <db:section xml:id="cup">
 <db:title>Cup</db:title>
-<db:para>We define the cup as a <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml">DynamicRigidBody</db:link> with a Model and a <db:link xlink:href="qml-qtquick3d-physics-trianglemeshshape.xml">TriangleMeshShape</db:link> as the collision shape. It has a Behavior on the <db:code>eulerRotation</db:code> and <db:code>position</db:code> properties as these are part of an animation.</db:para>
+<db:para>We define the cup as a <db:link xlink:href="qml-qtquick3dphysics-dynamicrigidbody.xml">DynamicRigidBody</db:link> with a Model and a <db:link xlink:href="qml-qtquick3dphysics-trianglemeshshape.xml">TriangleMeshShape</db:link> as the collision shape. It has a Behavior on the <db:code>eulerRotation</db:code> and <db:code>position</db:code> properties as these are part of an animation.</db:para>
 <db:programlisting language="qml">DynamicRigidBody {
     id: diceCup
     isKinematic: true
     mass: 0
-    property vector3d bottomPos: Qt.vector3d(11, 6, 0)
-    property vector3d topPos: Qt.vector3d(11, 45, 0)
-    property vector3d unloadPos: Qt.vector3d(0, 45, 0)
-    position: bottomPos
-    kinematicPivot: Qt.vector3d(0, 6, 0)
-    kinematicPosition: bottomPos
+    property vector3d restPos: Qt.vector3d(11, 6, 0)
+    position: restPos
+    pivot: Qt.vector3d(0, 6, 0)
     collisionShapes: TriangleMeshShape {
         id: cupShape
-        source: &amp;quot;meshes/simpleCup.mesh&amp;quot;
+        meshSource: &amp;quot;meshes/simpleCup.mesh&amp;quot;
     }
     Model {
         source: &amp;quot;meshes/cup.mesh&amp;quot;
@@ -135,12 +375,18 @@ DirectionalLight {
             metalness: 1
         }
     }
+    Behavior on eulerRotation.z {
+        NumberAnimation { duration: 1500 }
+    }
+    Behavior on position {
+        PropertyAnimation { duration: 1500 }
+    }
 }
 </db:programlisting>
 </db:section>
 <db:section xml:id="tower">
 <db:title>Tower</db:title>
-<db:para>The tower is just a <db:link xlink:href="qml-qtquick3d-physics-staticrigidbody.xml">StaticRigidBody</db:link> with a Model and a <db:link xlink:href="qml-qtquick3d-physics-trianglemeshshape.xml">TriangleMeshShape</db:link> for collision.</db:para>
+<db:para>The tower is just a <db:link xlink:href="qml-qtquick3dphysics-staticrigidbody.xml">StaticRigidBody</db:link> with a Model and a <db:link xlink:href="qml-qtquick3dphysics-trianglemeshshape.xml">TriangleMeshShape</db:link> for collision.</db:para>
 <db:programlisting language="qml">StaticRigidBody {
     id: diceTower
     x: -4
@@ -163,21 +409,21 @@ DirectionalLight {
     }
     collisionShapes: TriangleMeshShape {
         id: triShape
-        source: &amp;quot;meshes/tower.mesh&amp;quot;
+        meshSource: &amp;quot;meshes/tower.mesh&amp;quot;
     }
 }
 </db:programlisting>
 </db:section>
-<db:section xml:id="dice">
-<db:title>Dice</db:title>
-<db:para>To generate the dice we use a Component and a <db:link xlink:href="../qtquick3d/qml-qtquick3d-repeater3d.xml">Repeater3D</db:link>. The Component contains a <db:link xlink:href="qml-qtquick3d-physics-dynamicrigidbody.xml">DynamicRigidBody</db:link> with a <db:link xlink:href="qml-qtquick3d-physics-convexmeshshape.xml">ConvexMeshShape</db:link> and a Model. The position, color, scale and mesh source are randomly generated for each die.</db:para>
+<db:section xml:id="dices">
+<db:title>Dices</db:title>
+<db:para>To generate the dices we use a Component and a <db:link xlink:href="../qtquick3d/qml-qtquick3d-repeater3d.xml">Repeater3D</db:link>. The Component contains a <db:link xlink:href="qml-qtquick3dphysics-dynamicrigidbody.xml">DynamicRigidBody</db:link> with a <db:link xlink:href="qml-qtquick3dphysics-convexmeshshape.xml">ConvexMeshShape</db:link> and a Model. The position, color, scale and mesh source are randomly generated for each die.</db:para>
 <db:programlisting language="qml">Component {
     id: diceComponent
 
     DynamicRigidBody {
         id: thisBody
         function randomInRange(min, max) {
-            return Math.random() * (max - min) + min
+            return Math.random() * (max - min) + min;
         }
 
         function restore() {
@@ -189,8 +435,8 @@ DirectionalLight {
                                    randomInRange(0, 360),
                                    randomInRange(0, 360))
 
-        property vector3d initialPosition: Qt.vector3d(11 + 1.5 * Math.cos(index/(Math.PI/4)),
-                                                       diceCup.bottomPos.y + index * 1.5,
+        property vector3d initialPosition: Qt.vector3d(11 + 1.5*Math.cos(index/(Math.PI/4)),
+                                                       5 + index * 1.5,
                                                        0)
         position: initialPosition
 
@@ -202,15 +448,15 @@ DirectionalLight {
 
         collisionShapes: ConvexMeshShape {
             id: diceShape
-            source: Math.random() &amp;lt; 0.25 ? &amp;quot;meshes/icosahedron.mesh&amp;quot;
-                  : Math.random() &amp;lt; 0.5 ? &amp;quot;meshes/dodecahedron.mesh&amp;quot;
-                  : Math.random() &amp;lt; 0.75 ? &amp;quot;meshes/octahedron.mesh&amp;quot;
-                                         : &amp;quot;meshes/tetrahedron.mesh&amp;quot;
+            meshSource: Math.random() &amp;lt; 0.25 ? &amp;quot;meshes/icosahedron.mesh&amp;quot;
+                      : Math.random() &amp;lt; 0.5 ? &amp;quot;meshes/dodecahedron.mesh&amp;quot;
+                      : Math.random() &amp;lt; 0.75 ? &amp;quot;meshes/octahedron.mesh&amp;quot;
+                                             : &amp;quot;meshes/tetrahedron.mesh&amp;quot;
         }
 
         Model {
             id: thisModel
-            source: diceShape.source
+            source: diceShape.meshSource
             materials: PrincipledMaterial {
                 metalness: 1.0
                 roughness: randomInRange(0.2, 0.6)
@@ -229,7 +475,7 @@ Repeater3D {
     model: 25
     delegate: diceComponent
     function restore() {
-        for (var i = 0; i &amp;lt; count; i++) {
+        for (let i = 0; i &amp;lt; count; i++) {
             objectAt(i).restore()
         }
     }
@@ -238,64 +484,20 @@ Repeater3D {
 </db:section>
 <db:section xml:id="animation">
 <db:title>Animation</db:title>
-<db:para>To make the dice move from the cup to the dice tower we animate the cup and move it up and then tip it over. To make sure that the animation stays in sync with the physical simulation we use an <db:link xlink:href="../qtquick/qml-qtquick-animationcontroller.xml">AnimationController</db:link> which we connect to the <db:code>onFrameDone</db:code> signal on the <db:link xlink:href="qml-qtquick3d-physics-physicsworld.xml">PhysicsWorld</db:link>. After every simulated frame we progress the animation with the elapsed timestep.</db:para>
-<db:programlisting language="qml">Connections {
-    target: physicsWorld
-    property real totalAnimationTime: 7500
-    function onFrameDone(timeStep) {
-        let progressStep = timeStep / totalAnimationTime
-        animationController.progress += progressStep
-        if (animationController.progress &amp;gt;= 1) {
-            animationController.completeToEnd()
-            animationController.reload()
-            animationController.progress = 0
-        }
-    }
-}
-
-AnimationController {
-    id: animationController
-    animation: SequentialAnimation {
-        PauseAnimation { duration: 2500 }
-        PropertyAnimation {
-            target: diceCup
-            property: &amp;quot;kinematicPosition&amp;quot;
-            to: diceCup.topPos
-            duration: 2500
-        }
-        ParallelAnimation {
-            PropertyAnimation {
-                target: diceCup
-                property: &amp;quot;kinematicEulerRotation.z&amp;quot;
-                to: 130
-                duration: 1500
-            }
-            PropertyAnimation {
-                target: diceCup
-                property: &amp;quot;kinematicPosition&amp;quot;
-                to: diceCup.unloadPos
-                duration: 1500
-            }
-        }
-        PauseAnimation { duration: 1000 }
-        ParallelAnimation {
-            PropertyAnimation {
-                target: diceCup
-                property: &amp;quot;kinematicEulerRotation.z&amp;quot;
-                to: 0
-                duration: 1500
-            }
-            PropertyAnimation {
-                target: diceCup
-                property: &amp;quot;kinematicPosition&amp;quot;
-                to: diceCup.topPos
-                duration: 1500
-            }
-        }
-        PropertyAnimation { target: diceCup; property: &amp;quot;kinematicPosition&amp;quot;; to: diceCup.bottomPos; duration: 1500 }
-        PauseAnimation { duration: 2000 }
-        ScriptAction { script: dicePool.restore() }
-    }
+<db:para>To make the dices move from the cup to the dice tower we animate the cup and move it up and then tip it over. This is done using a <db:link xlink:href="qml-qtquick-sequentialanimation.xml">SequentialAnimation</db:link>:</db:para>
+<db:programlisting language="qml">SequentialAnimation {
+    running: physicsWorld.running
+    PauseAnimation { duration: 1500 }
+    ScriptAction { script: diceCup.position = Qt.vector3d(4, 45, 0) }
+    PauseAnimation { duration: 1500 }
+    ScriptAction { script: { diceCup.eulerRotation.z = 130; diceCup.position = Qt.vector3d(0, 45, 0) } }
+    PauseAnimation { duration: 3000 }
+    ScriptAction { script: { diceCup.eulerRotation.z = 0; diceCup.position = Qt.vector3d(4, 45, 0) } }
+    PauseAnimation { duration: 1500 }
+    ScriptAction { script: diceCup.position = diceCup.restPos }
+    PauseAnimation { duration: 2000 }
+    ScriptAction { script: dicePool.restore() }
+    loops: Animation.Infinite
 }
 </db:programlisting>
 </db:section>
@@ -308,6 +510,7 @@ AnimationController {
     speed: 0.2
 }
 </db:programlisting>
+</db:section>
 </db:section>
 <db:section>
 <db:title>List of Files</db:title>

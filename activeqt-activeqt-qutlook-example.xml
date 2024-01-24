@@ -3,11 +3,13 @@
 <db:info>
 <db:title>Qutlook Example (ActiveQt)</db:title>
 <db:productname>ActiveQt</db:productname>
-<db:edition>Qt 6.5.3 Reference Documentation</db:edition>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
 <db:titleabbrev>ActiveQt</db:titleabbrev>
 <db:abstract>
 <db:para>The Qutlook example demonstrates the use of ActiveQt to automate Outlook. The example makes use of the <db:link xlink:href="activeqt-dumpcpp.xml">dumpcpp</db:link> tool to generate a C++ namespace for the type library describing the Outlook Object Model.</db:para>
 </db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
 </db:info>
 <db:para>The project file for the example looks like this:</db:para>
 <db:programlisting language="cpp">TEMPLATE = app
@@ -51,7 +53,7 @@ protected:
     QLineEdit *m_email;
 };
 </db:programlisting>
-<db:para>The AddressView class is a <db:link xlink:href="../qtwidgets/qwidget.xml">QWidget</db:link> subclass for the user interface. The <db:link xlink:href="../qtwidgets/qtreeview.xml">QTreeView</db:link> widget will display the contents of Outlook's Contact folder as provided by the <db:code>model</db:code>.</db:para>
+<db:para>The AddressView class is a <db:link xlink:href="qwidget.xml">QWidget</db:link> subclass for the user interface. The <db:link xlink:href="../qtwidgets/qtreeview.xml">QTreeView</db:link> widget will display the contents of Outlook's Contact folder as provided by the <db:code>model</db:code>.</db:para>
 <db:programlisting language="cpp">#include &amp;quot;addressview.h&amp;quot;
 #include &amp;quot;msoutl.h&amp;quot;
 #include &amp;lt;QtWidgets&amp;gt;
@@ -73,12 +75,12 @@ public:
 
 private:
     Outlook::Application outlook;
-    Outlook::Items *folderItems = nullptr;
+    Outlook::Items * contactItems;
 
     mutable QHash&amp;lt;QModelIndex, QStringList&amp;gt; cache;
 };
 </db:programlisting>
-<db:para>The AddressBookModel class is a <db:link xlink:href="../qtcore/qabstractlistmodel.xml">QAbstractListModel</db:link> subclass that communicates directly with Outlook, using a <db:link xlink:href="../qtcore/qhash.xml#qhash">QHash</db:link> for caching.</db:para>
+<db:para>The AddressBookModel class is a <db:link xlink:href="qabstractlistmodel.xml">QAbstractListModel</db:link> subclass that communicates directly with Outlook, using a <db:link xlink:href="../qtcore/qhash.xml#qhash">QHash</db:link> for caching.</db:para>
 <db:programlisting language="cpp">AddressBookModel::AddressBookModel(AddressView *parent)
 : QAbstractListModel(parent)
 {
@@ -86,10 +88,10 @@ private:
         Outlook::NameSpace session(outlook.Session());
         session.Logon();
         Outlook::MAPIFolder *folder = session.GetDefaultFolder(Outlook::olFolderContacts);
-        folderItems = new Outlook::Items(folder-&amp;gt;Items());
-        connect(folderItems, SIGNAL(ItemAdd(IDispatch*)), parent, SLOT(updateOutlook()));
-        connect(folderItems, SIGNAL(ItemChange(IDispatch*)), parent, SLOT(updateOutlook()));
-        connect(folderItems, SIGNAL(ItemRemove()), parent, SLOT(updateOutlook()));
+        contactItems = new Outlook::Items(folder-&amp;gt;Items());
+        connect(contactItems, SIGNAL(ItemAdd(IDispatch*)), parent, SLOT(updateOutlook()));
+        connect(contactItems, SIGNAL(ItemChange(IDispatch*)), parent, SLOT(updateOutlook()));
+        connect(contactItems, SIGNAL(ItemRemove()), parent, SLOT(updateOutlook()));
 
         delete folder;
     }
@@ -98,7 +100,7 @@ private:
 <db:para>The constructor initializes Outlook. The various signals Outlook provides to notify about contents changes are connected to the <db:code>updateOutlook()</db:code> slot.</db:para>
 <db:programlisting language="cpp">AddressBookModel::~AddressBookModel()
 {
-    delete folderItems;
+    delete contactItems;
 
     if (!outlook.isNull())
         Outlook::NameSpace(outlook.Session()).Logoff();
@@ -107,7 +109,7 @@ private:
 <db:para>The destructor logs off from the session.</db:para>
 <db:programlisting language="cpp">int AddressBookModel::rowCount(const QModelIndex &amp;amp;) const
 {
-    return folderItems ? folderItems-&amp;gt;Count() : 0;
+    return contactItems ? contactItems-&amp;gt;Count() : 0;
 }
 
 int AddressBookModel::columnCount(const QModelIndex &amp;amp; /*parent*/) const
@@ -147,11 +149,8 @@ int AddressBookModel::columnCount(const QModelIndex &amp;amp; /*parent*/) const
     if (cache.contains(index)) {
         data = cache.value(index);
     } else {
-        Outlook::ContactItem contact(folderItems-&amp;gt;Item(index.row() + 1));
-
-        if (contact.Class() == Outlook::OlObjectClass::olContact)
-            data &amp;lt;&amp;lt; contact.FirstName() &amp;lt;&amp;lt; contact.LastName() &amp;lt;&amp;lt; contact.HomeAddress() &amp;lt;&amp;lt; contact.Email1Address();
-
+        Outlook::ContactItem contact(contactItems-&amp;gt;Item(index.row() + 1));
+        data &amp;lt;&amp;lt; contact.FirstName() &amp;lt;&amp;lt; contact.LastName() &amp;lt;&amp;lt; contact.HomeAddress() &amp;lt;&amp;lt; contact.Email1Address();
         cache.insert(index, data);
     }
 
@@ -164,10 +163,7 @@ int AddressBookModel::columnCount(const QModelIndex &amp;amp; /*parent*/) const
 <db:para>The <db:code>data()</db:code> implementation is the core of the model. If the requested data is in the cache the cached value is used, otherwise the data is acquired from Outlook.</db:para>
 <db:programlisting language="cpp">void AddressBookModel::changeItem(const QModelIndex &amp;amp;index, const QString &amp;amp;firstName, const QString &amp;amp;lastName, const QString &amp;amp;address, const QString &amp;amp;email)
 {
-    Outlook::ContactItem item(folderItems-&amp;gt;Item(index.row() + 1));
-
-    if (item.Class() != Outlook::OlObjectClass::olContact)
-        return; // Not a contact
+    Outlook::ContactItem item(contactItems-&amp;gt;Item(index.row() + 1));
 
     item.SetFirstName(firstName);
     item.SetLastName(lastName);
@@ -322,6 +318,6 @@ int main(int argc, char *argv[])
 <db:para>To build the example you must first build the <db:link xlink:href="qaxcontainer-module.xml">QAxContainer</db:link> library. Then run your make tool in <db:code>examples/activeqt/qutlook</db:code> and run the resulting <db:code>qutlook.exe</db:code>.</db:para>
 <db:section>
 <db:title>Example project</db:title>
-<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtactiveqt.git/tree/examples/activeqt/qutlook?h=6.5">Example project @ code.qt.io</db:link></db:para>
+<db:para><db:link xlink:href="https://code.qt.io/cgit/qt/qtactiveqt.git/tree/examples/activeqt/qutlook?h=6.4">Example project @ code.qt.io</db:link></db:para>
 </db:section>
 </db:article>

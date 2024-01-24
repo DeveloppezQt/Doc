@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<db:article xmlns:db="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.2" xml:lang="en">
+<db:info>
+<db:title>Simple Example</db:title>
+<db:productname>QtHttpServer</db:productname>
+<db:edition>Qt 6.4.3 Reference Documentation</db:edition>
+<db:titleabbrev>Qt Lightweight HTTP Server Reference Documentation</db:titleabbrev>
+<db:abstract>
+<db:para>Simple example of how to set up an HTTP server.</db:para>
+</db:abstract>
+<db:pubdate>2024-01-26</db:pubdate>
+<db:date>2024-01-26</db:date>
+</db:info>
+<db:programlisting language="cpp">// Copyright (C) 2018 The Qt Company Ltd.
+// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+#include &amp;lt;QtCore&amp;gt;
+#include &amp;lt;QtHttpServer&amp;gt;
+
+static inline QString host(const QHttpServerRequest &amp;amp;request)
+{
+    return QString::fromLatin1(request.value(&amp;quot;Host&amp;quot;));
+}
+
+int main(int argc, char *argv[])
+{
+    QCoreApplication app(argc, argv);
+
+    QHttpServer httpServer;
+    httpServer.route(&amp;quot;/&amp;quot;, []() {
+        return &amp;quot;Hello world&amp;quot;;
+    });
+
+    httpServer.route(&amp;quot;/query&amp;quot;, [] (const QHttpServerRequest &amp;amp;request) {
+        return QString(&amp;quot;%1/query/&amp;quot;).arg(host(request));
+    });
+
+    httpServer.route(&amp;quot;/query/&amp;quot;, [] (qint32 id, const QHttpServerRequest &amp;amp;request) {
+        return QString(&amp;quot;%1/query/%2&amp;quot;).arg(host(request)).arg(id);
+    });
+
+    httpServer.route(&amp;quot;/query/&amp;lt;arg&amp;gt;/log&amp;quot;, [] (qint32 id, const QHttpServerRequest &amp;amp;request) {
+        return QString(&amp;quot;%1/query/%2/log&amp;quot;).arg(host(request)).arg(id);
+    });
+
+    httpServer.route(&amp;quot;/query/&amp;lt;arg&amp;gt;/log/&amp;quot;, [] (qint32 id, float threshold,
+                                              const QHttpServerRequest &amp;amp;request) {
+        return QString(&amp;quot;%1/query/%2/log/%3&amp;quot;).arg(host(request)).arg(id).arg(threshold);
+    });
+
+    httpServer.route(&amp;quot;/user/&amp;quot;, [] (const qint32 id) {
+        return QString(&amp;quot;User %1&amp;quot;).arg(id);
+    });
+
+    httpServer.route(&amp;quot;/user/&amp;lt;arg&amp;gt;/detail&amp;quot;, [] (const qint32 id) {
+        return QString(&amp;quot;User %1 detail&amp;quot;).arg(id);
+    });
+
+    httpServer.route(&amp;quot;/user/&amp;lt;arg&amp;gt;/detail/&amp;quot;, [] (const qint32 id, const qint32 year) {
+        return QString(&amp;quot;User %1 detail year - %2&amp;quot;).arg(id).arg(year);
+    });
+
+    httpServer.route(&amp;quot;/json/&amp;quot;, [] {
+        return QJsonObject{
+            {
+                {&amp;quot;key1&amp;quot;, &amp;quot;1&amp;quot;},
+                {&amp;quot;key2&amp;quot;, &amp;quot;2&amp;quot;},
+                {&amp;quot;key3&amp;quot;, &amp;quot;3&amp;quot;}
+            }
+        };
+    });
+
+    httpServer.route(&amp;quot;/assets/&amp;lt;arg&amp;gt;&amp;quot;, [] (const QUrl &amp;amp;url) {
+        return QHttpServerResponse::fromFile(QStringLiteral(&amp;quot;:/assets/%1&amp;quot;).arg(url.path()));
+    });
+
+    httpServer.route(&amp;quot;/remote_address&amp;quot;, [](const QHttpServerRequest &amp;amp;request) {
+        return request.remoteAddress().toString();
+    });
+
+    // Basic authentication example (RFC 7617)
+    httpServer.route(&amp;quot;/auth&amp;quot;, [](const QHttpServerRequest &amp;amp;request) {
+        auto auth = request.value(&amp;quot;authorization&amp;quot;).simplified();
+
+        if (auth.size() &amp;gt; 6 &amp;amp;&amp;amp; auth.first(6).toLower() == &amp;quot;basic &amp;quot;) {
+            auto token = auth.sliced(6);
+            auto userPass = QByteArray::fromBase64(token);
+
+            if (auto colon = userPass.indexOf(':'); colon &amp;gt; 0) {
+                auto userId = userPass.first(colon);
+                auto password = userPass.sliced(colon + 1);
+
+                if (userId == &amp;quot;Aladdin&amp;quot; &amp;amp;&amp;amp; password == &amp;quot;open sesame&amp;quot;)
+                    return QHttpServerResponse(&amp;quot;text/plain&amp;quot;, &amp;quot;Success\n&amp;quot;);
+            }
+        }
+        QHttpServerResponse response(&amp;quot;text/plain&amp;quot;, &amp;quot;Authentication required\n&amp;quot;,
+                                     QHttpServerResponse::StatusCode::Unauthorized);
+        response.setHeader(&amp;quot;WWW-Authenticate&amp;quot;, R&amp;quot;(Basic realm=&amp;quot;Simple example&amp;quot;, charset=&amp;quot;UTF-8&amp;quot;)&amp;quot;);
+        return response;
+    });
+
+    const auto port = httpServer.listen(QHostAddress::Any);
+    if (!port) {
+        qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&amp;quot;QHttpServerExample&amp;quot;,
+                                                &amp;quot;Server failed to listen on a port.&amp;quot;);
+        return 0;
+    }
+
+    const auto sslCertificateChain =
+            QSslCertificate::fromPath(QStringLiteral(&amp;quot;:/assets/certificate.crt&amp;quot;));
+    if (sslCertificateChain.empty()) {
+        qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&amp;quot;QHttpServerExample&amp;quot;,
+                                                &amp;quot;Couldn't retrive SSL certificate from file.&amp;quot;);
+        return 0;
+    }
+    QFile privateKeyFile(QStringLiteral(&amp;quot;:/assets/private.key&amp;quot;));
+    if (!privateKeyFile.open(QIODevice::ReadOnly)) {
+        qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&amp;quot;QHttpServerExample&amp;quot;,
+                                                &amp;quot;Couldn't open file for reading.&amp;quot;);
+        return 0;
+    }
+    httpServer.sslSetup(sslCertificateChain.front(), QSslKey(&amp;amp;privateKeyFile, QSsl::Rsa));
+    privateKeyFile.close();
+
+    const auto sslPort = httpServer.listen(QHostAddress::Any);
+    if (!sslPort) {
+        qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&amp;quot;QHttpServerExample&amp;quot;,
+                                                &amp;quot;Server failed to listen on a port.&amp;quot;);
+        return 0;
+    }
+
+    qDebug() &amp;lt;&amp;lt; QCoreApplication::translate(&amp;quot;QHttpServerExample&amp;quot;,
+                                            &amp;quot;Running on http://127.0.0.1:%1/ and &amp;quot;
+                                            &amp;quot;https://127.0.0.1:%2/ (Press CTRL+C to quit)&amp;quot;)
+                        .arg(port)
+                        .arg(sslPort);
+
+    return app.exec();
+}
+
+</db:programlisting>
+</db:article>
